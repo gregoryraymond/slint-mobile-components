@@ -1,3 +1,11 @@
+[workspace]
+members = ["android-demo"]
+resolver = "2"
+# Default cargo commands at the root operate on the library, not the
+# demo APK — that's what consumers care about. `cargo apk build` from
+# inside `android-demo/` (or `just demo-run`) handles the APK.
+default-members = ["."]
+
 [package]
 name = "slint-mobile-components"
 version = "0.1.0"
@@ -28,12 +36,34 @@ slint-build = "1"
 # so consumers (e.g. an Android app) aren't forced to drag in winit.
 gallery = ["slint/backend-default", "slint/renderer-skia"]
 
+# Component-snapshot harness — pulls in Slint's software renderer so we
+# can render scenes to a pixel buffer without a backend or display.
+# Enabled when running `cargo test --features snapshots`.
+snapshots = ["slint/renderer-software"]
+
+# Behavior-test harness — uses i-slint-backend-testing to find elements
+# by accessibility metadata and invoke their default actions without
+# rendering. Enabled when running `cargo test --features behaviors`.
+behaviors = []
+
 # Desktop preview app — `cargo run --example gallery --features gallery`.
 # Renders the same `Gallery` Window that `build.rs` already compiles for
 # CI validation; no extra .slint file needed.
 [[example]]
 name = "gallery"
 required-features = ["gallery"]
+
+[[test]]
+name = "snapshots"
+required-features = ["snapshots"]
+
+[[test]]
+name = "behavior"
+required-features = ["behaviors"]
+
+[dev-dependencies]
+image = { version = "0.25", default-features = false, features = ["png"] }
+i-slint-backend-testing = "1"
 
 [profile.dev]
 opt-level = 1

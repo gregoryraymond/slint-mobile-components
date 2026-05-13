@@ -1,0 +1,179 @@
+// Behavior-test scenes — small wrappers that compose one or more
+// components and expose their result state via `out` properties so the
+// Rust runner can read it after invoking accessibility default actions.
+//
+// Each scene should:
+//   - inherit Window (so it's instantiable from Rust)
+//   - put each interactive component at a known position
+//   - expose any state we want to assert via `out property`s
+//
+// The scenes are intentionally minimal — no theme, no padding, no
+// surrounding chrome. We're testing behavior, not layout.
+
+import { MobileButton } from "../ui/button.slint";
+import { MobileSwitch } from "../ui/switch.slint";
+import { TextField } from "../ui/text-field.slint";
+import { IconButton } from "../ui/icon-button.slint";
+import { BottomNav, BottomNavDistribution } from "../ui/bottom-nav.slint";
+import { ListItem } from "../ui/list-item.slint";
+import { Chip } from "../ui/chip.slint";
+import { Checkbox } from "../ui/checkbox.slint";
+import { Slider } from "../ui/slider.slint";
+import { TabBar, Tab } from "../ui/tab-bar.slint";
+
+// Clicking a MobileButton fires `clicked` and (optionally) doesn't fire
+// when disabled.
+export component BehaviorButtonClick inherits Window {
+    out property <int> click-count: 0;
+    out property <int> disabled-click-count: 0;
+
+    enabled-button := MobileButton {
+        text: "Submit";
+        clicked => { root.click-count += 1; }
+    }
+
+    disabled-button := MobileButton {
+        text: "Locked";
+        enabled: false;
+        clicked => { root.disabled-click-count += 1; }
+    }
+}
+
+// Tapping a MobileSwitch flips `checked` and fires `toggled` with the
+// new value.
+export component BehaviorSwitchToggle inherits Window {
+    out property <int> toggle-count: 0;
+    out property <bool> last-value: false;
+    out property <bool> checked: false;
+
+    sw := MobileSwitch {
+        checked <=> root.checked;
+        toggled(v) => {
+            root.toggle-count += 1;
+            root.last-value = v;
+        }
+    }
+}
+
+// Setting a TextField's value via the accessibility set-value action
+// updates `text` and fires `edited`.
+export component BehaviorTextField inherits Window {
+    in-out property <string> current-text: "";
+    out property <int> edited-count: 0;
+
+    field := TextField {
+        label: "Email";
+        text <=> root.current-text;
+        edited(v) => { root.edited-count += 1; }
+    }
+}
+
+// Clicking an IconButton inside a BottomNav fires its `clicked` callback;
+// the parent updates `current-index`. (We test multiple buttons to
+// confirm find_by_accessible_label picks the right one.)
+export component BehaviorBottomNav inherits Window {
+    in-out property <int> nav-index: 0;
+    out property <int> nav-change-count: 0;
+
+    BottomNav {
+        current-index <=> root.nav-index;
+
+        IconButton {
+            label: "Home";
+            icon: @image-url("../ui/icons/home.svg");
+            clicked => { root.nav-index = 0; root.nav-change-count += 1; }
+        }
+        IconButton {
+            label: "Search";
+            icon: @image-url("../ui/icons/search.svg");
+            clicked => { root.nav-index = 1; root.nav-change-count += 1; }
+        }
+        IconButton {
+            label: "Profile";
+            icon: @image-url("../ui/icons/profile.svg");
+            clicked => { root.nav-index = 2; root.nav-change-count += 1; }
+        }
+    }
+}
+
+// Chip — invoking the default action toggles `selected` and fires
+// `clicked`. The dismissible chip's X glyph is a separate sub-element;
+// the test for `dismissed` finds the chip and reads back state changes.
+export component BehaviorChip inherits Window {
+    out property <int> click-count: 0;
+    out property <int> dismiss-count: 0;
+    in-out property <bool> filter-selected: false;
+
+    Chip {
+        label: "Filter";
+        selected <=> root.filter-selected;
+        clicked => { root.click-count += 1; }
+    }
+    Chip {
+        label: "Today";
+        dismissible: true;
+        dismissed => { root.dismiss-count += 1; }
+    }
+}
+
+// Checkbox — default action toggles `checked` and fires `toggled`.
+export component BehaviorCheckbox inherits Window {
+    in-out property <bool> agreed: false;
+    out property <int> toggle-count: 0;
+    out property <bool> last-value: false;
+
+    Checkbox {
+        label: "Agree to terms";
+        checked <=> root.agreed;
+        toggled(v) => {
+            root.toggle-count += 1;
+            root.last-value = v;
+        }
+    }
+}
+
+// Slider — programmatic value updates flow through to accessible-value.
+export component BehaviorSlider inherits Window {
+    in-out property <float> volume: 0.25;
+
+    Slider {
+        value <=> root.volume;
+    }
+}
+
+// TabBar — each Tab's default action fires `clicked`, parent updates
+// `current-index`.
+export component BehaviorTabBar inherits Window {
+    in-out property <int> tab-index: 0;
+    out property <int> tab-change-count: 0;
+
+    TabBar {
+        current-index <=> root.tab-index;
+        Tab {
+            label: "Photos";
+            active: root.tab-index == 0;
+            clicked => { root.tab-index = 0; root.tab-change-count += 1; }
+        }
+        Tab {
+            label: "Videos";
+            active: root.tab-index == 1;
+            clicked => { root.tab-index = 1; root.tab-change-count += 1; }
+        }
+        Tab {
+            label: "Albums";
+            active: root.tab-index == 2;
+            clicked => { root.tab-index = 2; root.tab-change-count += 1; }
+        }
+    }
+}
+
+// Tapping a ListItem fires `clicked`.
+export component BehaviorListItem inherits Window {
+    out property <int> click-count: 0;
+
+    ListItem {
+        title: "Privacy";
+        subtitle: "Data, permissions, exports";
+        clicked => { root.click-count += 1; }
+    }
+}

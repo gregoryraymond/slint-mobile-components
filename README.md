@@ -43,6 +43,18 @@ slint-mobile-components/
 │   └── lib.rs              # slint::include_modules!() + UI_LIBRARY_DIR
 ├── examples/
 │   └── gallery.rs          # Desktop preview (--features gallery)
+├── android-demo/           # cargo-apk demo APK that runs the Gallery
+├── maestro/                # On-device E2E (`just maestro`)
+│   ├── config.yaml
+│   └── flows/
+│       ├── gallery-tabs.yaml
+│       └── baselines/      # Committed E2E baseline PNGs
+├── tests/
+│   ├── snapshot_scenes.slint
+│   ├── snapshots.rs        # Visual regression (--features snapshots)
+│   ├── snapshot_baselines/ # Committed golden PNGs
+│   ├── behavior_scenes.slint
+│   └── behavior.rs         # Behavior tests (--features behaviors)
 └── ui/
     ├── gallery.slint       # Desktop preview Window + CI validation entry
     ├── theme.slint         # Theme global (colors, spacing, type, motion)
@@ -53,6 +65,16 @@ slint-mobile-components/
     ├── list-item.slint     # ListItem
     ├── text-field.slint    # TextField
     ├── switch.slint        # MobileSwitch
+    ├── chip.slint          # Chip (toggleable, dismissible)
+    ├── avatar.slint        # Avatar (image + initials fallback)
+    ├── badge.slint         # Badge (dot / count overlay)
+    ├── progress-bar.slint  # ProgressBar (determinate + indeterminate)
+    ├── spinner.slint       # Spinner (continuous-rotate loader)
+    ├── checkbox.slint      # Checkbox (square multi-select toggle)
+    ├── slider.slint        # Slider (0..1 value picker, drag + tap)
+    ├── tab-bar.slint       # TabBar + Tab (top tab strip, sibling to BottomNav)
+    ├── divider.slint       # Divider (hairline separator)
+    ├── banner.slint        # Banner (inline info strip with optional action)
     └── pages/
         ├── home.slint      # HomePage
         ├── settings.slint  # SettingsPage
@@ -142,6 +164,161 @@ export component MainWindow inherits Window {
 The Slint compiler resolves `@mobile-components/...` against the directory
 returned by `slint_mobile_components::UI_LIBRARY_DIR`, so consumers don't
 hard-code relative paths in their `.slint` sources.
+
+## On-device E2E — Maestro against the Android demo APK
+
+A third layer covers the actual device: a tiny Android app crate
+(`android-demo/`) consumes this library and runs the `Gallery` as a
+real APK; [Maestro](https://docs.maestro.dev) YAML flows drive it on
+the connected emulator and assert against baseline screenshots.
+
+### Prerequisites
+
+- Android SDK + NDK + JDK 17 (the `justfile` defaults assume the same
+  paths the `slint-mobile` devcontainer ships)
+- `cargo-apk` (`cargo install cargo-apk`)
+- A running emulator or device on `adb devices`
+- Maestro: `curl -fsSL "https://get.maestro.mobile.dev" | bash`
+
+### Workflow
+
+```sh
+just demo-build       # Build the demo APK (debug, multi-arch)
+just demo-run         # Build, install, launch on the connected device
+just maestro          # Run all flows under maestro/flows
+just maestro-refresh  # Update baselines after an intended UI change
+```
+
+### How it works
+
+```
+slint-mobile-components/
+├── android-demo/                 # cargo-apk crate
+│   ├── Cargo.toml                # cdylib + [package.metadata.android]
+│   ├── build.rs                  # library_paths → ../ui
+│   ├── ui/main.slint             # imports `@mobile-components/gallery.slint`
+│   └── src/lib.rs                # android_main → MainWindow::new().run()
+└── maestro/
+    ├── config.yaml
+    └── flows/
+        ├── gallery-tabs.yaml     # The flow
+        └── baselines/            # Committed baseline PNGs
+            ├── home.png
+            ├── settings.png
+            ├── login.png
+            └── toolbox.png
+```
+
+Because Slint renders the entire UI to a single SurfaceView and exposes
+nothing to Android's `AccessibilityService`, Maestro can't address
+individual widgets by id or label. Every interaction is a percentage
+coordinate tap, and every visual assertion is `assertScreenshot:
+baselines/<name>.png` against a committed full-screen PNG with the
+default 95 % match threshold (loose enough to absorb the status-bar
+clock changing). Recapture baselines via `just maestro-refresh` after
+an intended visual change.
+
+### The three test layers at a glance
+
+| Layer | What it covers | Where it runs | When to add a test |
+|---|---|---|---|
+| Snapshots (`--features snapshots`) | Pixel-level component appearance | Desktop / CI (software renderer) | A new visual state of a component |
+| Behavior tests (`--features behaviors`) | Click / toggle / value-change logic via the accessibility tree | Desktop / CI (no rendering) | A new interaction or callback |
+| Maestro flows | End-to-end UI on real Android | Emulator / device | A user-visible workflow that spans multiple screens |
+
+## Behavior tests — accessibility-driven
+
+A second harness uses `i-slint-backend-testing` to find interactive
+elements via the same accessibility metadata that drives screen readers
+(`accessible-role`, `accessible-label`, `accessible-action-default`)
+and to invoke their default actions, without rendering anything.
+
+```sh
+cargo test --features behaviors --test behavior
+```
+
+Each test composes one or more components into a small Window scene
+defined in `tests/behavior_scenes.slint`, exposing the result state via
+`out` properties. The Rust test then:
+
+1. Finds the element by accessibility metadata
+   (`ElementHandle::find_by_accessible_label(&scene, "Submit")`)
+2. Triggers the default action (`invoke_accessible_default_action()`)
+3. Asserts on the scene's exposed state (`scene.get_click_count()`)
+
+Layout:
+
+```
+tests/
+├── behavior_scenes.slint   # Scenes that expose state via out properties
+└── behavior.rs             # Tests find elements by a11y, invoke, assert
+```
+
+**Why this works.** Every interactive component in `ui/` declares
+`accessible-role` (button / switch / list-item / text-input), an
+`accessible-label` bound to its visible text, and an
+`accessible-action-default` callback that fires the same Rust-facing
+callback (`clicked()`, `toggled(v)`, …) the inner `TouchArea` does on
+tap. The accessibility tree is the test surface — and the same one
+screen readers see.
+
+Adding a behavior test: add a scene to `tests/behavior_scenes.slint`,
+add a `#[test]` to `tests/behavior.rs` that calls
+`ElementHandle::find_by_accessible_label(&scene, "…")`, invoke the
+action, and assert.
+
+Each test thread calls `i_slint_backend_testing::init_no_event_loop()`
+exactly once (the backend is per-thread); the harness handles that.
+
+## Visual regression — component snapshots
+
+A small harness renders each component scene to a PNG via Slint's
+software renderer (no display, no emulator) and diffs against a
+committed baseline. Run as part of `cargo test`:
+
+```sh
+# Verify nothing has changed (CI mode):
+cargo test --features snapshots --test snapshots
+
+# Refresh baselines after an intended visual change:
+SLINT_CREATE_SCREENSHOTS=1 cargo test --features snapshots --test snapshots
+```
+
+Layout:
+
+```
+tests/
+├── snapshot_scenes.slint   # Window-rooted scenes, one per component+state
+├── snapshots.rs            # Runner (renders, diffs, writes actuals on fail)
+└── snapshot_baselines/
+    ├── mobile-button-primary.png
+    ├── card-with-subtitle.png
+    └── ...                 # committed; this is the golden set
+```
+
+**Adding a scene.** Define a Window component in
+`tests/snapshot_scenes.slint` with explicit `preferred-width` and
+`preferred-height`, then add a line to `render_snapshots` in
+`tests/snapshots.rs`:
+
+```rust
+snapshot("my-new-scene", 320, 120, SnapMyNewScene::new);
+```
+
+Run with `SLINT_CREATE_SCREENSHOTS=1` once to write the baseline, commit
+the PNG, and the diff job will keep it locked in from then on.
+
+**Failure output.** On mismatch the actual render is saved next to the
+baseline as `<name>.actual.png` so the visual diff can be inspected. The
+threshold is 0.5 % of pixels — tight enough to catch real changes,
+loose enough to absorb minor rasterizer drift between machines.
+
+**Why software-rendered.** The on-device Android build uses Skia; this
+test harness uses Slint's pure-Rust software renderer. The harness's
+job is to detect changes to **your** code, not to mirror device
+output — the baseline and the actual are both produced by the same
+renderer, so any deterministic visual change shows up. For on-device
+visual checks see the layered testing notes in `CLAUDE.md`.
 
 ## Local development
 

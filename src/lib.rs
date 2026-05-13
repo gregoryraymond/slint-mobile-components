@@ -45,7 +45,40 @@
 //!    import { HomePage } from "@mobile-components/pages/home.slint";
 //!    ```
 
-slint::include_modules!();
+// `slint::include_modules!()` only includes ONE file (the most recent
+// call to slint_build::compile sets `SLINT_INCLUDE_GENERATED`), so when
+// `build.rs` compiles multiple .slint inputs we have to include each
+// generated module explicitly. We wrap each in its own private mod so
+// the per-file `pub use` chains can't collide with one another (e.g.
+// `BottomNavDistribution` is re-exported from every file that imports
+// `bottom-nav.slint`).
+mod _generated_gallery {
+    include!(concat!(env!("OUT_DIR"), "/gallery.rs"));
+}
+mod _generated_snapshot_scenes {
+    include!(concat!(env!("OUT_DIR"), "/snapshot_scenes.rs"));
+}
+mod _generated_behavior_scenes {
+    include!(concat!(env!("OUT_DIR"), "/behavior_scenes.rs"));
+}
+
+// Production surface — Gallery exposes the design-system globals
+// (Theme, BottomNavDistribution) that consumers expect at the crate root.
+pub use _generated_gallery::*;
+
+// Test scenes — re-exported by exact name only, so they don't shadow
+// the Theme / BottomNavDistribution from the gallery export above.
+pub use _generated_snapshot_scenes::{
+    SnapAvatarSizes, SnapBadgeOnIcon, SnapBanner, SnapBottomNavSpaced,
+    SnapCardWithSubtitle, SnapCheckboxPair, SnapChipRow, SnapIconButtonActive,
+    SnapMobileButtonPrimary, SnapMobileButtonSecondary, SnapProgressDeterminate,
+    SnapSliderAt35, SnapSpinnerStatic, SnapTabBar,
+};
+pub use _generated_behavior_scenes::{
+    BehaviorBottomNav, BehaviorButtonClick, BehaviorCheckbox, BehaviorChip,
+    BehaviorListItem, BehaviorSlider, BehaviorSwitchToggle, BehaviorTabBar,
+    BehaviorTextField,
+};
 
 /// Filesystem path to this crate's `ui/` directory — the entry point Slint
 /// resolves `@mobile-components/...` imports against. Pass this (wrapped in

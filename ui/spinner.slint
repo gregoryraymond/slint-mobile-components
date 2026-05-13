@@ -1,0 +1,57 @@
+// Spinner
+// =====================================================================
+//
+// Circular indeterminate loading indicator. Use when an operation's
+// duration is unknown and you don't want a linear bar (small inline
+// loaders, button-internal loading states, modal overlays).
+//
+// Specification
+// -------------
+//
+// Geometry
+//   - Square: width == height == `size`. `size` defaults to 24 px.
+//     32–48 px is appropriate for centred page-level loading; 16 px
+//     works inside a tight inline label.
+//
+// Visual
+//   - Renders an SVG arc (~ 3/4 of a circle) tinted with `Theme.primary`
+//     and rotates the Image element continuously. Slint's `Rectangle`
+//     can't be rotated directly, so the spinner is an Image with a
+//     `rotation-angle` driven by a Timer that increments the
+//     `rotation` property on each frame.
+//
+// Behaviour
+//   - 360°/s. Halts when `running` is false (set false to "freeze" the
+//     spinner, e.g. during a snapshot test). Hiding via a parent `if`
+//     is the more common way to stop drawing it entirely.
+
+import { Theme } from "theme.slint";
+
+export component Spinner inherits Rectangle {
+    in property <length> size: 24px;
+    in property <bool> running: true;
+
+    width: root.size;
+    height: root.size;
+
+    property <float> rotation: 0;
+
+    Timer {
+        interval: 16ms;
+        running: root.running;
+        triggered => {
+            root.rotation = mod(root.rotation + 6, 360);
+        }
+    }
+
+    // `transform-origin` defaults to the element's centre, which is
+    // exactly what we want for a centred-spin animation.
+    Image {
+        width: parent.width;
+        height: parent.height;
+        source: @image-url("icons/spinner-arc.svg");
+        colorize: Theme.primary;
+        image-fit: contain;
+        transform-rotation: root.rotation * 1deg;
+    }
+}

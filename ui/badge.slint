@@ -1,0 +1,55 @@
+// Badge
+// =====================================================================
+//
+// Small overlay that conveys a notification count or unread indicator.
+// Typically positioned by the parent over an icon or avatar (e.g. an
+// inbox icon's top-right corner). The badge does not position itself —
+// callers absolute-position it relative to the parent it's decorating.
+//
+// Specification
+// -------------
+//
+// Geometry
+//   - Two modes:
+//     - **Dot** (`count == 0`): 8 × 8 px circle. Use when you only need
+//       "something new is here" without an exact number.
+//     - **Count** (`count >= 1`): pill shape, height 18 px,
+//       min-width 18 px. Width grows with the label so two- and three-
+//       digit counts fit.
+//   - Border (2 px in `Theme.background`) cleanly separates the badge
+//     from whatever it's overlaid on, even when colours are close.
+//
+// Content
+//   - `count` (int, default 0): the displayed number. When 0, the badge
+//     renders as the small dot variant with no text. When `count > 99`,
+//     the label clamps to "99+".
+//
+// Style
+//   - Background: `Theme.danger` (matches OS notification conventions).
+//   - Foreground: `Theme.on-primary` (white) text, 10 px / weight 700.
+
+import { Theme } from "theme.slint";
+
+export component Badge inherits Rectangle {
+    in property <int> count: 0;
+
+    height: root.count == 0 ? 8px : 18px;
+    min-width: root.count == 0 ? 8px : 18px;
+    border-radius: self.height / 2;
+    background: Theme.danger;
+    border-width: 2px;
+    border-color: Theme.background;
+
+    if root.count > 0: Text {
+        x: 4px;
+        y: 0;
+        width: parent.width - 8px;
+        height: parent.height;
+        text: root.count > 99 ? "99+" : root.count;
+        color: Theme.on-primary;
+        font-size: 10px;
+        font-weight: 700;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}

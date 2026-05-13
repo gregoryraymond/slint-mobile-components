@@ -7,6 +7,16 @@
 
 set shell := ["bash", "-cu"]
 
+# Default Android SDK + JDK locations on this machine. Override on the
+# command line (`just ANDROID_HOME=… demo-run`) or in your environment
+# if your install lives elsewhere.
+export ANDROID_HOME := env_var_or_default("ANDROID_HOME", "/home/user/android-build/sdk")
+export ANDROID_NDK_ROOT := env_var_or_default("ANDROID_NDK_ROOT", "/home/user/android-build/sdk/ndk/27.0.12077973")
+export JAVA_HOME := env_var_or_default("JAVA_HOME", "/home/user/android-build/jdk-17.0.13+11")
+MAESTRO_BIN := env_var_or_default("MAESTRO_BIN", env_var("HOME") + "/.maestro/bin")
+export PATH := JAVA_HOME + "/bin:" + ANDROID_HOME + "/platform-tools:" + MAESTRO_BIN + ":" + env_var("PATH")
+export MAESTRO_CLI_ANALYSIS_NOTIFICATION_DISABLED := "true"
+
 # Show available recipes
 default:
     @just --list
@@ -40,6 +50,33 @@ fmt-check:
 # CI-only: install Linux apt packages Slint's renderer needs to build.
 # (Not strictly required for this library crate since it doesn't enable a
 # renderer feature, but kept for parity with consuming apps.)
+# --- Android demo APK ------------------------------------------------------
+
+# Build the demo APK (debug, multi-arch).
+demo-build:
+    cd android-demo && cargo apk build
+
+# Build a release APK.
+demo-release:
+    cd android-demo && cargo apk build --release
+
+# Build, install, and launch the demo on the connected emulator/device.
+demo-run:
+    cd android-demo && cargo apk run
+
+# --- Maestro E2E flows ------------------------------------------------------
+
+# Run all Maestro flows against the connected device (you must `just demo-run`
+# first to ensure the APK is installed).
+maestro:
+    maestro test maestro/flows
+
+# Re-capture Maestro baselines (run after an intended visual change).
+maestro-refresh:
+    maestro test --update-screenshots maestro/flows
+
+# --- private helpers (callable, but hidden from `just --list`) -------------
+
 [private]
 install-host-deps:
     sudo apt-get update

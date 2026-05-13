@@ -1,0 +1,48 @@
+[package]
+name = "slint-mobile-components-demo"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Demonstration APK that runs the slint-mobile-components Gallery on Android. Also serves as the target for the Maestro E2E flows."
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[dependencies]
+slint = { version = "1", default-features = false, features = [
+    "compat-1-2",
+    "std",
+    "backend-android-activity-06",
+    "renderer-skia",
+] }
+# Path dep on the sibling library — `slint_mobile_components::UI_LIBRARY_DIR`
+# is the path build.rs hands to slint_build's library_paths so this app's
+# `.slint` files can import `@mobile-components/...`.
+slint-mobile-components = { path = ".." }
+
+[build-dependencies]
+slint-build = "1"
+slint-mobile-components = { path = ".." }
+
+# cargo-apk reads this block to package the cdylib into an APK.
+[package.metadata.android]
+package = "dev.slint.mobile_components_demo"
+build_targets = ["aarch64-linux-android", "x86_64-linux-android"]
+resources = "android-res"
+assets = "android-assets"
+
+[package.metadata.android.sdk]
+min_sdk_version = 24
+target_sdk_version = 34
+
+[package.metadata.android.application]
+label = "Mobile Components Demo"
+
+# Skia uses Vulkan when available, falls back to GL — declare Vulkan as
+# optional so the APK still installs on Vulkan-less devices.
+[[package.metadata.android.uses_feature]]
+name = "android.hardware.vulkan.level"
+required = false
+version = 1

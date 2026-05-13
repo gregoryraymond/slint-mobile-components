@@ -1,0 +1,59 @@
+// Avatar
+// =====================================================================
+//
+// Circular representation of a person or entity. Shows the bound image
+// when one is provided; otherwise renders an initials fallback on a
+// muted background.
+//
+// Specification
+// -------------
+//
+// Geometry
+//   - Square: width == height == `size`. `size` defaults to 40 px (the
+//     standard list-row avatar size). Set 56 / 72 / 96 for app-bar
+//     leading slots, profile headers, or large cards.
+//   - Border-radius = size / 2 (perfect circle).
+//
+// Content
+//   - `source` (image, optional): the avatar image; rendered
+//     `image-fit: cover` so a non-square source crops to fill rather
+//     than letterbox.
+//   - `fallback` (string): one or two character initials shown when
+//     `source` is empty. Centered, scaled to half the avatar size.
+//
+// Style
+//   - With image: the image fills the circle (clipped by border-radius).
+//   - Without image: `Theme.surface-variant` fill with `Theme.on-surface`
+//     initials.
+
+import { Theme } from "theme.slint";
+
+export component Avatar inherits Rectangle {
+    in property <image> source;
+    in property <string> fallback;
+    in property <length> size: 40px;
+
+    width: root.size;
+    height: root.size;
+    border-radius: self.width / 2;
+    background: Theme.surface-variant;
+    clip: true;
+
+    if root.source.width > 0: Image {
+        width: parent.width;
+        height: parent.height;
+        source: root.source;
+        image-fit: cover;
+    }
+
+    if root.source.width == 0: Text {
+        width: parent.width;
+        height: parent.height;
+        text: root.fallback;
+        color: Theme.on-surface;
+        font-size: root.size / 2;
+        font-weight: 600;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}

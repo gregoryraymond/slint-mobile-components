@@ -1,0 +1,55 @@
+# Maestro E2E flow — switch through all four tabs of the Gallery and
+# assert each lands on the expected screenshot.
+#
+# Slint apps render to a single SurfaceView and don't expose individual
+# elements to Android's AccessibilityService, so every `tapOn` is a
+# coordinate tap and every visual assertion uses `assertScreenshot`
+# against a baseline committed under `maestro/flows/baselines/`.
+# Re-capture baselines after intended visual changes with:
+#
+#     just maestro-refresh
+#
+# Coordinates are percentages of the screen — the tab strip is 48dp tall
+# at the top of the window, so y ≈ 4% lands inside it. The four tabs
+# divide the width evenly so each tab's centre is at 12.5%, 37.5%,
+# 62.5%, 87.5%.
+
+appId: dev.slint.mobile_components_demo
+name: gallery-tabs
+---
+- launchApp:
+    clearState: true
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# Tap the (already-active) Home tab to force Slint's first frame before
+# the first screenshot — `waitForAnimationToEnd` alone returns as soon
+# as Slint's NativeActivity is up, even before the UI has drawn.
+- tapOn:
+    point: 12%, 4%
+- waitForAnimationToEnd:
+    timeout: 2000
+
+# --- Home tab (default) ---------------------------------------------------
+- assertScreenshot: baselines/home.png
+
+# --- Settings tab ---------------------------------------------------------
+- tapOn:
+    point: 37%, 4%
+- waitForAnimationToEnd:
+    timeout: 2000
+- assertScreenshot: baselines/settings.png
+
+# --- Login tab ------------------------------------------------------------
+- tapOn:
+    point: 62%, 4%
+- waitForAnimationToEnd:
+    timeout: 2000
+- assertScreenshot: baselines/login.png
+
+# --- Toolbox tab ----------------------------------------------------------
+- tapOn:
+    point: 87%, 4%
+- waitForAnimationToEnd:
+    timeout: 2000
+- assertScreenshot: baselines/toolbox.png

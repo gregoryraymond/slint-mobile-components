@@ -1,0 +1,239 @@
+// Snapshot scenes — one Window-rooted component per `<component, state>`
+// pair we want to lock down as a baseline image. The snapshot runner
+// (`tests/snapshots.rs`) instantiates each scene, renders it to a pixel
+// buffer via Slint's software renderer, and either writes the baseline
+// (`SLINT_CREATE_SCREENSHOTS=1`) or diffs against the existing one.
+//
+// Add new scenes here. Each scene must:
+//   - inherit Window
+//   - set explicit `preferred-width` and `preferred-height` matching the
+//     dimensions in the snapshot! entry in `tests/snapshots.rs`
+//   - render the component once at a known state (no animations in
+//     flight; press / focus pseudo-states should be driven by setting
+//     properties, not by simulated input)
+
+import { Theme } from "../ui/theme.slint";
+import { MobileButton, TextButton, Fab } from "../ui/button.slint";
+import { Card } from "../ui/card.slint";
+import { AppBar } from "../ui/app-bar.slint";
+import { BottomNav, BottomNavDistribution } from "../ui/bottom-nav.slint";
+import { IconButton } from "../ui/icon-button.slint";
+import { ListItem } from "../ui/list-item.slint";
+import { TextField } from "../ui/text-field.slint";
+import { MobileSwitch } from "../ui/switch.slint";
+import { Chip } from "../ui/chip.slint";
+import { Avatar } from "../ui/avatar.slint";
+import { Badge } from "../ui/badge.slint";
+import { ProgressBar } from "../ui/progress-bar.slint";
+import { Spinner } from "../ui/spinner.slint";
+import { Checkbox } from "../ui/checkbox.slint";
+import { Slider } from "../ui/slider.slint";
+import { TabBar, Tab } from "../ui/tab-bar.slint";
+import { Divider } from "../ui/divider.slint";
+import { Banner } from "../ui/banner.slint";
+
+// MobileButton — primary, full width.
+export component SnapMobileButtonPrimary inherits Window {
+    preferred-width: 320px;
+    preferred-height: 80px;
+    background: Theme.background;
+    MobileButton {
+        x: Theme.spacing-md;
+        y: Theme.spacing-md;
+        width: parent.width - 2 * Theme.spacing-md;
+        height: 48px;
+        text: "Primary action";
+        primary: true;
+    }
+}
+
+// MobileButton — secondary (outlined) variant.
+export component SnapMobileButtonSecondary inherits Window {
+    preferred-width: 320px;
+    preferred-height: 80px;
+    background: Theme.background;
+    MobileButton {
+        x: Theme.spacing-md;
+        y: Theme.spacing-md;
+        width: parent.width - 2 * Theme.spacing-md;
+        height: 48px;
+        text: "Secondary action";
+        primary: false;
+    }
+}
+
+// Card with title + subtitle.
+export component SnapCardWithSubtitle inherits Window {
+    preferred-width: 320px;
+    preferred-height: 140px;
+    background: Theme.background;
+    Card {
+        x: Theme.spacing-md;
+        y: Theme.spacing-md;
+        width: parent.width - 2 * Theme.spacing-md;
+        title: "Today's brief";
+        subtitle: "Three updates from the projects you follow.";
+    }
+}
+
+// IconButton — active state.
+export component SnapIconButtonActive inherits Window {
+    preferred-width: 96px;
+    preferred-height: 96px;
+    background: Theme.surface;
+    IconButton {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        label: "Home";
+        icon: @image-url("../ui/icons/home.svg");
+        active: true;
+    }
+}
+
+// Chip row — selected + leading-icon + dismissible variants.
+export component SnapChipRow inherits Window {
+    preferred-width: 360px;
+    preferred-height: 56px;
+    background: Theme.background;
+    HorizontalLayout {
+        x: Theme.spacing-md;
+        y: 12px;
+        width: parent.width - 2 * Theme.spacing-md;
+        spacing: Theme.spacing-sm;
+        Chip { label: "All"; selected: true; }
+        Chip { label: "Tagged"; leading-icon: @image-url("../ui/icons/star.svg"); }
+        Chip { label: "Today"; dismissible: true; }
+    }
+}
+
+// Avatar — three sizes, all initials fallback.
+export component SnapAvatarSizes inherits Window {
+    preferred-width: 200px;
+    preferred-height: 80px;
+    background: Theme.background;
+    HorizontalLayout {
+        x: Theme.spacing-md;
+        y: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: start;
+        Avatar { fallback: "AB"; size: 32px; }
+        Avatar { fallback: "CD"; }
+        Avatar { fallback: "EF"; size: 56px; }
+    }
+}
+
+// Badge — overlaid on an icon, with count.
+export component SnapBadgeOnIcon inherits Window {
+    preferred-width: 72px;
+    preferred-height: 56px;
+    background: Theme.background;
+    Rectangle {
+        x: Theme.spacing-md;
+        y: Theme.spacing-sm;
+        width: 32px;
+        height: 32px;
+        Image {
+            width: 24px;
+            height: 24px;
+            x: 0;
+            y: 4px;
+            source: @image-url("../ui/icons/bell.svg");
+            colorize: Theme.on-surface;
+            image-fit: contain;
+        }
+        Badge { x: 14px; y: 0; count: 4; }
+    }
+}
+
+// ProgressBar — determinate at 65 %.
+export component SnapProgressDeterminate inherits Window {
+    preferred-width: 320px;
+    preferred-height: 32px;
+    background: Theme.background;
+    ProgressBar {
+        x: Theme.spacing-md;
+        y: 14px;
+        width: parent.width - 2 * Theme.spacing-md;
+        value: 0.65;
+    }
+}
+
+// Spinner — frozen at rotation 0 so the snapshot is deterministic.
+export component SnapSpinnerStatic inherits Window {
+    preferred-width: 96px;
+    preferred-height: 96px;
+    background: Theme.background;
+    Spinner {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        running: false;
+    }
+}
+
+// Checkbox — one checked, one unchecked.
+export component SnapCheckboxPair inherits Window {
+    preferred-width: 320px;
+    preferred-height: 112px;
+    background: Theme.background;
+    VerticalLayout {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        Checkbox { label: "Subscribe to newsletter"; checked: true; }
+        Checkbox { label: "Send anonymous analytics"; }
+    }
+}
+
+// Slider at 35 % — thumb mid-track, filled portion left of thumb.
+export component SnapSliderAt35 inherits Window {
+    preferred-width: 320px;
+    preferred-height: 64px;
+    background: Theme.background;
+    Slider {
+        x: Theme.spacing-md;
+        y: 8px;
+        width: parent.width - 2 * Theme.spacing-md;
+        value: 0.35;
+    }
+}
+
+// TabBar with three tabs, "Photos" active.
+export component SnapTabBar inherits Window {
+    preferred-width: 360px;
+    preferred-height: 48px;
+    background: Theme.background;
+    TabBar {
+        Tab { label: "Photos"; active: true; }
+        Tab { label: "Videos"; }
+        Tab { label: "Albums"; }
+    }
+}
+
+// Banner with icon + message + action.
+export component SnapBanner inherits Window {
+    preferred-width: 360px;
+    preferred-height: 96px;
+    background: Theme.background;
+    Banner {
+        x: Theme.spacing-md;
+        y: Theme.spacing-md;
+        width: parent.width - 2 * Theme.spacing-md;
+        icon: @image-url("../ui/icons/bell.svg");
+        message: "You're working offline. Changes will sync when you reconnect.";
+        action-label: "Retry";
+    }
+}
+
+// BottomNav — spaced distribution with 4 IconButtons.
+export component SnapBottomNavSpaced inherits Window {
+    preferred-width: 412px;
+    preferred-height: 72px;
+    background: Theme.background;
+    BottomNav {
+        distribution: BottomNavDistribution.spaced;
+        IconButton { label: "Home"; icon: @image-url("../ui/icons/home.svg"); active: true; }
+        IconButton { label: "Search"; icon: @image-url("../ui/icons/search.svg"); }
+        IconButton { label: "Inbox"; icon: @image-url("../ui/icons/inbox.svg"); }
+        IconButton { label: "Profile"; icon: @image-url("../ui/icons/profile.svg"); }
+    }
+}

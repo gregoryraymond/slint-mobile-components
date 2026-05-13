@@ -1,0 +1,94 @@
+// Banner
+// =====================================================================
+//
+// Inline informational strip with an optional icon, message, and
+// trailing action label. Use when you need to surface a persistent
+// state (offline, sync paused, update available, "you're on the free
+// plan") that lives in the layout flow — for transient feedback
+// dismissable in a few seconds, prefer Snackbar / Toast (not yet in
+// the catalogue).
+//
+// Specification
+// -------------
+//
+// Geometry
+//   - Full layout-cell width (`horizontal-stretch: 1`).
+//   - 16 px padding on all sides; 16 px between icon / message / action.
+//   - Border-radius: `Theme.radius-md`. Surface fill so it stands clear
+//     of `Theme.background` without being as loud as a `Card`.
+//
+// Content
+//   - `icon` (image, optional): 24 × 24 glyph at the leading edge,
+//     tinted `Theme.muted`. Hidden when empty.
+//   - `message` (string): primary text. Word-wraps over multiple lines
+//     if the layout is narrow.
+//   - `action-label` (string, optional): when set, a primary-tinted
+//     action label appears at the trailing edge; tapping it fires
+//     `action-pressed()`.
+
+import { Theme } from "theme.slint";
+
+export component Banner inherits Rectangle {
+    in property <image> icon;
+    in property <string> message;
+    in property <string> action-label;
+    callback action-pressed();
+
+    horizontal-stretch: 1;
+    background: Theme.surface;
+    border-radius: Theme.radius-md;
+
+    HorizontalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+
+        if root.icon.width > 0: Image {
+            width: 24px;
+            height: 24px;
+            source: root.icon;
+            colorize: Theme.muted;
+            image-fit: contain;
+            vertical-alignment: center;
+        }
+
+        Text {
+            text: root.message;
+            color: Theme.on-surface;
+            font-size: Theme.font-size-body;
+            wrap: word-wrap;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+
+        if root.action-label != "": Rectangle {
+            min-height: 36px;
+            min-width: 64px;
+            border-radius: Theme.radius-sm;
+            background: action-touch.pressed ? Theme.surface-pressed : transparent;
+
+            accessible-role: button;
+            accessible-label: root.action-label;
+            accessible-action-default => { root.action-pressed(); }
+
+            animate background { duration: Theme.motion-fast; }
+
+            Text {
+                x: Theme.spacing-sm;
+                y: 0;
+                width: parent.width - 2 * Theme.spacing-sm;
+                height: parent.height;
+                text: root.action-label;
+                color: Theme.primary;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+
+            action-touch := TouchArea {
+                clicked => { root.action-pressed(); }
+            }
+        }
+    }
+}

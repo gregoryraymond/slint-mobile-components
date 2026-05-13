@@ -1,0 +1,78 @@
+// ProgressBar
+// =====================================================================
+//
+// Thin horizontal progress indicator. Supports two modes: determinate
+// (driven by a 0..1 `value`) and indeterminate (an animated track
+// segment shuttling left-to-right for loading states of unknown
+// duration).
+//
+// Specification
+// -------------
+//
+// Geometry
+//   - Height: 4 px (Material standard linear progress).
+//   - Width: full layout cell (`horizontal-stretch: 1`).
+//   - The track has border-radius = height / 2 so the fill clips into
+//     soft round end-caps.
+//
+// Modes
+//   - Determinate (default): `value` (0.0–1.0). The fill occupies
+//     `parent.width * value`, animated over `Theme.motion-base` when
+//     `value` changes so progress feels smooth.
+//   - Indeterminate: set `indeterminate: true`. A 30 %-wide fill
+//     segment slides from left edge to right edge on a 1.6 s loop, then
+//     restarts. `value` is ignored in this mode.
+//
+// Style
+//   - Track: `Theme.outline` (subtle, low-contrast).
+//   - Fill: `Theme.primary`.
+
+import { Theme } from "theme.slint";
+
+export component ProgressBar inherits Rectangle {
+    in property <float> value: 0.0;
+    in property <bool> indeterminate: false;
+
+    height: 4px;
+    horizontal-stretch: 1;
+    background: Theme.outline;
+    border-radius: self.height / 2;
+    clip: true;
+
+    // Determinate fill — animated when `value` changes.
+    if !root.indeterminate: Rectangle {
+        x: 0;
+        y: 0;
+        width: parent.width * max(0.0, min(1.0, root.value));
+        height: parent.height;
+        background: Theme.primary;
+        border-radius: parent.border-radius;
+        animate width { duration: Theme.motion-base; easing: ease-out; }
+    }
+
+    // Indeterminate marquee — a 30%-wide segment animates across the
+    // track on a continuous loop, driven by a Timer that ticks
+    // `progress-tick` from 0 to 1 and resets.
+    if root.indeterminate: Rectangle {
+        x: parent.width * (root.progress-tick - 0.3);
+        y: 0;
+        width: parent.width * 0.3;
+        height: parent.height;
+        background: Theme.primary;
+        border-radius: parent.border-radius;
+    }
+    // Phase property advanced by the timer below — runs 0 → 1.3 (slightly
+    // past the right edge so the fill exits cleanly) before resetting.
+    // The Timer is always present but only ticks when `indeterminate` is
+    // true (Slint doesn't allow Timers inside `if` blocks).
+    property <float> progress-tick: 0;
+    Timer {
+        interval: 16ms;
+        running: root.indeterminate;
+        triggered => {
+            root.progress-tick = root.progress-tick >= 1.3
+                ? 0
+                : root.progress-tick + 0.012;
+        }
+    }
+}
