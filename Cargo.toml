@@ -22,5 +22,18 @@ slint = { version = "1", default-features = false, features = [
 [build-dependencies]
 slint-build = "1"
 
+[features]
+# Pull in Slint's default desktop backend + renderer so the `gallery`
+# example can open a window on macOS / Linux / Windows. Off by default
+# so consumers (e.g. an Android app) aren't forced to drag in winit.
+gallery = ["slint/backend-default", "slint/renderer-skia"]
+
+# Desktop preview app — `cargo run --example gallery --features gallery`.
+# Renders the same `Gallery` Window that `build.rs` already compiles for
+# CI validation; no extra .slint file needed.
+[[example]]
+name = "gallery"
+required-features = ["gallery"]
+
 [profile.dev]
 opt-level = 1

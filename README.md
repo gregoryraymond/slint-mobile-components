@@ -9,6 +9,27 @@ The primary surface is the `ui/` directory of `.slint` files, consumed
 from a sibling project via Slint's `library_paths`. A thin Rust crate
 wraps it so `cargo check` validates every component in CI.
 
+## See it: the Gallery preview
+
+```sh
+cargo run --example gallery --features gallery
+```
+
+A desktop window opens at the mobile aspect ratio (412 × 892). A tab
+strip at the top switches between:
+
+- **Home / Settings / Login** — the three example pages
+- **Toolbox** — every component in the library, captioned and scrollable
+
+Use this during development to iterate on components without spinning up
+an Android emulator. The `gallery` Cargo feature pulls in Slint's winit
+backend + femtovg renderer; it's off by default so Android consumers
+aren't forced to drag those crates in.
+
+> On Linux, the renderer needs a few system packages — see
+> `just install-host-deps` (pkg-config, fontconfig, freetype, clang, cmake,
+> ninja). The slint-mobile devcontainer already has them.
+
 ## What's inside
 
 ```
@@ -20,8 +41,10 @@ slint-mobile-components/
 ├── .github/workflows/ci.yml
 ├── src/
 │   └── lib.rs              # slint::include_modules!() + UI_LIBRARY_DIR
+├── examples/
+│   └── gallery.rs          # Desktop preview (--features gallery)
 └── ui/
-    ├── _check.slint        # CI validation entry — not consumed externally
+    ├── gallery.slint       # Desktop preview Window + CI validation entry
     ├── theme.slint         # Theme global (colors, spacing, type, motion)
     ├── button.slint        # MobileButton, TextButton, Fab
     ├── card.slint          # Card

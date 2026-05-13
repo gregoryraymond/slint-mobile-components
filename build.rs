@@ -1,10 +1,14 @@
-// Compile a Window-rooted entry file purely to validate every component's
-// `.slint` syntax on every `cargo check`. The file (and its transitive
-// imports) exercises each component; nothing here ships to consumers.
+// Compile `ui/gallery.slint`, which is Window-rooted and uses every
+// component in the library — this serves two purposes at once:
 //
-// Consumers don't depend on the output of this build — they configure
-// Slint's `library_paths` to point at `ui/` and import components by
-// file path (`@mobile-components/button.slint`).
+//   1. CI validation: every component's `.slint` syntax is type-checked
+//      on each `cargo check` (gallery.slint imports them transitively).
+//   2. Desktop preview: with `--features gallery`, the `gallery` example
+//      runs the resulting `Gallery` Window so you can see the library.
+//
+// Consumers never depend on this build's output — they configure Slint's
+// `library_paths` to point at `ui/` and import individual files via
+// `@mobile-components/<file>.slint`.
 fn main() {
-    slint_build::compile("ui/_check.slint").expect("Slint build failed");
+    slint_build::compile("ui/gallery.slint").expect("Slint build failed");
 }

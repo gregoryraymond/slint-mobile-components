@@ -1,0 +1,280 @@
+// Gallery — a desktop preview Window that switches between the example
+// pages and a "Toolbox" of every individual component. Used by the
+// `gallery` example (`cargo run --example gallery --features gallery`)
+// and doubles as the slint-build compilation entry: because Gallery is
+// Window-rooted and uses every component, `cargo check` validates the
+// entire library without slint-build emitting "no code will be generated"
+// advisories on non-Window exports.
+//
+// Consumers never import this file — they configure `library_paths` to
+// point at `ui/` and import individual components by path.
+
+import { Theme } from "theme.slint";
+import { MobileButton, TextButton, Fab } from "button.slint";
+import { Card } from "card.slint";
+import { AppBar } from "app-bar.slint";
+import { BottomNav, BottomNavDistribution } from "bottom-nav.slint";
+import { IconButton } from "icon-button.slint";
+import { ListItem } from "list-item.slint";
+import { TextField } from "text-field.slint";
+import { MobileSwitch } from "switch.slint";
+import { HomePage } from "pages/home.slint";
+import { SettingsPage } from "pages/settings.slint";
+import { LoginPage } from "pages/login.slint";
+import { ScrollView } from "std-widgets.slint";
+
+component Tab inherits Rectangle {
+    in property <string> label;
+    in property <bool> selected;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    background: touch.pressed ? Theme.surface-pressed : Theme.surface;
+
+    animate background { duration: Theme.motion-fast; }
+
+    Text {
+        width: parent.width;
+        height: parent.height;
+        text: root.label;
+        color: root.selected ? Theme.primary : Theme.muted;
+        font-size: Theme.font-size-body;
+        font-weight: root.selected ? 600 : 400;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    // Active-tab underline.
+    if root.selected: Rectangle {
+        x: 0;
+        y: parent.height - 2px;
+        width: parent.width;
+        height: 2px;
+        background: Theme.primary;
+    }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+component SectionLabel inherits Text {
+    color: Theme.muted;
+    font-size: Theme.font-size-caption;
+    font-weight: 600;
+}
+
+// "Toolbox" — every component rendered once, captioned, scrollable.
+component Toolbox inherits Rectangle {
+    background: Theme.background;
+
+    in-out property <string> sample-text;
+    in-out property <bool> sample-switch: true;
+
+    ScrollView {
+        VerticalLayout {
+            padding: Theme.spacing-md;
+            spacing: Theme.spacing-lg;
+
+            // ---- AppBar ------------------------------------------------
+            VerticalLayout {
+                spacing: Theme.spacing-sm;
+                SectionLabel { text: "APP BAR"; }
+                AppBar { title: "Title only"; show-divider: false; }
+                AppBar {
+                    title: "With actions";
+                    leading-icon: @image-url("icons/arrow-left.svg");
+                    trailing-icon: @image-url("icons/more-vertical.svg");
+                    show-divider: false;
+                }
+            }
+
+            // ---- Buttons -----------------------------------------------
+            VerticalLayout {
+                spacing: Theme.spacing-sm;
+                SectionLabel { text: "BUTTONS"; }
+                MobileButton { text: "Primary"; }
+                MobileButton { text: "Secondary"; primary: false; }
+                MobileButton { text: "Disabled"; enabled: false; }
+                HorizontalLayout {
+                    spacing: Theme.spacing-md;
+                    alignment: start;
+                    TextButton { text: "Text action"; }
+                    Fab { }
+                }
+            }
+
+            // ---- Card --------------------------------------------------
+            VerticalLayout {
+                spacing: Theme.spacing-sm;
+                SectionLabel { text: "CARD"; }
+                Card { title: "Title only"; }
+                Card {
+                    title: "With subtitle";
+                    subtitle: "A short description that wraps across two lines if it needs to.";
+                }
+                Card {
+                    title: "Tappable";
+                    subtitle: "Press feedback enabled.";
+                    tappable: true;
+                }
+            }
+
+            // ---- List items --------------------------------------------
+            VerticalLayout {
+                spacing: 0;
+                SectionLabel { text: "LIST ITEMS"; }
+                Rectangle {
+                    background: Theme.surface;
+                    border-radius: Theme.radius-md;
+                    VerticalLayout {
+                        ListItem { title: "Title only"; }
+                        ListItem { title: "With subtitle"; subtitle: "Secondary line of text"; }
+                        ListItem {
+                            title: "Leading + trailing";
+                            subtitle: "Both icon slots used";
+                            leading-icon: @image-url("icons/star.svg");
+                            trailing-icon: @image-url("icons/chevron-right.svg");
+                            show-divider: false;
+                        }
+                    }
+                }
+            }
+
+            // ---- TextField ---------------------------------------------
+            VerticalLayout {
+                spacing: Theme.spacing-md;
+                SectionLabel { text: "TEXT FIELD"; }
+                TextField { label: "Empty"; placeholder: "Type something"; }
+                TextField {
+                    label: "Bound";
+                    placeholder: "Sample text";
+                    text <=> root.sample-text;
+                }
+                TextField {
+                    label: "Password";
+                    placeholder: "••••••••";
+                    input-type: InputType.password;
+                }
+            }
+
+            // ---- Switch ------------------------------------------------
+            VerticalLayout {
+                spacing: Theme.spacing-sm;
+                SectionLabel { text: "SWITCH"; }
+                HorizontalLayout {
+                    spacing: Theme.spacing-md;
+                    alignment: start;
+                    MobileSwitch { checked: false; }
+                    MobileSwitch { checked <=> root.sample-switch; }
+                    MobileSwitch { checked: true; enabled: false; }
+                }
+            }
+
+            // ---- Bottom nav --------------------------------------------
+            VerticalLayout {
+                spacing: Theme.spacing-sm;
+                SectionLabel { text: "BOTTOM NAV — SPACED (default)"; }
+                Rectangle {
+                    border-radius: Theme.radius-md;
+                    clip: true;
+                    height: 72px;
+                    BottomNav {
+                        distribution: BottomNavDistribution.spaced;
+                        IconButton { label: "Home"; icon: @image-url("icons/home.svg"); active: true; }
+                        IconButton { label: "Search"; icon: @image-url("icons/search.svg"); }
+                        IconButton { label: "Inbox"; icon: @image-url("icons/inbox.svg"); }
+                        IconButton { label: "Profile"; icon: @image-url("icons/profile.svg"); }
+                    }
+                }
+
+                SectionLabel { text: "BOTTOM NAV — CENTERED"; }
+                Rectangle {
+                    border-radius: Theme.radius-md;
+                    clip: true;
+                    height: 72px;
+                    BottomNav {
+                        distribution: BottomNavDistribution.centered;
+                        IconButton { label: "Home"; icon: @image-url("icons/home.svg"); active: true; }
+                        IconButton { label: "Search"; icon: @image-url("icons/search.svg"); }
+                        IconButton { label: "Profile"; icon: @image-url("icons/profile.svg"); }
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component Gallery inherits Window {
+    title: "slint-mobile-components — Gallery";
+    preferred-width: 412px;
+    preferred-height: 892px;
+    min-width: 360px;
+    min-height: 640px;
+    background: Theme.background;
+
+    in-out property <int> selected: 0;
+
+    VerticalLayout {
+        spacing: 0;
+
+        // Tab strip
+        Rectangle {
+            height: 48px;
+            background: Theme.surface;
+            HorizontalLayout {
+                spacing: 0;
+                Tab {
+                    label: "Home";
+                    selected: root.selected == 0;
+                    clicked => { root.selected = 0; }
+                }
+                Tab {
+                    label: "Settings";
+                    selected: root.selected == 1;
+                    clicked => { root.selected = 1; }
+                }
+                Tab {
+                    label: "Login";
+                    selected: root.selected == 2;
+                    clicked => { root.selected = 2; }
+                }
+                Tab {
+                    label: "Toolbox";
+                    selected: root.selected == 3;
+                    clicked => { root.selected = 3; }
+                }
+            }
+            Rectangle {
+                x: 0;
+                y: parent.height - 1px;
+                width: parent.width;
+                height: 1px;
+                background: Theme.outline;
+            }
+        }
+
+        // Content area — fills the rest of the window.
+        Rectangle {
+            background: Theme.background;
+            vertical-stretch: 1;
+
+            if root.selected == 0: HomePage {
+                width: parent.width;
+                height: parent.height;
+            }
+            if root.selected == 1: SettingsPage {
+                width: parent.width;
+                height: parent.height;
+            }
+            if root.selected == 2: LoginPage {
+                width: parent.width;
+                height: parent.height;
+            }
+            if root.selected == 3: Toolbox {
+                width: parent.width;
+                height: parent.height;
+            }
+        }
+    }
+}

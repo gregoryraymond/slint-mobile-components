@@ -1,11 +1,43 @@
+// TextField
+// =====================================================================
+//
+// Single-line text input styled for mobile forms. Wraps Slint's
+// `TextInput` primitive with a labelled, focus-aware shell.
+//
+// Specification
+// -------------
+//
+// Geometry
+//   - Inner field: min-height = `Theme.touch-target` (48px) so the field
+//     accepts a fingertip tap directly.
+//   - Optional label above the field adds ~22px height (caption text +
+//     4px spacing).
+//   - Full width (`horizontal-stretch: 1`).
+//   - Border-radius: `Theme.radius-md` (12px); background `Theme.surface`.
+//
+// Border / focus
+//   - Resting: 1px `Theme.outline`.
+//   - Focused: 2px `Theme.primary`, animated over `motion-fast`.
+//
+// Slots
+//   - `label` (string, optional): caption above the field, muted.
+//   - `placeholder` (string, optional): shown inside the field while
+//     `text` is empty. Disappears as soon as a character is typed.
+//   - `text` (in-out string): the current value. Use a two-way binding
+//     (`text <=> some-prop`) when the page owns the model.
+//
+// Behaviour
+//   - `input-type` (InputType, default `text`): switch to `password` to
+//     mask characters, `number` / `decimal` for numeric pads.
+//   - `enabled` (bool, default true): when false, the field is dimmed
+//     and accepts no input.
+//
+// Callbacks
+//   - `edited(string)` fires after every keystroke with the new text.
+//   - `accepted(string)` fires when the soft-keyboard's enter key is
+//     pressed (useful for "next field" navigation or form submit).
 import { Theme } from "theme.slint";
 
-// Single-line text input styled for mobile. Drives a Slint `TextInput`
-// primitive directly so consumers control the value via the `text`
-// in-out property; `edited` fires on every keystroke.
-//
-// Set `input-type: password` to mask characters. Set `label` to show a
-// caption above the input.
 export component TextField inherits Rectangle {
     in property <string> label;
     in property <string> placeholder;

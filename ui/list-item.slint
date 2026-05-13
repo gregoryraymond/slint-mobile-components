@@ -1,13 +1,50 @@
+// ListItem
+// =====================================================================
+//
+// One row in a vertical list. Standard settings / menu / contact-row
+// pattern with optional leading + trailing icons and a two-line text
+// block.
+//
+// Specification
+// -------------
+//
+// Geometry
+//   - min-height: `Theme.touch-target + Theme.spacing-sm` (56px) so the
+//     row is always tappable even with a single-line title.
+//   - Full width (`horizontal-stretch: 1`).
+//   - 16px horizontal padding, 8px vertical, 16px gap between leading
+//     icon / text block / trailing icon.
+//
+// Slots
+//   - `leading-icon` (image, optional): 24×24, tinted `Theme.muted`.
+//     Hidden if empty.
+//   - Text block (centre): `title` (16px, weight-500, on-surface) above
+//     `subtitle` (14px, muted). The subtitle row is omitted entirely
+//     when empty; the title alone vertically centres in the row.
+//   - `trailing-icon` (image, optional): mirror of leading. Typical
+//     glyphs: `chevron-right.svg` for nav rows, `check.svg` for select
+//     state, etc.
+//
+// Divider
+//   - `show-divider` (bool, default true) draws a 1px `Theme.outline`
+//     hairline along the bottom edge, inset by the horizontal padding
+//     so it doesn't reach the screen edges. Set false on the last item
+//     in a section.
+//
+// Interaction
+//   - Press feedback: background → `Theme.surface-pressed`. Emits
+//     `clicked()`. Tap area = full row.
+//
+// Composition
+//   - Stack inside a `Card` (rounded section) or a bare `Rectangle`
+//     (flush-edge section) inside a `ScrollView`. See `SettingsPage`.
 import { Theme } from "theme.slint";
 
-// One row in a vertical list. Optional leading icon glyph, primary `title`,
-// secondary `subtitle`, and optional trailing glyph (e.g. "›" for nav).
-// Tap-feedback is built in; emit `clicked` to drive navigation.
 export component ListItem inherits Rectangle {
     in property <string> title;
     in property <string> subtitle;
-    in property <string> leading-icon: "";
-    in property <string> trailing-icon: "";
+    in property <image> leading-icon;
+    in property <image> trailing-icon;
     in property <bool> show-divider: true;
     callback clicked();
 
@@ -25,13 +62,13 @@ export component ListItem inherits Rectangle {
         spacing: Theme.spacing-md;
         alignment: stretch;
 
-        if root.leading-icon != "": Text {
-            text: root.leading-icon;
-            color: Theme.muted;
-            font-size: 22px;
+        if root.leading-icon.width > 0: Image {
             width: 24px;
+            height: 24px;
+            source: root.leading-icon;
+            colorize: Theme.muted;
+            image-fit: contain;
             vertical-alignment: center;
-            horizontal-alignment: center;
         }
 
         VerticalLayout {
@@ -53,13 +90,13 @@ export component ListItem inherits Rectangle {
             }
         }
 
-        if root.trailing-icon != "": Text {
-            text: root.trailing-icon;
-            color: Theme.muted;
-            font-size: 22px;
+        if root.trailing-icon.width > 0: Image {
             width: 24px;
+            height: 24px;
+            source: root.trailing-icon;
+            colorize: Theme.muted;
+            image-fit: contain;
             vertical-alignment: center;
-            horizontal-alignment: center;
         }
     }
 

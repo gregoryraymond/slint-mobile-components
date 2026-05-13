@@ -1,69 +1,66 @@
+// BottomNav
+// =====================================================================
+//
+// Horizontal strip of `IconButton` children, anchored to the bottom of a
+// mobile page. The bar is full-bleed; the buttons inside keep their
+// natural (fixed) IconButton width and the bar decides how to distribute
+// any leftover horizontal space between them.
+//
+// Specification
+// -------------
+//
+// Geometry
+//   - Height: 72px (Material-ish bottom-nav floor; the button is 72px
+//     square and 4px of top padding makes room for the hairline divider
+//     without clipping). horizontal-stretch: 1 so the bar fills its
+//     parent's width.
+//   - Background: `Theme.surface` with a 1px `Theme.outline` divider on
+//     the top edge.
+//
+// Children
+//   - Hosts 2–5 IconButton children passed via `@children`. Each
+//     IconButton's `width == height == size` is preserved by the layout
+//     — see icon-button.slint for the per-button spec.
+//
+// Distribution
+//   - `distribution` (BottomNavDistribution, default `spaced`) chooses
+//     how the leftover horizontal space (bar-width − total button-width)
+//     is allocated:
+//       - `spaced`:   `space-around` — equal half-gap on the bar edges
+//         and a full-gap between adjacent buttons. Typical Android-style
+//         bottom nav with the buttons spread across the width.
+//       - `centered`: buttons cluster in the middle of the bar with no
+//         space between them; the leftover is split evenly on the left
+//         and right edges. Useful when a compact set of actions should
+//         feel like a single grouped control.
+//
+// State
+//   - `current-index` (in-out int): index of the selected button. The
+//     bar itself doesn't react to taps — the parent page reads each
+//     child IconButton's `clicked` callback and assigns `current-index`
+//     plus the matching `active` flag. See the example in
+//     `pages/home.slint`.
+//
+// Composition
+//   - Always sits at the bottom of a page; pair with `AppBar` on top
+//     and a `ScrollView` of content in between.
+
 import { Theme } from "theme.slint";
 
-// A single bottom-nav entry. Driven by the parent BottomNav, which sets
-// `active` based on its `current-index` and forwards taps.
-export component BottomNavItem inherits Rectangle {
-    in property <string> label;
-    in property <string> icon-text;
-    in property <bool> active: false;
-    callback clicked();
-
-    horizontal-stretch: 1;
-    height: 64px;
-    background: touch.pressed ? Theme.surface-pressed : transparent;
-
-    animate background { duration: Theme.motion-fast; }
-
-    VerticalLayout {
-        padding-top: Theme.spacing-xs;
-        padding-bottom: Theme.spacing-xs;
-        spacing: 2px;
-        alignment: center;
-
-        Text {
-            text: root.icon-text;
-            color: root.active ? Theme.primary : Theme.muted;
-            font-size: 22px;
-            horizontal-alignment: center;
-            animate color { duration: Theme.motion-fast; }
-        }
-
-        Text {
-            text: root.label;
-            color: root.active ? Theme.primary : Theme.muted;
-            font-size: Theme.font-size-caption;
-            font-weight: root.active ? 600 : 400;
-            horizontal-alignment: center;
-            animate color { duration: Theme.motion-fast; }
-        }
-    }
-
-    touch := TouchArea {
-        clicked => { root.clicked(); }
-    }
+export enum BottomNavDistribution {
+    centered,
+    spaced,
 }
 
-// Bottom navigation bar. Hosts 2-5 BottomNavItem children (passed via
-// `@children`). The parent owns the `current-index` and updates it from
-// each child's `clicked` callback.
-//
-// Typical usage:
-//
-//     BottomNav {
-//         BottomNavItem {
-//             label: "Home"; icon-text: "⌂";
-//             active: parent.current-index == 0;
-//             clicked => { parent.current-index = 0; }
-//         }
-//         ...
-//     }
 export component BottomNav inherits Rectangle {
+    in property <BottomNavDistribution> distribution: BottomNavDistribution.spaced;
     in-out property <int> current-index: 0;
 
     height: 72px;
     background: Theme.surface;
     horizontal-stretch: 1;
 
+    // Top hairline divider.
     Rectangle {
         x: 0;
         y: 0;
@@ -73,11 +70,10 @@ export component BottomNav inherits Rectangle {
     }
 
     HorizontalLayout {
-        padding-left: Theme.spacing-xs;
-        padding-right: Theme.spacing-xs;
         padding-top: 4px;
-        spacing: 0px;
-
+        alignment: root.distribution == BottomNavDistribution.spaced
+            ? LayoutAlignment.space-around
+            : LayoutAlignment.center;
         @children
     }
 }

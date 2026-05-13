@@ -1,7 +1,30 @@
+// Button components
+// =====================================================================
+//
+// Three buttons cover the standard mobile action vocabulary:
+//   - `MobileButton`  — primary or secondary full-width action button
+//   - `TextButton`    — compact tertiary action ("Forgot password?")
+//   - `Fab`           — floating action button (circular, raised)
+//
+// All three honour the 48dp Material touch-target floor (FAB is 56dp by
+// convention, which exceeds it).
+
 import { Theme } from "theme.slint";
 
-// Primary action button. Full-width by default (let the parent layout
-// constrain it); always at least the 48dp Material touch target.
+// MobileButton
+// ---------------------------------------------------------------------
+//
+// Specification
+//   - Geometry: full width of its layout cell (`horizontal-stretch: 1`),
+//     min-height = `Theme.touch-target` (48px). Border-radius =
+//     `Theme.radius-md` (12px).
+//   - Variant: `primary` (default true) fills with `Theme.primary` and
+//     uses `Theme.on-primary` text — the dominant CTA on a screen.
+//     `primary: false` swaps to a 1px outlined surface — use for the
+//     secondary action when both appear together.
+//   - State: `enabled` toggles 50 % opacity and disables the TouchArea.
+//     `pressed` swaps the background to `*-pressed` over `motion-fast`.
+//   - Tap area = full button bounds; emits `clicked()`.
 export component MobileButton inherits Rectangle {
     in property <string> text;
     in property <bool> enabled: true;
@@ -40,8 +63,19 @@ export component MobileButton inherits Rectangle {
     }
 }
 
-// Compact text-only secondary button — used inline (e.g. in AppBar actions
-// or as a tertiary action below a primary MobileButton).
+// TextButton
+// ---------------------------------------------------------------------
+//
+// Specification
+//   - Geometry: min-height 40px (tighter than MobileButton — tertiary
+//     actions don't need the full 48dp on their own, but still fit a
+//     thumb when stacked next to another tap target). min-width 80px so
+//     short labels don't collapse to a one-character tap zone.
+//   - No background fill at rest; press feedback uses
+//     `Theme.surface-pressed`. Label colour is `Theme.primary` so the
+//     button reads as a link without being a heavy surface.
+//   - Use for tertiary actions ("Create an account", "Skip", "Learn
+//     more"). Don't use as a primary CTA.
 export component TextButton inherits Rectangle {
     in property <string> text;
     in property <bool> enabled: true;
@@ -75,10 +109,23 @@ export component TextButton inherits Rectangle {
     }
 }
 
-// Floating action button — circular, raised. Usually anchored to the
-// bottom-right of a page; the page owns its absolute positioning.
+// Fab — Floating Action Button
+// ---------------------------------------------------------------------
+//
+// Specification
+//   - Geometry: 56 × 56 px (Material standard), circular via
+//     `border-radius: width / 2`. Drop shadow (12 px blur, 4 px Y
+//     offset, 38 % black) raises it above page content.
+//   - Icon: defaults to `icons/plus.svg` rendered at 28×28 (slightly
+//     larger than the IconButton's 24×24 since the FAB is bigger).
+//     Override `icon` with any 24-grid SVG for other primary actions
+//     (compose, capture, etc.).
+//   - Positioning: the FAB does NOT position itself. The page that
+//     hosts it is responsible — typically anchored to the bottom-right
+//     above the BottomNav with explicit `x` / `y` bindings.
+//   - One FAB per page maximum.
 export component Fab inherits Rectangle {
-    in property <string> icon-text: "+";
+    in property <image> icon: @image-url("icons/plus.svg");
     in property <bool> enabled: true;
     callback clicked();
 
@@ -93,15 +140,14 @@ export component Fab inherits Rectangle {
 
     animate background { duration: Theme.motion-fast; }
 
-    Text {
-        width: parent.width;
-        height: parent.height;
-        text: root.icon-text;
-        color: Theme.on-primary;
-        font-size: 28px;
-        font-weight: 600;
-        horizontal-alignment: center;
-        vertical-alignment: center;
+    Image {
+        width: 28px;
+        height: 28px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        source: root.icon;
+        colorize: Theme.on-primary;
+        image-fit: contain;
     }
 
     touch := TouchArea {

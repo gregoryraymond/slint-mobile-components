@@ -1,12 +1,43 @@
-// Theme — design tokens for slint-mobile-components.
+// Theme
+// =====================================================================
 //
-// Every other component in this library reads from this global. Properties
-// are `in-out` so a consuming app can rebind them at startup (or runtime)
-// to switch palettes:
+// Single source of truth for visual constants used across the library.
+// Every other component imports `Theme` and reads tokens by name —
+// nothing hard-codes a colour, spacing, font size, or duration.
 //
-//     ui.global::<Theme>().set_primary(slint::Color::from_rgb_u8(...));
+// Specification
+// -------------
 //
-// The defaults form a dark theme aligned with the slint-mobile starter's
+// Type
+//   - Global. Accessible from any `.slint` file in the library and from
+//     consuming code via `ComponentHandle::global::<Theme>()`.
+//
+// Properties
+//   - All properties are `in-out`: a consuming app may rebind them at
+//     startup or runtime to switch palettes:
+//
+//         ui.global::<Theme>().set_primary(slint::Color::from_rgb_u8(
+//             0xff, 0x6b, 0x35,
+//         ));
+//
+// Token groups
+//   - Colour palette (15 tokens): background / surface / surface-variant
+//     / surface-pressed for fills; primary / primary-pressed / on-primary
+//     for the brand control set; on-background / on-surface / muted for
+//     foreground text; outline for hairline dividers; danger / success
+//     for status states.
+//   - Spacing scale (5 tokens, 4–32 px): spacing-xs through spacing-xl.
+//     Use these on layout `padding` and `spacing` properties so vertical
+//     rhythm stays consistent.
+//   - Typography (5 tokens, 12–28 px): font-size-caption / -body /
+//     -body-large / -title / -headline.
+//   - Touch + radii: `touch-target` is 48px — the Material minimum and
+//     the floor every tappable component honours. `radius-sm / -md / -lg`
+//     are 6 / 12 / 20 px.
+//   - Motion: `motion-fast` (120 ms) for tap state transitions,
+//     `motion-base` (200 ms) for switch knobs and layout reflows.
+//
+// Defaults form a dark theme aligned with the slint-mobile starter's
 // `#0f1115` background.
 
 export global Theme {
