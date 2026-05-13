@@ -1,0 +1,83 @@
+import { Theme } from "theme.slint";
+
+// A single bottom-nav entry. Driven by the parent BottomNav, which sets
+// `active` based on its `current-index` and forwards taps.
+export component BottomNavItem inherits Rectangle {
+    in property <string> label;
+    in property <string> icon-text;
+    in property <bool> active: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    height: 64px;
+    background: touch.pressed ? Theme.surface-pressed : transparent;
+
+    animate background { duration: Theme.motion-fast; }
+
+    VerticalLayout {
+        padding-top: Theme.spacing-xs;
+        padding-bottom: Theme.spacing-xs;
+        spacing: 2px;
+        alignment: center;
+
+        Text {
+            text: root.icon-text;
+            color: root.active ? Theme.primary : Theme.muted;
+            font-size: 22px;
+            horizontal-alignment: center;
+            animate color { duration: Theme.motion-fast; }
+        }
+
+        Text {
+            text: root.label;
+            color: root.active ? Theme.primary : Theme.muted;
+            font-size: Theme.font-size-caption;
+            font-weight: root.active ? 600 : 400;
+            horizontal-alignment: center;
+            animate color { duration: Theme.motion-fast; }
+        }
+    }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+// Bottom navigation bar. Hosts 2-5 BottomNavItem children (passed via
+// `@children`). The parent owns the `current-index` and updates it from
+// each child's `clicked` callback.
+//
+// Typical usage:
+//
+//     BottomNav {
+//         BottomNavItem {
+//             label: "Home"; icon-text: "⌂";
+//             active: parent.current-index == 0;
+//             clicked => { parent.current-index = 0; }
+//         }
+//         ...
+//     }
+export component BottomNav inherits Rectangle {
+    in-out property <int> current-index: 0;
+
+    height: 72px;
+    background: Theme.surface;
+    horizontal-stretch: 1;
+
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: 1px;
+        background: Theme.outline;
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-xs;
+        padding-right: Theme.spacing-xs;
+        padding-top: 4px;
+        spacing: 0px;
+
+        @children
+    }
+}

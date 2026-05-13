@@ -1,0 +1,77 @@
+import { Theme } from "theme.slint";
+
+// One row in a vertical list. Optional leading icon glyph, primary `title`,
+// secondary `subtitle`, and optional trailing glyph (e.g. "›" for nav).
+// Tap-feedback is built in; emit `clicked` to drive navigation.
+export component ListItem inherits Rectangle {
+    in property <string> title;
+    in property <string> subtitle;
+    in property <string> leading-icon: "";
+    in property <string> trailing-icon: "";
+    in property <bool> show-divider: true;
+    callback clicked();
+
+    min-height: Theme.touch-target + Theme.spacing-sm;
+    horizontal-stretch: 1;
+    background: touch.pressed ? Theme.surface-pressed : transparent;
+
+    animate background { duration: Theme.motion-fast; }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        padding-top: Theme.spacing-sm;
+        padding-bottom: Theme.spacing-sm;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+
+        if root.leading-icon != "": Text {
+            text: root.leading-icon;
+            color: Theme.muted;
+            font-size: 22px;
+            width: 24px;
+            vertical-alignment: center;
+            horizontal-alignment: center;
+        }
+
+        VerticalLayout {
+            horizontal-stretch: 1;
+            spacing: 2px;
+            alignment: center;
+
+            Text {
+                text: root.title;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body-large;
+                font-weight: 500;
+            }
+
+            if root.subtitle != "": Text {
+                text: root.subtitle;
+                color: Theme.muted;
+                font-size: Theme.font-size-body;
+            }
+        }
+
+        if root.trailing-icon != "": Text {
+            text: root.trailing-icon;
+            color: Theme.muted;
+            font-size: 22px;
+            width: 24px;
+            vertical-alignment: center;
+            horizontal-alignment: center;
+        }
+    }
+
+    if root.show-divider: Rectangle {
+        x: Theme.spacing-md;
+        y: parent.height - 1px;
+        width: parent.width - 2 * Theme.spacing-md;
+        height: 1px;
+        background: Theme.outline;
+    }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}

@@ -1,0 +1,71 @@
+import { Theme } from "theme.slint";
+
+// Single-line text input styled for mobile. Drives a Slint `TextInput`
+// primitive directly so consumers control the value via the `text`
+// in-out property; `edited` fires on every keystroke.
+//
+// Set `input-type: password` to mask characters. Set `label` to show a
+// caption above the input.
+export component TextField inherits Rectangle {
+    in property <string> label;
+    in property <string> placeholder;
+    in-out property <string> text;
+    in property <InputType> input-type: InputType.text;
+    in property <bool> enabled: true;
+    callback edited(string);
+    callback accepted(string);
+
+    min-height: Theme.touch-target + (root.label != "" ? 22px : 0px);
+    horizontal-stretch: 1;
+    background: transparent;
+
+    VerticalLayout {
+        spacing: 4px;
+
+        if root.label != "": Text {
+            text: root.label;
+            color: Theme.muted;
+            font-size: Theme.font-size-caption;
+            font-weight: 500;
+        }
+
+        field := Rectangle {
+            min-height: Theme.touch-target;
+            background: Theme.surface;
+            border-radius: Theme.radius-md;
+            border-width: input.has-focus ? 2px : 1px;
+            border-color: input.has-focus ? Theme.primary : Theme.outline;
+            opacity: root.enabled ? 1.0 : 0.5;
+
+            animate border-color { duration: Theme.motion-fast; }
+
+            if input.text == "" && root.placeholder != "": Text {
+                x: Theme.spacing-md;
+                y: 0;
+                width: parent.width - 2 * Theme.spacing-md;
+                height: parent.height;
+                text: root.placeholder;
+                color: Theme.muted;
+                font-size: Theme.font-size-body-large;
+                vertical-alignment: center;
+            }
+
+            input := TextInput {
+                x: Theme.spacing-md;
+                y: 0;
+                width: parent.width - 2 * Theme.spacing-md;
+                height: parent.height;
+                text <=> root.text;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body-large;
+                single-line: true;
+                input-type: root.input-type;
+                enabled: root.enabled;
+                vertical-alignment: center;
+
+                edited => { root.edited(self.text); }
+                accepted => { root.accepted(self.text); }
+            }
+        }
+    }
+}

@@ -1,0 +1,66 @@
+import { Theme } from "../theme.slint";
+import { MobileButton, TextButton } from "../button.slint";
+import { TextField } from "../text-field.slint";
+
+// Example login page: heading, two TextFields, primary submit button, and
+// a secondary "create account" affordance.
+export component LoginPage inherits Rectangle {
+    in-out property <string> email;
+    in-out property <string> password;
+    in property <bool> loading: false;
+    callback submit(string, string);
+    callback create-account();
+
+    background: Theme.background;
+
+    VerticalLayout {
+        padding: Theme.spacing-lg;
+        spacing: Theme.spacing-lg;
+        alignment: center;
+
+        VerticalLayout {
+            spacing: Theme.spacing-xs;
+            Text {
+                text: "Sign in";
+                color: Theme.on-background;
+                font-size: Theme.font-size-headline;
+                font-weight: 600;
+            }
+            Text {
+                text: "Welcome back. Use your email to continue.";
+                color: Theme.muted;
+                font-size: Theme.font-size-body;
+                wrap: word-wrap;
+            }
+        }
+
+        VerticalLayout {
+            spacing: Theme.spacing-md;
+
+            TextField {
+                label: "Email";
+                placeholder: "you@example.com";
+                text <=> root.email;
+            }
+
+            TextField {
+                label: "Password";
+                placeholder: "••••••••";
+                input-type: InputType.password;
+                text <=> root.password;
+            }
+        }
+
+        MobileButton {
+            text: root.loading ? "Signing in…" : "Sign in";
+            primary: true;
+            enabled: !root.loading && root.email != "" && root.password != "";
+            clicked => { root.submit(root.email, root.password); }
+        }
+
+        TextButton {
+            text: "Create an account";
+            clicked => { root.create-account(); }
+        }
+    }
+}

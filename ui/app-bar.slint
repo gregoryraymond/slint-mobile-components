@@ -1,0 +1,97 @@
+import { Theme } from "theme.slint";
+
+// Top app bar. Fixed-height (56dp — Material standard), with a title and
+// an optional leading action (e.g. back arrow) and trailing action.
+//
+// `leading-icon` / `trailing-icon` are simple text glyphs (e.g. "←", "⋮")
+// so the component stays icon-font-agnostic. A future iteration can swap
+// these for `Image` source bindings once the asset story is settled.
+export component AppBar inherits Rectangle {
+    in property <string> title;
+    in property <string> leading-icon: "";
+    in property <string> trailing-icon: "";
+    in property <bool> show-divider: true;
+    callback leading-pressed();
+    callback trailing-pressed();
+
+    height: 56px;
+    background: Theme.background;
+    horizontal-stretch: 1;
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-sm;
+        padding-right: Theme.spacing-sm;
+        spacing: Theme.spacing-xs;
+        alignment: stretch;
+
+        // Leading slot
+        Rectangle {
+            width: Theme.touch-target;
+            height: Theme.touch-target;
+            background: leading-touch.pressed && root.leading-icon != "" ? Theme.surface-pressed : transparent;
+            border-radius: self.width / 2;
+
+            animate background { duration: Theme.motion-fast; }
+
+            if root.leading-icon != "": Text {
+                width: parent.width;
+                height: parent.height;
+                text: root.leading-icon;
+                color: Theme.on-background;
+                font-size: 22px;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+
+            leading-touch := TouchArea {
+                enabled: root.leading-icon != "";
+                clicked => { root.leading-pressed(); }
+            }
+        }
+
+        // Title — takes all remaining horizontal space.
+        Text {
+            text: root.title;
+            color: Theme.on-background;
+            font-size: Theme.font-size-title;
+            font-weight: 600;
+            horizontal-alignment: left;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+
+        // Trailing slot
+        Rectangle {
+            width: Theme.touch-target;
+            height: Theme.touch-target;
+            background: trailing-touch.pressed && root.trailing-icon != "" ? Theme.surface-pressed : transparent;
+            border-radius: self.width / 2;
+
+            animate background { duration: Theme.motion-fast; }
+
+            if root.trailing-icon != "": Text {
+                width: parent.width;
+                height: parent.height;
+                text: root.trailing-icon;
+                color: Theme.on-background;
+                font-size: 22px;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+
+            trailing-touch := TouchArea {
+                enabled: root.trailing-icon != "";
+                clicked => { root.trailing-pressed(); }
+            }
+        }
+    }
+
+    // Hairline divider at the bottom edge.
+    if root.show-divider: Rectangle {
+        x: 0;
+        y: parent.height - 1px;
+        width: parent.width;
+        height: 1px;
+        background: Theme.outline;
+    }
+}

@@ -1,0 +1,112 @@
+import { Theme } from "theme.slint";
+
+// Primary action button. Full-width by default (let the parent layout
+// constrain it); always at least the 48dp Material touch target.
+export component MobileButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> enabled: true;
+    in property <bool> primary: true;
+    callback clicked();
+
+    min-height: Theme.touch-target;
+    horizontal-stretch: 1;
+    border-radius: Theme.radius-md;
+    background: root.primary
+        ? (touch.pressed ? Theme.primary-pressed : Theme.primary)
+        : (touch.pressed ? Theme.surface-pressed : Theme.surface);
+    border-width: root.primary ? 0px : 1px;
+    border-color: Theme.outline;
+    opacity: root.enabled ? 1.0 : 0.5;
+
+    animate background { duration: Theme.motion-fast; }
+
+    Text {
+        x: Theme.spacing-md;
+        y: 0;
+        width: parent.width - 2 * Theme.spacing-md;
+        height: parent.height;
+        text: root.text;
+        color: root.primary ? Theme.on-primary : Theme.on-surface;
+        font-size: Theme.font-size-body-large;
+        font-weight: 600;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+// Compact text-only secondary button — used inline (e.g. in AppBar actions
+// or as a tertiary action below a primary MobileButton).
+export component TextButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> enabled: true;
+    callback clicked();
+
+    min-height: 40px;
+    min-width: 80px;
+    border-radius: Theme.radius-sm;
+    background: touch.pressed ? Theme.surface-pressed : transparent;
+    opacity: root.enabled ? 1.0 : 0.5;
+
+    animate background { duration: Theme.motion-fast; }
+
+    Text {
+        x: Theme.spacing-sm;
+        y: 0;
+        width: parent.width - 2 * Theme.spacing-sm;
+        height: parent.height;
+        text: root.text;
+        color: Theme.primary;
+        font-size: Theme.font-size-body;
+        font-weight: 600;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+// Floating action button — circular, raised. Usually anchored to the
+// bottom-right of a page; the page owns its absolute positioning.
+export component Fab inherits Rectangle {
+    in property <string> icon-text: "+";
+    in property <bool> enabled: true;
+    callback clicked();
+
+    width: 56px;
+    height: 56px;
+    border-radius: self.width / 2;
+    background: touch.pressed ? Theme.primary-pressed : Theme.primary;
+    drop-shadow-blur: 12px;
+    drop-shadow-color: #00000060;
+    drop-shadow-offset-y: 4px;
+    opacity: root.enabled ? 1.0 : 0.5;
+
+    animate background { duration: Theme.motion-fast; }
+
+    Text {
+        width: parent.width;
+        height: parent.height;
+        text: root.icon-text;
+        color: Theme.on-primary;
+        font-size: 28px;
+        font-weight: 600;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
