@@ -21,4 +21,11 @@ fn main() {
     slint_build::compile("ui/gallery.slint").expect("Slint build failed");
     slint_build::compile("tests/snapshot_scenes.slint").expect("Snapshot scenes build failed");
     slint_build::compile("tests/behavior_scenes.slint").expect("Behavior scenes build failed");
+
+    // `ui/showcase.slint` tiles all ~145 page templates into one Window —
+    // it's expensive to compile, so only build it for the `showcase`
+    // example. Everyday `cargo check` / `cargo test` stays fast.
+    if std::env::var_os("CARGO_FEATURE_SHOWCASE").is_some() {
+        slint_build::compile("ui/showcase.slint").expect("Showcase build failed");
+    }
 }

@@ -61,6 +61,12 @@ mod _generated_snapshot_scenes {
 mod _generated_behavior_scenes {
     include!(concat!(env!("OUT_DIR"), "/behavior_scenes.rs"));
 }
+// Only built under the `showcase` feature (see build.rs) — the review
+// grid instantiates every page template at once and is slow to compile.
+#[cfg(feature = "showcase")]
+mod _generated_showcase {
+    include!(concat!(env!("OUT_DIR"), "/showcase.rs"));
+}
 
 // Production surface — Gallery exposes the design-system globals
 // (Theme, BottomNavDistribution) that consumers expect at the crate root.
@@ -116,6 +122,10 @@ pub use _generated_snapshot_scenes::{
     SnapWiFiSettingsPage, SnapWordlePuzzlePage, SnapWorkoutSessionPage, SnapWorldClockPage,
     SnapWriteReviewPage,
 };
+
+// Desktop review grid — consumed by `examples/showcase.rs`.
+#[cfg(feature = "showcase")]
+pub use _generated_showcase::Showcase;
 
 /// Filesystem path to this crate's `ui/` directory — the entry point Slint
 /// resolves `@mobile-components/...` imports against. Pass this (wrapped in

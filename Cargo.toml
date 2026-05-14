@@ -46,12 +46,23 @@ snapshots = ["slint/renderer-software"]
 # rendering. Enabled when running `cargo test --features behaviors`.
 behaviors = []
 
+# Desktop review grid — `cargo run --example showcase --features showcase`.
+# Tiles every page template at native phone resolution with a pass/fail
+# verdict toggle. Off by default (and `build.rs` only compiles the heavy
+# `ui/showcase.slint` when this is set) so normal `cargo check` stays fast.
+showcase = ["slint/backend-default", "slint/renderer-skia"]
+
 # Desktop preview app — `cargo run --example gallery --features gallery`.
 # Renders the same `Gallery` Window that `build.rs` already compiles for
 # CI validation; no extra .slint file needed.
 [[example]]
 name = "gallery"
 required-features = ["gallery"]
+
+# Desktop review grid app — `cargo run --example showcase --features showcase`.
+[[example]]
+name = "showcase"
+required-features = ["showcase"]
 
 [[test]]
 name = "snapshots"
@@ -64,6 +75,8 @@ required-features = ["behaviors"]
 [dev-dependencies]
 image = { version = "0.25", default-features = false, features = ["png"] }
 i-slint-backend-testing = "1"
+# Used only by the `showcase` example to read/write showcase-verdicts.json.
+serde_json = "1"
 
 [profile.dev]
 opt-level = 1
