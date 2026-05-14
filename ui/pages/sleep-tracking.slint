@@ -1,0 +1,381 @@
+// SleepTrackingPage
+// =====================================================================
+//
+// Last-night sleep report — Oura / Whoop / Apple Health Sleep style.
+// Distinct from `ActivityRingsPage` (daily move rings) and `TimerPage`
+// (countdown). Demonstrates a data-viz-heavy health surface:
+//
+//   - Sleep-score hero (big numeral + qualitative label + bed/wake
+//     window beneath).
+//   - Hypnogram: a horizontal strip of stacked stage bars across the
+//     night. Each column is one ~15-min slice; the bar's vertical
+//     position + colour encode the stage (Awake danger / REM info /
+//     Light primary / Deep success). Approximated as full-height
+//     columns tinted by stage since Slint has no chart primitive.
+//   - Per-stage breakdown rows (duration + % + tone dot).
+//   - Vitals strip: resting HR / HRV / respiratory rate.
+
+import { Theme, Tone } from "../theme.slint";
+import { AppBar } from "../app-bar.slint";
+import { SectionHeader } from "../section-header.slint";
+import { Divider } from "../divider.slint";
+
+// One hypnogram column. `stage`: 0 awake, 1 REM, 2 light, 3 deep.
+component HypColumn inherits VerticalLayout {
+    in property <int> stage: 2;
+    horizontal-stretch: 1;
+    alignment: stretch;
+
+    // Spacer above the bar positions it by stage (awake highest).
+    Rectangle {
+        vertical-stretch:
+              root.stage == 0 ? 0
+            : root.stage == 1 ? 1
+            : root.stage == 2 ? 2
+            : 3;
+    }
+    Rectangle {
+        vertical-stretch:
+              root.stage == 0 ? 1
+            : root.stage == 1 ? 1
+            : root.stage == 2 ? 1
+            : 1;
+        background:
+              root.stage == 0 ? Theme.accent-danger
+            : root.stage == 1 ? Theme.accent-info
+            : root.stage == 2 ? Theme.primary
+            : Theme.accent-success;
+    }
+    Rectangle {
+        vertical-stretch:
+              root.stage == 0 ? 3
+            : root.stage == 1 ? 2
+            : root.stage == 2 ? 1
+            : 0;
+    }
+}
+
+// One stage breakdown row.
+component StageRow inherits Rectangle {
+    in property <string> name;
+    in property <string> duration;
+    in property <string> percent;
+    in property <Tone> tone;
+    in property <float> share: 0.5;
+
+    horizontal-stretch: 1;
+    min-height: 52px;
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 12px;
+                height: 12px;
+                border-radius: 3px;
+                background:
+                      root.tone == Tone.success ? Theme.accent-success
+                    : root.tone == Tone.warning ? Theme.accent-warning
+                    : root.tone == Tone.danger  ? Theme.accent-danger
+                    : root.tone == Tone.info    ? Theme.accent-info
+                    : Theme.primary;
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 4px;
+            HorizontalLayout {
+                Text {
+                    text: root.name;
+                    color: Theme.on-surface;
+                    font-size: Theme.font-size-body;
+                    font-weight: 600;
+                    horizontal-stretch: 1;
+                }
+                Text {
+                    text: root.duration + " · " + root.percent;
+                    color: Theme.muted;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                }
+            }
+            Rectangle {
+                height: 4px;
+                background: Theme.surface-variant;
+                border-radius: 2px;
+                Rectangle {
+                    x: 0;
+                    y: 0;
+                    width: parent.width * root.share;
+                    height: parent.height;
+                    background:
+                          root.tone == Tone.success ? Theme.accent-success
+                        : root.tone == Tone.warning ? Theme.accent-warning
+                        : root.tone == Tone.danger  ? Theme.accent-danger
+                        : root.tone == Tone.info    ? Theme.accent-info
+                        : Theme.primary;
+                    border-radius: 2px;
+                }
+            }
+        }
+    }
+}
+
+// One vital tile.
+component VitalTile inherits Rectangle {
+    in property <string> label;
+    in property <string> value;
+    in property <string> unit;
+    in property <Tone> tone: Tone.default;
+
+    horizontal-stretch: 1;
+    VerticalLayout {
+        padding: Theme.spacing-sm;
+        spacing: 2px;
+        alignment: center;
+        Text {
+            text: root.label;
+            color: Theme.muted;
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: 0.5px;
+            horizontal-alignment: center;
+        }
+        HorizontalLayout {
+            spacing: 2px;
+            alignment: center;
+            Text {
+                text: root.value;
+                color:
+                      root.tone == Tone.success ? Theme.accent-success
+                    : root.tone == Tone.warning ? Theme.accent-warning
+                    : root.tone == Tone.danger  ? Theme.accent-danger
+                    : Theme.on-surface;
+                font-size: Theme.font-size-title;
+                font-weight: 800;
+            }
+            VerticalLayout {
+                alignment: end;
+                padding-bottom: 4px;
+                Text {
+                    text: root.unit;
+                    color: Theme.muted;
+                    font-size: Theme.font-size-caption;
+                }
+            }
+        }
+    }
+}
+
+export component SleepTrackingPage inherits Rectangle {
+    in property <string> score: "82";
+    in property <string> score-label: "Good sleep";
+    in property <string> window: "23:42 → 07:18 · 7 h 36 m in bed";
+    callback back-pressed();
+    callback share-pressed();
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "Last night";
+            leading-icon: @image-url("../icons/arrow-left.svg");
+            trailing-icon: @image-url("../icons/send.svg");
+            leading-pressed => { root.back-pressed(); }
+            trailing-pressed => { root.share-pressed(); }
+        }
+
+        // Score hero.
+        VerticalLayout {
+            padding-top: Theme.spacing-lg;
+            padding-bottom: Theme.spacing-md;
+            spacing: 2px;
+            HorizontalLayout {
+                alignment: center;
+                Text {
+                    text: "SLEEP SCORE";
+                    color: Theme.muted;
+                    font-size: 10px;
+                    font-weight: 800;
+                    letter-spacing: 0.5px;
+                }
+            }
+            HorizontalLayout {
+                alignment: center;
+                Text {
+                    text: root.score;
+                    color: Theme.accent-success;
+                    font-size: 72px;
+                    font-weight: 300;
+                }
+            }
+            HorizontalLayout {
+                alignment: center;
+                Text {
+                    text: root.score-label;
+                    color: Theme.on-background;
+                    font-size: Theme.font-size-body-large;
+                    font-weight: 700;
+                }
+            }
+            HorizontalLayout {
+                alignment: center;
+                Text {
+                    text: root.window;
+                    color: Theme.muted;
+                    font-size: Theme.font-size-caption;
+                }
+            }
+        }
+
+        // Hypnogram.
+        VerticalLayout {
+            padding-left: Theme.spacing-md;
+            padding-right: Theme.spacing-md;
+            padding-bottom: Theme.spacing-md;
+            spacing: 4px;
+            Rectangle {
+                height: 96px;
+                background: Theme.surface-1;
+                border-radius: Theme.radius-md;
+                drop-shadow-blur: Theme.elevation-1-blur;
+                drop-shadow-color: Theme.elevation-1-color;
+                drop-shadow-offset-y: Theme.elevation-1-y;
+                HorizontalLayout {
+                    padding: Theme.spacing-sm;
+                    spacing: 2px;
+                    // 28 columns of the night, mostly light/deep with a
+                    // couple of awake blips and REM cycles.
+                    HypColumn { stage: 2; }
+                    HypColumn { stage: 3; }
+                    HypColumn { stage: 3; }
+                    HypColumn { stage: 2; }
+                    HypColumn { stage: 1; }
+                    HypColumn { stage: 1; }
+                    HypColumn { stage: 2; }
+                    HypColumn { stage: 3; }
+                    HypColumn { stage: 3; }
+                    HypColumn { stage: 3; }
+                    HypColumn { stage: 2; }
+                    HypColumn { stage: 0; }
+                    HypColumn { stage: 2; }
+                    HypColumn { stage: 1; }
+                    HypColumn { stage: 1; }
+                    HypColumn { stage: 1; }
+                    HypColumn { stage: 2; }
+                    HypColumn { stage: 3; }
+                    HypColumn { stage: 3; }
+                    HypColumn { stage: 2; }
+                    HypColumn { stage: 1; }
+                    HypColumn { stage: 1; }
+                    HypColumn { stage: 2; }
+                    HypColumn { stage: 0; }
+                    HypColumn { stage: 2; }
+                    HypColumn { stage: 1; }
+                    HypColumn { stage: 1; }
+                    HypColumn { stage: 2; }
+                }
+            }
+            HorizontalLayout {
+                Text {
+                    text: "23:42";
+                    color: Theme.muted;
+                    font-size: 10px;
+                    font-weight: 700;
+                    horizontal-stretch: 1;
+                }
+                Text {
+                    text: "03:30";
+                    color: Theme.muted;
+                    font-size: 10px;
+                    font-weight: 700;
+                    horizontal-stretch: 1;
+                    horizontal-alignment: center;
+                }
+                Text {
+                    text: "07:18";
+                    color: Theme.muted;
+                    font-size: 10px;
+                    font-weight: 700;
+                    horizontal-stretch: 1;
+                    horizontal-alignment: right;
+                }
+            }
+        }
+
+        SectionHeader { text: "STAGES"; }
+        StageRow {
+            name: "Deep";
+            duration: "1 h 28 m";
+            percent: "19%";
+            tone: Tone.success;
+            share: 0.19;
+        }
+        Divider { }
+        StageRow {
+            name: "REM";
+            duration: "1 h 52 m";
+            percent: "25%";
+            tone: Tone.info;
+            share: 0.25;
+        }
+        Divider { }
+        StageRow {
+            name: "Light";
+            duration: "3 h 58 m";
+            percent: "52%";
+            tone: Tone.default;
+            share: 0.52;
+        }
+        Divider { }
+        StageRow {
+            name: "Awake";
+            duration: "18 m";
+            percent: "4%";
+            tone: Tone.danger;
+            share: 0.04;
+        }
+
+        SectionHeader { text: "OVERNIGHT VITALS"; }
+        VerticalLayout {
+            padding: Theme.spacing-md;
+            Rectangle {
+                background: Theme.surface-1;
+                border-radius: Theme.radius-md;
+                drop-shadow-blur: Theme.elevation-1-blur;
+                drop-shadow-color: Theme.elevation-1-color;
+                drop-shadow-offset-y: Theme.elevation-1-y;
+                HorizontalLayout {
+                    padding: Theme.spacing-sm;
+                    VitalTile {
+                        label: "RESTING HR";
+                        value: "52";
+                        unit: "bpm";
+                        tone: Tone.success;
+                    }
+                    Rectangle { width: 1px; background: Theme.outline; }
+                    VitalTile {
+                        label: "HRV";
+                        value: "68";
+                        unit: "ms";
+                        tone: Tone.success;
+                    }
+                    Rectangle { width: 1px; background: Theme.outline; }
+                    VitalTile {
+                        label: "RESP RATE";
+                        value: "14.2";
+                        unit: "/min";
+                    }
+                }
+            }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+    }
+}

@@ -1,0 +1,325 @@
+// MediaPlayerLockscreenPage
+// =====================================================================
+//
+// iOS-style lockscreen music widget — the now-playing card that takes
+// over the lock surface when audio is active. Distinct from
+// `PodcastPage` and `PlaylistDetailPage` (both in-app surfaces).
+// Demonstrates a chrome-light, content-first lock surface:
+//
+//   - Big time hero at the top (96 px Light) + date underneath.
+//   - "Now playing" media card: 88 px album cover + track + artist +
+//     scrubber with current / remaining times + transport row.
+//   - AirPlay / Lyrics / Queue glyph row beneath the player.
+//   - Pinned bottom-right "Music" source pill that names the app
+//     producing the audio.
+
+import { Theme, Tone } from "../theme.slint";
+
+export component MediaPlayerLockscreenPage inherits Rectangle {
+    in property <string> time-now: "14:32";
+    in property <string> date: "Wednesday, May 14";
+    in property <string> track: "Nightcall";
+    in property <string> artist: "Kavinsky · feat. Lovefoxxx";
+    in property <string> elapsed: "1:42";
+    in property <string> remaining: "−2:36";
+    in property <float> progress: 0.40;
+    in-out property <bool> playing: true;
+    callback prev-pressed();
+    callback play-pause-pressed();
+    callback next-pressed();
+    callback airplay-pressed();
+    callback lyrics-pressed();
+    callback queue-pressed();
+    callback source-pressed();
+
+    background: @radial-gradient(circle, #1a1d35 0%, #050610 80%);
+
+    VerticalLayout {
+        spacing: 0;
+
+        // ----- Time hero -----
+        VerticalLayout {
+            padding-top: 72px;
+            spacing: 2px;
+            HorizontalLayout {
+                alignment: center;
+                Text {
+                    text: root.time-now;
+                    color: #ffffff;
+                    font-size: 96px;
+                    font-weight: 200;
+                }
+            }
+            HorizontalLayout {
+                alignment: center;
+                Text {
+                    text: root.date;
+                    color: #ffffffaa;
+                    font-size: Theme.font-size-body;
+                    font-weight: 600;
+                }
+            }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+
+        // ----- Now-playing card -----
+        Rectangle {
+            x: Theme.spacing-md;
+            background: #ffffff11;
+            border-radius: Theme.radius-lg;
+            border-width: 1px;
+            border-color: #ffffff22;
+            VerticalLayout {
+                padding: Theme.spacing-md;
+                spacing: Theme.spacing-md;
+
+                // Source row.
+                HorizontalLayout {
+                    spacing: Theme.spacing-xs;
+                    alignment: start;
+                    Image {
+                        width: 14px;
+                        height: 14px;
+                        source: @image-url("../icons/play.svg");
+                        colorize: #ffffff88;
+                        image-fit: contain;
+                        vertical-alignment: center;
+                    }
+                    Text {
+                        text: "MUSIC";
+                        color: #ffffff88;
+                        font-size: 10px;
+                        font-weight: 800;
+                        letter-spacing: 1px;
+                        vertical-alignment: center;
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                    Text {
+                        text: "AirPods Pro · −18 dB";
+                        color: #ffffff88;
+                        font-size: 10px;
+                        font-weight: 700;
+                        vertical-alignment: center;
+                    }
+                }
+
+                // Album art + track meta.
+                HorizontalLayout {
+                    spacing: Theme.spacing-md;
+                    alignment: stretch;
+                    VerticalLayout {
+                        alignment: center;
+                        Rectangle {
+                            width: 88px;
+                            height: 88px;
+                            border-radius: 12px;
+                            background: @linear-gradient(135deg, #f59e0b 0%, #4c1d95 100%);
+                            drop-shadow-blur: Theme.elevation-2-blur;
+                            drop-shadow-color: Theme.elevation-2-color;
+                            drop-shadow-offset-y: Theme.elevation-2-y;
+                            Text {
+                                text: "K";
+                                color: #ffffff;
+                                font-size: 36px;
+                                font-weight: 800;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                width: parent.width;
+                                height: parent.height;
+                            }
+                        }
+                    }
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        alignment: center;
+                        spacing: 2px;
+                        Text {
+                            text: root.track;
+                            color: #ffffff;
+                            font-size: Theme.font-size-body-large;
+                            font-weight: 700;
+                            overflow: elide;
+                        }
+                        Text {
+                            text: root.artist;
+                            color: #ffffffaa;
+                            font-size: Theme.font-size-caption;
+                            overflow: elide;
+                        }
+                    }
+                }
+
+                // Scrubber.
+                VerticalLayout {
+                    spacing: 4px;
+                    Rectangle {
+                        height: 4px;
+                        background: #ffffff22;
+                        border-radius: 2px;
+                        Rectangle {
+                            x: 0;
+                            y: 0;
+                            width: parent.width * root.progress;
+                            height: parent.height;
+                            background: #ffffff;
+                            border-radius: 2px;
+                        }
+                    }
+                    HorizontalLayout {
+                        Text {
+                            text: root.elapsed;
+                            color: #ffffffaa;
+                            font-size: 10px;
+                            font-weight: 700;
+                            horizontal-stretch: 1;
+                        }
+                        Text {
+                            text: root.remaining;
+                            color: #ffffffaa;
+                            font-size: 10px;
+                            font-weight: 700;
+                        }
+                    }
+                }
+
+                // Transport row.
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: Theme.spacing-lg;
+                    Rectangle {
+                        width: 56px;
+                        height: 56px;
+                        Image {
+                            width: 28px;
+                            height: 28px;
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                            source: @image-url("../icons/skip-back.svg");
+                            colorize: #ffffff;
+                            image-fit: contain;
+                        }
+                        TouchArea {
+                            clicked => { root.prev-pressed(); }
+                        }
+                    }
+                    Rectangle {
+                        width: 64px;
+                        height: 64px;
+                        border-radius: self.width / 2;
+                        background: #ffffff;
+                        Image {
+                            width: 28px;
+                            height: 28px;
+                            x: (parent.width - self.width) / 2 + (root.playing ? 0px : 2px);
+                            y: (parent.height - self.height) / 2;
+                            source: root.playing
+                                ? @image-url("../icons/pause.svg")
+                                : @image-url("../icons/play.svg");
+                            colorize: #0a0d12;
+                            image-fit: contain;
+                        }
+                        TouchArea {
+                            clicked => {
+                                root.playing = !root.playing;
+                                root.play-pause-pressed();
+                            }
+                        }
+                    }
+                    Rectangle {
+                        width: 56px;
+                        height: 56px;
+                        Image {
+                            width: 28px;
+                            height: 28px;
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                            source: @image-url("../icons/skip-forward.svg");
+                            colorize: #ffffff;
+                            image-fit: contain;
+                        }
+                        TouchArea {
+                            clicked => { root.next-pressed(); }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ----- Glyph row (AirPlay / Lyrics / Queue) -----
+        HorizontalLayout {
+            padding-left: Theme.spacing-md + Theme.spacing-md;
+            padding-right: Theme.spacing-md + Theme.spacing-md;
+            padding-top: Theme.spacing-md;
+            padding-bottom: Theme.spacing-md;
+            alignment: stretch;
+            Rectangle {
+                width: 40px;
+                height: 40px;
+                Image {
+                    width: 22px;
+                    height: 22px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: @image-url("../icons/send.svg");
+                    colorize: #ffffff;
+                    image-fit: contain;
+                }
+                TouchArea {
+                    clicked => { root.airplay-pressed(); }
+                }
+            }
+            Rectangle { horizontal-stretch: 1; }
+            Rectangle {
+                width: 40px;
+                height: 40px;
+                Image {
+                    width: 22px;
+                    height: 22px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: @image-url("../icons/menu.svg");
+                    colorize: #ffffff;
+                    image-fit: contain;
+                }
+                TouchArea {
+                    clicked => { root.lyrics-pressed(); }
+                }
+            }
+            Rectangle { horizontal-stretch: 1; }
+            Rectangle {
+                width: 40px;
+                height: 40px;
+                Image {
+                    width: 22px;
+                    height: 22px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: @image-url("../icons/queue.svg");
+                    colorize: #ffffff;
+                    image-fit: contain;
+                }
+                TouchArea {
+                    clicked => { root.queue-pressed(); }
+                }
+            }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+
+        // ----- Bottom slide-to-unlock hint -----
+        VerticalLayout {
+            padding-bottom: Theme.spacing-lg;
+            HorizontalLayout {
+                alignment: center;
+                Text {
+                    text: "Swipe up to open";
+                    color: #ffffff66;
+                    font-size: 11px;
+                    font-weight: 700;
+                    letter-spacing: 0.5px;
+                }
+            }
+        }
+    }
+}

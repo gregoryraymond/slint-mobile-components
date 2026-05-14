@@ -1,0 +1,274 @@
+// EqualizerPage
+// =====================================================================
+//
+// An audio equalizer — the "tune the sound" screen of a music app.
+// Distinct from `AudiobookPlayerPage` / `PodcastPage` (playback) and
+// `AppearanceSettingsPage` (theme). Demonstrates a multi-slider
+// control surface:
+//
+//   - An on/off master toggle card.
+//   - A preset chip row (Flat / Bass / Vocal / Rock / Custom).
+//   - A row of vertical frequency-band sliders — each a track with a
+//     filled lower portion, a thumb, and a Hz label + dB readout.
+//   - A bass / treble pair of horizontal mini-sliders beneath.
+
+import { Theme, Tone } from "../theme.slint";
+import { AppBar } from "../app-bar.slint";
+import { SectionHeader } from "../section-header.slint";
+import { MobileSwitch } from "../switch.slint";
+
+// One vertical EQ band. `value` is 0..1 (bottom..top).
+component EqBand inherits VerticalLayout {
+    in property <string> hz;
+    in property <string> db;
+    in property <float> value: 0.5;
+    in property <bool> enabled: true;
+
+    horizontal-stretch: 1;
+    spacing: 6px;
+    // dB readout.
+    Text {
+        text: root.db;
+        color: root.enabled ? Theme.accent-info : Theme.muted;
+        font-size: 10px;
+        font-weight: 800;
+        horizontal-alignment: center;
+    }
+    // Vertical track.
+    HorizontalLayout {
+        alignment: center;
+        vertical-stretch: 1;
+        Rectangle {
+            width: 6px;
+            border-radius: 3px;
+            background: Theme.surface-variant;
+            // Filled lower portion.
+            Rectangle {
+                x: 0;
+                width: parent.width;
+                height: parent.height * root.value;
+                y: parent.height - self.height;
+                border-radius: 3px;
+                background: root.enabled ? Theme.primary : Theme.muted;
+            }
+            // Thumb.
+            Rectangle {
+                x: (parent.width - self.width) / 2;
+                y: parent.height * (1.0 - root.value) - self.height / 2;
+                width: 18px;
+                height: 18px;
+                border-radius: 9px;
+                background: root.enabled ? Theme.primary : Theme.muted;
+                border-width: 3px;
+                border-color: Theme.background;
+            }
+        }
+    }
+    // Hz label.
+    Text {
+        text: root.hz;
+        color: Theme.muted;
+        font-size: 10px;
+        font-weight: 700;
+        horizontal-alignment: center;
+    }
+}
+
+// One preset chip.
+component PresetChip inherits Rectangle {
+    in property <string> label;
+    in property <bool> selected: false;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-action-default => { root.clicked(); }
+
+    height: 32px;
+    border-radius: 16px;
+    background: root.selected ? Theme.primary : Theme.surface-2;
+    animate background { duration: Theme.motion-fast; }
+
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        Text {
+            text: root.label;
+            color: root.selected ? Theme.on-primary : Theme.on-surface;
+            font-size: Theme.font-size-caption;
+            font-weight: 800;
+            vertical-alignment: center;
+        }
+    }
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+// One horizontal bass/treble mini-slider.
+component ToneSlider inherits VerticalLayout {
+    in property <string> label;
+    in property <float> value: 0.5;
+    in property <bool> enabled: true;
+
+    horizontal-stretch: 1;
+    spacing: 8px;
+    HorizontalLayout {
+        Text {
+            text: root.label;
+            color: Theme.on-surface;
+            font-size: Theme.font-size-caption;
+            font-weight: 800;
+            horizontal-stretch: 1;
+        }
+        Text {
+            text: root.value > 0.5 ? "+" : "";
+            color: Theme.muted;
+            font-size: Theme.font-size-caption;
+            font-weight: 700;
+        }
+    }
+    Rectangle {
+        height: 6px;
+        border-radius: 3px;
+        background: Theme.surface-variant;
+        Rectangle {
+            x: 0;
+            width: parent.width * root.value;
+            height: parent.height;
+            border-radius: 3px;
+            background: root.enabled ? Theme.primary : Theme.muted;
+        }
+        Rectangle {
+            x: parent.width * root.value - self.width / 2;
+            y: (parent.height - self.height) / 2;
+            width: 16px;
+            height: 16px;
+            border-radius: 8px;
+            background: root.enabled ? Theme.primary : Theme.muted;
+            border-width: 3px;
+            border-color: Theme.surface-1;
+        }
+    }
+}
+
+export component EqualizerPage inherits Rectangle {
+    in-out property <bool> enabled: true;
+    in-out property <int> preset: 3;
+    callback back-pressed();
+    callback preset-pressed(int);
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "Equalizer";
+            leading-icon: @image-url("../icons/arrow-left.svg");
+            leading-pressed => { root.back-pressed(); }
+        }
+
+        VerticalLayout {
+            padding: Theme.spacing-md;
+            spacing: Theme.spacing-md;
+            alignment: start;
+
+            // Master toggle.
+            Rectangle {
+                height: 64px;
+                border-radius: Theme.radius-md;
+                background: Theme.surface-1;
+                drop-shadow-blur: Theme.elevation-1-blur;
+                drop-shadow-color: Theme.elevation-1-color;
+                drop-shadow-offset-y: Theme.elevation-1-y;
+                HorizontalLayout {
+                    padding: Theme.spacing-md;
+                    spacing: Theme.spacing-md;
+                    alignment: stretch;
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        alignment: center;
+                        spacing: 2px;
+                        Text {
+                            text: "Equalizer";
+                            color: Theme.on-surface;
+                            font-size: Theme.font-size-body;
+                            font-weight: 700;
+                        }
+                        Text {
+                            text: root.enabled ? "Custom tuning is active" : "Using the default sound";
+                            color: Theme.muted;
+                            font-size: Theme.font-size-caption;
+                        }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        MobileSwitch {
+                            checked <=> root.enabled;
+                        }
+                    }
+                }
+            }
+
+            // Presets.
+            HorizontalLayout {
+                spacing: Theme.spacing-sm;
+                PresetChip {
+                    label: "Flat";
+                    selected: root.preset == 0;
+                    clicked => { root.preset = 0; root.preset-pressed(0); }
+                }
+                PresetChip {
+                    label: "Bass";
+                    selected: root.preset == 1;
+                    clicked => { root.preset = 1; root.preset-pressed(1); }
+                }
+                PresetChip {
+                    label: "Vocal";
+                    selected: root.preset == 2;
+                    clicked => { root.preset = 2; root.preset-pressed(2); }
+                }
+                PresetChip {
+                    label: "Rock";
+                    selected: root.preset == 3;
+                    clicked => { root.preset = 3; root.preset-pressed(3); }
+                }
+                PresetChip {
+                    label: "Custom";
+                    selected: root.preset == 4;
+                    clicked => { root.preset = 4; root.preset-pressed(4); }
+                }
+            }
+        }
+
+        SectionHeader { text: "FREQUENCY BANDS"; }
+
+        // Band sliders.
+        Rectangle {
+            height: 280px;
+            HorizontalLayout {
+                padding: Theme.spacing-md;
+                spacing: Theme.spacing-sm;
+                EqBand { hz: "60"; db: "+4"; value: 0.72; enabled: root.enabled; }
+                EqBand { hz: "150"; db: "+2"; value: 0.62; enabled: root.enabled; }
+                EqBand { hz: "400"; db: "0"; value: 0.5; enabled: root.enabled; }
+                EqBand { hz: "1k"; db: "-1"; value: 0.44; enabled: root.enabled; }
+                EqBand { hz: "2.4k"; db: "+1"; value: 0.56; enabled: root.enabled; }
+                EqBand { hz: "6k"; db: "+3"; value: 0.68; enabled: root.enabled; }
+                EqBand { hz: "16k"; db: "+5"; value: 0.8; enabled: root.enabled; }
+            }
+        }
+
+        SectionHeader { text: "TONE"; }
+        VerticalLayout {
+            padding: Theme.spacing-md;
+            spacing: Theme.spacing-lg;
+            alignment: start;
+            ToneSlider { label: "Bass"; value: 0.68; enabled: root.enabled; }
+            ToneSlider { label: "Treble"; value: 0.74; enabled: root.enabled; }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+    }
+}

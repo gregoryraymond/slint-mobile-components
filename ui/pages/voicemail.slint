@@ -1,0 +1,322 @@
+// VoicemailPage
+// =====================================================================
+//
+// A visual-voicemail inbox — the "phone app, voicemail tab" screen.
+// Distinct from `InboxPage` (email-style threads) and `ChatPage` (live
+// messaging). Demonstrates a list view with one expanded row:
+//
+//   - List rows: caller avatar + name / number + timestamp, an unread
+//     dot, a one-line transcript snippet, and a duration pill.
+//   - The selected row expands to show a playback bar — scrubber,
+//     play / call-back / delete controls.
+
+import { Theme, Tone } from "../theme.slint";
+import { AppBar } from "../app-bar.slint";
+import { Avatar } from "../avatar.slint";
+import { Divider } from "../divider.slint";
+
+// One round playback control.
+component VmControl inherits Rectangle {
+    in property <image> icon;
+    in property <string> a11y;
+    in property <int> kind: 0; // 0 ghost / 1 primary / 2 danger
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: root.a11y;
+    accessible-action-default => { root.clicked(); }
+
+    width: root.kind == 1 ? 48px : 40px;
+    height: self.width;
+    border-radius: self.width / 2;
+    background:
+          root.kind == 1 ? Theme.primary
+        : root.kind == 2 ? Theme.accent-danger.with-alpha(0.16)
+        : Theme.surface-2;
+
+    Image {
+        width: parent.width * 0.42;
+        height: self.width;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        source: root.icon;
+        colorize:
+              root.kind == 1 ? Theme.on-primary
+            : root.kind == 2 ? Theme.accent-danger
+            : Theme.on-surface;
+        image-fit: contain;
+    }
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+// One voicemail row. `expanded` shows the playback bar.
+component VoicemailRow inherits Rectangle {
+    in property <string> fallback;
+    in property <string> name;
+    in property <string> meta;
+    in property <string> transcript;
+    in property <string> duration;
+    in property <bool> unread: false;
+    in property <bool> expanded: false;
+    in property <string> elapsed: "0:00";
+    in property <float> progress: 0.0;
+    callback clicked();
+    callback play-pressed();
+    callback callback-pressed();
+    callback delete-pressed();
+
+    accessible-role: button;
+    accessible-label: root.name;
+    accessible-action-default => { root.clicked(); }
+
+    horizontal-stretch: 1;
+    background: root.expanded ? Theme.surface-1
+        : touch.pressed ? Theme.surface-pressed : transparent;
+    animate background { duration: Theme.motion-fast; }
+
+    VerticalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-sm;
+
+        HorizontalLayout {
+            spacing: Theme.spacing-md;
+            alignment: stretch;
+            VerticalLayout {
+                alignment: center;
+                Avatar {
+                    fallback: root.fallback;
+                    size: 44px;
+                }
+            }
+            VerticalLayout {
+                horizontal-stretch: 1;
+                alignment: center;
+                spacing: 3px;
+                HorizontalLayout {
+                    spacing: 6px;
+                    alignment: start;
+                    if root.unread: Rectangle {
+                        width: 8px;
+                        height: 8px;
+                        y: (parent.height - self.height) / 2;
+                        border-radius: 4px;
+                        background: Theme.accent-info;
+                    }
+                    Text {
+                        text: root.name;
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-body;
+                        font-weight: root.unread ? 800 : 600;
+                    }
+                }
+                Text {
+                    text: root.transcript;
+                    color: Theme.muted;
+                    font-size: Theme.font-size-caption;
+                    overflow: elide;
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                spacing: 4px;
+                Text {
+                    text: root.meta;
+                    color: Theme.muted;
+                    font-size: Theme.font-size-caption;
+                    horizontal-alignment: right;
+                }
+                Rectangle {
+                    width: dur.preferred-width + 12px;
+                    height: 18px;
+                    border-radius: 9px;
+                    background: Theme.surface-2;
+                    dur := Text {
+                        text: root.duration;
+                        color: Theme.muted;
+                        font-size: 10px;
+                        font-weight: 800;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                }
+            }
+        }
+
+        // Expanded playback bar.
+        if root.expanded: VerticalLayout {
+            spacing: Theme.spacing-sm;
+            Rectangle {
+                height: 6px;
+                border-radius: 3px;
+                background: Theme.surface-variant;
+                Rectangle {
+                    x: 0;
+                    width: parent.width * root.progress;
+                    height: parent.height;
+                    border-radius: 3px;
+                    background: Theme.primary;
+                }
+                Rectangle {
+                    x: parent.width * root.progress - self.width / 2;
+                    y: (parent.height - self.height) / 2;
+                    width: 14px;
+                    height: 14px;
+                    border-radius: 7px;
+                    background: Theme.primary;
+                    border-width: 3px;
+                    border-color: Theme.surface-1;
+                }
+            }
+            HorizontalLayout {
+                Text {
+                    text: root.elapsed;
+                    color: Theme.muted;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 600;
+                    horizontal-stretch: 1;
+                }
+                Text {
+                    text: root.duration;
+                    color: Theme.muted;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 600;
+                }
+            }
+            HorizontalLayout {
+                spacing: Theme.spacing-md;
+                alignment: center;
+                VmControl {
+                    icon: @image-url("../icons/play.svg");
+                    a11y: "Play";
+                    kind: 1;
+                    clicked => { root.play-pressed(); }
+                }
+                VmControl {
+                    icon: @image-url("../icons/send.svg");
+                    a11y: "Call back";
+                    kind: 0;
+                    clicked => { root.callback-pressed(); }
+                }
+                VmControl {
+                    icon: @image-url("../icons/close.svg");
+                    a11y: "Delete";
+                    kind: 2;
+                    clicked => { root.delete-pressed(); }
+                }
+            }
+        }
+    }
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+export component VoicemailPage inherits Rectangle {
+    callback back-pressed();
+    callback settings-pressed();
+    callback row-pressed(string);
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "Voicemail";
+            leading-icon: @image-url("../icons/arrow-left.svg");
+            trailing-icon: @image-url("../icons/more-vertical.svg");
+            leading-pressed => { root.back-pressed(); }
+            trailing-pressed => { root.settings-pressed(); }
+        }
+
+        // Summary strip.
+        Rectangle {
+            background: Theme.surface-1;
+            height: 44px;
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: "3 unread · 6 total";
+                        color: Theme.muted;
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                    }
+                }
+            }
+        }
+
+        Divider { }
+
+        VoicemailRow {
+            fallback: "DM";
+            name: "Dad — Mobile";
+            meta: "9:42 AM";
+            duration: "0:38";
+            transcript: "Hey, just calling to see if you're still coming over for…";
+            unread: true;
+            expanded: true;
+            elapsed: "0:14";
+            progress: 0.37;
+            clicked => { root.row-pressed("Dad — Mobile"); }
+        }
+        Divider { }
+        VoicemailRow {
+            fallback: "CL";
+            name: "Clinic — Front Desk";
+            meta: "Yesterday";
+            duration: "1:12";
+            transcript: "This is a reminder about your appointment on Thursday at…";
+            unread: true;
+            clicked => { root.row-pressed("Clinic — Front Desk"); }
+        }
+        Divider { }
+        VoicemailRow {
+            fallback: "+1";
+            name: "+1 (415) 555-0188";
+            meta: "Yesterday";
+            duration: "0:21";
+            transcript: "Hi, this message is regarding your recent enquiry about…";
+            unread: true;
+            clicked => { root.row-pressed("+1 (415) 555-0188"); }
+        }
+        Divider { }
+        VoicemailRow {
+            fallback: "MK";
+            name: "Marco Kessler";
+            meta: "Mon";
+            duration: "0:45";
+            transcript: "Got your email — let's sync tomorrow morning before the…";
+            unread: false;
+            clicked => { root.row-pressed("Marco Kessler"); }
+        }
+        Divider { }
+        VoicemailRow {
+            fallback: "GR";
+            name: "Garage — Service";
+            meta: "Sat";
+            duration: "0:29";
+            transcript: "Your car's ready for pickup, we close at 6 today so…";
+            unread: false;
+            clicked => { root.row-pressed("Garage — Service"); }
+        }
+        Divider { }
+        VoicemailRow {
+            fallback: "AL";
+            name: "Aïsha Laurent";
+            meta: "Fri";
+            duration: "1:03";
+            transcript: "Thanks for the birthday wishes! Call me back when you…";
+            unread: false;
+            clicked => { root.row-pressed("Aïsha Laurent"); }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+    }
+}

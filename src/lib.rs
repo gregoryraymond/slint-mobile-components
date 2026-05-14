@@ -68,16 +68,53 @@ pub use _generated_gallery::*;
 
 // Test scenes — re-exported by exact name only, so they don't shadow
 // the Theme / BottomNavDistribution from the gallery export above.
-pub use _generated_snapshot_scenes::{
-    SnapAvatarSizes, SnapBadgeOnIcon, SnapBanner, SnapBottomNavSpaced,
-    SnapCardWithSubtitle, SnapCheckboxPair, SnapChipRow, SnapIconButtonActive,
-    SnapMobileButtonPrimary, SnapMobileButtonSecondary, SnapProgressDeterminate,
-    SnapSliderAt35, SnapSpinnerStatic, SnapTabBar,
-};
 pub use _generated_behavior_scenes::{
-    BehaviorBottomNav, BehaviorButtonClick, BehaviorCheckbox, BehaviorChip,
-    BehaviorListItem, BehaviorSlider, BehaviorSwitchToggle, BehaviorTabBar,
-    BehaviorTextField,
+    BehaviorBottomNav, BehaviorButtonClick, BehaviorCheckbox, BehaviorChip, BehaviorListItem,
+    BehaviorRadio, BehaviorSegmented, BehaviorSlider, BehaviorStepper, BehaviorSwitchToggle,
+    BehaviorTabBar, BehaviorTextField,
+};
+pub use _generated_snapshot_scenes::{
+    SnapAccountSettingsPage, SnapAchievementsPage, SnapActivityRingsPage, SnapAddressBookPage,
+    SnapAlbumDetailPage, SnapAppErrorPage, SnapAppLockScreen, SnapAppPermissionsPage,
+    SnapAppStoreListingPage, SnapAppearanceSettingsPage, SnapAudiobookPlayerPage, SnapAvatarSizes,
+    SnapBadgeOnIcon, SnapBanner, SnapBannerTones, SnapBoardingPassPage, SnapBottomNavSpaced,
+    SnapBudgetOverviewPage, SnapBugReportPage, SnapButtonTones, SnapCalculatorPage,
+    SnapCalendarPage, SnapCameraCapturePage, SnapCardWithSubtitle, SnapCarpoolSearchPage,
+    SnapCartPage, SnapChatPage, SnapCheckboxPair, SnapCheckoutPage, SnapChipRow,
+    SnapCodeReviewPage, SnapCommentsPage, SnapCommunityForumPage, SnapContactDetailPage,
+    SnapCountdownEventPage, SnapCountrySelectorPage, SnapCryptoPortfolioPage,
+    SnapCurrencyConverterPage, SnapDashboardPage, SnapDeliveryDriverPage, SnapDialerPage,
+    SnapDialog, SnapDoctorAppointmentPage, SnapDocumentScannerPage, SnapDonationPage,
+    SnapDownloadManagerPage, SnapDrawer, SnapDriverOnTheWayPage, SnapEReaderPage,
+    SnapEmailThreadPage, SnapEmptyState, SnapEqualizerPage, SnapEventDetailPage,
+    SnapExpenseReportPage, SnapFileBrowserPage, SnapFlightSearchPage, SnapFormWizardPage,
+    SnapGameLobbyPage, SnapGiftCardPage, SnapGroceryListPage, SnapGroupChatListPage,
+    SnapHabitTrackerPage, SnapHelpCenterPage, SnapHotelBookingPage, SnapIconButtonActive,
+    SnapInboxPage, SnapInsuranceClaimPage, SnapInvestmentDetailPage, SnapInvoicePage,
+    SnapJobListingPage, SnapJournalEntryPage, SnapLabResultsPage, SnapLeaderboardPage,
+    SnapLiveSportsScorePage, SnapLiveStreamPage, SnapLoyaltyCardPage, SnapMapPage, SnapMealLogPage,
+    SnapMediaPlayerLockscreenPage, SnapMedicationPage, SnapMeditationPage, SnapMessageComposerPage,
+    SnapMobileButtonPrimary, SnapMobileButtonSecondary, SnapMortgageCalculatorPage,
+    SnapMultiSelectListPage, SnapMusicLibraryPage, SnapNetWorthPage, SnapNewsArticleFeedPage,
+    SnapNotificationCenterPage, SnapNutritionLabelPage, SnapOnboardingHintPage, SnapOnboardingPage,
+    SnapOrderHistoryPage, SnapOrderTrackingPage, SnapParkingSessionPage, SnapPaymentMethodPage,
+    SnapPaymentSplitPage, SnapPaywallPage, SnapPetAdoptionPage, SnapPhotoGridPage,
+    SnapPhotoViewerPage, SnapPlaylistDetailPage, SnapPodcastPage, SnapPollResultsPage,
+    SnapPostCreatorPage, SnapPostDetailPage, SnapProductDetailPage, SnapProfileEditPage,
+    SnapProfilePage, SnapProgressDeterminate, SnapQRScannerPage, SnapQuizPage, SnapRadioGroup,
+    SnapReadingListPage, SnapRecipePage, SnapReferralPage, SnapRestaurantMenuPage,
+    SnapReviewSummaryPage, SnapRideShareBookingPage, SnapRoomThermostatPage, SnapSavingsGoalPage,
+    SnapSearchResultsPage, SnapSeatSelectionPage, SnapSecurityCheckupPage, SnapSegmentedThree,
+    SnapSendMoneyPage, SnapSignupPage, SnapSkeletonRow, SnapSleepTrackingPage, SnapSliderAt35,
+    SnapSmartHomePage, SnapSmartTVRemotePage, SnapSnackbarTones, SnapSpinnerStatic, SnapStepperAt3,
+    SnapStockWatchlistPage, SnapStorageManagerPage, SnapStoreLocatorPage, SnapSubscriptionsPage,
+    SnapTVShowDetailPage, SnapTabBar, SnapTaskListPage, SnapTimerPage, SnapTimezoneConverterPage,
+    SnapTipJarPage, SnapTransitDeparturesPage, SnapTrendingTopicsPage, SnapTripItineraryPage,
+    SnapTurnByTurnNavPage, SnapTwoFactorAuthPage, SnapVideoCallPage, SnapVideoFeedPage,
+    SnapVideoPlayerPage, SnapVoiceRecorderPage, SnapVoicemailPage, SnapVotingBallotPage,
+    SnapWalletPage, SnapWeatherPage, SnapWeeklyMealPlanPage, SnapWelcomeSplashPage,
+    SnapWiFiSettingsPage, SnapWordlePuzzlePage, SnapWorkoutSessionPage, SnapWorldClockPage,
+    SnapWriteReviewPage,
 };
 
 /// Filesystem path to this crate's `ui/` directory — the entry point Slint

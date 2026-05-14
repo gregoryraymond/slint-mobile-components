@@ -1,0 +1,248 @@
+// TaskListPage
+// =====================================================================
+//
+// To-do app screen with grouped sections (Today / Upcoming / Done) +
+// per-row priority indicator + tag chips + a Fab to add new tasks.
+// Demonstrates how to layer the Tone enum into a pure list — priority
+// gets a tone-tinted leading bar, the "Done" section dims completed
+// tasks via 50 % opacity + strike-through colour, and the FAB anchors
+// to the bottom-right above any bottom safe area.
+//
+// Layout
+// ------
+//
+//   AppBar — "Tasks" with filter trailing
+//   SectionHeader "TODAY"
+//     TaskRow × N (with tone-tinted left bar)
+//   SectionHeader "UPCOMING"
+//     TaskRow × N
+//   SectionHeader "DONE"
+//     TaskRow × N (dimmed + strike-through)
+//   Fab — bottom-right, plus icon
+
+import { Theme, Tone } from "../theme.slint";
+import { AppBar } from "../app-bar.slint";
+import { SectionHeader } from "../section-header.slint";
+import { Checkbox } from "../checkbox.slint";
+import { Chip } from "../chip.slint";
+import { Divider } from "../divider.slint";
+import { Fab } from "../button.slint";
+
+// One task row.
+//
+// Tone-tinted leading bar: `priority` (Tone) drives a 4-px left bar.
+// `done: true` dims the row to 0.5 opacity and reaches across the
+// label with `Theme.muted` colour — the strike-through itself is
+// approximated by an overlay 1-px Rectangle on the label since Slint
+// doesn't expose text-decoration on the Text element.
+component TaskRow inherits Rectangle {
+    in property <string> label;
+    in property <string> due;
+    in property <string> tag;
+    in property <Tone> priority: Tone.default;
+    in-out property <bool> done: false;
+    callback toggled();
+
+    horizontal-stretch: 1;
+    min-height: 64px;
+    opacity: root.done ? 0.55 : 1.0;
+
+    // Leading tone bar.
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: 4px;
+        height: parent.height;
+        background:
+              root.priority == Tone.success ? Theme.accent-success
+            : root.priority == Tone.warning ? Theme.accent-warning
+            : root.priority == Tone.danger  ? Theme.accent-danger
+            : root.priority == Tone.info    ? Theme.accent-info
+            : transparent;
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md + 4px;
+        padding-right: Theme.spacing-md;
+        padding-top: Theme.spacing-sm;
+        padding-bottom: Theme.spacing-sm;
+        spacing: Theme.spacing-sm;
+        alignment: stretch;
+
+        // Checkbox.
+        VerticalLayout {
+            alignment: center;
+            Checkbox {
+                checked: root.done;
+                toggled => {
+                    root.done = self.checked;
+                    root.toggled();
+                }
+            }
+        }
+
+        // Label + meta (due + tag).
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            Rectangle {
+                height: 22px;
+                Text {
+                    text: root.label;
+                    color: root.done ? Theme.muted : Theme.on-surface;
+                    font-size: Theme.font-size-body-large;
+                    font-weight: 500;
+                    overflow: elide;
+                    horizontal-stretch: 1;
+                    width: parent.width;
+                    height: parent.height;
+                    vertical-alignment: center;
+                }
+                // Strike-through line — only on done rows.
+                if root.done: Rectangle {
+                    x: 0;
+                    y: parent.height / 2;
+                    width: parent.width;
+                    height: 1px;
+                    background: Theme.muted;
+                }
+            }
+            HorizontalLayout {
+                spacing: Theme.spacing-sm;
+                Text {
+                    text: root.due;
+                    color: Theme.muted;
+                    font-size: Theme.font-size-caption;
+                    vertical-alignment: center;
+                }
+                if root.tag != "": Rectangle {
+                    width: tag-text.preferred-width + 12px;
+                    height: 18px;
+                    border-radius: 4px;
+                    background: Theme.surface-variant;
+                    tag-text := Text {
+                        text: root.tag;
+                        color: Theme.muted;
+                        font-size: 10px;
+                        font-weight: 700;
+                        letter-spacing: 0.3px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                }
+            }
+        }
+
+        // Drag handle (decorative; gesture not wired here).
+        VerticalLayout {
+            alignment: center;
+            Image {
+                width: 18px;
+                height: 18px;
+                source: @image-url("../icons/menu.svg");
+                colorize: Theme.muted;
+                image-fit: contain;
+            }
+        }
+    }
+}
+
+export component TaskListPage inherits Rectangle {
+    callback back-pressed();
+    callback filter-pressed();
+    callback add-task-pressed();
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "Tasks";
+            leading-icon: @image-url("../icons/arrow-left.svg");
+            trailing-icon: @image-url("../icons/more-vertical.svg");
+            leading-pressed => { root.back-pressed(); }
+            trailing-pressed => { root.filter-pressed(); }
+        }
+
+        VerticalLayout {
+            spacing: 0;
+
+            SectionHeader { text: "TODAY"; }
+            TaskRow {
+                label: "Land Tone enum refactor";
+                due: "today";
+                tag: "DESIGN";
+                priority: Tone.warning;
+            }
+            Divider { }
+            TaskRow {
+                label: "Review Drawer PR #312";
+                due: "today";
+                tag: "REVIEW";
+                priority: Tone.info;
+            }
+            Divider { }
+            TaskRow {
+                label: "Cut May patch release";
+                due: "today";
+                tag: "RELEASE";
+                priority: Tone.danger;
+            }
+            Divider { }
+
+            SectionHeader { text: "UPCOMING"; }
+            TaskRow {
+                label: "Refactor MapPage to use new BottomSheet API";
+                due: "Wed, May 15";
+                tag: "TECH-DEBT";
+                priority: Tone.default;
+            }
+            Divider { }
+            TaskRow {
+                label: "Write up cargo-apk on Apple Silicon";
+                due: "Fri, May 17";
+                tag: "DOCS";
+                priority: Tone.success;
+            }
+            Divider { }
+            TaskRow {
+                label: "Schedule Slint Conf dry-run";
+                due: "next week";
+                tag: "EVENT";
+                priority: Tone.info;
+            }
+            Divider { }
+
+            SectionHeader { text: "DONE"; }
+            TaskRow {
+                label: "Migrate Snackbar from SnackbarTone to shared Tone";
+                due: "yesterday";
+                tag: "DESIGN";
+                priority: Tone.success;
+                done: true;
+            }
+            Divider { }
+            TaskRow {
+                label: "Build VideoPlayerPage template";
+                due: "today";
+                tag: "DESIGN";
+                priority: Tone.default;
+                done: true;
+            }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+    }
+
+    // FAB anchored bottom-right above safe area.
+    Fab {
+        x: root.width - self.width - Theme.spacing-md;
+        y: root.height - self.height - Theme.spacing-md;
+        accessible-label: "Add task";
+        clicked => { root.add-task-pressed(); }
+    }
+}

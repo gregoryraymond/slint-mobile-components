@@ -1,0 +1,362 @@
+// DeliveryDriverPage
+// =====================================================================
+//
+// A delivery-driver dashboard — the courier's "home" screen. Distinct
+// from `DriverOnTheWayPage` (the customer waiting for a driver) and
+// `OrderTrackingPage` (the customer's order timeline). Demonstrates a
+// gig-worker dashboard surface:
+//
+//   - An online/offline toggle hero with today's earnings.
+//   - An active-delivery card: pickup + dropoff stops with a
+//     connecting rail, payout, and a big "Navigate" CTA.
+//   - A 3-up stat strip (trips, online hours, rating).
+//   - A recent-deliveries list.
+
+import { Theme, Tone } from "../theme.slint";
+import { AppBar } from "../app-bar.slint";
+import { SectionHeader } from "../section-header.slint";
+import { Divider } from "../divider.slint";
+import { MobileButton } from "../button.slint";
+
+// One stat cell.
+component StatCell inherits Rectangle {
+    in property <string> value;
+    in property <string> label;
+
+    horizontal-stretch: 1;
+    height: 72px;
+    border-radius: Theme.radius-md;
+    background: Theme.surface-1;
+    drop-shadow-blur: Theme.elevation-1-blur;
+    drop-shadow-color: Theme.elevation-1-color;
+    drop-shadow-offset-y: Theme.elevation-1-y;
+    VerticalLayout {
+        alignment: center;
+        spacing: 3px;
+        Text {
+            text: root.value;
+            color: Theme.on-surface;
+            font-size: Theme.font-size-body-large;
+            font-weight: 800;
+            horizontal-alignment: center;
+        }
+        Text {
+            text: root.label;
+            color: Theme.muted;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.3px;
+            horizontal-alignment: center;
+        }
+    }
+}
+
+// One stop in the active-delivery card. `kind`: 0 pickup / 1 dropoff.
+component Stop inherits HorizontalLayout {
+    in property <int> kind: 0;
+    in property <string> label;
+    in property <string> place;
+    in property <string> detail;
+
+    spacing: Theme.spacing-md;
+    alignment: stretch;
+    VerticalLayout {
+        alignment: start;
+        Rectangle {
+            width: 24px;
+            height: 24px;
+            border-radius: 12px;
+            background: root.kind == 0 ? Theme.accent-info : Theme.accent-success;
+            Image {
+                width: 12px;
+                height: 12px;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                source: root.kind == 0
+                    ? @image-url("../icons/inbox.svg")
+                    : @image-url("../icons/pin.svg");
+                colorize: Theme.on-primary;
+                image-fit: contain;
+            }
+        }
+    }
+    VerticalLayout {
+        horizontal-stretch: 1;
+        spacing: 2px;
+        Text {
+            text: root.label;
+            color: Theme.muted;
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: 0.5px;
+        }
+        Text {
+            text: root.place;
+            color: Theme.on-surface;
+            font-size: Theme.font-size-body;
+            font-weight: 700;
+        }
+        Text {
+            text: root.detail;
+            color: Theme.muted;
+            font-size: Theme.font-size-caption;
+        }
+    }
+}
+
+// One recent-delivery row.
+component RecentRow inherits Rectangle {
+    in property <string> place;
+    in property <string> time;
+    in property <string> payout;
+
+    horizontal-stretch: 1;
+    min-height: 56px;
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 32px;
+                height: 32px;
+                border-radius: 16px;
+                background: Theme.accent-success.with-alpha(0.18);
+                Image {
+                    width: 15px;
+                    height: 15px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: @image-url("../icons/check.svg");
+                    colorize: Theme.accent-success;
+                    image-fit: contain;
+                }
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: root.place;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+            Text {
+                text: root.time;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.payout;
+                color: Theme.accent-success;
+                font-size: Theme.font-size-body;
+                font-weight: 800;
+            }
+        }
+    }
+}
+
+export component DeliveryDriverPage inherits Rectangle {
+    in-out property <bool> online: true;
+    in property <string> earnings: "$148.20";
+    callback back-pressed();
+    callback menu-pressed();
+    callback navigate-pressed();
+    callback recent-pressed(string);
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "Driver";
+            leading-icon: @image-url("../icons/menu.svg");
+            trailing-icon: @image-url("../icons/profile.svg");
+            leading-pressed => { root.menu-pressed(); }
+            trailing-pressed => { root.back-pressed(); }
+        }
+
+        VerticalLayout {
+            padding: Theme.spacing-md;
+            spacing: Theme.spacing-md;
+            alignment: start;
+
+            // Online + earnings hero.
+            Rectangle {
+                height: 132px;
+                border-radius: Theme.radius-lg;
+                background: root.online
+                    ? @linear-gradient(135deg, #1f6f4d 0%, #0b3322 100%)
+                    : @linear-gradient(135deg, #3a4150 0%, #1a1f29 100%);
+                drop-shadow-blur: Theme.elevation-2-blur;
+                drop-shadow-color: Theme.elevation-2-color;
+                drop-shadow-offset-y: Theme.elevation-2-y;
+                animate background { duration: Theme.motion-base; }
+                VerticalLayout {
+                    padding: Theme.spacing-md;
+                    spacing: Theme.spacing-sm;
+                    HorizontalLayout {
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            spacing: 2px;
+                            Text {
+                                text: "EARNED TODAY";
+                                color: #ffffff99;
+                                font-size: 10px;
+                                font-weight: 800;
+                                letter-spacing: 0.5px;
+                            }
+                            Text {
+                                text: root.earnings;
+                                color: #ffffff;
+                                font-size: 40px;
+                                font-weight: 800;
+                            }
+                        }
+                        VerticalLayout {
+                            alignment: start;
+                            // Online toggle pill.
+                            Rectangle {
+                                width: 96px;
+                                height: 36px;
+                                border-radius: 18px;
+                                background: root.online ? #4ade80 : #ffffff33;
+                                animate background { duration: Theme.motion-fast; }
+                                Text {
+                                    text: root.online ? "ONLINE" : "OFFLINE";
+                                    color: root.online ? #06351f : #ffffff;
+                                    font-size: 11px;
+                                    font-weight: 800;
+                                    letter-spacing: 0.5px;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                                TouchArea {
+                                    clicked => {
+                                        root.online = !root.online;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Text {
+                        text: root.online
+                            ? "You're online — finding deliveries near you"
+                            : "You're offline — go online to get requests";
+                        color: #ffffffcc;
+                        font-size: Theme.font-size-caption;
+                        font-weight: 600;
+                    }
+                }
+            }
+
+            // Active delivery card.
+            Rectangle {
+                border-radius: Theme.radius-md;
+                background: Theme.surface-1;
+                drop-shadow-blur: Theme.elevation-2-blur;
+                drop-shadow-color: Theme.elevation-2-color;
+                drop-shadow-offset-y: Theme.elevation-2-y;
+                VerticalLayout {
+                    padding: Theme.spacing-md;
+                    spacing: Theme.spacing-md;
+                    HorizontalLayout {
+                        Text {
+                            text: "Active delivery";
+                            color: Theme.on-surface;
+                            font-size: Theme.font-size-body;
+                            font-weight: 800;
+                            horizontal-stretch: 1;
+                        }
+                        Text {
+                            text: "$11.40";
+                            color: Theme.accent-success;
+                            font-size: Theme.font-size-body-large;
+                            font-weight: 800;
+                        }
+                    }
+                    Stop {
+                        kind: 0;
+                        label: "PICK UP";
+                        place: "Foundry Coffee — Mission";
+                        detail: "418 Valencia St · 0.4 mi away";
+                    }
+                    // Connecting rail.
+                    Rectangle {
+                        x: 11px;
+                        width: 2px;
+                        height: 14px;
+                        background: Theme.surface-variant;
+                    }
+                    Stop {
+                        kind: 1;
+                        label: "DROP OFF";
+                        place: "Theo Nguyen";
+                        detail: "1290 Guerrero St, Apt 3 · 1.2 mi";
+                    }
+                    MobileButton {
+                        text: "Navigate to pickup";
+                        primary: true;
+                        max-height: 48px;
+                        clicked => { root.navigate-pressed(); }
+                    }
+                }
+            }
+
+            // Stats.
+            HorizontalLayout {
+                spacing: Theme.spacing-sm;
+                StatCell {
+                    value: "12";
+                    label: "TRIPS";
+                }
+                StatCell {
+                    value: "5.4 h";
+                    label: "ONLINE";
+                }
+                StatCell {
+                    value: "4.93 ★";
+                    label: "RATING";
+                }
+            }
+        }
+
+        SectionHeader { text: "RECENT DELIVERIES"; }
+        RecentRow {
+            place: "Saffron Kitchen → Aïsha L.";
+            time: "2:48 PM · 18 min";
+            payout: "+$9.60";
+        }
+        Divider { }
+        RecentRow {
+            place: "Green Bowl → Marco K.";
+            time: "1:55 PM · 12 min";
+            payout: "+$7.20";
+        }
+        Divider { }
+        RecentRow {
+            place: "Foundry Coffee → Rosa P.";
+            time: "12:30 PM · 9 min";
+            payout: "+$6.10";
+        }
+        Divider { }
+        RecentRow {
+            place: "Noodle Bar → Devika S.";
+            time: "11:42 AM · 21 min";
+            payout: "+$12.80";
+        }
+
+        Rectangle { vertical-stretch: 1; }
+    }
+}

@@ -75,11 +75,67 @@ slint-mobile-components/
     ├── tab-bar.slint       # TabBar + Tab (top tab strip, sibling to BottomNav)
     ├── divider.slint       # Divider (hairline separator)
     ├── banner.slint        # Banner (inline info strip with optional action)
-    └── pages/
-        ├── home.slint      # HomePage
-        ├── settings.slint  # SettingsPage
-        └── login.slint     # LoginPage
+    ├── radio.slint         # Radio (single-choice button; parent manages group)
+    ├── segmented-control.slint  # SegmentedControl (iOS-style 2–4 choice strip)
+    ├── stepper.slint       # Stepper (numeric +/- with bounds)
+    ├── skeleton.slint      # Skeleton (animated loading placeholder)
+    ├── empty-state.slint   # EmptyState (illustration + title + description + CTA)
+    ├── bottom-bar.slint    # BottomBar (pinned bottom chrome with upward shadow)
+    ├── bottom-sheet.slint  # BottomSheet (partial-height surface with drag handle, surface-2)
+    ├── dialog.slint        # Dialog (centered modal: title + body + actions; danger flag)
+    ├── snackbar.slint      # Snackbar (transient toast: tone dot + message + optional action)
+    ├── contact-row.slint   # ContactRow (Avatar + 2-line text + trailing meta; recurring list row)
+    ├── dot-indicator.slint # DotIndicator (paginated content active-dot strip)
+    ├── section-header.slint # SectionHeader (caption-muted-bold list / section label)
+    └── pages/              # 122 composite screen templates (see below)
+        ├── home.slint           # HomePage (feed + cards + bottom nav + FAB)
+        ├── settings.slint       # SettingsPage (sections of toggles and nav rows)
+        ├── login.slint          # LoginPage (form + primary CTA)
+        ├── podcast.slint        # PodcastPage (now-playing media)
+        ├── inbox.slint          # InboxPage (list view + unread badges + compose FAB)
+        ├── profile.slint        # ProfilePage (hero avatar + stats + sub-tabs)
+        ├── chat.slint           # ChatPage (alternating bubbles + pinned input)
+        ├── dashboard.slint      # DashboardPage (stat tiles + activity feed)
+        └── ...                  # + 114 more — see "Screen catalogue" below
 ```
+
+## Screen catalogue
+
+The `ui/pages/` directory holds **122 composite screen templates** — full
+mobile screens assembled from the component library, each one a starting
+point you can copy and adapt. Every page is locked down by a committed
+snapshot baseline. Broad groupings:
+
+- **Lists & feeds** — inbox, news feed, comments, group chat list,
+  notification centre, order history, reading list, transit departures,
+  trending topics, multi-select list, community forum, address book.
+- **Media & playback** — podcast, music library, video player, video
+  feed, playlist detail, album detail, tv-show detail, live stream,
+  media lockscreen, e-reader.
+- **Commerce & payments** — checkout, cart, product detail, paywall,
+  wallet, payment methods, payment split, gift card, loyalty card,
+  invoice, subscriptions, tip jar, donation, restaurant menu.
+- **Maps & travel** — map, turn-by-turn nav, ride-share booking,
+  driver-on-the-way, carpool search, flight search, hotel booking,
+  trip itinerary, boarding pass, world clock, timezone converter.
+- **Health & tracking** — activity rings, workout session, meal log,
+  sleep tracking, medication, meditation, habit tracker, timer.
+- **Forms & input** — login, signup, form wizard, profile edit,
+  write review, bug report, insurance claim, message composer,
+  post creator, journal entry, two-factor auth, voting ballot.
+- **Settings & system** — settings, account settings, appearance
+  settings, wifi settings, app permissions, storage manager, app lock,
+  app error, onboarding, onboarding hint, welcome splash, help centre.
+- **Detail & dashboards** — dashboard, profile, post detail, event
+  detail, job listing, investment detail, crypto portfolio, expense
+  report, review summary, poll results, leaderboard, weather,
+  pet adoption, app store listing, code review.
+- **Smart home & devices** — smart home, room thermostat,
+  smart-tv remote, document scanner, qr scanner, voice recorder.
+- **Utilities & games** — calculator, currency converter,
+  country selector, calendar, weekly meal plan, grocery list,
+  recipe, photo grid, photo viewer, search results, game lobby,
+  wordle puzzle, quiz, countdown event, live sports score.
 
 ## Design tokens
 

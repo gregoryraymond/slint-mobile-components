@@ -1,0 +1,411 @@
+// WiFiSettingsPage
+// =====================================================================
+//
+// Wi-Fi networks settings — the iOS / Android system-settings list.
+// Distinct from `SmartHomePage` (devices) and `AccountSettingsPage`
+// (profile-level prefs). Demonstrates:
+//
+//   - Master toggle row at the top ("Wi-Fi · ON").
+//   - Connected network hero card showing SSID + signal strength bar
+//     + speed caption + Forget / chevron-right affordances.
+//   - "Other networks" list: per-network row carrying a 3-bar signal
+//     indicator (success / warning / muted depending on bars), lock
+//     glyph for password-protected, network name + frequency band.
+//   - "Join other network" footer row + "Ask to join" toggle.
+
+import { Theme, Tone } from "../theme.slint";
+import { AppBar } from "../app-bar.slint";
+import { SectionHeader } from "../section-header.slint";
+import { MobileSwitch } from "../switch.slint";
+import { Divider } from "../divider.slint";
+
+// Three-bar signal indicator.
+//
+// `bars` = how many of the three are lit (1..3).
+component SignalBars inherits Rectangle {
+    in property <int> bars: 3;
+    in property <Tone> tone: Tone.success;
+
+    width: 24px;
+    height: 18px;
+
+    property <color> tint:
+          root.tone == Tone.warning ? Theme.accent-warning
+        : root.tone == Tone.danger  ? Theme.accent-danger
+        : Theme.accent-success;
+
+    // Bar 1 (shortest, left).
+    Rectangle {
+        x: 0;
+        y: 12px;
+        width: 4px;
+        height: 6px;
+        border-radius: 1px;
+        background: root.bars >= 1 ? tint : Theme.surface-variant;
+    }
+    // Bar 2.
+    Rectangle {
+        x: 8px;
+        y: 6px;
+        width: 4px;
+        height: 12px;
+        border-radius: 1px;
+        background: root.bars >= 2 ? tint : Theme.surface-variant;
+    }
+    // Bar 3 (tallest, right).
+    Rectangle {
+        x: 16px;
+        y: 0;
+        width: 4px;
+        height: 18px;
+        border-radius: 1px;
+        background: root.bars >= 3 ? tint : Theme.surface-variant;
+    }
+}
+
+// Connected-network hero card.
+component ConnectedCard inherits Rectangle {
+    in property <string> ssid;
+    in property <string> speed;
+    in property <int> bars: 3;
+    callback forget-pressed();
+    callback detail-pressed();
+
+    horizontal-stretch: 1;
+    height: 96px;
+    background: Theme.surface-1;
+    border-radius: Theme.radius-md;
+    border-width: 1px;
+    border-color: Theme.accent-success;
+    drop-shadow-blur: Theme.elevation-1-blur;
+    drop-shadow-color: Theme.elevation-1-color;
+    drop-shadow-offset-y: Theme.elevation-1-y;
+
+    HorizontalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+
+        VerticalLayout {
+            alignment: center;
+            SignalBars { bars: root.bars; tone: Tone.success; }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            HorizontalLayout {
+                spacing: Theme.spacing-xs;
+                Text {
+                    text: root.ssid;
+                    color: Theme.on-surface;
+                    font-size: Theme.font-size-body;
+                    font-weight: 700;
+                }
+                Rectangle {
+                    width: connected-text.preferred-width + 12px;
+                    height: 18px;
+                    border-radius: 4px;
+                    background: Theme.accent-success;
+                    connected-text := Text {
+                        text: "CONNECTED";
+                        color: Theme.on-primary;
+                        font-size: 9px;
+                        font-weight: 800;
+                        letter-spacing: 0.5px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                }
+            }
+            Text {
+                text: root.speed + " · auto-join on";
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Image {
+                width: 16px;
+                height: 16px;
+                source: @image-url("../icons/chevron-right.svg");
+                colorize: Theme.muted;
+                image-fit: contain;
+                TouchArea {
+                    clicked => { root.detail-pressed(); }
+                }
+            }
+        }
+    }
+}
+
+// One other-network row.
+component NetworkRow inherits Rectangle {
+    in property <string> ssid;
+    in property <string> band;
+    in property <int> bars: 3;
+    in property <Tone> signal-tone: Tone.success;
+    in property <bool> locked: true;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: root.ssid;
+    accessible-action-default => { root.clicked(); }
+
+    horizontal-stretch: 1;
+    min-height: 56px;
+    background: touch.pressed ? Theme.surface-pressed : transparent;
+    animate background { duration: Theme.motion-fast; }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+        VerticalLayout {
+            alignment: center;
+            SignalBars { bars: root.bars; tone: root.signal-tone; }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: root.ssid;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 500;
+                overflow: elide;
+            }
+            Text {
+                text: root.band;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: Theme.spacing-xs;
+            HorizontalLayout {
+                spacing: Theme.spacing-xs;
+                if root.locked: Image {
+                    width: 14px;
+                    height: 14px;
+                    source: @image-url("../icons/lock.svg");
+                    colorize: Theme.muted;
+                    image-fit: contain;
+                    vertical-alignment: center;
+                }
+                Image {
+                    width: 14px;
+                    height: 14px;
+                    source: @image-url("../icons/chevron-right.svg");
+                    colorize: Theme.muted;
+                    image-fit: contain;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+export component WiFiSettingsPage inherits Rectangle {
+    in-out property <bool> wifi-on: true;
+    in-out property <bool> ask-to-join: true;
+    callback back-pressed();
+    callback help-pressed();
+    callback network-pressed(string);
+    callback join-other-pressed();
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "Wi-Fi";
+            leading-icon: @image-url("../icons/arrow-left.svg");
+            trailing-icon: @image-url("../icons/more-vertical.svg");
+            leading-pressed => { root.back-pressed(); }
+            trailing-pressed => { root.help-pressed(); }
+        }
+
+        // Master toggle.
+        Rectangle {
+            background: Theme.surface-1;
+            HorizontalLayout {
+                padding: Theme.spacing-md;
+                spacing: Theme.spacing-md;
+                alignment: stretch;
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    alignment: center;
+                    spacing: 2px;
+                    Text {
+                        text: "Wi-Fi";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-body-large;
+                        font-weight: 700;
+                    }
+                    Text {
+                        text:
+                              root.wifi-on
+                            ? "Allow this device to connect to nearby networks"
+                            : "Turning off disables AirDrop and AirPlay until re-enabled";
+                        color: Theme.muted;
+                        font-size: Theme.font-size-caption;
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    MobileSwitch {
+                        checked <=> root.wifi-on;
+                    }
+                }
+            }
+        }
+
+        Divider { }
+
+        // Connected network.
+        VerticalLayout {
+            padding: Theme.spacing-md;
+            spacing: Theme.spacing-sm;
+            Text {
+                text: "CONNECTED NETWORK";
+                color: Theme.muted;
+                font-size: 10px;
+                font-weight: 800;
+                letter-spacing: 0.5px;
+            }
+            ConnectedCard {
+                ssid: "patagonia-mesh-5g";
+                speed: "WPA3 · 5 GHz · 643 Mbps";
+                bars: 3;
+            }
+        }
+
+        SectionHeader { text: "OTHER NETWORKS"; }
+
+        NetworkRow {
+            ssid: "patagonia-mesh-2.4g";
+            band: "WPA3 · 2.4 GHz";
+            bars: 3;
+            signal-tone: Tone.success;
+            locked: true;
+        }
+        Divider { }
+        NetworkRow {
+            ssid: "Memmo Alfama · Guest";
+            band: "Public · captive portal";
+            bars: 2;
+            signal-tone: Tone.success;
+            locked: false;
+        }
+        Divider { }
+        NetworkRow {
+            ssid: "Léa's iPhone hotspot";
+            band: "WPA2 · 5 GHz · personal hotspot";
+            bars: 2;
+            signal-tone: Tone.warning;
+            locked: true;
+        }
+        Divider { }
+        NetworkRow {
+            ssid: "café-paolo";
+            band: "WPA2 · 2.4 GHz";
+            bars: 2;
+            signal-tone: Tone.warning;
+            locked: true;
+        }
+        Divider { }
+        NetworkRow {
+            ssid: "ATT-WiFi-2890";
+            band: "WPA2 · 2.4 GHz";
+            bars: 1;
+            signal-tone: Tone.danger;
+            locked: true;
+        }
+        Divider { }
+        NetworkRow {
+            ssid: "xfinitywifi";
+            band: "Public · subscriber sign-in";
+            bars: 1;
+            signal-tone: Tone.danger;
+            locked: false;
+        }
+
+        SectionHeader { text: "MANUAL"; }
+        Rectangle {
+            min-height: 56px;
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                spacing: Theme.spacing-md;
+                alignment: stretch;
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    alignment: center;
+                    Text {
+                        text: "Join other network…";
+                        color: Theme.accent-info;
+                        font-size: Theme.font-size-body;
+                        font-weight: 600;
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Image {
+                        width: 16px;
+                        height: 16px;
+                        source: @image-url("../icons/chevron-right.svg");
+                        colorize: Theme.muted;
+                        image-fit: contain;
+                    }
+                }
+            }
+            TouchArea {
+                clicked => { root.join-other-pressed(); }
+            }
+        }
+        Divider { }
+        Rectangle {
+            min-height: 56px;
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                spacing: Theme.spacing-md;
+                alignment: stretch;
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    alignment: center;
+                    spacing: 2px;
+                    Text {
+                        text: "Ask to join networks";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-body;
+                    }
+                    Text {
+                        text: "Known networks join automatically.";
+                        color: Theme.muted;
+                        font-size: Theme.font-size-caption;
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    MobileSwitch {
+                        checked <=> root.ask-to-join;
+                    }
+                }
+            }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+    }
+}

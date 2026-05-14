@@ -1,0 +1,300 @@
+// GiftCardPage
+// =====================================================================
+//
+// Gift-card / wallet-coupon detail — Starbucks app / Sephora wallet /
+// Apple Gift Card-style. Distinct from `PaymentMethodPage` (real
+// cards) and `WalletPage` (account overview). Demonstrates:
+//
+//   - Branded gradient hero card with merchant name + balance + last-4
+//     of the gift code (the "card face").
+//   - QR / barcode placeholder card beneath — a faux-QR grid pattern
+//     (same approach as the `BoardingPassPage` QR) + redemption code
+//     in monospace + Add to Wallet CTA.
+//   - "How to use" mini info card.
+//   - Recent activity list of redemptions, each showing where + when +
+//     amount drawn down + remaining balance.
+
+import { Theme, Tone } from "../theme.slint";
+import { AppBar } from "../app-bar.slint";
+import { SectionHeader } from "../section-header.slint";
+import { Divider } from "../divider.slint";
+import { MobileButton } from "../button.slint";
+
+// Faux QR square.
+component FauxQR inherits Rectangle {
+    width: 160px;
+    height: 160px;
+    background: #ffffff;
+    border-radius: 8px;
+    clip: true;
+    VerticalLayout {
+        spacing: 0;
+        padding: 8px;
+        for row-index in 16 : HorizontalLayout {
+            spacing: 0;
+            for col-index in 16 : Rectangle {
+                width: 9px;
+                height: 9px;
+                background:
+                      (row-index < 3 && col-index < 3)                ? #000000
+                    : (row-index < 3 && col-index >= 13)              ? #000000
+                    : (row-index >= 13 && col-index < 3)              ? #000000
+                    : (row-index == 1 && col-index == 1)              ? #ffffff
+                    : (row-index == 1 && col-index == 14)             ? #ffffff
+                    : (row-index == 14 && col-index == 1)             ? #ffffff
+                    : (mod(row-index * 7 + col-index * 5, 3) == 0)    ? #000000
+                    : (mod(row-index * 3 + col-index * 11, 5) == 0)   ? #000000
+                    : #ffffff;
+            }
+        }
+    }
+}
+
+// One redemption row.
+component RedemptionRow inherits Rectangle {
+    in property <string> merchant;
+    in property <string> when;
+    in property <string> amount;
+    in property <string> remaining;
+
+    horizontal-stretch: 1;
+    min-height: 56px;
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: root.merchant;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+            Text {
+                text: root.when;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: root.amount;
+                color: Theme.accent-danger;
+                font-size: Theme.font-size-body;
+                font-weight: 700;
+                horizontal-alignment: right;
+            }
+            Text {
+                text: root.remaining + " left";
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+                horizontal-alignment: right;
+            }
+        }
+    }
+}
+
+export component GiftCardPage inherits Rectangle {
+    in property <string> merchant: "Patagonia";
+    in property <string> balance: "$94.50";
+    in property <string> issued: "Issued Mar 14, 2026 · expires Mar 14, 2028";
+    in property <string> code: "PATA-3MK4-9R12-X8DE";
+    callback back-pressed();
+    callback share-pressed();
+    callback add-to-wallet-pressed();
+    callback redemption-pressed(string);
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "Gift card";
+            leading-icon: @image-url("../icons/arrow-left.svg");
+            trailing-icon: @image-url("../icons/send.svg");
+            leading-pressed => { root.back-pressed(); }
+            trailing-pressed => { root.share-pressed(); }
+        }
+
+        VerticalLayout {
+            padding: Theme.spacing-md;
+            spacing: Theme.spacing-md;
+            alignment: start;
+
+            // Branded hero.
+            Rectangle {
+                horizontal-stretch: 1;
+                height: 200px;
+                border-radius: Theme.radius-lg;
+                background: @linear-gradient(135deg, #b91c1c 0%, #451a03 100%);
+                drop-shadow-blur: Theme.elevation-2-blur;
+                drop-shadow-color: Theme.elevation-2-color;
+                drop-shadow-offset-y: Theme.elevation-2-y;
+                clip: true;
+
+                VerticalLayout {
+                    padding: Theme.spacing-md;
+                    spacing: Theme.spacing-xs;
+                    Text {
+                        text: root.merchant;
+                        color: #ffffff;
+                        font-size: Theme.font-size-title;
+                        font-weight: 800;
+                        letter-spacing: 1px;
+                    }
+                    Text {
+                        text: "GIFT CARD";
+                        color: #ffffffaa;
+                        font-size: 11px;
+                        font-weight: 800;
+                        letter-spacing: 2px;
+                    }
+                    Rectangle { vertical-stretch: 1; }
+                    Text {
+                        text: "BALANCE";
+                        color: #ffffffaa;
+                        font-size: 10px;
+                        font-weight: 800;
+                        letter-spacing: 0.5px;
+                    }
+                    Text {
+                        text: root.balance;
+                        color: #ffffff;
+                        font-size: 40px;
+                        font-weight: 300;
+                    }
+                }
+
+                // Top-right brand mark.
+                Rectangle {
+                    x: parent.width - 64px;
+                    y: 16px;
+                    width: 48px;
+                    height: 48px;
+                    border-radius: 12px;
+                    background: #ffffff22;
+                    Text {
+                        text: "P";
+                        color: #ffffff;
+                        font-size: 28px;
+                        font-weight: 800;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                }
+            }
+
+            // QR card.
+            Rectangle {
+                horizontal-stretch: 1;
+                height: 232px;
+                background: Theme.surface-1;
+                border-radius: Theme.radius-md;
+                drop-shadow-blur: Theme.elevation-1-blur;
+                drop-shadow-color: Theme.elevation-1-color;
+                drop-shadow-offset-y: Theme.elevation-1-y;
+
+                HorizontalLayout {
+                    padding: Theme.spacing-md;
+                    spacing: Theme.spacing-md;
+                    alignment: stretch;
+
+                    VerticalLayout {
+                        alignment: center;
+                        FauxQR { }
+                    }
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        alignment: center;
+                        spacing: Theme.spacing-xs;
+                        Text {
+                            text: "REDEMPTION CODE";
+                            color: Theme.muted;
+                            font-size: 10px;
+                            font-weight: 800;
+                            letter-spacing: 0.5px;
+                        }
+                        Text {
+                            text: root.code;
+                            color: Theme.on-surface;
+                            font-size: Theme.font-size-body;
+                            font-family: "Menlo";
+                            font-weight: 700;
+                            letter-spacing: 1px;
+                            wrap: word-wrap;
+                        }
+                        Text {
+                            text: root.issued;
+                            color: Theme.muted;
+                            font-size: Theme.font-size-caption;
+                            wrap: word-wrap;
+                        }
+                        MobileButton {
+                            text: "Add to Wallet";
+                            tone: Tone.info;
+                            max-height: 36px;
+                            clicked => { root.add-to-wallet-pressed(); }
+                        }
+                    }
+                }
+            }
+
+            // How-to info card.
+            Rectangle {
+                horizontal-stretch: 1;
+                background: Theme.surface-2;
+                border-radius: Theme.radius-md;
+                VerticalLayout {
+                    padding: Theme.spacing-md;
+                    spacing: 4px;
+                    Text {
+                        text: "How to redeem";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-body;
+                        font-weight: 700;
+                    }
+                    Text {
+                        text: "Show the QR at the register, or paste the code into the checkout's Gift card field at patagonia.com.";
+                        color: Theme.muted;
+                        font-size: Theme.font-size-caption;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+        }
+
+        SectionHeader { text: "RECENT REDEMPTIONS"; }
+
+        RedemptionRow {
+            merchant: "Patagonia · Hayes Valley";
+            when: "Mon, May 12 · 14:18";
+            amount: "−$48.50";
+            remaining: "$94.50";
+        }
+        Divider { }
+        RedemptionRow {
+            merchant: "patagonia.com";
+            when: "Apr 30 · 22:08";
+            amount: "−$32.00";
+            remaining: "$143.00";
+        }
+        Divider { }
+        RedemptionRow {
+            merchant: "Patagonia · Soho NYC";
+            when: "Apr 14 · 16:42";
+            amount: "−$25.00";
+            remaining: "$175.00";
+        }
+
+        Rectangle { vertical-stretch: 1; }
+    }
+}

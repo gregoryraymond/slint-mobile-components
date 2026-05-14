@@ -1,0 +1,214 @@
+// NotificationCenterPage
+// =====================================================================
+//
+// Grouped notification feed — the screen you land on after tapping the
+// bell icon in any of the other pages. Demonstrates:
+//
+//   - Three-section grouping (Today / Yesterday / This week) via
+//     SectionHeader
+//   - Per-row tone-tinted indicator (using the shared `Tone` enum) so
+//     the user can scan severity at a glance — mentions, system events,
+//     errors, and successes all carry distinct accent dots
+//   - Avatar + body + timestamp three-column row layout, which is the
+//     timeline pattern most notification surfaces converge on
+//
+// Layout
+// ------
+//
+//   AppBar — "Notifications" + clear-all trailing
+//   Section "TODAY"
+//     NotificationRow × N
+//   Section "YESTERDAY"
+//     NotificationRow × N
+//   Section "THIS WEEK"
+//     NotificationRow × N
+
+import { Theme, Tone } from "../theme.slint";
+import { AppBar } from "../app-bar.slint";
+import { SectionHeader } from "../section-header.slint";
+import { Avatar } from "../avatar.slint";
+import { Divider } from "../divider.slint";
+import { ScrollView } from "std-widgets.slint";
+
+// One notification row.
+component NotificationRow inherits Rectangle {
+    in property <string> initials;
+    // (mapped onto Avatar's `fallback` slot in the row body below.)
+    in property <string> message;
+    in property <string> when;
+    in property <Tone> tone: Tone.default;
+    in property <bool> unread: false;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: root.message;
+    accessible-action-default => { root.clicked(); }
+
+    horizontal-stretch: 1;
+    min-height: 72px;
+    background: touch.pressed ? Theme.surface-pressed : transparent;
+
+    animate background { duration: Theme.motion-fast; }
+
+    // Leading unread / tone dot (8 × 8). Always rendered for layout
+    // stability — when the row is read, the dot is transparent so the
+    // row left-edge still aligns with its unread neighbours.
+    Rectangle {
+        x: Theme.spacing-sm;
+        y: (parent.height - self.height) / 2;
+        width: 8px;
+        height: 8px;
+        border-radius: 4px;
+        background: root.unread
+            ? (
+                  root.tone == Tone.success ? Theme.accent-success
+                : root.tone == Tone.warning ? Theme.accent-warning
+                : root.tone == Tone.danger  ? Theme.accent-danger
+                : root.tone == Tone.info    ? Theme.accent-info
+                : Theme.primary
+              )
+            : transparent;
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md + 8px;
+        padding-right: Theme.spacing-md;
+        padding-top: Theme.spacing-sm;
+        padding-bottom: Theme.spacing-sm;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+
+        // Avatar.
+        VerticalLayout {
+            alignment: start;
+            Avatar {
+                fallback: root.initials;
+                size: 40px;
+            }
+        }
+
+        // Body.
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: root.message;
+                color: root.unread ? Theme.on-surface : Theme.muted;
+                font-size: Theme.font-size-body;
+                font-weight: root.unread ? 600 : 400;
+                wrap: word-wrap;
+            }
+            Text {
+                text: root.when;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+            }
+        }
+    }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+export component NotificationCenterPage inherits Rectangle {
+    callback back-pressed();
+    callback clear-all-pressed();
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "Notifications";
+            leading-icon: @image-url("../icons/arrow-left.svg");
+            trailing-icon: @image-url("../icons/close.svg");
+            leading-pressed => { root.back-pressed(); }
+            trailing-pressed => { root.clear-all-pressed(); }
+        }
+
+        ScrollView {
+            vertical-stretch: 1;
+            horizontal-stretch: 1;
+            viewport-width: 412px;
+            viewport-height: 1100px;
+            VerticalLayout {
+                spacing: 0;
+
+                SectionHeader { text: "TODAY"; }
+                NotificationRow {
+                    initials: "PR";
+                    message: "Priya mentioned you in #design — \"the new Tone enum looks great\"";
+                    when: "12 minutes ago";
+                    tone: Tone.info;
+                    unread: true;
+                }
+                Divider { }
+                NotificationRow {
+                    initials: "DS";
+                    message: "Build #1842 succeeded on main";
+                    when: "1 hour ago";
+                    tone: Tone.success;
+                    unread: true;
+                }
+                Divider { }
+                NotificationRow {
+                    initials: "AR";
+                    message: "Anika requested your review on PR #312 — Drawer primitive";
+                    when: "3 hours ago";
+                    tone: Tone.default;
+                    unread: true;
+                }
+                Divider { }
+
+                SectionHeader { text: "YESTERDAY"; }
+                NotificationRow {
+                    initials: "SY";
+                    message: "Production deploy failed — rollback completed automatically";
+                    when: "yesterday, 18:42";
+                    tone: Tone.danger;
+                }
+                Divider { }
+                NotificationRow {
+                    initials: "MK";
+                    message: "Marco invited you to the \"Slint Conf 2026 dry run\" calendar event";
+                    when: "yesterday, 14:10";
+                    tone: Tone.info;
+                }
+                Divider { }
+                NotificationRow {
+                    initials: "ST";
+                    message: "Storage at 78% — consider archiving old build artifacts";
+                    when: "yesterday, 09:30";
+                    tone: Tone.warning;
+                }
+                Divider { }
+
+                SectionHeader { text: "THIS WEEK"; }
+                NotificationRow {
+                    initials: "LE";
+                    message: "Léa published a new doc: \"Cargo-apk on Apple Silicon\"";
+                    when: "Monday";
+                    tone: Tone.info;
+                }
+                Divider { }
+                NotificationRow {
+                    initials: "TM";
+                    message: "Your weekly digest is ready — 14 items closed, 3 new issues opened";
+                    when: "Monday";
+                    tone: Tone.default;
+                }
+                Divider { }
+                NotificationRow {
+                    initials: "DV";
+                    message: "Devika starred your repo \"slint-mobile-components\"";
+                    when: "Sunday";
+                    tone: Tone.success;
+                }
+            }
+        }
+    }
+}

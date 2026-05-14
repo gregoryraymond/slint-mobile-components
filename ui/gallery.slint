@@ -28,9 +28,26 @@ import { Slider } from "slider.slint";
 import { TabBar, Tab } from "tab-bar.slint";
 import { Divider } from "divider.slint";
 import { Banner } from "banner.slint";
+import { Radio } from "radio.slint";
+import { SegmentedControl } from "segmented-control.slint";
+import { Stepper } from "stepper.slint";
+import { Skeleton } from "skeleton.slint";
+import { EmptyState } from "empty-state.slint";
 import { HomePage } from "pages/home.slint";
 import { SettingsPage } from "pages/settings.slint";
 import { LoginPage } from "pages/login.slint";
+import { PodcastPage } from "pages/podcast.slint";
+import { InboxPage } from "pages/inbox.slint";
+import { ProfilePage } from "pages/profile.slint";
+import { ChatPage } from "pages/chat.slint";
+import { DashboardPage } from "pages/dashboard.slint";
+import { MusicLibraryPage } from "pages/music-library.slint";
+import { OnboardingPage } from "pages/onboarding.slint";
+import { PhotoGridPage } from "pages/photo-grid.slint";
+import { SearchResultsPage } from "pages/search-results.slint";
+import { CheckoutPage } from "pages/checkout.slint";
+import { PostDetailPage } from "pages/post-detail.slint";
+import { MapPage } from "pages/map.slint";
 import { ScrollView } from "std-widgets.slint";
 
 component GalleryTab inherits Rectangle {
@@ -39,7 +56,8 @@ component GalleryTab inherits Rectangle {
     callback clicked();
 
     horizontal-stretch: 1;
-    background: touch.pressed ? Theme.surface-pressed : Theme.surface;
+    min-width: 88px;
+    background: touch.pressed ? Theme.surface-pressed : Theme.surface-1;
 
     animate background { duration: Theme.motion-fast; }
 
@@ -135,7 +153,7 @@ component Toolbox inherits Rectangle {
                 spacing: 0;
                 SectionLabel { text: "LIST ITEMS"; }
                 Rectangle {
-                    background: Theme.surface;
+                    background: Theme.surface-1;
                     border-radius: Theme.radius-md;
                     VerticalLayout {
                         ListItem { title: "Title only"; }
@@ -343,6 +361,79 @@ component Toolbox inherits Rectangle {
                 }
             }
 
+            // ---- Radio -------------------------------------------------
+            VerticalLayout {
+                spacing: 0;
+                SectionLabel { text: "RADIO"; }
+                Radio { label: "Quarterly"; selected: false; }
+                Radio { label: "Monthly"; selected: true; }
+                Radio { label: "Weekly"; selected: false; }
+            }
+
+            // ---- Segmented control -------------------------------------
+            VerticalLayout {
+                spacing: Theme.spacing-sm;
+                SectionLabel { text: "SEGMENTED CONTROL"; }
+                SegmentedControl {
+                    options: ["All", "Active", "Done"];
+                    selected-index: 1;
+                }
+            }
+
+            // ---- Stepper -----------------------------------------------
+            VerticalLayout {
+                spacing: Theme.spacing-sm;
+                SectionLabel { text: "STEPPER"; }
+                HorizontalLayout {
+                    alignment: start;
+                    Stepper {
+                        value: 3;
+                        minimum: 0;
+                        maximum: 10;
+                    }
+                }
+            }
+
+            // ---- Skeleton ----------------------------------------------
+            VerticalLayout {
+                spacing: Theme.spacing-sm;
+                SectionLabel { text: "SKELETON"; }
+                HorizontalLayout {
+                    spacing: Theme.spacing-md;
+                    alignment: stretch;
+                    Skeleton {
+                        width: 40px;
+                        height: 40px;
+                        border-radius: 20px;
+                    }
+                    VerticalLayout {
+                        spacing: Theme.spacing-sm;
+                        alignment: center;
+                        horizontal-stretch: 1;
+                        Skeleton { height: 14px; width: 70%; }
+                        Skeleton { height: 12px; width: 50%; }
+                    }
+                }
+            }
+
+            // ---- Empty state -------------------------------------------
+            VerticalLayout {
+                spacing: Theme.spacing-sm;
+                SectionLabel { text: "EMPTY STATE"; }
+                Rectangle {
+                    height: 240px;
+                    border-radius: Theme.radius-md;
+                    background: Theme.surface-1;
+                    clip: true;
+                    EmptyState {
+                        icon: @image-url("icons/inbox.svg");
+                        title: "Inbox is empty";
+                        description: "Threads you star or get @mentioned in will show up here.";
+                        action-label: "Browse channels";
+                    }
+                }
+            }
+
             // ---- Bottom nav --------------------------------------------
             VerticalLayout {
                 spacing: Theme.spacing-sm;
@@ -390,39 +481,101 @@ export component Gallery inherits Window {
     VerticalLayout {
         spacing: 0;
 
-        // Tab strip
+        // Tab strip — horizontal-scrollable so the catalogue can grow
+        // past the visible width without squeezing labels into ellipses.
+        // Each tab carries a min-width 88 px so it never collapses
+        // below readable size.
         Rectangle {
             height: 48px;
-            background: Theme.surface;
-            HorizontalLayout {
-                spacing: 0;
-                GalleryTab {
-                    label: "Home";
-                    selected: root.selected == 0;
-                    clicked => { root.selected = 0; }
+            background: Theme.surface-1;
+            clip: true;
+            ScrollView {
+                horizontal-scrollbar-policy: ScrollBarPolicy.always-off;
+                vertical-scrollbar-policy: ScrollBarPolicy.always-off;
+                viewport-width: 88px * 16;
+                HorizontalLayout {
+                    spacing: 0;
+                    GalleryTab {
+                        label: "Home";
+                        selected: root.selected == 0;
+                        clicked => { root.selected = 0; }
+                    }
+                    GalleryTab {
+                        label: "Settings";
+                        selected: root.selected == 1;
+                        clicked => { root.selected = 1; }
+                    }
+                    GalleryTab {
+                        label: "Login";
+                        selected: root.selected == 2;
+                        clicked => { root.selected = 2; }
+                    }
+                    GalleryTab {
+                        label: "Podcast";
+                        selected: root.selected == 3;
+                        clicked => { root.selected = 3; }
+                    }
+                    GalleryTab {
+                        label: "Inbox";
+                        selected: root.selected == 4;
+                        clicked => { root.selected = 4; }
+                    }
+                    GalleryTab {
+                        label: "Profile";
+                        selected: root.selected == 5;
+                        clicked => { root.selected = 5; }
+                    }
+                    GalleryTab {
+                        label: "Chat";
+                        selected: root.selected == 6;
+                        clicked => { root.selected = 6; }
+                    }
+                    GalleryTab {
+                        label: "Dashboard";
+                        selected: root.selected == 7;
+                        clicked => { root.selected = 7; }
+                    }
+                    GalleryTab {
+                        label: "Music";
+                        selected: root.selected == 8;
+                        clicked => { root.selected = 8; }
+                    }
+                    GalleryTab {
+                        label: "Photos";
+                        selected: root.selected == 9;
+                        clicked => { root.selected = 9; }
+                    }
+                    GalleryTab {
+                        label: "Onboarding";
+                        selected: root.selected == 10;
+                        clicked => { root.selected = 10; }
+                    }
+                    GalleryTab {
+                        label: "Search";
+                        selected: root.selected == 11;
+                        clicked => { root.selected = 11; }
+                    }
+                    GalleryTab {
+                        label: "Checkout";
+                        selected: root.selected == 12;
+                        clicked => { root.selected = 12; }
+                    }
+                    GalleryTab {
+                        label: "Article";
+                        selected: root.selected == 13;
+                        clicked => { root.selected = 13; }
+                    }
+                    GalleryTab {
+                        label: "Map";
+                        selected: root.selected == 14;
+                        clicked => { root.selected = 14; }
+                    }
+                    GalleryTab {
+                        label: "Toolbox";
+                        selected: root.selected == 15;
+                        clicked => { root.selected = 15; }
+                    }
                 }
-                GalleryTab {
-                    label: "Settings";
-                    selected: root.selected == 1;
-                    clicked => { root.selected = 1; }
-                }
-                GalleryTab {
-                    label: "Login";
-                    selected: root.selected == 2;
-                    clicked => { root.selected = 2; }
-                }
-                GalleryTab {
-                    label: "Toolbox";
-                    selected: root.selected == 3;
-                    clicked => { root.selected = 3; }
-                }
-            }
-            Rectangle {
-                x: 0;
-                y: parent.height - 1px;
-                width: parent.width;
-                height: 1px;
-                background: Theme.outline;
             }
         }
 
@@ -443,7 +596,55 @@ export component Gallery inherits Window {
                 width: parent.width;
                 height: parent.height;
             }
-            if root.selected == 3: Toolbox {
+            if root.selected == 3: PodcastPage {
+                width: parent.width;
+                height: parent.height;
+            }
+            if root.selected == 4: InboxPage {
+                width: parent.width;
+                height: parent.height;
+            }
+            if root.selected == 5: ProfilePage {
+                width: parent.width;
+                height: parent.height;
+            }
+            if root.selected == 6: ChatPage {
+                width: parent.width;
+                height: parent.height;
+            }
+            if root.selected == 7: DashboardPage {
+                width: parent.width;
+                height: parent.height;
+            }
+            if root.selected == 8: MusicLibraryPage {
+                width: parent.width;
+                height: parent.height;
+            }
+            if root.selected == 9: PhotoGridPage {
+                width: parent.width;
+                height: parent.height;
+            }
+            if root.selected == 10: OnboardingPage {
+                width: parent.width;
+                height: parent.height;
+            }
+            if root.selected == 11: SearchResultsPage {
+                width: parent.width;
+                height: parent.height;
+            }
+            if root.selected == 12: CheckoutPage {
+                width: parent.width;
+                height: parent.height;
+            }
+            if root.selected == 13: PostDetailPage {
+                width: parent.width;
+                height: parent.height;
+            }
+            if root.selected == 14: MapPage {
+                width: parent.width;
+                height: parent.height;
+            }
+            if root.selected == 15: Toolbox {
                 width: parent.width;
                 height: parent.height;
             }

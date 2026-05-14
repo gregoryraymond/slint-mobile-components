@@ -1,0 +1,388 @@
+// RecipePage
+// =====================================================================
+//
+// Cooking recipe view — NYT Cooking / Allrecipes / Paprika-style.
+// Distinct from `RestaurantMenuPage` (order food) and `MealLogPage`
+// (calorie tracking). Demonstrates:
+//
+//   - Gradient hero with title + chef byline + ratings overlay.
+//   - Quick-stat strip: cook time / servings stepper / difficulty.
+//   - Ingredients checklist where each row leads with a checkbox and
+//     ends with a portion quantity.
+//   - Numbered cook steps with optional inline timer badge for steps
+//     that have a duration.
+//   - Per-serving nutrition footer.
+
+import { Theme, Tone } from "../theme.slint";
+import { Checkbox } from "../checkbox.slint";
+import { Divider } from "../divider.slint";
+import { Stepper } from "../stepper.slint";
+import { MobileButton } from "../button.slint";
+
+// Quick-stat tile (cook time / difficulty / etc).
+component StatTile inherits Rectangle {
+    in property <string> label;
+    in property <string> value;
+    in property <Tone> tone: Tone.default;
+
+    horizontal-stretch: 1;
+    height: 64px;
+    VerticalLayout {
+        spacing: 2px;
+        alignment: center;
+        Text {
+            text: root.label;
+            color: Theme.muted;
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: 0.5px;
+            horizontal-alignment: center;
+        }
+        Text {
+            text: root.value;
+            color:
+                  root.tone == Tone.success ? Theme.accent-success
+                : root.tone == Tone.warning ? Theme.accent-warning
+                : root.tone == Tone.danger  ? Theme.accent-danger
+                : root.tone == Tone.info    ? Theme.accent-info
+                : Theme.on-surface;
+            font-size: Theme.font-size-body;
+            font-weight: 700;
+            horizontal-alignment: center;
+        }
+    }
+}
+
+// One ingredient row.
+component IngredientRow inherits Rectangle {
+    in property <string> name;
+    in property <string> qty;
+    in-out property <bool> checked: false;
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+        VerticalLayout {
+            alignment: center;
+            Checkbox {
+                checked <=> root.checked;
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            Text {
+                text: root.name;
+                color: root.checked ? Theme.muted : Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 500;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.qty;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+                font-weight: 700;
+            }
+        }
+    }
+}
+
+// One cook-step row.
+component StepRow inherits Rectangle {
+    in property <int> index;
+    in property <string> body;
+    in property <string> timer-label;
+
+    horizontal-stretch: 1;
+    min-height: 72px;
+    HorizontalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+        VerticalLayout {
+            alignment: start;
+            padding-top: 2px;
+            Rectangle {
+                width: 32px;
+                height: 32px;
+                border-radius: 16px;
+                background: Theme.accent-info;
+                Text {
+                    text: root.index;
+                    color: Theme.on-primary;
+                    font-size: 14px;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            spacing: Theme.spacing-xs;
+            Text {
+                text: root.body;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                wrap: word-wrap;
+            }
+            if root.timer-label != "": HorizontalLayout {
+                alignment: start;
+                Rectangle {
+                    width: timer-text.preferred-width + 28px;
+                    height: 26px;
+                    border-radius: 13px;
+                    background: Theme.accent-warning;
+                    HorizontalLayout {
+                        spacing: 4px;
+                        padding-left: 8px;
+                        padding-right: 8px;
+                        alignment: center;
+                        VerticalLayout {
+                            alignment: center;
+                            Image {
+                                width: 12px;
+                                height: 12px;
+                                source: @image-url("../icons/spinner-arc.svg");
+                                colorize: Theme.on-primary;
+                                image-fit: contain;
+                            }
+                        }
+                        timer-text := Text {
+                            text: root.timer-label;
+                            color: Theme.on-primary;
+                            font-size: 10px;
+                            font-weight: 800;
+                            letter-spacing: 0.3px;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component RecipePage inherits Rectangle {
+    in property <string> recipe: "Caramelised lemon tart";
+    in property <string> chef: "by Tartine Bakery · 4.8 ★ (1,284)";
+    in-out property <int> servings: 8;
+    callback back-pressed();
+    callback share-pressed();
+    callback save-pressed();
+    callback cook-mode-pressed();
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        // Gradient hero.
+        Rectangle {
+            height: 200px;
+            background: @linear-gradient(135deg, #f59e0b 0%, #92400e 100%);
+            clip: true;
+
+            // Translucent back / heart row.
+            HorizontalLayout {
+                x: 0;
+                y: 0;
+                width: parent.width;
+                height: 64px;
+                padding: Theme.spacing-md;
+                spacing: Theme.spacing-sm;
+                alignment: stretch;
+                Rectangle {
+                    width: 36px;
+                    height: 36px;
+                    border-radius: self.width / 2;
+                    background: #00000066;
+                    Image {
+                        width: 18px;
+                        height: 18px;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        source: @image-url("../icons/arrow-left.svg");
+                        colorize: #ffffff;
+                        image-fit: contain;
+                    }
+                    TouchArea {
+                        clicked => { root.back-pressed(); }
+                    }
+                }
+                Rectangle { horizontal-stretch: 1; }
+                Rectangle {
+                    width: 36px;
+                    height: 36px;
+                    border-radius: self.width / 2;
+                    background: #00000066;
+                    Image {
+                        width: 18px;
+                        height: 18px;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        source: @image-url("../icons/heart.svg");
+                        colorize: #ffffff;
+                        image-fit: contain;
+                    }
+                    TouchArea {
+                        clicked => { root.save-pressed(); }
+                    }
+                }
+            }
+
+            // Title bottom-left.
+            VerticalLayout {
+                x: Theme.spacing-md;
+                y: parent.height - 84px;
+                width: parent.width - 2 * Theme.spacing-md;
+                spacing: 2px;
+                Text {
+                    text: root.recipe;
+                    color: #ffffff;
+                    font-size: Theme.font-size-headline;
+                    font-weight: 800;
+                    wrap: word-wrap;
+                }
+                Text {
+                    text: root.chef;
+                    color: #ffffffcc;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 600;
+                }
+            }
+        }
+
+        // Quick stats.
+        Rectangle {
+            background: Theme.surface-1;
+            drop-shadow-blur: Theme.elevation-1-blur;
+            drop-shadow-color: Theme.elevation-1-color;
+            drop-shadow-offset-y: Theme.elevation-1-y;
+            HorizontalLayout {
+                padding: Theme.spacing-sm;
+                alignment: stretch;
+                StatTile { label: "PREP"; value: "20 min"; }
+                Rectangle { width: 1px; background: Theme.outline; }
+                StatTile { label: "COOK"; value: "45 min"; tone: Tone.warning; }
+                Rectangle { width: 1px; background: Theme.outline; }
+                StatTile { label: "TOTAL"; value: "1h 05"; }
+                Rectangle { width: 1px; background: Theme.outline; }
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    alignment: center;
+                    spacing: 4px;
+                    Text {
+                        text: "SERVINGS";
+                        color: Theme.muted;
+                        font-size: 10px;
+                        font-weight: 800;
+                        letter-spacing: 0.5px;
+                        horizontal-alignment: center;
+                    }
+                    HorizontalLayout {
+                        alignment: center;
+                        Stepper {
+                            value <=> root.servings;
+                        }
+                    }
+                }
+            }
+        }
+
+        VerticalLayout {
+            padding: Theme.spacing-md;
+            spacing: Theme.spacing-md;
+            alignment: start;
+
+            // Ingredients.
+            Text {
+                text: "Ingredients";
+                color: Theme.on-background;
+                font-size: Theme.font-size-title;
+                font-weight: 700;
+            }
+            VerticalLayout {
+                spacing: 0;
+                IngredientRow { name: "All-purpose flour"; qty: "1 ¼ cup"; checked: true; }
+                Divider { }
+                IngredientRow { name: "Unsalted butter, cold"; qty: "100 g"; checked: true; }
+                Divider { }
+                IngredientRow { name: "Granulated sugar"; qty: "¾ cup"; }
+                Divider { }
+                IngredientRow { name: "Large eggs"; qty: "4"; }
+                Divider { }
+                IngredientRow { name: "Meyer lemons, zested + juiced"; qty: "6"; }
+                Divider { }
+                IngredientRow { name: "Heavy cream"; qty: "¼ cup"; }
+                Divider { }
+                IngredientRow { name: "Sea salt"; qty: "pinch"; }
+            }
+
+            // Steps.
+            Text {
+                text: "Method";
+                color: Theme.on-background;
+                font-size: Theme.font-size-title;
+                font-weight: 700;
+            }
+            VerticalLayout {
+                spacing: Theme.spacing-sm;
+                StepRow {
+                    index: 1;
+                    body: "Pulse flour, sugar, and salt in a food processor. Add cold butter cubes; pulse until pea-sized.";
+                    timer-label: "";
+                }
+                StepRow {
+                    index: 2;
+                    body: "Drizzle 3 tbsp ice water; pulse until the dough just clumps. Wrap and chill.";
+                    timer-label: "30 MIN CHILL";
+                }
+                StepRow {
+                    index: 3;
+                    body: "Roll dough out, line a 9-inch tart pan, dock with a fork, blind-bake until pale gold.";
+                    timer-label: "18 MIN @ 175°C";
+                }
+                StepRow {
+                    index: 4;
+                    body: "Whisk eggs, sugar, lemon zest + juice, cream, and salt. Pour into the warm shell.";
+                    timer-label: "";
+                }
+                StepRow {
+                    index: 5;
+                    body: "Bake until just set with a slight wobble. Cool, dust with sugar, torch the top.";
+                    timer-label: "27 MIN @ 165°C";
+                }
+            }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+
+        // Sticky cook-mode CTA.
+        Rectangle {
+            background: Theme.surface-1;
+            drop-shadow-blur: Theme.elevation-2-blur;
+            drop-shadow-color: Theme.elevation-2-color;
+            drop-shadow-offset-y: -4px;
+            height: 80px;
+            HorizontalLayout {
+                padding: Theme.spacing-md;
+                MobileButton {
+                    text: "Start cook mode · keep screen on";
+                    tone: Tone.warning;
+                    max-height: 48px;
+                    clicked => { root.cook-mode-pressed(); }
+                }
+            }
+        }
+    }
+}

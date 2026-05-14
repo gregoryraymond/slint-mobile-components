@@ -1,0 +1,360 @@
+// VotingBallotPage
+// =====================================================================
+//
+// Multi-question voting ballot — civic-tech / community-vote / shareholder-
+// proxy-ballot style. Distinct from `PollResultsPage` (results) and
+// `FormWizardPage` (multi-step onboarding). Demonstrates:
+//
+//   - Ballot header card with election name + voter name + ballot ID +
+//     security warning Banner.
+//   - Per-question card: numbered prompt, support text, list of radio-
+//     style options (one selected per question), an explicit "Skip"
+//     row tone-tinted muted.
+//   - 4-pip progress strip + sticky Review-and-submit CTA at bottom.
+
+import { Theme, Tone } from "../theme.slint";
+import { AppBar } from "../app-bar.slint";
+import { Banner } from "../banner.slint";
+import { Divider } from "../divider.slint";
+import { MobileButton, TextButton } from "../button.slint";
+
+// One radio-style option.
+component BallotOption inherits Rectangle {
+    in property <string> label;
+    in property <string> sub;
+    in property <bool> selected: false;
+    in property <Tone> tone: Tone.default;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-action-default => { root.clicked(); }
+
+    horizontal-stretch: 1;
+    min-height: 56px;
+    background: root.selected ? Theme.surface-2 : Theme.surface-1;
+    border-radius: Theme.radius-md;
+    border-width: root.selected ? 1px : 0px;
+    border-color:
+          root.tone == Tone.success ? Theme.accent-success
+        : root.tone == Tone.warning ? Theme.accent-warning
+        : root.tone == Tone.danger  ? Theme.accent-danger
+        : root.tone == Tone.info    ? Theme.accent-info
+        : Theme.primary;
+    drop-shadow-blur: Theme.elevation-1-blur;
+    drop-shadow-color: Theme.elevation-1-color;
+    drop-shadow-offset-y: Theme.elevation-1-y;
+
+    HorizontalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+
+        // Radio dot.
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 22px;
+                height: 22px;
+                border-radius: 11px;
+                border-width: 2px;
+                border-color: root.selected
+                    ? (
+                          root.tone == Tone.success ? Theme.accent-success
+                        : root.tone == Tone.warning ? Theme.accent-warning
+                        : root.tone == Tone.danger  ? Theme.accent-danger
+                        : root.tone == Tone.info    ? Theme.accent-info
+                        : Theme.primary
+                      )
+                    : Theme.outline;
+                background: transparent;
+                if root.selected: Rectangle {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    width: 10px;
+                    height: 10px;
+                    border-radius: 5px;
+                    background:
+                          root.tone == Tone.success ? Theme.accent-success
+                        : root.tone == Tone.warning ? Theme.accent-warning
+                        : root.tone == Tone.danger  ? Theme.accent-danger
+                        : root.tone == Tone.info    ? Theme.accent-info
+                        : Theme.primary;
+                }
+            }
+        }
+
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: root.label;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: root.selected ? 700 : 500;
+            }
+            if root.sub != "": Text {
+                text: root.sub;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+                wrap: word-wrap;
+            }
+        }
+    }
+    TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+// One question card (with @children for options).
+component QuestionCard inherits Rectangle {
+    in property <int> number;
+    in property <string> question;
+    in property <string> support;
+    in property <bool> required: true;
+
+    horizontal-stretch: 1;
+    background: Theme.surface-1;
+    border-radius: Theme.radius-md;
+    drop-shadow-blur: Theme.elevation-1-blur;
+    drop-shadow-color: Theme.elevation-1-color;
+    drop-shadow-offset-y: Theme.elevation-1-y;
+
+    VerticalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-sm;
+
+        HorizontalLayout {
+            spacing: Theme.spacing-sm;
+            alignment: stretch;
+            VerticalLayout {
+                alignment: start;
+                padding-top: 2px;
+                Rectangle {
+                    width: 28px;
+                    height: 28px;
+                    border-radius: 14px;
+                    background: Theme.accent-info;
+                    Text {
+                        text: root.number;
+                        color: Theme.on-primary;
+                        font-size: 13px;
+                        font-weight: 800;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                }
+            }
+            VerticalLayout {
+                horizontal-stretch: 1;
+                spacing: 2px;
+                HorizontalLayout {
+                    spacing: Theme.spacing-xs;
+                    Text {
+                        text: root.question;
+                        color: Theme.on-background;
+                        font-size: Theme.font-size-body-large;
+                        font-weight: 800;
+                        wrap: word-wrap;
+                        horizontal-stretch: 1;
+                    }
+                    if root.required: Rectangle {
+                        width: req-text.preferred-width + 10px;
+                        height: 18px;
+                        border-radius: 4px;
+                        background: Theme.accent-danger;
+                        req-text := Text {
+                            text: "REQUIRED";
+                            color: Theme.on-primary;
+                            font-size: 9px;
+                            font-weight: 800;
+                            letter-spacing: 0.3px;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
+                        }
+                    }
+                }
+                Text {
+                    text: root.support;
+                    color: Theme.muted;
+                    font-size: Theme.font-size-caption;
+                    wrap: word-wrap;
+                }
+            }
+        }
+
+        @children
+    }
+}
+
+// Progress strip — 4 pips.
+component StepStrip inherits Rectangle {
+    in property <int> current: 1;
+    in property <int> total: 4;
+
+    horizontal-stretch: 1;
+    HorizontalLayout {
+        spacing: Theme.spacing-sm;
+        alignment: stretch;
+        for index in root.total : Rectangle {
+            horizontal-stretch: 1;
+            height: 4px;
+            border-radius: 2px;
+            background:
+                  index < root.current ? Theme.accent-success
+                : index == root.current ? Theme.accent-info
+                : Theme.surface-variant;
+        }
+    }
+}
+
+export component VotingBallotPage inherits Rectangle {
+    in property <string> ballot-name: "Patagonia Co-op · Spring 2026 ballot";
+    in property <string> voter-id: "Voter ID · GR-44219 · Ballot 218 of 9,402";
+    in-out property <int> q1-choice: 0;     // 0..3
+    in-out property <int> q2-choice: 1;
+    callback close-pressed();
+    callback option-pressed(int, int);
+    callback skip-pressed(int);
+    callback review-pressed();
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "Ballot · question 1 of 4";
+            leading-icon: @image-url("../icons/close.svg");
+            leading-pressed => { root.close-pressed(); }
+        }
+
+        VerticalLayout {
+            padding: Theme.spacing-md;
+            spacing: Theme.spacing-md;
+            alignment: start;
+
+            // Ballot header card.
+            Rectangle {
+                background: Theme.surface-1;
+                border-radius: Theme.radius-md;
+                drop-shadow-blur: Theme.elevation-1-blur;
+                drop-shadow-color: Theme.elevation-1-color;
+                drop-shadow-offset-y: Theme.elevation-1-y;
+                VerticalLayout {
+                    padding: Theme.spacing-md;
+                    spacing: 2px;
+                    Text {
+                        text: root.ballot-name;
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-body;
+                        font-weight: 700;
+                    }
+                    Text {
+                        text: root.voter-id;
+                        color: Theme.muted;
+                        font-size: 10px;
+                        font-weight: 700;
+                        letter-spacing: 0.3px;
+                    }
+                }
+            }
+
+            Banner {
+                icon: @image-url("../icons/lock.svg");
+                message: "Your vote is anonymous · signed with your wallet. Submissions close Friday 18:00 PT.";
+                tone: Tone.info;
+            }
+
+            StepStrip { current: 1; total: 4; }
+
+            // Question 1.
+            QuestionCard {
+                number: 1;
+                question: "Approve the Spring 2026 product line plan?";
+                support: "Includes the recycled-fleece pivot, three new mid-layer SKUs, and the EU repair-by-default policy.";
+                BallotOption {
+                    label: "Approve as proposed";
+                    sub: "Aligns with the 2025 board recommendation.";
+                    tone: Tone.success;
+                    selected: root.q1-choice == 0;
+                    clicked => { root.option-pressed(1, 0); }
+                }
+                BallotOption {
+                    label: "Approve with amendments";
+                    sub: "Send back for amendments to the EU repair clause.";
+                    tone: Tone.warning;
+                    selected: root.q1-choice == 1;
+                    clicked => { root.option-pressed(1, 1); }
+                }
+                BallotOption {
+                    label: "Reject";
+                    sub: "Reset the plan; new proposal in Q3.";
+                    tone: Tone.danger;
+                    selected: root.q1-choice == 2;
+                    clicked => { root.option-pressed(1, 2); }
+                }
+                BallotOption {
+                    label: "Abstain";
+                    sub: "Won't count for or against.";
+                    selected: root.q1-choice == 3;
+                    clicked => { root.option-pressed(1, 3); }
+                }
+            }
+
+            // Question 2 (peek so the user sees a multi-question pattern).
+            QuestionCard {
+                number: 2;
+                question: "Confirm Léa Bernard for the Sustainability Council?";
+                support: "Three-year seat. Replaces outgoing member Devika Sharma.";
+                required: false;
+                BallotOption {
+                    label: "Confirm";
+                    sub: "Endorse Léa's appointment.";
+                    tone: Tone.success;
+                    selected: root.q2-choice == 0;
+                    clicked => { root.option-pressed(2, 0); }
+                }
+                BallotOption {
+                    label: "Decline";
+                    sub: "Re-open the seat for nominations.";
+                    tone: Tone.danger;
+                    selected: root.q2-choice == 1;
+                    clicked => { root.option-pressed(2, 1); }
+                }
+            }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+
+        // Sticky footer.
+        Rectangle {
+            background: Theme.surface-1;
+            drop-shadow-blur: Theme.elevation-2-blur;
+            drop-shadow-color: Theme.elevation-2-color;
+            drop-shadow-offset-y: -4px;
+            height: 88px;
+            VerticalLayout {
+                padding: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                MobileButton {
+                    text: "Review and submit";
+                    tone: Tone.success;
+                    max-height: 44px;
+                    clicked => { root.review-pressed(); }
+                }
+                HorizontalLayout {
+                    alignment: center;
+                    TextButton {
+                        text: "Save draft and finish later";
+                    }
+                }
+            }
+        }
+    }
+}

@@ -21,9 +21,9 @@ use std::cell::Cell;
 use i_slint_backend_testing::ElementHandle;
 
 use slint_mobile_components::{
-    BehaviorBottomNav, BehaviorButtonClick, BehaviorCheckbox, BehaviorChip,
-    BehaviorListItem, BehaviorSlider, BehaviorSwitchToggle, BehaviorTabBar,
-    BehaviorTextField,
+    BehaviorBottomNav, BehaviorButtonClick, BehaviorCheckbox, BehaviorChip, BehaviorListItem,
+    BehaviorRadio, BehaviorSegmented, BehaviorSlider, BehaviorStepper, BehaviorSwitchToggle,
+    BehaviorTabBar, BehaviorTextField,
 };
 
 // `i_slint_backend_testing::init_no_event_loop` is per-thread (the
@@ -87,7 +87,10 @@ fn mobile_switch_default_action_toggles_state() {
     assert!(scene.get_last_value(), "callback should receive new value");
 
     sw.invoke_accessible_default_action();
-    assert!(!scene.get_checked(), "expected unchecked after second toggle");
+    assert!(
+        !scene.get_checked(),
+        "expected unchecked after second toggle"
+    );
     assert_eq!(scene.get_toggle_count(), 2);
     assert!(!scene.get_last_value());
 }
@@ -105,10 +108,7 @@ fn text_field_advertises_label_and_value() {
         .expect("no element labelled 'Email'");
 
     assert_eq!(field.accessible_label().as_deref(), Some("Email"));
-    assert_eq!(
-        field.accessible_value().as_deref(),
-        Some("you@example.com"),
-    );
+    assert_eq!(field.accessible_value().as_deref(), Some("you@example.com"),);
 }
 
 // ---- BottomNav / IconButton ---------------------------------------------
@@ -225,6 +225,71 @@ fn tab_bar_each_tab_routes_to_its_index() {
     }
 
     assert_eq!(scene.get_tab_change_count(), 3);
+}
+
+// ---- Radio ---------------------------------------------------------------
+
+#[test]
+fn radio_default_action_routes_to_clicked() {
+    ensure_backend();
+    let scene = BehaviorRadio::new().unwrap();
+    assert_eq!(scene.get_choice(), 1);
+
+    let weekly = ElementHandle::find_by_accessible_label(&scene, "Weekly")
+        .next()
+        .expect("no radio labelled 'Weekly'");
+    weekly.invoke_accessible_default_action();
+    assert_eq!(scene.get_choice(), 2);
+
+    let quarterly = ElementHandle::find_by_accessible_label(&scene, "Quarterly")
+        .next()
+        .expect("no radio labelled 'Quarterly'");
+    quarterly.invoke_accessible_default_action();
+    assert_eq!(scene.get_choice(), 0);
+
+    assert_eq!(scene.get_click_count(), 2);
+}
+
+// ---- SegmentedControl ----------------------------------------------------
+
+#[test]
+fn segmented_control_each_option_updates_index() {
+    ensure_backend();
+    let scene = BehaviorSegmented::new().unwrap();
+    assert_eq!(scene.get_segment(), 0);
+
+    for (label, expected) in [("Active", 1), ("Done", 2), ("All", 0)] {
+        let seg = ElementHandle::find_by_accessible_label(&scene, label)
+            .next()
+            .unwrap_or_else(|| panic!("no segment labelled '{label}'"));
+        seg.invoke_accessible_default_action();
+        assert_eq!(scene.get_segment(), expected);
+    }
+    assert_eq!(scene.get_change_count(), 3);
+}
+
+// ---- Stepper -------------------------------------------------------------
+
+#[test]
+fn stepper_increment_and_decrement_via_a11y() {
+    ensure_backend();
+    let scene = BehaviorStepper::new().unwrap();
+    assert_eq!(scene.get_count(), 3);
+
+    let plus = ElementHandle::find_by_accessible_label(&scene, "Increment")
+        .next()
+        .expect("no Increment button");
+    plus.invoke_accessible_default_action();
+    plus.invoke_accessible_default_action();
+    assert_eq!(scene.get_count(), 5);
+
+    let minus = ElementHandle::find_by_accessible_label(&scene, "Decrement")
+        .next()
+        .expect("no Decrement button");
+    minus.invoke_accessible_default_action();
+    assert_eq!(scene.get_count(), 4);
+
+    assert_eq!(scene.get_change_count(), 3);
 }
 
 // ---- ListItem ------------------------------------------------------------

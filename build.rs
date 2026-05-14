@@ -19,8 +19,6 @@ fn main() {
     std::env::set_var("SLINT_EMIT_DEBUG_INFO", "1");
 
     slint_build::compile("ui/gallery.slint").expect("Slint build failed");
-    slint_build::compile("tests/snapshot_scenes.slint")
-        .expect("Snapshot scenes build failed");
-    slint_build::compile("tests/behavior_scenes.slint")
-        .expect("Behavior scenes build failed");
+    slint_build::compile("tests/snapshot_scenes.slint").expect("Snapshot scenes build failed");
+    slint_build::compile("tests/behavior_scenes.slint").expect("Behavior scenes build failed");
 }

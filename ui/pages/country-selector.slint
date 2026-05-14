@@ -1,0 +1,257 @@
+// CountrySelectorPage
+// =====================================================================
+//
+// Country / region picker — the modal you land on when entering a
+// phone number, picking a billing region, or switching app locale.
+// Distinct from `AddressBookPage` (contacts) and `WorldClockPage`
+// (timezones). Demonstrates:
+//
+//   - Search field anchored at the top.
+//   - "Recents" section above the alphabet-grouped main list.
+//   - Each row leads with a 2-letter flag tile (tone-tinted), then
+//     country name, dial code, and a selected check.
+
+import { Theme, Tone } from "../theme.slint";
+import { AppBar } from "../app-bar.slint";
+import { SectionHeader } from "../section-header.slint";
+import { TextField } from "../text-field.slint";
+import { Divider } from "../divider.slint";
+
+// One country row.
+component CountryRow inherits Rectangle {
+    in property <string> code;
+    in property <string> name;
+    in property <string> dial;
+    in property <color> flag-color;
+    in property <bool> selected: false;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: root.name;
+    accessible-action-default => { root.clicked(); }
+
+    horizontal-stretch: 1;
+    min-height: 56px;
+    background:
+          root.selected ? Theme.surface-2
+        : (touch.pressed ? Theme.surface-pressed : transparent);
+    animate background { duration: Theme.motion-fast; }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+
+        // Flag tile — 2-letter abbreviation on a tinted square.
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 32px;
+                height: 22px;
+                border-radius: 4px;
+                background: root.flag-color;
+                Text {
+                    text: root.code;
+                    color: #ffffff;
+                    font-size: 11px;
+                    font-weight: 800;
+                    letter-spacing: 0.5px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+            }
+        }
+
+        // Country name.
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            Text {
+                text: root.name;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: root.selected ? 700 : 500;
+                overflow: elide;
+            }
+        }
+
+        // Dial code.
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.dial;
+                color: Theme.muted;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+                horizontal-alignment: right;
+            }
+        }
+
+        // Selected indicator.
+        VerticalLayout {
+            alignment: center;
+            width: 24px;
+            if root.selected: Image {
+                width: 18px;
+                height: 18px;
+                source: @image-url("../icons/check.svg");
+                colorize: Theme.accent-info;
+                image-fit: contain;
+            }
+        }
+    }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+// Tiny alphabet letter header.
+component LetterHeader inherits Rectangle {
+    in property <string> letter;
+    horizontal-stretch: 1;
+    height: 28px;
+    background: Theme.surface-2;
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.letter;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+                font-weight: 800;
+                letter-spacing: 0.5px;
+            }
+        }
+    }
+}
+
+export component CountrySelectorPage inherits Rectangle {
+    in property <string> active-code: "US";
+    callback close-pressed();
+    callback country-pressed(string);
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "Select country / region";
+            leading-icon: @image-url("../icons/close.svg");
+            leading-pressed => { root.close-pressed(); }
+        }
+
+        VerticalLayout {
+            padding-left: Theme.spacing-md;
+            padding-right: Theme.spacing-md;
+            padding-top: Theme.spacing-sm;
+            padding-bottom: Theme.spacing-sm;
+            TextField {
+                label: "";
+                placeholder: "Search countries…";
+            }
+        }
+
+        SectionHeader { text: "RECENT"; }
+        CountryRow {
+            code: "US";
+            name: "United States";
+            dial: "+1";
+            flag-color: #4f8cff;
+            selected: true;
+            clicked => { root.country-pressed(self.code); }
+        }
+        Divider { }
+        CountryRow {
+            code: "GB";
+            name: "United Kingdom";
+            dial: "+44";
+            flag-color: #1d3a8e;
+            clicked => { root.country-pressed(self.code); }
+        }
+        Divider { }
+        CountryRow {
+            code: "PT";
+            name: "Portugal";
+            dial: "+351";
+            flag-color: #16a34a;
+            clicked => { root.country-pressed(self.code); }
+        }
+
+        LetterHeader { letter: "A"; }
+        CountryRow {
+            code: "AR";
+            name: "Argentina";
+            dial: "+54";
+            flag-color: #5fb6ff;
+            clicked => { root.country-pressed(self.code); }
+        }
+        Divider { }
+        CountryRow {
+            code: "AU";
+            name: "Australia";
+            dial: "+61";
+            flag-color: #1d3a8e;
+            clicked => { root.country-pressed(self.code); }
+        }
+
+        LetterHeader { letter: "B"; }
+        CountryRow {
+            code: "BR";
+            name: "Brazil";
+            dial: "+55";
+            flag-color: #16a34a;
+            clicked => { root.country-pressed(self.code); }
+        }
+
+        LetterHeader { letter: "C"; }
+        CountryRow {
+            code: "CA";
+            name: "Canada";
+            dial: "+1";
+            flag-color: #b91c1c;
+            clicked => { root.country-pressed(self.code); }
+        }
+        Divider { }
+        CountryRow {
+            code: "CL";
+            name: "Chile";
+            dial: "+56";
+            flag-color: #b91c1c;
+            clicked => { root.country-pressed(self.code); }
+        }
+        Divider { }
+        CountryRow {
+            code: "CN";
+            name: "China";
+            dial: "+86";
+            flag-color: #b91c1c;
+            clicked => { root.country-pressed(self.code); }
+        }
+
+        LetterHeader { letter: "F"; }
+        CountryRow {
+            code: "FR";
+            name: "France";
+            dial: "+33";
+            flag-color: #1d3a8e;
+            clicked => { root.country-pressed(self.code); }
+        }
+
+        LetterHeader { letter: "J"; }
+        CountryRow {
+            code: "JP";
+            name: "Japan";
+            dial: "+81";
+            flag-color: #b91c1c;
+            clicked => { root.country-pressed(self.code); }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+    }
+}

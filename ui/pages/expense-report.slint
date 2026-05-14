@@ -1,0 +1,352 @@
+// ExpenseReportPage
+// =====================================================================
+//
+// Categorised expense breakdown — the YNAB / Copilot / Monarch "where
+// did the money go this month" screen. Distinct from `WalletPage`
+// (chronological transactions) and `SubscriptionsPage` (recurring
+// only). Demonstrates:
+//
+//   - Total-spent hero at the top + delta against the prior period.
+//   - Period chip row (May / Apr / Mar / YTD).
+//   - Stacked horizontal "spending bar" showing the proportional
+//     breakdown across categories — each band tone-tinted.
+//   - Category cards: tone-tinted icon disc + name + sum + percentage
+//     + share bar at the bottom. Expanding one card shows its top
+//     merchants (rendered always-expanded for the most-spent category
+//     so the snapshot includes them).
+
+import { Theme, Tone } from "../theme.slint";
+import { AppBar } from "../app-bar.slint";
+import { SectionHeader } from "../section-header.slint";
+import { Chip } from "../chip.slint";
+import { Divider } from "../divider.slint";
+
+// One band in the stacked spend bar.
+component SpendBand inherits Rectangle {
+    in property <float> fraction;
+    in property <color> fill;
+
+    horizontal-stretch: root.fraction * 1000;
+    height: 12px;
+    background: root.fill;
+}
+
+// One category card with its own embedded share bar.
+component CategoryCard inherits Rectangle {
+    in property <image> icon;
+    in property <string> name;
+    in property <string> sum;
+    in property <string> pct;
+    in property <float> share;
+    in property <Tone> tone: Tone.default;
+
+    horizontal-stretch: 1;
+    background: Theme.surface-1;
+    border-radius: Theme.radius-md;
+    drop-shadow-blur: Theme.elevation-1-blur;
+    drop-shadow-color: Theme.elevation-1-color;
+    drop-shadow-offset-y: Theme.elevation-1-y;
+
+    VerticalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-sm;
+
+        HorizontalLayout {
+            spacing: Theme.spacing-md;
+            alignment: stretch;
+            VerticalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 36px;
+                    height: 36px;
+                    border-radius: 8px;
+                    background:
+                          root.tone == Tone.success ? Theme.accent-success
+                        : root.tone == Tone.warning ? Theme.accent-warning
+                        : root.tone == Tone.danger  ? Theme.accent-danger
+                        : root.tone == Tone.info    ? Theme.accent-info
+                        : Theme.primary;
+                    Image {
+                        width: 18px;
+                        height: 18px;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        source: root.icon;
+                        colorize: Theme.on-primary;
+                        image-fit: contain;
+                    }
+                }
+            }
+            VerticalLayout {
+                horizontal-stretch: 1;
+                alignment: center;
+                spacing: 2px;
+                Text {
+                    text: root.name;
+                    color: Theme.on-surface;
+                    font-size: Theme.font-size-body;
+                    font-weight: 700;
+                }
+                Text {
+                    text: root.pct + " of spend";
+                    color: Theme.muted;
+                    font-size: Theme.font-size-caption;
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                Text {
+                    text: root.sum;
+                    color: Theme.on-surface;
+                    font-size: Theme.font-size-body-large;
+                    font-weight: 700;
+                    horizontal-alignment: right;
+                }
+            }
+        }
+
+        // Share bar inside the card.
+        Rectangle {
+            height: 6px;
+            background: Theme.surface-variant;
+            border-radius: 3px;
+            Rectangle {
+                x: 0;
+                y: 0;
+                width: parent.width * root.share;
+                height: parent.height;
+                background:
+                      root.tone == Tone.success ? Theme.accent-success
+                    : root.tone == Tone.warning ? Theme.accent-warning
+                    : root.tone == Tone.danger  ? Theme.accent-danger
+                    : root.tone == Tone.info    ? Theme.accent-info
+                    : Theme.primary;
+                border-radius: 3px;
+            }
+        }
+
+        @children
+    }
+}
+
+// One merchant row inside an expanded card.
+component MerchantRow inherits Rectangle {
+    in property <string> merchant;
+    in property <string> count;
+    in property <string> amount;
+
+    horizontal-stretch: 1;
+    height: 36px;
+    HorizontalLayout {
+        spacing: Theme.spacing-sm;
+        alignment: stretch;
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            Text {
+                text: root.merchant;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-caption;
+                font-weight: 500;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.count;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+                font-weight: 500;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.amount;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+                font-weight: 700;
+                horizontal-alignment: right;
+            }
+        }
+    }
+}
+
+export component ExpenseReportPage inherits Rectangle {
+    in property <string> total: "$3,142.88";
+    in property <string> delta: "+$418 vs April · 15% over budget";
+    callback back-pressed();
+    callback export-pressed();
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "Expenses";
+            leading-icon: @image-url("../icons/arrow-left.svg");
+            trailing-icon: @image-url("../icons/send.svg");
+            leading-pressed => { root.back-pressed(); }
+            trailing-pressed => { root.export-pressed(); }
+        }
+
+        VerticalLayout {
+            padding-top: Theme.spacing-md;
+            padding-bottom: Theme.spacing-sm;
+            spacing: 2px;
+            HorizontalLayout {
+                alignment: center;
+                Text {
+                    text: "MAY · TOTAL SPEND";
+                    color: Theme.muted;
+                    font-size: 10px;
+                    font-weight: 800;
+                    letter-spacing: 0.5px;
+                }
+            }
+            HorizontalLayout {
+                alignment: center;
+                Text {
+                    text: root.total;
+                    color: Theme.on-background;
+                    font-size: 48px;
+                    font-weight: 300;
+                }
+            }
+            HorizontalLayout {
+                alignment: center;
+                Text {
+                    text: root.delta;
+                    color: Theme.accent-warning;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 600;
+                }
+            }
+        }
+
+        // Period chip row.
+        HorizontalLayout {
+            padding-left: Theme.spacing-md;
+            padding-right: Theme.spacing-md;
+            padding-bottom: Theme.spacing-sm;
+            spacing: Theme.spacing-sm;
+            Chip { label: "May"; selected: true; }
+            Chip { label: "Apr"; }
+            Chip { label: "Mar"; }
+            Chip { label: "YTD"; }
+        }
+
+        // Stacked spend bar.
+        VerticalLayout {
+            padding-left: Theme.spacing-md;
+            padding-right: Theme.spacing-md;
+            padding-bottom: Theme.spacing-md;
+            spacing: 4px;
+            Rectangle {
+                height: 12px;
+                border-radius: 6px;
+                clip: true;
+                HorizontalLayout {
+                    spacing: 0;
+                    SpendBand { fraction: 0.28; fill: Theme.accent-info; }
+                    SpendBand { fraction: 0.22; fill: Theme.accent-warning; }
+                    SpendBand { fraction: 0.18; fill: Theme.accent-success; }
+                    SpendBand { fraction: 0.14; fill: Theme.accent-danger; }
+                    SpendBand { fraction: 0.10; fill: Theme.primary; }
+                    SpendBand { fraction: 0.08; fill: Theme.muted; }
+                }
+            }
+            HorizontalLayout {
+                Text {
+                    text: "← Higher · Housing 28%";
+                    color: Theme.muted;
+                    font-size: 10px;
+                    font-weight: 600;
+                    horizontal-stretch: 1;
+                }
+                Text {
+                    text: "Other 8% →";
+                    color: Theme.muted;
+                    font-size: 10px;
+                    font-weight: 600;
+                }
+            }
+        }
+
+        SectionHeader { text: "BY CATEGORY"; }
+
+        // Per-category cards.
+        VerticalLayout {
+            padding: Theme.spacing-md;
+            spacing: Theme.spacing-sm;
+
+            CategoryCard {
+                icon: @image-url("../icons/home.svg");
+                name: "Housing";
+                sum: "$880.00";
+                pct: "28%";
+                share: 0.28;
+                tone: Tone.info;
+                MerchantRow {
+                    merchant: "Rent · Hayes Valley apt";
+                    count: "1 charge";
+                    amount: "$820.00";
+                }
+                MerchantRow {
+                    merchant: "PG&E";
+                    count: "1 charge";
+                    amount: "$60.00";
+                }
+            }
+            CategoryCard {
+                icon: @image-url("../icons/heart.svg");
+                name: "Food & drink";
+                sum: "$692.43";
+                pct: "22%";
+                share: 0.22;
+                tone: Tone.warning;
+                MerchantRow {
+                    merchant: "Whole Foods Market";
+                    count: "4 charges";
+                    amount: "$284.10";
+                }
+                MerchantRow {
+                    merchant: "Blue Bottle Coffee";
+                    count: "11 charges";
+                    amount: "$72.80";
+                }
+                MerchantRow {
+                    merchant: "Restaurants (8)";
+                    count: "8 charges";
+                    amount: "$335.53";
+                }
+            }
+            CategoryCard {
+                icon: @image-url("../icons/queue.svg");
+                name: "Shopping";
+                sum: "$565.40";
+                pct: "18%";
+                share: 0.18;
+                tone: Tone.success;
+            }
+            CategoryCard {
+                icon: @image-url("../icons/pin.svg");
+                name: "Transport";
+                sum: "$440.10";
+                pct: "14%";
+                share: 0.14;
+                tone: Tone.danger;
+            }
+            CategoryCard {
+                icon: @image-url("../icons/star.svg");
+                name: "Subscriptions";
+                sum: "$314.00";
+                pct: "10%";
+                share: 0.10;
+            }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+    }
+}

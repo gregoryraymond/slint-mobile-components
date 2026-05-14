@@ -9,7 +9,7 @@
 // All three honour the 48dp Material touch-target floor (FAB is 56dp by
 // convention, which exceeds it).
 
-import { Theme } from "theme.slint";
+import { Theme, Tone } from "theme.slint";
 
 // MobileButton
 // ---------------------------------------------------------------------
@@ -29,6 +29,7 @@ export component MobileButton inherits Rectangle {
     in property <string> text;
     in property <bool> enabled: true;
     in property <bool> primary: true;
+    in property <Tone> tone: Tone.default;
     callback clicked();
 
     accessible-role: button;
@@ -36,14 +37,30 @@ export component MobileButton inherits Rectangle {
     accessible-enabled: root.enabled;
     accessible-action-default => { root.clicked(); }
 
+    // Resolved tone fill — when `tone` is `default`, the brand
+    // `primary` colour drives; status tones pull the matching accent.
+    property <color> tone-fill:
+          root.tone == Tone.success ? Theme.accent-success
+        : root.tone == Tone.warning ? Theme.accent-warning
+        : root.tone == Tone.danger  ? Theme.accent-danger
+        : root.tone == Tone.info    ? Theme.accent-info
+        : Theme.primary;
+
     min-height: Theme.touch-target;
     horizontal-stretch: 1;
     border-radius: Theme.radius-md;
+    // Primary variant fills with `tone-fill`; pressed state shifts to a
+    // pre-defined `primary-pressed` for the default tone, and to a
+    // darker derivation of the accent colour otherwise (we don't ship
+    // dedicated `accent-*-pressed` tokens; `.darker(0.15)` is the
+    // documented Slint API for runtime tonal shifts).
     background: root.primary
-        ? (touch.pressed ? Theme.primary-pressed : Theme.primary)
-        : (touch.pressed ? Theme.surface-pressed : Theme.surface);
-    border-width: root.primary ? 0px : 1px;
-    border-color: Theme.outline;
+        ? (
+            root.tone == Tone.default
+                ? (touch.pressed ? Theme.primary-pressed : Theme.primary)
+                : (touch.pressed ? tone-fill.darker(0.15) : tone-fill)
+          )
+        : (touch.pressed ? Theme.surface-pressed : Theme.surface-1);
     opacity: root.enabled ? 1.0 : 0.5;
 
     animate background { duration: Theme.motion-fast; }
@@ -54,7 +71,9 @@ export component MobileButton inherits Rectangle {
         width: parent.width - 2 * Theme.spacing-md;
         height: parent.height;
         text: root.text;
-        color: root.primary ? Theme.on-primary : Theme.on-surface;
+        color: root.primary
+            ? Theme.on-primary
+            : (root.tone == Tone.default ? Theme.on-surface : tone-fill);
         font-size: Theme.font-size-body-large;
         font-weight: 600;
         horizontal-alignment: center;
@@ -149,9 +168,12 @@ export component Fab inherits Rectangle {
     height: 56px;
     border-radius: self.width / 2;
     background: touch.pressed ? Theme.primary-pressed : Theme.primary;
-    drop-shadow-blur: 12px;
-    drop-shadow-color: #00000060;
-    drop-shadow-offset-y: 4px;
+    // Elevation tier 2 — FAB floats just above page content (Material's
+    // "raised" tier). The library's tier-3 is reserved for transient
+    // overlays (Snackbar, Dialog) that visually outrank a FAB.
+    drop-shadow-blur: Theme.elevation-2-blur;
+    drop-shadow-color: Theme.elevation-2-color;
+    drop-shadow-offset-y: Theme.elevation-2-y;
     opacity: root.enabled ? 1.0 : 0.5;
 
     animate background { duration: Theme.motion-fast; }

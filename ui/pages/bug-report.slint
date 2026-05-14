@@ -1,0 +1,354 @@
+// BugReportPage
+// =====================================================================
+//
+// Bug-report submission form — the "Help & feedback → report a bug"
+// surface. Distinct from `WriteReviewPage` (product review) and
+// `HelpCenterPage` (browse FAQs). Demonstrates:
+//
+//   - Severity picker rendered as Radio-style tone-tinted pills (Low /
+//     Medium / High / Blocker).
+//   - Summary single-line field.
+//   - Numbered repro-steps card: each step prefilled with the user's
+//     entry + a small × remove and a leading number disc.
+//   - "Attach screenshots" tile row (one filled + 2 empty add tiles).
+//   - "Include diagnostics" chip strip toggling what's auto-attached
+//     (device info / logs / network trace / app state).
+//   - Sticky Submit CTA at the bottom.
+
+import { Theme, Tone } from "../theme.slint";
+import { AppBar } from "../app-bar.slint";
+import { SectionHeader } from "../section-header.slint";
+import { Chip } from "../chip.slint";
+import { Divider } from "../divider.slint";
+import { TextField } from "../text-field.slint";
+import { MobileButton } from "../button.slint";
+
+// Severity pill — a sized-up Chip-like control with tone fill when
+// selected.
+component SeverityPill inherits Rectangle {
+    in property <string> label;
+    in property <Tone> tone;
+    in property <bool> selected: false;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-action-default => { root.clicked(); }
+
+    horizontal-stretch: 1;
+    height: 56px;
+    background:
+          root.selected
+        ? (
+              root.tone == Tone.success ? Theme.accent-success
+            : root.tone == Tone.warning ? Theme.accent-warning
+            : root.tone == Tone.danger  ? Theme.accent-danger
+            : root.tone == Tone.info    ? Theme.accent-info
+            : Theme.primary
+          )
+        : Theme.surface-1;
+    border-radius: Theme.radius-md;
+    border-width: 1px;
+    border-color:
+          root.selected
+        ? (
+              root.tone == Tone.success ? Theme.accent-success
+            : root.tone == Tone.warning ? Theme.accent-warning
+            : root.tone == Tone.danger  ? Theme.accent-danger
+            : root.tone == Tone.info    ? Theme.accent-info
+            : Theme.primary
+          )
+        : Theme.outline;
+    drop-shadow-blur: Theme.elevation-1-blur;
+    drop-shadow-color: Theme.elevation-1-color;
+    drop-shadow-offset-y: Theme.elevation-1-y;
+
+    VerticalLayout {
+        spacing: 0;
+        alignment: center;
+        Text {
+            text: root.label;
+            color:
+                  root.selected
+                ? Theme.on-primary
+                : Theme.on-surface;
+            font-size: Theme.font-size-body;
+            font-weight: 800;
+            horizontal-alignment: center;
+        }
+    }
+    TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+// One repro-step row.
+component StepRow inherits Rectangle {
+    in property <int> index;
+    in property <string> text;
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    background: Theme.surface-2;
+    border-radius: Theme.radius-sm;
+
+    HorizontalLayout {
+        padding: Theme.spacing-sm;
+        spacing: Theme.spacing-sm;
+        alignment: stretch;
+        VerticalLayout {
+            alignment: start;
+            padding-top: 2px;
+            Rectangle {
+                width: 24px;
+                height: 24px;
+                border-radius: 12px;
+                background: Theme.accent-info;
+                Text {
+                    text: root.index;
+                    color: Theme.on-primary;
+                    font-size: 11px;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            Text {
+                text: root.text;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                wrap: word-wrap;
+            }
+        }
+        VerticalLayout {
+            alignment: start;
+            padding-top: 2px;
+            Image {
+                width: 14px;
+                height: 14px;
+                source: @image-url("../icons/close.svg");
+                colorize: Theme.muted;
+                image-fit: contain;
+            }
+        }
+    }
+}
+
+export component BugReportPage inherits Rectangle {
+    in property <int> severity: 2;     // 0..3 (Low/Med/High/Blocker)
+    in property <string> summary:
+        "Theme switch flashes light-mode for one frame on hot start";
+    callback back-pressed();
+    callback severity-pressed(int);
+    callback add-step-pressed();
+    callback attach-pressed();
+    callback submit-pressed();
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "Report a bug";
+            leading-icon: @image-url("../icons/close.svg");
+            leading-pressed => { root.back-pressed(); }
+        }
+
+        VerticalLayout {
+            padding: Theme.spacing-md;
+            spacing: Theme.spacing-md;
+            alignment: start;
+
+            // Severity picker.
+            Text {
+                text: "Severity";
+                color: Theme.on-background;
+                font-size: Theme.font-size-body;
+                font-weight: 700;
+            }
+            HorizontalLayout {
+                spacing: Theme.spacing-sm;
+                SeverityPill {
+                    label: "Low";
+                    tone: Tone.success;
+                    selected: root.severity == 0;
+                    clicked => { root.severity-pressed(0); }
+                }
+                SeverityPill {
+                    label: "Med";
+                    tone: Tone.warning;
+                    selected: root.severity == 1;
+                    clicked => { root.severity-pressed(1); }
+                }
+                SeverityPill {
+                    label: "High";
+                    tone: Tone.danger;
+                    selected: root.severity == 2;
+                    clicked => { root.severity-pressed(2); }
+                }
+                SeverityPill {
+                    label: "Block";
+                    tone: Tone.info;
+                    selected: root.severity == 3;
+                    clicked => { root.severity-pressed(3); }
+                }
+            }
+
+            // Summary.
+            TextField {
+                label: "Summary";
+                placeholder: "One sentence — what went wrong?";
+                text: root.summary;
+            }
+
+            Divider { }
+
+            // Repro steps.
+            Text {
+                text: "Steps to reproduce";
+                color: Theme.on-background;
+                font-size: Theme.font-size-body;
+                font-weight: 700;
+            }
+            VerticalLayout {
+                spacing: Theme.spacing-xs;
+                StepRow { index: 1; text: "Open the app on Android cold-boot."; }
+                StepRow { index: 2; text: "Sign in (user is already on dark scheme)."; }
+                StepRow {
+                    index: 3;
+                    text: "Notice the first frame of the home screen rendered in light scheme, then snaps to dark.";
+                }
+                Rectangle {
+                    horizontal-stretch: 1;
+                    height: 40px;
+                    border-radius: Theme.radius-sm;
+                    border-width: 1px;
+                    border-color: Theme.outline;
+                    background: transparent;
+                    HorizontalLayout {
+                        alignment: center;
+                        spacing: Theme.spacing-xs;
+                        Image {
+                            width: 14px;
+                            height: 14px;
+                            source: @image-url("../icons/plus.svg");
+                            colorize: Theme.accent-info;
+                            image-fit: contain;
+                            vertical-alignment: center;
+                        }
+                        Text {
+                            text: "Add step";
+                            color: Theme.accent-info;
+                            font-size: Theme.font-size-caption;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                        }
+                    }
+                    TouchArea {
+                        clicked => { root.add-step-pressed(); }
+                    }
+                }
+            }
+
+            Divider { }
+
+            // Screenshots.
+            Text {
+                text: "Screenshots (optional)";
+                color: Theme.on-background;
+                font-size: Theme.font-size-body;
+                font-weight: 700;
+            }
+            HorizontalLayout {
+                spacing: Theme.spacing-sm;
+                Rectangle {
+                    width: 80px;
+                    height: 80px;
+                    border-radius: Theme.radius-sm;
+                    background: @linear-gradient(135deg, #1e3a8a 0%, #0f1d4d 100%);
+                    clip: true;
+                    Rectangle {
+                        x: parent.width - 18px;
+                        y: 2px;
+                        width: 16px;
+                        height: 16px;
+                        border-radius: 8px;
+                        background: #00000099;
+                        Text {
+                            text: "✕";
+                            color: #ffffff;
+                            font-size: 9px;
+                            font-weight: 800;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
+                        }
+                    }
+                }
+                for index in 3 : Rectangle {
+                    width: 80px;
+                    height: 80px;
+                    border-radius: Theme.radius-sm;
+                    background: Theme.surface-variant;
+                    Image {
+                        width: 22px;
+                        height: 22px;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        source: @image-url("../icons/plus.svg");
+                        colorize: Theme.muted;
+                        image-fit: contain;
+                    }
+                    TouchArea {
+                        clicked => { root.attach-pressed(); }
+                    }
+                }
+            }
+
+            Divider { }
+
+            // Diagnostics chip strip.
+            Text {
+                text: "Auto-attach";
+                color: Theme.on-background;
+                font-size: Theme.font-size-body;
+                font-weight: 700;
+            }
+            HorizontalLayout {
+                spacing: Theme.spacing-sm;
+                Chip { label: "Device info"; selected: true; }
+                Chip { label: "Crash logs"; selected: true; }
+                Chip { label: "Network trace"; }
+                Chip { label: "App state"; selected: true; }
+            }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+
+        // Sticky submit.
+        Rectangle {
+            background: Theme.surface-1;
+            drop-shadow-blur: Theme.elevation-2-blur;
+            drop-shadow-color: Theme.elevation-2-color;
+            drop-shadow-offset-y: -4px;
+            height: 80px;
+            HorizontalLayout {
+                padding: Theme.spacing-md;
+                MobileButton {
+                    text: "Submit report";
+                    tone: Tone.info;
+                    max-height: 48px;
+                    clicked => { root.submit-pressed(); }
+                }
+            }
+        }
+    }
+}

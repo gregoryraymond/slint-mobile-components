@@ -1,0 +1,256 @@
+// TransitDeparturesPage
+// =====================================================================
+//
+// Next-departures board — Citymapper / Transit / Google Maps "show me
+// when the next train comes" surface. Demonstrates:
+//
+//   - Station header card: name + zone + distance + 1-button save.
+//   - Mode filter chip strip (Bus / Tram / Metro / Train / Ferry).
+//   - Per-departure row: route badge (coloured square with line
+//     number/letter), destination + via, big tone-tinted countdown
+//     in minutes on the right + scheduled time below in smaller text.
+//   - Disruption banner anchored under the chip row when applicable.
+
+import { Theme, Tone } from "../theme.slint";
+import { AppBar } from "../app-bar.slint";
+import { SectionHeader } from "../section-header.slint";
+import { Chip } from "../chip.slint";
+import { Divider } from "../divider.slint";
+import { Banner } from "../banner.slint";
+
+// One departure row.
+component DepartureRow inherits Rectangle {
+    in property <string> route;
+    in property <color> route-color;
+    in property <string> destination;
+    in property <string> via;
+    in property <int> minutes;
+    in property <string> scheduled;
+    in property <bool> realtime: true;
+    in property <bool> arriving-soon: false;
+
+    horizontal-stretch: 1;
+    min-height: 64px;
+
+    HorizontalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+
+        // Route badge.
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 40px;
+                height: 40px;
+                border-radius: Theme.radius-sm;
+                background: root.route-color;
+                Text {
+                    text: root.route;
+                    color: Theme.on-primary;
+                    font-size: Theme.font-size-body-large;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+            }
+        }
+
+        // Destination + via.
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: root.destination;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 700;
+                overflow: elide;
+            }
+            Text {
+                text: root.via;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+            }
+        }
+
+        // Countdown + scheduled time.
+        VerticalLayout {
+            alignment: center;
+            spacing: 0;
+            HorizontalLayout {
+                spacing: 2px;
+                alignment: end;
+                if root.realtime: Rectangle {
+                    width: 8px;
+                    height: 8px;
+                    border-radius: 4px;
+                    background:
+                          root.arriving-soon ? Theme.accent-danger
+                        : Theme.accent-success;
+                    y: 6px;
+                }
+                Text {
+                    text:
+                          root.minutes == 0 ? "now"
+                        : root.minutes + " min";
+                    color:
+                          root.arriving-soon ? Theme.accent-danger
+                        : root.minutes <= 3   ? Theme.accent-warning
+                        : Theme.on-surface;
+                    font-size: 20px;
+                    font-weight: 800;
+                    horizontal-alignment: right;
+                }
+            }
+            HorizontalLayout {
+                alignment: end;
+                Text {
+                    text: root.scheduled;
+                    color: Theme.muted;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 600;
+                }
+            }
+        }
+    }
+}
+
+export component TransitDeparturesPage inherits Rectangle {
+    in property <string> station: "Civic Center / UN Plaza";
+    in property <string> meta: "BART · Zone 1 · 220 m";
+    callback back-pressed();
+    callback save-station-pressed();
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "Departures";
+            leading-icon: @image-url("../icons/arrow-left.svg");
+            trailing-icon: @image-url("../icons/queue.svg");
+            leading-pressed => { root.back-pressed(); }
+            trailing-pressed => { root.save-station-pressed(); }
+        }
+
+        // ----- Station hero -----
+        VerticalLayout {
+            padding: Theme.spacing-md;
+            spacing: 2px;
+            Text {
+                text: root.station;
+                color: Theme.on-background;
+                font-size: Theme.font-size-headline;
+                font-weight: 700;
+                wrap: word-wrap;
+            }
+            Text {
+                text: root.meta;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+                font-weight: 600;
+            }
+        }
+
+        // ----- Mode filter chips -----
+        HorizontalLayout {
+            padding-left: Theme.spacing-md;
+            padding-right: Theme.spacing-md;
+            padding-bottom: Theme.spacing-sm;
+            spacing: Theme.spacing-sm;
+            Chip { label: "All"; selected: true; }
+            Chip { label: "Train"; }
+            Chip { label: "Bus"; }
+            Chip { label: "Tram"; }
+            Chip { label: "Ferry"; }
+        }
+
+        // ----- Disruption banner -----
+        VerticalLayout {
+            padding-left: Theme.spacing-md;
+            padding-right: Theme.spacing-md;
+            padding-bottom: Theme.spacing-md;
+            Banner {
+                icon: @image-url("../icons/bell.svg");
+                message: "Yellow line · single-tracking through Glen Park until 16:00 — expect ~6 min delays.";
+                tone: Tone.warning;
+            }
+        }
+
+        SectionHeader { text: "NORTHBOUND"; }
+        DepartureRow {
+            route: "R";
+            route-color: Theme.accent-danger;
+            destination: "Pittsburg / Bay Point";
+            via: "Yellow line · 10-car";
+            minutes: 1;
+            scheduled: "14:33";
+            realtime: true;
+            arriving-soon: true;
+        }
+        Divider { }
+        DepartureRow {
+            route: "Y";
+            route-color: Theme.accent-warning;
+            destination: "Antioch";
+            via: "Yellow line · 8-car · slight delay";
+            minutes: 4;
+            scheduled: "14:38";
+        }
+        Divider { }
+        DepartureRow {
+            route: "G";
+            route-color: Theme.accent-success;
+            destination: "Berryessa / North San José";
+            via: "Green line · express";
+            minutes: 9;
+            scheduled: "14:42";
+        }
+        Divider { }
+        DepartureRow {
+            route: "B";
+            route-color: Theme.accent-info;
+            destination: "Richmond";
+            via: "Red line";
+            minutes: 12;
+            scheduled: "14:46";
+        }
+
+        SectionHeader { text: "SOUTHBOUND"; }
+        DepartureRow {
+            route: "R";
+            route-color: Theme.accent-danger;
+            destination: "Millbrae";
+            via: "Red line";
+            minutes: 2;
+            scheduled: "14:34";
+            arriving-soon: true;
+        }
+        Divider { }
+        DepartureRow {
+            route: "Y";
+            route-color: Theme.accent-warning;
+            destination: "SFO airport";
+            via: "Yellow line · 6-car";
+            minutes: 6;
+            scheduled: "14:40";
+        }
+        Divider { }
+        DepartureRow {
+            route: "B";
+            route-color: Theme.accent-info;
+            destination: "Berryessa / North San José";
+            via: "Blue line";
+            minutes: 14;
+            scheduled: "14:48";
+            realtime: false;
+        }
+
+        Rectangle { vertical-stretch: 1; }
+    }
+}

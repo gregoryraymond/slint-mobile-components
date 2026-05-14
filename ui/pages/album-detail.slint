@@ -1,0 +1,391 @@
+// AlbumDetailPage
+// =====================================================================
+//
+// Spotify-style album detail — distinct from `PlaylistDetailPage`
+// (user-curated playlist) and `PodcastPage` (single-track playback).
+// An album has a fixed track order, a fixed artist, and a release year
+// that anchors the meta. Demonstrates:
+//
+//   - Cover square hero (square, 200 × 200) on a dark background,
+//     overlaid with translucent back + more buttons.
+//   - Album title + artist + year + tracks-count + duration meta.
+//   - Action row: Heart save / Download / Share + a big primary
+//     play disc anchored to the right.
+//   - Track list — numeric index, title + artist (if "various"), tone-
+//     tinted "EXPLICIT" pill, like glyph, duration.
+
+import { Theme, Tone } from "../theme.slint";
+import { Divider } from "../divider.slint";
+
+// One track row.
+component TrackRow inherits Rectangle {
+    in property <int> position;
+    in property <string> title;
+    in property <string> features;
+    in property <string> duration;
+    in property <bool> explicit: false;
+    in property <bool> liked: false;
+    in property <bool> playing: false;
+
+    horizontal-stretch: 1;
+    min-height: 60px;
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+        VerticalLayout {
+            alignment: center;
+            width: 24px;
+            if root.playing: Image {
+                width: 16px;
+                height: 16px;
+                source: @image-url("../icons/play.svg");
+                colorize: Theme.accent-success;
+                image-fit: contain;
+            }
+            if !root.playing: Text {
+                text: root.position;
+                color: Theme.muted;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+                horizontal-alignment: right;
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            HorizontalLayout {
+                spacing: Theme.spacing-xs;
+                Text {
+                    text: root.title;
+                    color: root.playing ? Theme.accent-success : Theme.on-surface;
+                    font-size: Theme.font-size-body;
+                    font-weight: root.playing ? 700 : 500;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+                if root.explicit: Rectangle {
+                    width: 14px;
+                    height: 14px;
+                    border-radius: 3px;
+                    background: Theme.surface-variant;
+                    Text {
+                        text: "E";
+                        color: Theme.muted;
+                        font-size: 9px;
+                        font-weight: 800;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                }
+            }
+            if root.features != "": Text {
+                text: root.features;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Image {
+                width: 14px;
+                height: 14px;
+                source: @image-url("../icons/heart.svg");
+                colorize: root.liked ? Theme.accent-danger : Theme.muted;
+                image-fit: contain;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.duration;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+                font-weight: 600;
+            }
+        }
+    }
+}
+
+// One small action icon button.
+component MiniAction inherits Rectangle {
+    in property <image> icon;
+    in property <Tone> tone: Tone.default;
+    in property <bool> active: false;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-action-default => { root.clicked(); }
+
+    width: 44px;
+    height: 44px;
+    Image {
+        width: 22px;
+        height: 22px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        source: root.icon;
+        colorize:
+              root.active
+            ? (
+                  root.tone == Tone.success ? Theme.accent-success
+                : root.tone == Tone.warning ? Theme.accent-warning
+                : root.tone == Tone.danger  ? Theme.accent-danger
+                : root.tone == Tone.info    ? Theme.accent-info
+                : Theme.primary
+              )
+            : Theme.muted;
+        image-fit: contain;
+    }
+    TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+export component AlbumDetailPage inherits Rectangle {
+    in property <string> album: "Late Night Tales: Bonobo";
+    in property <string> artist: "Various Artists, curated by Bonobo";
+    in property <string> year: "2014";
+    in property <string> meta: "21 tracks · 1h 18m · LP";
+    in-out property <bool> saved: true;
+    in-out property <bool> downloaded: false;
+    callback back-pressed();
+    callback more-pressed();
+    callback save-pressed();
+    callback download-pressed();
+    callback share-pressed();
+    callback play-pressed();
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        // Gradient hero.
+        Rectangle {
+            height: 320px;
+            background: @linear-gradient(180deg, #4c1d95 0%, #0a0d12 100%);
+            clip: true;
+
+            // Translucent header.
+            HorizontalLayout {
+                x: 0;
+                y: 0;
+                width: parent.width;
+                height: 64px;
+                padding: Theme.spacing-md;
+                alignment: stretch;
+                Rectangle {
+                    width: 36px;
+                    height: 36px;
+                    border-radius: self.width / 2;
+                    background: #00000066;
+                    Image {
+                        width: 18px;
+                        height: 18px;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        source: @image-url("../icons/arrow-left.svg");
+                        colorize: #ffffff;
+                        image-fit: contain;
+                    }
+                    TouchArea {
+                        clicked => { root.back-pressed(); }
+                    }
+                }
+                Rectangle { horizontal-stretch: 1; }
+                Rectangle {
+                    width: 36px;
+                    height: 36px;
+                    border-radius: self.width / 2;
+                    background: #00000066;
+                    Image {
+                        width: 18px;
+                        height: 18px;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        source: @image-url("../icons/more-vertical.svg");
+                        colorize: #ffffff;
+                        image-fit: contain;
+                    }
+                    TouchArea {
+                        clicked => { root.more-pressed(); }
+                    }
+                }
+            }
+
+            // Album cover.
+            Rectangle {
+                x: (parent.width - self.width) / 2;
+                y: 72px;
+                width: 200px;
+                height: 200px;
+                border-radius: Theme.radius-md;
+                background: @linear-gradient(135deg, #f59e0b 0%, #4c1d95 100%);
+                drop-shadow-blur: Theme.elevation-3-blur;
+                drop-shadow-color: Theme.elevation-3-color;
+                drop-shadow-offset-y: Theme.elevation-3-y;
+                Text {
+                    text: "BONOBO";
+                    color: #ffffff;
+                    font-size: 22px;
+                    font-weight: 800;
+                    letter-spacing: 4px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+            }
+        }
+
+        // Title + artist + meta.
+        VerticalLayout {
+            padding-left: Theme.spacing-md;
+            padding-right: Theme.spacing-md;
+            padding-top: Theme.spacing-md;
+            spacing: 2px;
+            HorizontalLayout {
+                alignment: center;
+                Text {
+                    text: root.album;
+                    color: Theme.on-background;
+                    font-size: Theme.font-size-title;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                    wrap: word-wrap;
+                }
+            }
+            HorizontalLayout {
+                alignment: center;
+                Text {
+                    text: root.artist;
+                    color: Theme.accent-info;
+                    font-size: Theme.font-size-body;
+                    font-weight: 700;
+                    horizontal-alignment: center;
+                }
+            }
+            HorizontalLayout {
+                alignment: center;
+                Text {
+                    text: "Album · " + root.year + " · " + root.meta;
+                    color: Theme.muted;
+                    font-size: Theme.font-size-caption;
+                    horizontal-alignment: center;
+                }
+            }
+        }
+
+        // Action row.
+        Rectangle {
+            height: 72px;
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                alignment: stretch;
+                MiniAction {
+                    icon: @image-url("../icons/heart.svg");
+                    tone: Tone.danger;
+                    active: root.saved;
+                    clicked => {
+                        root.saved = !root.saved;
+                        root.save-pressed();
+                    }
+                }
+                MiniAction {
+                    icon: @image-url("../icons/check.svg");
+                    tone: Tone.success;
+                    active: root.downloaded;
+                    clicked => {
+                        root.downloaded = !root.downloaded;
+                        root.download-pressed();
+                    }
+                }
+                MiniAction {
+                    icon: @image-url("../icons/send.svg");
+                    clicked => { root.share-pressed(); }
+                }
+                Rectangle { horizontal-stretch: 1; }
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 56px;
+                        height: 56px;
+                        border-radius: self.width / 2;
+                        background: Theme.accent-success;
+                        drop-shadow-blur: Theme.elevation-2-blur;
+                        drop-shadow-color: Theme.elevation-2-color;
+                        drop-shadow-offset-y: Theme.elevation-2-y;
+                        Image {
+                            width: 22px;
+                            height: 22px;
+                            x: (parent.width - self.width) / 2 + 2px;
+                            y: (parent.height - self.height) / 2;
+                            source: @image-url("../icons/play.svg");
+                            colorize: Theme.on-primary;
+                            image-fit: contain;
+                        }
+                        TouchArea {
+                            clicked => { root.play-pressed(); }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Tracks.
+        TrackRow {
+            position: 1;
+            title: "Sleep On The Wing";
+            features: "Bibio";
+            duration: "3:34";
+            liked: true;
+        }
+        Divider { }
+        TrackRow {
+            position: 2;
+            title: "Nightcall";
+            features: "Kavinsky · feat. Lovefoxxx";
+            duration: "4:18";
+            playing: true;
+        }
+        Divider { }
+        TrackRow {
+            position: 3;
+            title: "Wild Horses";
+            features: "The Rolling Stones";
+            duration: "5:42";
+        }
+        Divider { }
+        TrackRow {
+            position: 4;
+            title: "Ports";
+            features: "Eddie Henderson";
+            duration: "5:01";
+            explicit: true;
+        }
+        Divider { }
+        TrackRow {
+            position: 5;
+            title: "Garden City Movement";
+            features: "Tel Aviv Sessions";
+            duration: "3:58";
+            liked: true;
+        }
+        Divider { }
+        TrackRow {
+            position: 6;
+            title: "An Ending (Ascent)";
+            features: "Brian Eno";
+            duration: "4:55";
+        }
+
+        Rectangle { vertical-stretch: 1; }
+    }
+}

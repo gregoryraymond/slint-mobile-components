@@ -1,0 +1,299 @@
+// CommentsPage
+// =====================================================================
+//
+// Threaded discussion view — the surface you land on after tapping a
+// post on PostDetailPage or the comment-count CTA on a feed item.
+// Demonstrates:
+//
+//   - Recursion-shaped layout via a `depth` property that drives both
+//     the left indent (`16 * depth + 16 px`) and a 2 px vertical "rail"
+//     to the left of every nested reply.
+//   - Author + body + interaction row (Like · Reply · timestamp) per
+//     comment, with the like state tinting the heart icon.
+//   - A sticky composer at the bottom — text field + Send button — that
+//     stays anchored regardless of the comment list's scroll position.
+//
+// Layout
+// ------
+//
+//   AppBar — "Comments (24)" with sort trailing icon
+//   ScrollView containing CommentRow stack (depth 0/1/2 visible)
+//   Sticky composer footer
+
+import { Theme, Tone } from "../theme.slint";
+import { AppBar } from "../app-bar.slint";
+import { Avatar } from "../avatar.slint";
+import { TextField } from "../text-field.slint";
+import { MobileButton } from "../button.slint";
+import { ScrollView } from "std-widgets.slint";
+
+// One comment row. The thread rail on the left only renders when
+// `depth > 0`; depth-0 (top-level) comments don't draw it because the
+// page edge is sufficient.
+component CommentRow inherits Rectangle {
+    in property <string> initials;
+    in property <string> author;
+    in property <string> body;
+    in property <string> when;
+    in property <int> like-count: 0;
+    in-out property <bool> liked: false;
+    in property <int> depth: 0;
+    in property <bool> pinned: false;
+    callback like-pressed();
+    callback reply-pressed();
+
+    horizontal-stretch: 1;
+
+    HorizontalLayout {
+        padding-left: 16px + (root.depth * 16px);
+        padding-right: Theme.spacing-md;
+        padding-top: Theme.spacing-sm;
+        padding-bottom: Theme.spacing-sm;
+        spacing: Theme.spacing-sm;
+        alignment: stretch;
+
+        // Thread rail (vertical 2-px bar). Only on nested rows.
+        if root.depth > 0: Rectangle {
+            width: 2px;
+            background: Theme.outline;
+        }
+
+        // Avatar.
+        VerticalLayout {
+            alignment: start;
+            padding-top: 2px;
+            Avatar {
+                fallback: root.initials;
+                size: root.depth == 0 ? 36px : 28px;
+            }
+        }
+
+        // Comment body.
+        VerticalLayout {
+            horizontal-stretch: 1;
+            spacing: 4px;
+            HorizontalLayout {
+                spacing: Theme.spacing-xs;
+                Text {
+                    text: root.author;
+                    color: Theme.on-surface;
+                    font-size: Theme.font-size-body;
+                    font-weight: 600;
+                }
+                if root.pinned: Rectangle {
+                    width: pin-text.preferred-width + 10px;
+                    height: 16px;
+                    border-radius: 4px;
+                    background: Theme.surface-variant;
+                    pin-text := Text {
+                        text: "PINNED";
+                        color: Theme.muted;
+                        font-size: 9px;
+                        font-weight: 700;
+                        letter-spacing: 0.5px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                }
+                Rectangle { horizontal-stretch: 1; }
+                Text {
+                    text: root.when;
+                    color: Theme.muted;
+                    font-size: Theme.font-size-caption;
+                }
+            }
+            Text {
+                text: root.body;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                wrap: word-wrap;
+            }
+            HorizontalLayout {
+                spacing: Theme.spacing-md;
+                padding-top: 2px;
+                alignment: start;
+
+                // Like target — Rectangle wrapper so the TouchArea fills
+                // the whole hit zone without fighting the HorizontalLayout
+                // for width.
+                Rectangle {
+                    height: 20px;
+                    width: 48px;
+                    HorizontalLayout {
+                        spacing: 4px;
+                        alignment: start;
+                        Image {
+                            width: 14px;
+                            height: 14px;
+                            source: @image-url("../icons/heart.svg");
+                            colorize: root.liked ? Theme.accent-danger : Theme.muted;
+                            image-fit: contain;
+                            vertical-alignment: center;
+                        }
+                        Text {
+                            text: root.like-count + (root.liked ? 1 : 0);
+                            color: root.liked ? Theme.accent-danger : Theme.muted;
+                            font-size: Theme.font-size-caption;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                        }
+                    }
+                    TouchArea {
+                        clicked => {
+                            root.liked = !root.liked;
+                            root.like-pressed();
+                        }
+                    }
+                }
+
+                // Reply target — same wrapper pattern.
+                Rectangle {
+                    height: 20px;
+                    width: 48px;
+                    Text {
+                        text: "Reply";
+                        color: Theme.muted;
+                        font-size: Theme.font-size-caption;
+                        font-weight: 600;
+                        horizontal-alignment: left;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                    TouchArea {
+                        clicked => { root.reply-pressed(); }
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component CommentsPage inherits Rectangle {
+    in property <int> comment-count: 24;
+    callback back-pressed();
+    callback sort-pressed();
+    callback send-pressed(string);
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "Comments · " + root.comment-count;
+            leading-icon: @image-url("../icons/arrow-left.svg");
+            trailing-icon: @image-url("../icons/more-vertical.svg");
+            leading-pressed => { root.back-pressed(); }
+            trailing-pressed => { root.sort-pressed(); }
+        }
+
+        ScrollView {
+            horizontal-stretch: 1;
+            vertical-stretch: 1;
+            viewport-width: 412px;
+            viewport-height: 1100px;
+            VerticalLayout {
+                spacing: 0;
+                CommentRow {
+                    initials: "AR";
+                    author: "Anika Ravi";
+                    body: "This is the best deep-dive on the Slint Android backend I've seen. The bit about cdylib event loop integration finally clicked for me.";
+                    when: "2h";
+                    like-count: 18;
+                    pinned: true;
+                    depth: 0;
+                }
+                CommentRow {
+                    initials: "DV";
+                    author: "Devika Sharma";
+                    body: "Strong agree on the cdylib bit — we hit exactly that gotcha in our internal port last quarter.";
+                    when: "1h";
+                    like-count: 6;
+                    depth: 1;
+                }
+                CommentRow {
+                    initials: "GR";
+                    author: "Greg Raymond";
+                    body: "Did you end up writing it up anywhere? Would love to link the docs from here.";
+                    when: "47m";
+                    like-count: 2;
+                    depth: 2;
+                }
+                CommentRow {
+                    initials: "DV";
+                    author: "Devika Sharma";
+                    body: "Yep — internal Notion for now, will rewrite for the public docs this sprint.";
+                    when: "32m";
+                    like-count: 4;
+                    depth: 2;
+                }
+                CommentRow {
+                    initials: "MK";
+                    author: "Marco Kovač";
+                    body: "Anyone else have the issue where the cargo-apk build pipeline picks up the wrong NDK on Apple Silicon? Workaround?";
+                    when: "1h";
+                    like-count: 9;
+                    depth: 0;
+                }
+                CommentRow {
+                    initials: "LE";
+                    author: "Léa Bernard";
+                    body: "Pin the NDK version explicitly in Cargo.toml — `ndk = \"=26.1.10909125\"`. Caught us out too.";
+                    when: "55m";
+                    like-count: 11;
+                    liked: true;
+                    depth: 1;
+                }
+                CommentRow {
+                    initials: "PR";
+                    author: "Priya Rao";
+                    body: "Re: live theme switching — does this work with the new Tone enum or only ColorScheme?";
+                    when: "23m";
+                    like-count: 3;
+                    depth: 0;
+                }
+                CommentRow {
+                    initials: "GR";
+                    author: "Greg Raymond";
+                    body: "Both — ColorScheme drives the dark/light switch, Tone drives status-coloured components per-instance. They compose.";
+                    when: "18m";
+                    like-count: 1;
+                    depth: 1;
+                }
+            }
+        }
+
+        // ----- Sticky composer footer -----
+        Rectangle {
+            background: Theme.surface-1;
+            drop-shadow-blur: Theme.elevation-2-blur;
+            drop-shadow-color: Theme.elevation-2-color;
+            drop-shadow-offset-y: -4px;
+            HorizontalLayout {
+                padding: Theme.spacing-sm;
+                spacing: Theme.spacing-sm;
+                alignment: stretch;
+                Avatar {
+                    fallback: "G";
+                    size: 36px;
+                }
+                TextField {
+                    horizontal-stretch: 1;
+                    placeholder: "Add a comment…";
+                }
+                MobileButton {
+                    text: "Send";
+                    tone: Tone.info;
+                    horizontal-stretch: 0;
+                    vertical-stretch: 0;
+                    min-width: 72px;
+                    max-height: 44px;
+                    clicked => { root.send-pressed(""); }
+                }
+            }
+        }
+    }
+}

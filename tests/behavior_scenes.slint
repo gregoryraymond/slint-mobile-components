@@ -20,6 +20,9 @@ import { Chip } from "../ui/chip.slint";
 import { Checkbox } from "../ui/checkbox.slint";
 import { Slider } from "../ui/slider.slint";
 import { TabBar, Tab } from "../ui/tab-bar.slint";
+import { Radio } from "../ui/radio.slint";
+import { SegmentedControl } from "../ui/segmented-control.slint";
+import { Stepper } from "../ui/stepper.slint";
 
 // Clicking a MobileButton fires `clicked` and (optionally) doesn't fire
 // when disabled.
@@ -164,6 +167,55 @@ export component BehaviorTabBar inherits Window {
             active: root.tab-index == 2;
             clicked => { root.tab-index = 2; root.tab-change-count += 1; }
         }
+    }
+}
+
+// Radio — three radios, parent drives selection.
+export component BehaviorRadio inherits Window {
+    in-out property <int> choice: 1;
+    out property <int> click-count: 0;
+
+    VerticalLayout {
+        Radio {
+            label: "Quarterly";
+            selected: root.choice == 0;
+            clicked => { root.choice = 0; root.click-count += 1; }
+        }
+        Radio {
+            label: "Monthly";
+            selected: root.choice == 1;
+            clicked => { root.choice = 1; root.click-count += 1; }
+        }
+        Radio {
+            label: "Weekly";
+            selected: root.choice == 2;
+            clicked => { root.choice = 2; root.click-count += 1; }
+        }
+    }
+}
+
+// SegmentedControl — tapping a segment updates selected-index.
+export component BehaviorSegmented inherits Window {
+    in-out property <int> segment: 0;
+    out property <int> change-count: 0;
+
+    SegmentedControl {
+        options: ["All", "Active", "Done"];
+        selected-index <=> root.segment;
+        changed(i) => { root.change-count += 1; }
+    }
+}
+
+// Stepper — accessibility default actions on the +/- buttons.
+export component BehaviorStepper inherits Window {
+    in-out property <int> count: 3;
+    out property <int> change-count: 0;
+
+    Stepper {
+        value <=> root.count;
+        minimum: 0;
+        maximum: 10;
+        changed(v) => { root.change-count += 1; }
     }
 }
 

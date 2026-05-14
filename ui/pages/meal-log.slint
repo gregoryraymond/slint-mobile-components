@@ -1,0 +1,330 @@
+// MealLogPage
+// =====================================================================
+//
+// Daily calorie + macros tracker — the MyFitnessPal / MacroFactor /
+// Lose It! single-day surface. Demonstrates:
+//
+//   - Big-number "Calories left" hero on the left, three small macro
+//     progress bars (protein / carbs / fat) on the right. The ratio
+//     is a hard requirement for these apps: one giant number, three
+//     supporting bars.
+//   - Grouped meal entries — BREAKFAST / LUNCH / DINNER / SNACKS —
+//     each as a card with: meal heading + sum kcal + list of items
+//     beneath, each item showing portion + kcal on the right.
+//   - Sticky bottom Fab for "Quick add" — pinned to bottom-right.
+
+import { Theme, Tone } from "../theme.slint";
+import { AppBar } from "../app-bar.slint";
+import { Divider } from "../divider.slint";
+import { Fab } from "../button.slint";
+import { ScrollView } from "std-widgets.slint";
+
+// One macro bar — label + numeric + linear progress.
+component MacroBar inherits Rectangle {
+    in property <string> label;
+    in property <string> value;
+    in property <float> progress: 0.5;
+    in property <Tone> tone: Tone.default;
+
+    horizontal-stretch: 1;
+    VerticalLayout {
+        spacing: 4px;
+        HorizontalLayout {
+            Text {
+                text: root.label;
+                color: Theme.muted;
+                font-size: 10px;
+                font-weight: 700;
+                letter-spacing: 0.5px;
+                horizontal-stretch: 1;
+            }
+            Text {
+                text: root.value;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-caption;
+                font-weight: 600;
+            }
+        }
+        Rectangle {
+            height: 4px;
+            background: Theme.surface-variant;
+            border-radius: 2px;
+            Rectangle {
+                x: 0;
+                y: 0;
+                width: parent.width * root.progress;
+                height: parent.height;
+                background:
+                      root.tone == Tone.success ? Theme.accent-success
+                    : root.tone == Tone.warning ? Theme.accent-warning
+                    : root.tone == Tone.danger  ? Theme.accent-danger
+                    : root.tone == Tone.info    ? Theme.accent-info
+                    : Theme.primary;
+                border-radius: 2px;
+            }
+        }
+    }
+}
+
+// One meal-section card.
+component MealCard inherits Rectangle {
+    in property <string> meal-name;
+    in property <string> sum-kcal;
+    in property <int> item-count: 0;
+
+    horizontal-stretch: 1;
+    background: Theme.surface-1;
+    border-radius: Theme.radius-md;
+    drop-shadow-blur: Theme.elevation-1-blur;
+    drop-shadow-color: Theme.elevation-1-color;
+    drop-shadow-offset-y: Theme.elevation-1-y;
+
+    VerticalLayout {
+        spacing: 0;
+        // Header row.
+        HorizontalLayout {
+            padding: Theme.spacing-md;
+            spacing: Theme.spacing-md;
+            alignment: stretch;
+            VerticalLayout {
+                horizontal-stretch: 1;
+                spacing: 2px;
+                Text {
+                    text: root.meal-name;
+                    color: Theme.on-surface;
+                    font-size: Theme.font-size-body-large;
+                    font-weight: 700;
+                }
+                Text {
+                    text: root.item-count + " items";
+                    color: Theme.muted;
+                    font-size: Theme.font-size-caption;
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                Text {
+                    text: root.sum-kcal + " kcal";
+                    color: Theme.on-surface;
+                    font-size: Theme.font-size-body;
+                    font-weight: 700;
+                    horizontal-alignment: right;
+                }
+            }
+        }
+        Divider { }
+        @children
+    }
+}
+
+// One meal item row.
+component MealItem inherits Rectangle {
+    in property <string> name;
+    in property <string> portion;
+    in property <string> kcal;
+
+    min-height: 44px;
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        padding-top: Theme.spacing-xs;
+        padding-bottom: Theme.spacing-xs;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: root.name;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                overflow: elide;
+            }
+            Text {
+                text: root.portion;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.kcal;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+                font-weight: 600;
+                horizontal-alignment: right;
+            }
+        }
+    }
+}
+
+export component MealLogPage inherits Rectangle {
+    in property <string> when: "Today, May 14";
+    in property <string> kcal-remaining: "624";
+    in property <string> kcal-goal: "of 2,100";
+    callback back-pressed();
+    callback prev-day-pressed();
+    callback next-day-pressed();
+    callback add-pressed();
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: root.when;
+            leading-icon: @image-url("../icons/arrow-left.svg");
+            trailing-icon: @image-url("../icons/chevron-right.svg");
+            leading-pressed => { root.back-pressed(); }
+            trailing-pressed => { root.next-day-pressed(); }
+        }
+
+        // ----- Hero row: big calories + macro bars -----
+        Rectangle {
+            background: Theme.surface-1;
+            drop-shadow-blur: Theme.elevation-1-blur;
+            drop-shadow-color: Theme.elevation-1-color;
+            drop-shadow-offset-y: Theme.elevation-1-y;
+            HorizontalLayout {
+                padding: Theme.spacing-md;
+                spacing: Theme.spacing-md;
+                alignment: stretch;
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 2px;
+                    Text {
+                        text: "CALORIES LEFT";
+                        color: Theme.muted;
+                        font-size: 10px;
+                        font-weight: 700;
+                        letter-spacing: 0.5px;
+                    }
+                    Text {
+                        text: root.kcal-remaining;
+                        color: Theme.on-surface;
+                        font-size: 48px;
+                        font-weight: 300;
+                    }
+                    Text {
+                        text: root.kcal-goal;
+                        color: Theme.muted;
+                        font-size: Theme.font-size-caption;
+                    }
+                }
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    alignment: center;
+                    spacing: Theme.spacing-sm;
+                    MacroBar {
+                        label: "PROTEIN";
+                        value: "92 / 130 g";
+                        progress: 0.71;
+                        tone: Tone.success;
+                    }
+                    MacroBar {
+                        label: "CARBS";
+                        value: "184 / 240 g";
+                        progress: 0.77;
+                        tone: Tone.info;
+                    }
+                    MacroBar {
+                        label: "FAT";
+                        value: "48 / 65 g";
+                        progress: 0.74;
+                        tone: Tone.warning;
+                    }
+                }
+            }
+        }
+
+        ScrollView {
+            vertical-stretch: 1;
+            horizontal-stretch: 1;
+            viewport-width: 412px;
+            viewport-height: 1200px;
+            VerticalLayout {
+                padding: Theme.spacing-md;
+                spacing: Theme.spacing-md;
+
+                MealCard {
+                    meal-name: "Breakfast";
+                    sum-kcal: "412";
+                    item-count: 3;
+                    MealItem {
+                        name: "Oatmeal with berries";
+                        portion: "1 bowl · 250 g";
+                        kcal: "245";
+                    }
+                    Divider { }
+                    MealItem {
+                        name: "Black coffee";
+                        portion: "1 cup · 240 ml";
+                        kcal: "2";
+                    }
+                    Divider { }
+                    MealItem {
+                        name: "Greek yogurt";
+                        portion: "1 small tub · 150 g";
+                        kcal: "165";
+                    }
+                }
+
+                MealCard {
+                    meal-name: "Lunch";
+                    sum-kcal: "612";
+                    item-count: 2;
+                    MealItem {
+                        name: "Chicken-rice bowl";
+                        portion: "1 large · 500 g";
+                        kcal: "542";
+                    }
+                    Divider { }
+                    MealItem {
+                        name: "Iced latte";
+                        portion: "1 cup · 350 ml";
+                        kcal: "70";
+                    }
+                }
+
+                MealCard {
+                    meal-name: "Dinner";
+                    sum-kcal: "352";
+                    item-count: 1;
+                    MealItem {
+                        name: "Salmon + quinoa salad";
+                        portion: "1 plate · 380 g";
+                        kcal: "352";
+                    }
+                }
+
+                MealCard {
+                    meal-name: "Snacks";
+                    sum-kcal: "100";
+                    item-count: 2;
+                    MealItem {
+                        name: "Apple";
+                        portion: "1 medium · 180 g";
+                        kcal: "72";
+                    }
+                    Divider { }
+                    MealItem {
+                        name: "Square of dark chocolate";
+                        portion: "1 piece · 10 g";
+                        kcal: "28";
+                    }
+                }
+            }
+        }
+    }
+
+    // FAB anchored bottom-right above any safe area.
+    Fab {
+        x: root.width - self.width - Theme.spacing-md;
+        y: root.height - self.height - Theme.spacing-md;
+        accessible-label: "Quick add food";
+        clicked => { root.add-pressed(); }
+    }
+}

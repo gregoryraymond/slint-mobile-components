@@ -1,0 +1,341 @@
+// StorageManagerPage
+// =====================================================================
+//
+// Device-storage breakdown — iOS "iPhone Storage" / Android "Storage"
+// settings screen. Distinct from `ExpenseReportPage` (money) and
+// `AppPermissionsPage` (per-app). Demonstrates a quantity-breakdown
+// surface:
+//
+//   - Used/free hero: "182.4 GB of 256 GB used".
+//   - Stacked usage bar across categories, each band tone-tinted.
+//   - Category rows: tone-tinted icon disc + name + size + a faint
+//     per-row share bar.
+//   - "Recommendations" section: actionable cards (Offload unused
+//     apps, Review large attachments) with one-tap savings estimates.
+//   - Sticky "Clear cache" CTA.
+
+import { Theme, Tone } from "../theme.slint";
+import { AppBar } from "../app-bar.slint";
+import { SectionHeader } from "../section-header.slint";
+import { Divider } from "../divider.slint";
+import { MobileButton } from "../button.slint";
+
+// One band in the stacked usage bar.
+component UsageBand inherits Rectangle {
+    in property <float> fraction;
+    in property <color> fill;
+    horizontal-stretch: root.fraction * 1000;
+    height: 16px;
+    background: root.fill;
+}
+
+// One storage-category row.
+component CategoryRow inherits Rectangle {
+    in property <image> icon;
+    in property <string> name;
+    in property <string> size;
+    in property <float> share;
+    in property <Tone> tone: Tone.default;
+
+    horizontal-stretch: 1;
+    min-height: 64px;
+    HorizontalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 36px;
+                height: 36px;
+                border-radius: 8px;
+                background:
+                      root.tone == Tone.success ? Theme.accent-success
+                    : root.tone == Tone.warning ? Theme.accent-warning
+                    : root.tone == Tone.danger  ? Theme.accent-danger
+                    : root.tone == Tone.info    ? Theme.accent-info
+                    : Theme.primary;
+                Image {
+                    width: 18px;
+                    height: 18px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: root.icon;
+                    colorize: Theme.on-primary;
+                    image-fit: contain;
+                }
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 4px;
+            HorizontalLayout {
+                Text {
+                    text: root.name;
+                    color: Theme.on-surface;
+                    font-size: Theme.font-size-body;
+                    font-weight: 600;
+                    horizontal-stretch: 1;
+                }
+                Text {
+                    text: root.size;
+                    color: Theme.muted;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                }
+            }
+            Rectangle {
+                height: 4px;
+                background: Theme.surface-variant;
+                border-radius: 2px;
+                Rectangle {
+                    x: 0;
+                    y: 0;
+                    width: parent.width * root.share;
+                    height: parent.height;
+                    background:
+                          root.tone == Tone.success ? Theme.accent-success
+                        : root.tone == Tone.warning ? Theme.accent-warning
+                        : root.tone == Tone.danger  ? Theme.accent-danger
+                        : root.tone == Tone.info    ? Theme.accent-info
+                        : Theme.primary;
+                    border-radius: 2px;
+                }
+            }
+        }
+    }
+}
+
+// One recommendation card.
+component RecommendationCard inherits Rectangle {
+    in property <string> title;
+    in property <string> detail;
+    in property <string> savings;
+    in property <Tone> tone: Tone.info;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: root.title;
+    accessible-action-default => { root.clicked(); }
+
+    horizontal-stretch: 1;
+    background: Theme.surface-1;
+    border-radius: Theme.radius-md;
+    drop-shadow-blur: Theme.elevation-1-blur;
+    drop-shadow-color: Theme.elevation-1-color;
+    drop-shadow-offset-y: Theme.elevation-1-y;
+
+    HorizontalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+        VerticalLayout {
+            horizontal-stretch: 1;
+            spacing: 2px;
+            Text {
+                text: root.title;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 700;
+            }
+            Text {
+                text: root.detail;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+                wrap: word-wrap;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: savings-text.preferred-width + 16px;
+                height: 28px;
+                border-radius: 14px;
+                background:
+                      root.tone == Tone.success ? Theme.accent-success
+                    : root.tone == Tone.warning ? Theme.accent-warning
+                    : Theme.accent-info;
+                savings-text := Text {
+                    text: root.savings;
+                    color: Theme.on-primary;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+            }
+        }
+    }
+    TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+export component StorageManagerPage inherits Rectangle {
+    callback back-pressed();
+    callback recommendation-pressed(string);
+    callback clear-cache-pressed();
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "Storage";
+            leading-icon: @image-url("../icons/arrow-left.svg");
+            leading-pressed => { root.back-pressed(); }
+        }
+
+        // Hero + stacked bar.
+        VerticalLayout {
+            padding: Theme.spacing-md;
+            spacing: Theme.spacing-sm;
+            HorizontalLayout {
+                alignment: center;
+                Text {
+                    text: "182.4 GB";
+                    color: Theme.on-background;
+                    font-size: 48px;
+                    font-weight: 300;
+                }
+            }
+            HorizontalLayout {
+                alignment: center;
+                Text {
+                    text: "of 256 GB used · 73.6 GB free";
+                    color: Theme.muted;
+                    font-size: Theme.font-size-caption;
+                }
+            }
+            Rectangle {
+                height: 16px;
+                border-radius: 8px;
+                clip: true;
+                HorizontalLayout {
+                    spacing: 0;
+                    UsageBand { fraction: 0.34; fill: Theme.accent-info; }
+                    UsageBand { fraction: 0.22; fill: Theme.accent-warning; }
+                    UsageBand { fraction: 0.16; fill: Theme.accent-success; }
+                    UsageBand { fraction: 0.11; fill: Theme.accent-danger; }
+                    UsageBand { fraction: 0.08; fill: Theme.primary; }
+                    UsageBand { fraction: 0.09; fill: Theme.muted; }
+                }
+            }
+            HorizontalLayout {
+                Text {
+                    text: "Photos & video · biggest user";
+                    color: Theme.muted;
+                    font-size: 10px;
+                    font-weight: 700;
+                    horizontal-stretch: 1;
+                }
+                Text {
+                    text: "Free 73.6 GB →";
+                    color: Theme.muted;
+                    font-size: 10px;
+                    font-weight: 700;
+                }
+            }
+        }
+
+        SectionHeader { text: "BY CATEGORY"; }
+        CategoryRow {
+            icon: @image-url("../icons/photo-ocean.svg");
+            name: "Photos & video";
+            size: "62.1 GB";
+            share: 0.34;
+            tone: Tone.info;
+        }
+        Divider { }
+        CategoryRow {
+            icon: @image-url("../icons/queue.svg");
+            name: "Apps";
+            size: "40.2 GB";
+            share: 0.22;
+            tone: Tone.warning;
+        }
+        Divider { }
+        CategoryRow {
+            icon: @image-url("../icons/inbox.svg");
+            name: "Messages & attachments";
+            size: "29.0 GB";
+            share: 0.16;
+            tone: Tone.success;
+        }
+        Divider { }
+        CategoryRow {
+            icon: @image-url("../icons/play.svg");
+            name: "Music & podcasts";
+            size: "20.1 GB";
+            share: 0.11;
+            tone: Tone.danger;
+        }
+        Divider { }
+        CategoryRow {
+            icon: @image-url("../icons/menu.svg");
+            name: "System data";
+            size: "14.6 GB";
+            share: 0.08;
+            tone: Tone.default;
+        }
+        Divider { }
+        CategoryRow {
+            icon: @image-url("../icons/more-vertical.svg");
+            name: "Other";
+            size: "16.4 GB";
+            share: 0.09;
+            tone: Tone.default;
+        }
+
+        SectionHeader { text: "RECOMMENDATIONS"; }
+        VerticalLayout {
+            padding: Theme.spacing-md;
+            spacing: Theme.spacing-sm;
+            RecommendationCard {
+                title: "Offload 12 unused apps";
+                detail: "Apps not opened in 90+ days — data is kept, re-install in a tap.";
+                savings: "8.4 GB";
+                tone: Tone.warning;
+                clicked => { root.recommendation-pressed("offload"); }
+            }
+            RecommendationCard {
+                title: "Review large attachments";
+                detail: "31 files over 25 MB in Messages — mostly videos.";
+                savings: "11.2 GB";
+                tone: Tone.success;
+                clicked => { root.recommendation-pressed("attachments"); }
+            }
+            RecommendationCard {
+                title: "Empty 'Recently Deleted'";
+                detail: "184 photos waiting to be permanently removed.";
+                savings: "3.1 GB";
+                tone: Tone.info;
+                clicked => { root.recommendation-pressed("deleted"); }
+            }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+
+        // Clear cache footer.
+        Rectangle {
+            background: Theme.surface-1;
+            drop-shadow-blur: Theme.elevation-2-blur;
+            drop-shadow-color: Theme.elevation-2-color;
+            drop-shadow-offset-y: -4px;
+            height: 80px;
+            HorizontalLayout {
+                padding: Theme.spacing-md;
+                MobileButton {
+                    text: "Clear cache · frees ~2.8 GB";
+                    tone: Tone.info;
+                    max-height: 48px;
+                    clicked => { root.clear-cache-pressed(); }
+                }
+            }
+        }
+    }
+}

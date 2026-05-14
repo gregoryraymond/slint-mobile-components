@@ -1,0 +1,267 @@
+// QuizPage
+// =====================================================================
+//
+// Multiple-choice quiz question — Duolingo / Kahoot / trivia-app style.
+// Distinct from `PollResultsPage` (community vote results) and
+// `VotingBallotPage` (formal ballot). Demonstrates a graded-answer
+// surface: the user has answered, so the page shows the result state.
+//
+//   - Progress bar + "Question 4 of 10" + a streak / hearts strip.
+//   - Question prompt card.
+//   - 4 answer cards in the *answered* state:
+//       - the correct answer → success-tinted with a ✓,
+//       - the user's wrong pick → danger-tinted with a ✕,
+//       - the rest → neutral.
+//   - Explanation banner for the correct answer.
+//   - Sticky Continue CTA (success-toned since the run continues).
+
+import { Theme, Tone } from "../theme.slint";
+import { AppBar } from "../app-bar.slint";
+import { Banner } from "../banner.slint";
+import { MobileButton } from "../button.slint";
+
+// One answer card.
+//
+// state: 0 neutral, 1 correct, 2 wrong-picked
+component AnswerCard inherits Rectangle {
+    in property <string> letter;
+    in property <string> text;
+    in property <int> state: 0;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-action-default => { root.clicked(); }
+
+    horizontal-stretch: 1;
+    min-height: 60px;
+    background:
+          root.state == 1 ? #22c55e22
+        : root.state == 2 ? #ef444422
+        : Theme.surface-1;
+    border-radius: Theme.radius-md;
+    border-width: root.state == 0 ? 1px : 2px;
+    border-color:
+          root.state == 1 ? Theme.accent-success
+        : root.state == 2 ? Theme.accent-danger
+        : Theme.outline;
+    drop-shadow-blur: Theme.elevation-1-blur;
+    drop-shadow-color: Theme.elevation-1-color;
+    drop-shadow-offset-y: Theme.elevation-1-y;
+
+    HorizontalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+
+        // Letter badge.
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 32px;
+                height: 32px;
+                border-radius: self.width / 2;
+                background:
+                      root.state == 1 ? Theme.accent-success
+                    : root.state == 2 ? Theme.accent-danger
+                    : Theme.surface-variant;
+                Text {
+                    text: root.letter;
+                    color: root.state == 0 ? Theme.on-surface : Theme.on-primary;
+                    font-size: 14px;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+            }
+        }
+
+        // Answer text.
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            Text {
+                text: root.text;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: root.state == 0 ? 500 : 700;
+                wrap: word-wrap;
+            }
+        }
+
+        // Result glyph.
+        VerticalLayout {
+            alignment: center;
+            width: 24px;
+            if root.state == 1: Image {
+                width: 20px;
+                height: 20px;
+                source: @image-url("../icons/check.svg");
+                colorize: Theme.accent-success;
+                image-fit: contain;
+            }
+            if root.state == 2: Image {
+                width: 18px;
+                height: 18px;
+                source: @image-url("../icons/close.svg");
+                colorize: Theme.accent-danger;
+                image-fit: contain;
+            }
+        }
+    }
+    TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+export component QuizPage inherits Rectangle {
+    in property <int> question-number: 4;
+    in property <int> question-total: 10;
+    in property <float> progress: 0.4;
+    in property <int> hearts: 4;
+    in property <string> question:
+        "Which Slint global drives the light / dark palette across the whole component library?";
+    callback close-pressed();
+    callback answer-pressed(int);
+    callback continue-pressed();
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "Quiz · Slint basics";
+            leading-icon: @image-url("../icons/close.svg");
+            leading-pressed => { root.close-pressed(); }
+        }
+
+        // Progress + hearts strip.
+        VerticalLayout {
+            padding: Theme.spacing-md;
+            spacing: Theme.spacing-sm;
+            HorizontalLayout {
+                spacing: Theme.spacing-md;
+                alignment: stretch;
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    alignment: center;
+                    Rectangle {
+                        height: 8px;
+                        background: Theme.surface-variant;
+                        border-radius: 4px;
+                        Rectangle {
+                            x: 0;
+                            y: 0;
+                            width: parent.width * root.progress;
+                            height: parent.height;
+                            background: Theme.accent-success;
+                            border-radius: 4px;
+                        }
+                    }
+                }
+                // Hearts.
+                HorizontalLayout {
+                    spacing: 2px;
+                    for index in 5 : Image {
+                        width: 16px;
+                        height: 16px;
+                        source: @image-url("../icons/heart.svg");
+                        colorize:
+                              index < root.hearts
+                            ? Theme.accent-danger
+                            : Theme.surface-variant;
+                        image-fit: contain;
+                    }
+                }
+            }
+            Text {
+                text: "Question " + root.question-number + " of " + root.question-total;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+                font-weight: 700;
+            }
+        }
+
+        VerticalLayout {
+            padding-left: Theme.spacing-md;
+            padding-right: Theme.spacing-md;
+            spacing: Theme.spacing-md;
+            alignment: start;
+
+            // Question card.
+            Rectangle {
+                background: Theme.surface-1;
+                border-radius: Theme.radius-md;
+                drop-shadow-blur: Theme.elevation-1-blur;
+                drop-shadow-color: Theme.elevation-1-color;
+                drop-shadow-offset-y: Theme.elevation-1-y;
+                VerticalLayout {
+                    padding: Theme.spacing-md;
+                    Text {
+                        text: root.question;
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-body-large;
+                        font-weight: 700;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+
+            // Answers (answered state — B correct, C the wrong pick).
+            AnswerCard {
+                letter: "A";
+                text: "AppBar";
+                state: 0;
+                clicked => { root.answer-pressed(0); }
+            }
+            AnswerCard {
+                letter: "B";
+                text: "Theme (with ColorScheme)";
+                state: 1;
+                clicked => { root.answer-pressed(1); }
+            }
+            AnswerCard {
+                letter: "C";
+                text: "MobileButton";
+                state: 2;
+                clicked => { root.answer-pressed(2); }
+            }
+            AnswerCard {
+                letter: "D";
+                text: "BottomNav";
+                state: 0;
+                clicked => { root.answer-pressed(3); }
+            }
+
+            // Explanation.
+            Banner {
+                icon: @image-url("../icons/check.svg");
+                message: "Correct answer: Theme. Setting Theme.color-scheme flips every token-driven colour in one binding pass.";
+                tone: Tone.success;
+            }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+
+        // Continue.
+        Rectangle {
+            background: Theme.surface-1;
+            drop-shadow-blur: Theme.elevation-2-blur;
+            drop-shadow-color: Theme.elevation-2-color;
+            drop-shadow-offset-y: -4px;
+            height: 80px;
+            HorizontalLayout {
+                padding: Theme.spacing-md;
+                MobileButton {
+                    text: "Continue";
+                    tone: Tone.success;
+                    max-height: 48px;
+                    clicked => { root.continue-pressed(); }
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,355 @@
+// VideoPlayerPage
+// =====================================================================
+//
+// Full-bleed video surface with overlay transport controls + a metadata
+// block + a horizontal "Up next" rail. Sister surface to PodcastPage:
+// PodcastPage is audio-first (hero square + dominant transport row),
+// VideoPlayerPage is video-first (the video frame IS the hero, and the
+// controls overlay it).
+//
+// Layout
+// ------
+//
+//   ┌───────────────────────────────┐  ← status bar / safe area
+//   │   16:9 video frame (poster)   │
+//   │   ▶  ━━━━━●━━━  12:34 / 48:12 │  overlay controls
+//   ├───────────────────────────────┤
+//   │  Episode title                │
+//   │  Show name · 2 hours ago      │
+//   │  ┃ ♥  Like   ⤴ Share   ⋯ More│
+//   │  Lorem ipsum description …    │
+//   ├───────────────────────────────┤
+//   │  Up next                      │
+//   │  [thumb][thumb][thumb][thumb] │  horizontal rail
+//   └───────────────────────────────┘
+//
+// Controls are drawn ON the video frame using absolute positioning; the
+// content below uses the normal vertical-layout flow.
+
+import { Theme } from "../theme.slint";
+import { IconButton } from "../icon-button.slint";
+import { Slider } from "../slider.slint";
+import { ScrollView } from "std-widgets.slint";
+
+// Small reusable circular icon button — same shape as the one in
+// PodcastPage, but here it overlays the video so the resting state is
+// translucent rather than fully transparent.
+component OverlayCircleButton inherits Rectangle {
+    in property <image> icon;
+    in property <length> size: 48px;
+    in property <length> icon-size: 24px;
+    in property <string> a11y-label;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: root.a11y-label;
+    accessible-action-default => { root.clicked(); }
+
+    width: root.size;
+    height: root.size;
+    border-radius: self.width / 2;
+    background: touch.pressed ? #ffffff44 : #00000066;
+
+    animate background { duration: Theme.motion-fast; }
+
+    Image {
+        width: root.icon-size;
+        height: root.icon-size;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        source: root.icon;
+        colorize: #ffffff;
+        image-fit: contain;
+    }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+// Up-next rail card — small 160 × 96 video thumbnail with title beneath.
+component UpNextCard inherits Rectangle {
+    in property <string> title;
+    in property <string> duration;
+    in property <color> tint: Theme.surface-3;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: root.title;
+    accessible-action-default => { root.clicked(); }
+
+    width: 160px;
+    height: 144px;
+
+    VerticalLayout {
+        spacing: Theme.spacing-xs;
+        // Thumb.
+        Rectangle {
+            height: 96px;
+            background: root.tint;
+            border-radius: Theme.radius-md;
+            clip: true;
+            // Play-glyph overlay (centered).
+            Rectangle {
+                width: 32px;
+                height: 32px;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                border-radius: self.width / 2;
+                background: #00000099;
+                Image {
+                    width: 14px;
+                    height: 14px;
+                    x: (parent.width - self.width) / 2 + 1px;
+                    y: (parent.height - self.height) / 2;
+                    source: @image-url("../icons/play.svg");
+                    colorize: #ffffff;
+                    image-fit: contain;
+                }
+            }
+            // Duration chip bottom-right.
+            Rectangle {
+                width: dur-text.preferred-width + 12px;
+                height: 18px;
+                x: parent.width - self.width - 6px;
+                y: parent.height - self.height - 6px;
+                background: #000000aa;
+                border-radius: 4px;
+                dur-text := Text {
+                    text: root.duration;
+                    color: #ffffff;
+                    font-size: 10px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+            }
+        }
+        Text {
+            text: root.title;
+            color: Theme.on-surface;
+            font-size: Theme.font-size-body;
+            font-weight: 500;
+            overflow: elide;
+            horizontal-stretch: 1;
+            wrap: no-wrap;
+        }
+    }
+
+    TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+export component VideoPlayerPage inherits Rectangle {
+    in property <string> title: "Slint on Android — building from source";
+    in property <string> show-name: "Slint Conf 2026 · 2 hours ago";
+    in property <string> description:
+        "A walk-through of the Slint Android backend, from cargo-apk through the cdylib event loop. Demo includes the new gesture system and live theme switching.";
+    in property <string> current-time: "12:34";
+    in property <string> total-time: "48:12";
+    in-out property <float> progress: 0.26;
+    in-out property <bool> playing: false;
+    in-out property <bool> liked: false;
+    callback back-pressed();
+    callback play-pause-pressed();
+    callback like-toggled();
+    callback share-pressed();
+    callback more-pressed();
+    callback up-next-pressed(string);
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        // ----- Video frame with overlay controls -----
+        Rectangle {
+            // 16:9 of the 412 px mobile target. The page sits inside a
+            // 412×892 mobile window; height is hardcoded since binding
+            // `self.width * 9/16` triggers Slint's binding-loop warning
+            // (see DESIGN.md / podcast.slint for context).
+            height: 232px;
+            background: #0a0d12;
+            clip: true;
+
+            // Poster placeholder — solid colour band so the overlay
+            // chrome reads even without a real frame. Replace with the
+            // current frame in a real consumer.
+            Rectangle {
+                background: @linear-gradient(135deg, #1e2937 0%, #0a0d12 70%);
+                width: parent.width;
+                height: parent.height;
+            }
+
+            // Top-left back button.
+            OverlayCircleButton {
+                x: Theme.spacing-md;
+                y: Theme.spacing-md;
+                size: 40px;
+                icon-size: 20px;
+                icon: @image-url("../icons/arrow-left.svg");
+                a11y-label: "Back";
+                clicked => { root.back-pressed(); }
+            }
+
+            // Top-right more button.
+            OverlayCircleButton {
+                x: parent.width - self.width - Theme.spacing-md;
+                y: Theme.spacing-md;
+                size: 40px;
+                icon-size: 20px;
+                icon: @image-url("../icons/more-vertical.svg");
+                a11y-label: "More";
+                clicked => { root.more-pressed(); }
+            }
+
+            // Center play / pause.
+            OverlayCircleButton {
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                size: 64px;
+                icon-size: 32px;
+                icon: root.playing
+                    ? @image-url("../icons/pause.svg")
+                    : @image-url("../icons/play.svg");
+                a11y-label: root.playing ? "Pause" : "Play";
+                clicked => { root.play-pause-pressed(); }
+            }
+
+            // Bottom scrubber row.
+            Rectangle {
+                x: 0;
+                y: parent.height - self.height;
+                width: parent.width;
+                height: 48px;
+                background: #00000099;
+                HorizontalLayout {
+                    padding: Theme.spacing-sm;
+                    spacing: Theme.spacing-sm;
+                    Text {
+                        text: root.current-time;
+                        color: #ffffff;
+                        font-size: Theme.font-size-caption;
+                        vertical-alignment: center;
+                    }
+                    Slider {
+                        horizontal-stretch: 1;
+                        value <=> root.progress;
+                    }
+                    Text {
+                        text: root.total-time;
+                        color: #ffffff;
+                        font-size: Theme.font-size-caption;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+
+        // ----- Metadata + actions + description -----
+        VerticalLayout {
+            padding: Theme.spacing-md;
+            spacing: Theme.spacing-sm;
+
+            Text {
+                text: root.title;
+                color: Theme.on-background;
+                font-size: Theme.font-size-title;
+                font-weight: 600;
+                wrap: word-wrap;
+            }
+            Text {
+                text: root.show-name;
+                color: Theme.muted;
+                font-size: Theme.font-size-body;
+            }
+
+            HorizontalLayout {
+                spacing: Theme.spacing-sm;
+                padding-top: Theme.spacing-xs;
+                IconButton {
+                    label: "Like";
+                    icon: @image-url("../icons/heart.svg");
+                    active: root.liked;
+                    clicked => {
+                        root.liked = !root.liked;
+                        root.like-toggled();
+                    }
+                }
+                IconButton {
+                    label: "Share";
+                    icon: @image-url("../icons/send.svg");
+                    clicked => { root.share-pressed(); }
+                }
+                IconButton {
+                    label: "Save";
+                    icon: @image-url("../icons/queue.svg");
+                    clicked => { root.more-pressed(); }
+                }
+                Rectangle { horizontal-stretch: 1; }
+            }
+
+            Text {
+                text: root.description;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                wrap: word-wrap;
+            }
+        }
+
+        // ----- Up next rail -----
+        VerticalLayout {
+            padding-left: Theme.spacing-md;
+            padding-right: Theme.spacing-md;
+            padding-top: Theme.spacing-md;
+            padding-bottom: Theme.spacing-md;
+            spacing: Theme.spacing-sm;
+            vertical-stretch: 1;
+
+            Text {
+                text: "Up next";
+                color: Theme.on-background;
+                font-size: Theme.font-size-body-large;
+                font-weight: 600;
+            }
+
+            ScrollView {
+                horizontal-stretch: 1;
+                height: 160px;
+                viewport-width: 4 * 160px + 5 * Theme.spacing-sm;
+                viewport-height: 144px;
+                HorizontalLayout {
+                    spacing: Theme.spacing-sm;
+                    padding-right: Theme.spacing-sm;
+                    UpNextCard {
+                        title: "Rust on iOS — what works";
+                        duration: "32:08";
+                        tint: #1d4e89;
+                        clicked => { root.up-next-pressed(self.title); }
+                    }
+                    UpNextCard {
+                        title: "Cargo-apk deep dive";
+                        duration: "18:42";
+                        tint: #6e3a78;
+                        clicked => { root.up-next-pressed(self.title); }
+                    }
+                    UpNextCard {
+                        title: "Slint backends explained";
+                        duration: "24:55";
+                        tint: #3a6e58;
+                        clicked => { root.up-next-pressed(self.title); }
+                    }
+                    UpNextCard {
+                        title: "Live theme switching demo";
+                        duration: "11:20";
+                        tint: #783a3a;
+                        clicked => { root.up-next-pressed(self.title); }
+                    }
+                }
+            }
+        }
+    }
+}

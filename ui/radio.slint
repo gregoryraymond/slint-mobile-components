@@ -1,0 +1,111 @@
+// Radio
+// =====================================================================
+//
+// Single-choice form control — one radio button. Place several in a
+// VerticalLayout (or HorizontalLayout) and let the parent drive each
+// instance's `selected` from its own state, just like BottomNav's
+// IconButtons. There's no `RadioGroup` wrapper component — Slint's
+// child-iteration ergonomics make the manual parent-driven pattern
+// cleaner than a generic group.
+//
+// Specification
+// -------------
+//
+// Geometry
+//   - 20 × 20 px outer ring, vertically centred in a 48 px (touch-
+//     target) row. Inner dot is 10 × 10 px when selected.
+//   - Tappable area is the full row; the label is part of the tap zone.
+//
+// State
+//   - `selected` (in property bool, default false): parent owns the
+//     state — the radio does NOT toggle itself on tap. Tapping fires
+//     `clicked()`; the parent updates its selection-tracking property
+//     and rebinds `selected` on each radio.
+//   - `enabled` (bool, default true): standard 0.5 opacity + disabled
+//     touch.
+//
+// Style
+//   - Unselected: 2 px `Theme.outline` ring, no inner dot.
+//   - Selected: 2 px `Theme.primary` ring with a 10 × 10 `Theme.primary`
+//     dot inside.
+//   - Inner dot scales in/out over `Theme.motion-fast` when state
+//     changes.
+//
+// Accessibility
+//   - `accessible-role: button` + `accessible-checkable: true` +
+//     `accessible-checked: root.selected`. (Slint's `AccessibleRole`
+//     doesn't currently include a `radio-button` variant; we use
+//     `button` + the checkable/checked pair to convey radio semantics
+//     to AT.)
+//   - `accessible-action-default` fires `clicked()` so the testing
+//     harness can drive selection without coordinate taps.
+
+import { Theme } from "theme.slint";
+
+export component Radio inherits Rectangle {
+    in property <string> label;
+    in property <bool> selected: false;
+    in property <bool> enabled: true;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-checkable: true;
+    accessible-checked: root.selected;
+    accessible-enabled: root.enabled;
+    accessible-action-default => { root.clicked(); }
+
+    min-height: Theme.touch-target;
+    horizontal-stretch: 1;
+    background: touch.pressed ? Theme.surface-pressed : transparent;
+    border-radius: Theme.radius-sm;
+    opacity: root.enabled ? 1.0 : 0.5;
+
+    animate background { duration: Theme.motion-fast; }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: start;
+
+        VerticalLayout {
+            alignment: center;
+            // Outer ring.
+            Rectangle {
+                width: 20px;
+                height: 20px;
+                border-radius: self.width / 2;
+                border-width: 2px;
+                border-color: root.selected ? Theme.primary : Theme.outline;
+
+                animate border-color { duration: Theme.motion-fast; }
+
+                // Inner dot — scales in when selected.
+                Rectangle {
+                    width: root.selected ? 10px : 0px;
+                    height: self.width;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    border-radius: self.width / 2;
+                    background: Theme.primary;
+                    animate width { duration: Theme.motion-fast; easing: ease-out; }
+                }
+            }
+        }
+
+        Text {
+            text: root.label;
+            color: Theme.on-surface;
+            font-size: Theme.font-size-body-large;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+    }
+
+    touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}

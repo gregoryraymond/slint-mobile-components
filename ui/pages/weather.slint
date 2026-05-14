@@ -1,0 +1,346 @@
+// WeatherPage
+// =====================================================================
+//
+// Current conditions hero + horizontal hourly forecast + vertical 7-day
+// forecast. Demonstrates mixed-orientation forecast strips, the giant-
+// numeral typography weather apps favour, and a horizontal ScrollView
+// inside a vertical page (a layout that pairs awkwardly in some
+// frameworks but composes cleanly in Slint).
+//
+// Layout
+// ------
+//
+//   AppBar — location with chevron + refresh trailing
+//   Hero block:
+//     - City
+//     - Big temperature (96 px Light)
+//     - Condition + hi/lo
+//     - Sun-icon (placeholder via spinner-arc.svg)
+//   Horizontal hourly strip (12 entries)
+//   "7-DAY FORECAST" section header
+//   Daily row × 7
+//   Tone bar at the bottom — "Severe weather alert" when applicable
+
+import { Theme, Tone } from "../theme.slint";
+import { AppBar } from "../app-bar.slint";
+import { SectionHeader } from "../section-header.slint";
+import { Divider } from "../divider.slint";
+import { Banner } from "../banner.slint";
+import { ScrollView } from "std-widgets.slint";
+
+// One column in the horizontal hourly strip.
+component HourCell inherits Rectangle {
+    in property <string> when;
+    in property <string> temp;
+    in property <bool> highlight: false;
+
+    width: 56px;
+    height: 96px;
+    background: root.highlight ? Theme.surface-2 : transparent;
+    border-radius: Theme.radius-md;
+
+    VerticalLayout {
+        spacing: Theme.spacing-xs;
+        padding-top: Theme.spacing-sm;
+        padding-bottom: Theme.spacing-sm;
+        alignment: center;
+
+        Text {
+            text: root.when;
+            color: Theme.muted;
+            font-size: Theme.font-size-caption;
+            font-weight: 600;
+            horizontal-alignment: center;
+        }
+        Rectangle {
+            width: 24px;
+            height: 24px;
+            x: (parent.width - self.width) / 2;
+            Image {
+                width: 24px;
+                height: 24px;
+                source: @image-url("../icons/star.svg");
+                colorize: Theme.accent-warning;
+                image-fit: contain;
+            }
+        }
+        Text {
+            text: root.temp;
+            color: Theme.on-surface;
+            font-size: Theme.font-size-body;
+            font-weight: 600;
+            horizontal-alignment: center;
+        }
+    }
+}
+
+// One row in the 7-day forecast list. `low-fill` and `high-fill` drive
+// the position of a hi/lo bar so the user can scan the week's range at
+// a glance (left = cooler, right = hotter, across the global min/max).
+component DayRow inherits Rectangle {
+    in property <string> day;
+    in property <string> low;
+    in property <string> high;
+    in property <float> low-fill: 0.3;
+    in property <float> high-fill: 0.6;
+    in property <Tone> tone: Tone.default;
+
+    min-height: 44px;
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+
+        Text {
+            text: root.day;
+            width: 48px;
+            color: Theme.on-surface;
+            font-size: Theme.font-size-body;
+            font-weight: 500;
+            vertical-alignment: center;
+        }
+        Image {
+            width: 20px;
+            height: 20px;
+            source: @image-url("../icons/star.svg");
+            colorize:
+                  root.tone == Tone.success ? Theme.accent-success
+                : root.tone == Tone.warning ? Theme.accent-warning
+                : root.tone == Tone.danger  ? Theme.accent-danger
+                : root.tone == Tone.info    ? Theme.accent-info
+                : Theme.muted;
+            image-fit: contain;
+            vertical-alignment: center;
+        }
+        Text {
+            text: root.low;
+            width: 36px;
+            color: Theme.muted;
+            font-size: Theme.font-size-body;
+            horizontal-alignment: right;
+            vertical-alignment: center;
+        }
+
+        // Range bar.
+        Rectangle {
+            horizontal-stretch: 1;
+            VerticalLayout {
+                alignment: center;
+                Rectangle {
+                    height: 4px;
+                    background: Theme.surface-variant;
+                    border-radius: 2px;
+                    // Filled segment.
+                    Rectangle {
+                        x: parent.width * root.low-fill;
+                        y: 0;
+                        width: parent.width * (root.high-fill - root.low-fill);
+                        height: parent.height;
+                        background: @linear-gradient(90deg, #4f8cff 0%, #f59e0b 100%);
+                        border-radius: 2px;
+                    }
+                }
+            }
+        }
+
+        Text {
+            text: root.high;
+            width: 36px;
+            color: Theme.on-surface;
+            font-size: Theme.font-size-body;
+            font-weight: 600;
+            horizontal-alignment: right;
+            vertical-alignment: center;
+        }
+    }
+}
+
+export component WeatherPage inherits Rectangle {
+    in property <string> city: "San Francisco";
+    in property <string> temp: "62°";
+    in property <string> condition: "Mostly Sunny";
+    in property <string> hi-lo: "H: 68° · L: 54°";
+    callback back-pressed();
+    callback refresh-pressed();
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: root.city;
+            leading-icon: @image-url("../icons/arrow-left.svg");
+            trailing-icon: @image-url("../icons/chevron-right.svg");
+            leading-pressed => { root.back-pressed(); }
+            trailing-pressed => { root.refresh-pressed(); }
+        }
+
+        // ----- Hero -----
+        VerticalLayout {
+            padding-top: Theme.spacing-lg;
+            padding-bottom: Theme.spacing-lg;
+            spacing: Theme.spacing-xs;
+            alignment: center;
+
+            HorizontalLayout {
+                alignment: center;
+                Image {
+                    width: 64px;
+                    height: 64px;
+                    source: @image-url("../icons/star.svg");
+                    colorize: Theme.accent-warning;
+                    image-fit: contain;
+                }
+            }
+            HorizontalLayout {
+                alignment: center;
+                Text {
+                    text: root.temp;
+                    color: Theme.on-background;
+                    font-size: 96px;
+                    font-weight: 200;
+                    horizontal-alignment: center;
+                }
+            }
+            HorizontalLayout {
+                alignment: center;
+                Text {
+                    text: root.condition;
+                    color: Theme.on-background;
+                    font-size: Theme.font-size-body-large;
+                    font-weight: 500;
+                    horizontal-alignment: center;
+                }
+            }
+            HorizontalLayout {
+                alignment: center;
+                Text {
+                    text: root.hi-lo;
+                    color: Theme.muted;
+                    font-size: Theme.font-size-body;
+                    horizontal-alignment: center;
+                }
+            }
+        }
+
+        // ----- Hourly strip -----
+        VerticalLayout {
+            padding-left: Theme.spacing-md;
+            padding-right: Theme.spacing-md;
+            padding-bottom: Theme.spacing-md;
+            spacing: Theme.spacing-sm;
+
+            Text {
+                text: "Hourly";
+                color: Theme.on-background;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+
+            ScrollView {
+                height: 112px;
+                horizontal-stretch: 1;
+                viewport-width: 12 * 56px + 11 * Theme.spacing-xs + 2 * Theme.spacing-sm;
+                viewport-height: 96px;
+                HorizontalLayout {
+                    spacing: Theme.spacing-xs;
+                    padding-left: Theme.spacing-sm;
+                    padding-right: Theme.spacing-sm;
+                    HourCell { when: "Now";  temp: "62°"; highlight: true; }
+                    HourCell { when: "1PM";  temp: "63°"; }
+                    HourCell { when: "2PM";  temp: "65°"; }
+                    HourCell { when: "3PM";  temp: "66°"; }
+                    HourCell { when: "4PM";  temp: "67°"; }
+                    HourCell { when: "5PM";  temp: "66°"; }
+                    HourCell { when: "6PM";  temp: "64°"; }
+                    HourCell { when: "7PM";  temp: "61°"; }
+                    HourCell { when: "8PM";  temp: "59°"; }
+                    HourCell { when: "9PM";  temp: "57°"; }
+                    HourCell { when: "10PM"; temp: "56°"; }
+                    HourCell { when: "11PM"; temp: "55°"; }
+                }
+            }
+        }
+
+        // ----- 7-day forecast -----
+        SectionHeader { text: "7-DAY FORECAST"; }
+
+        DayRow {
+            day: "Today";
+            low: "54°";
+            high: "68°";
+            low-fill: 0.35;
+            high-fill: 0.68;
+            tone: Tone.warning;
+        }
+        Divider { }
+        DayRow {
+            day: "Wed";
+            low: "53°";
+            high: "70°";
+            low-fill: 0.33;
+            high-fill: 0.72;
+            tone: Tone.warning;
+        }
+        Divider { }
+        DayRow {
+            day: "Thu";
+            low: "52°";
+            high: "67°";
+            low-fill: 0.30;
+            high-fill: 0.65;
+            tone: Tone.default;
+        }
+        Divider { }
+        DayRow {
+            day: "Fri";
+            low: "55°";
+            high: "63°";
+            low-fill: 0.40;
+            high-fill: 0.55;
+            tone: Tone.info;
+        }
+        Divider { }
+        DayRow {
+            day: "Sat";
+            low: "50°";
+            high: "60°";
+            low-fill: 0.25;
+            high-fill: 0.50;
+            tone: Tone.info;
+        }
+        Divider { }
+        DayRow {
+            day: "Sun";
+            low: "48°";
+            high: "58°";
+            low-fill: 0.20;
+            high-fill: 0.45;
+            tone: Tone.info;
+        }
+        Divider { }
+        DayRow {
+            day: "Mon";
+            low: "51°";
+            high: "66°";
+            low-fill: 0.28;
+            high-fill: 0.62;
+            tone: Tone.default;
+        }
+
+        // ----- Trailing alert banner -----
+        VerticalLayout {
+            padding: Theme.spacing-md;
+            Banner {
+                icon: @image-url("../icons/bell.svg");
+                message: "High wind advisory — gusts up to 35 mph through tomorrow morning.";
+                tone: Tone.warning;
+            }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+    }
+}

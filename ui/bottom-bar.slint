@@ -1,0 +1,42 @@
+// BottomBar
+// =====================================================================
+//
+// The pinned-bottom chrome that recurs across `CheckoutPage` (Place
+// order CTA), `ChatPage` (message input row), and any other screen
+// that anchors actions to the bottom of the viewport. Lifted out as
+// a primitive so the surface + upward shadow recipe is set once and
+// callers only think about the inner content.
+//
+// Specification
+// -------------
+//
+// Geometry
+//   - Full layout-cell width (`horizontal-stretch: 1`).
+//   - Height: natural — sized by `@children`. The bar does NOT impose
+//     padding; callers wrap their content in their own
+//     `HorizontalLayout` / `VerticalLayout` with the padding that fits
+//     the screen (Chat uses `spacing-sm` for a compact input row;
+//     Checkout uses `spacing-md` for a generous CTA bar).
+//
+// Style
+//   - Fill: `Theme.surface-1`.
+//   - Shadow: `elevation-1` blur + colour, but `offset-y: -2 px` — the
+//     shadow points UPWARD so the bar appears to float above the
+//     content scrolling beneath it (the opposite of Card / Banner,
+//     which sit on top of the page and shadow downward).
+//
+// Accessibility
+//   - No `accessible-role` — the bar is decorative chrome. Interactive
+//     children (buttons, inputs) carry their own a11y.
+
+import { Theme } from "theme.slint";
+
+export component BottomBar inherits Rectangle {
+    horizontal-stretch: 1;
+    background: Theme.surface-1;
+    drop-shadow-blur: Theme.elevation-1-blur;
+    drop-shadow-color: Theme.elevation-1-color;
+    drop-shadow-offset-y: -2px;
+
+    @children
+}

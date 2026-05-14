@@ -1,83 +1,171 @@
 // Theme
 // =====================================================================
 //
-// Single source of truth for visual constants used across the library.
+// Single source of truth for every visual constant in the library.
 // Every other component imports `Theme` and reads tokens by name —
-// nothing hard-codes a colour, spacing, font size, or duration.
+// nothing hard-codes a colour, padding, font-size, radius, or duration.
+//
+// See `DESIGN.md` at the repo root for the design rationale (Linear +
+// iOS Liquid Glass references, no-borders rule, transparency strategy,
+// elevation system).
 //
 // Specification
 // -------------
 //
 // Type
-//   - Global. Accessible from any `.slint` file in the library and from
-//     consuming code via `ComponentHandle::global::<Theme>()`.
+//   - Global. Accessible from any `.slint` file in the library and
+//     from consuming Rust code via `ComponentHandle::global::<Theme>()`.
 //
-// Properties
-//   - All properties are `in-out`: a consuming app may rebind them at
-//     startup or runtime to switch palettes:
+// Light + dark
+//   - `color-scheme` (in-out `ColorScheme`, default `dark`) drives all
+//     colour-typed `out property` bindings. Setting it from a consuming
+//     app flips the entire library palette in one binding pass:
 //
-//         ui.global::<Theme>().set_primary(slint::Color::from_rgb_u8(
-//             0xff, 0x6b, 0x35,
-//         ));
+//         ui.global::<Theme>().set_color_scheme(ColorScheme::Light);
 //
-// Token groups
-//   - Colour palette (15 tokens): background / surface / surface-variant
-//     / surface-pressed for fills; primary / primary-pressed / on-primary
-//     for the brand control set; on-background / on-surface / muted for
-//     foreground text; outline for hairline dividers; danger / success
-//     for status states.
-//   - Spacing scale (5 tokens, 4–32 px): spacing-xs through spacing-xl.
-//     Use these on layout `padding` and `spacing` properties so vertical
-//     rhythm stays consistent.
-//   - Typography (5 tokens, 12–28 px): font-size-caption / -body /
-//     -body-large / -title / -headline.
-//   - Touch + radii: `touch-target` is 48px — the Material minimum and
-//     the floor every tappable component honours. `radius-sm / -md / -lg`
-//     are 6 / 12 / 20 px.
-//   - Motion: `motion-fast` (120 ms) for tap state transitions,
-//     `motion-base` (200 ms) for switch knobs and layout reflows.
+//   - `primary` and the four `accent-*` slots are `in-out` so consumers
+//     can override individual brand colours after picking a scheme.
 //
-// Defaults form a dark theme aligned with the slint-mobile starter's
-// `#0f1115` background.
+// Surface tiers
+//   - `surface-1` (base — Card, ListItem-on-page)
+//   - `surface-2` (raised — Drawer, Dialog)
+//   - `surface-3` (floating — Snackbar, FAB above scrolled content)
+//   - All three carry subtle alpha so they read as layered over the
+//     parent surface rather than as separate slabs.
+//
+// Elevation
+//   - `elevation-{1,2,3}-{blur,y,color}` — the drop-shadow recipe per
+//     tier. Components compose these into Slint's `drop-shadow-*`
+//     properties.
+//
+// Status accents
+//   - `accent-success`, `accent-warning`, `accent-danger`, `accent-info`
+//     give every component a typed surface for tone-aware variants.
+//
+// Motion / spacing / type / radii unchanged in concept; values stay
+// scheme-agnostic.
+
+export enum ColorScheme {
+    dark,
+    light,
+}
+
+// Status tones shared by every component that wants to convey severity
+// (Buttons, Banner, Snackbar, Dialog, Chip, ...). `default` keeps each
+// component's neutral / brand-coloured rendering; the four status tones
+// map to the matching `Theme.accent-*` colour.
+export enum Tone {
+    default,
+    success,
+    warning,
+    danger,
+    info,
+}
 
 export global Theme {
-    // ---- Color palette --------------------------------------------------
-    in-out property <color> background: #0f1115;
-    in-out property <color> surface: #1a1d24;
-    in-out property <color> surface-variant: #232730;
-    in-out property <color> surface-pressed: #2a2f3a;
-    in-out property <color> primary: #4f8cff;
-    in-out property <color> primary-pressed: #3a72e0;
-    in-out property <color> on-primary: #ffffff;
-    in-out property <color> on-background: #f5f5f7;
-    in-out property <color> on-surface: #e4e6eb;
-    in-out property <color> muted: #9aa0a6;
-    in-out property <color> outline: #2d313a;
-    in-out property <color> danger: #ef4444;
-    in-out property <color> success: #22c55e;
+    // ===== Scheme switch ==================================================
+    in-out property <ColorScheme> color-scheme: ColorScheme.dark;
 
-    // ---- Spacing scale --------------------------------------------------
+    // ===== Surface tiers (colour) ========================================
+    //
+    // Subtle alpha (0xeb = 92 %, 0xe6 = 90 %) gives the layered-but-readable
+    // feel. Surfaces are NEVER fully opaque — that's the design rule.
+
+    out property <color> background:
+        color-scheme == ColorScheme.dark ? #0f1115 : #fafafa;
+
+    out property <color> surface-1:
+        color-scheme == ColorScheme.dark ? #1a1d24eb : #ffffffeb;
+    out property <color> surface-2:
+        color-scheme == ColorScheme.dark ? #23262fe6 : #f4f5f7e6;
+    out property <color> surface-3:
+        color-scheme == ColorScheme.dark ? #2d313ae6 : #ebecefe6;
+
+    // Inactive control fill (Switch off track, SegmentedControl track,
+    // Avatar/Skeleton fallback). Opaque — these aren't elevated, just
+    // alternative-coloured.
+    out property <color> surface-variant:
+        color-scheme == ColorScheme.dark ? #232730 : #e8eaee;
+
+    // Touch / hover feedback overlay. Opaque so the press cue is
+    // immediate and unambiguous.
+    out property <color> surface-pressed:
+        color-scheme == ColorScheme.dark ? #2a2f3a : #e0e2e7;
+
+    // ===== Foreground ====================================================
+    out property <color> on-background:
+        color-scheme == ColorScheme.dark ? #f5f5f7 : #0f1115;
+    out property <color> on-surface:
+        color-scheme == ColorScheme.dark ? #e4e6eb : #1a1d24;
+    out property <color> muted:
+        color-scheme == ColorScheme.dark ? #9aa0a6 : #6b7280;
+
+    // ===== Brand ========================================================
+    in-out property <color> primary:
+        color-scheme == ColorScheme.dark ? #4f8cff : #2a72e0;
+    out property <color> primary-pressed:
+        color-scheme == ColorScheme.dark ? #3a72e0 : #1d5fc4;
+    out property <color> on-primary: #ffffff;
+
+    // ===== Status accents ===============================================
+    in-out property <color> accent-success:
+        color-scheme == ColorScheme.dark ? #22c55e : #16a34a;
+    in-out property <color> accent-warning:
+        color-scheme == ColorScheme.dark ? #f59e0b : #d97706;
+    in-out property <color> accent-danger:
+        color-scheme == ColorScheme.dark ? #ef4444 : #dc2626;
+    in-out property <color> accent-info:
+        color-scheme == ColorScheme.dark ? #4f8cff : #2a72e0;
+
+    // ===== Borders (transitional — see DESIGN.md) =======================
+    //
+    // Step 2 of the design overhaul removes borders from the library
+    // entirely; the only intended use after that is `TextField`'s focus
+    // ring. The `outline` token is kept temporarily so the build doesn't
+    // break before the no-border migration lands. New components MUST
+    // NOT reference this token.
+    out property <color> outline:
+        color-scheme == ColorScheme.dark ? #2d313a : #d8dade;
+
+    // ===== Elevation (shadow recipe per tier) ===========================
+    out property <length> elevation-1-blur: 8px;
+    out property <length> elevation-1-y: 2px;
+    out property <color>  elevation-1-color:
+        color-scheme == ColorScheme.dark ? #00000033 : #00000018;
+
+    out property <length> elevation-2-blur: 16px;
+    out property <length> elevation-2-y: 4px;
+    out property <color>  elevation-2-color:
+        color-scheme == ColorScheme.dark ? #00000055 : #00000022;
+
+    out property <length> elevation-3-blur: 24px;
+    out property <length> elevation-3-y: 8px;
+    out property <color>  elevation-3-color:
+        color-scheme == ColorScheme.dark ? #00000077 : #00000033;
+
+    // ===== Spacing (scheme-agnostic) ====================================
     in-out property <length> spacing-xs: 4px;
     in-out property <length> spacing-sm: 8px;
     in-out property <length> spacing-md: 16px;
     in-out property <length> spacing-lg: 24px;
     in-out property <length> spacing-xl: 32px;
 
-    // ---- Typography -----------------------------------------------------
+    // ===== Typography (scheme-agnostic) =================================
     in-out property <length> font-size-caption: 12px;
     in-out property <length> font-size-body: 14px;
     in-out property <length> font-size-body-large: 16px;
     in-out property <length> font-size-title: 20px;
     in-out property <length> font-size-headline: 28px;
 
-    // ---- Touch + radii --------------------------------------------------
-    // 48dp is the Material minimum touch target.
+    // ===== Touch / radii (scheme-agnostic) ==============================
+    // 48 dp is the Material minimum touch target — never hardcode.
     in-out property <length> touch-target: 48px;
     in-out property <length> radius-sm: 6px;
     in-out property <length> radius-md: 12px;
     in-out property <length> radius-lg: 20px;
 
-    // ---- Motion ---------------------------------------------------------
+    // ===== Motion (scheme-agnostic) =====================================
     in-out property <duration> motion-fast: 120ms;
     in-out property <duration> motion-base: 200ms;
+    in-out property <duration> motion-overlay: 240ms;
 }

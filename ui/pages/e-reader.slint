@@ -1,0 +1,145 @@
+// EReaderPage
+// =====================================================================
+//
+// Kindle / Books-style e-reader. The surface is intentionally typo-
+// heavy and chrome-light — a reader-mode page that mostly gets out of
+// the user's way. Demonstrates:
+//
+//   - Minimal top bar: book title (no leading icon — the reader is its
+//     own mode) + a few trailing affordances (bookmark, settings).
+//   - Big chapter label + body prose. The body uses
+//     `font-size: Theme.font-size-body-large` to mimic a comfortable
+//     e-reader font size. Wraps to the page width with generous
+//     padding.
+//   - Footer "page X of Y" + a slim progress bar across the bottom.
+
+import { Theme, Tone } from "../theme.slint";
+import { AppBar } from "../app-bar.slint";
+
+export component EReaderPage inherits Rectangle {
+    in property <string> book-title: "On the Origin of Programming Languages";
+    in property <string> chapter: "Chapter 14 — The Decoupling of Syntax and Form";
+    in property <string> body:
+        "When the first general-purpose declarative UI frameworks crossed over from research into production, the practitioners who picked them up quickly noticed something: the languages had become smaller, but their reach had grown.\n\nIn the era of imperative UIs, the runtime offered every primitive the platform supported, and the framework was a way to combine them. The declarative turn inverted that — the framework offered a tiny set of primitives, and the platform was a way to back them. Designers wrote a few hundred lines of declarations and shipped on three operating systems.\n\nIt is hard, today, to recover the surprise this caused. Programmers who had spent decades carrying mutable state through every component were now writing pure descriptions and watching them update. They were not relieved of complexity so much as they had moved it: the framework had taken on the bookkeeping that the programmer used to carry. Whether that was a good trade depended on what the framework's owners chose to do next.\n\nThe answer, as we now know, was: design tokens.";
+    in property <int> page-current: 142;
+    in property <int> page-total: 388;
+    in property <float> progress: 0.367;
+    in property <string> reading-time-left: "4 min left in chapter";
+    callback back-pressed();
+    callback bookmark-pressed();
+    callback settings-pressed();
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        // Minimal top bar — uses the existing AppBar so navigation
+        // patterns stay consistent across screens.
+        AppBar {
+            title: root.book-title;
+            leading-icon: @image-url("../icons/arrow-left.svg");
+            trailing-icon: @image-url("../icons/queue.svg");
+            leading-pressed => { root.back-pressed(); }
+            trailing-pressed => { root.bookmark-pressed(); }
+        }
+
+        // ----- Chapter title + body -----
+        VerticalLayout {
+            padding-left: Theme.spacing-lg;
+            padding-right: Theme.spacing-lg;
+            padding-top: Theme.spacing-lg;
+            spacing: Theme.spacing-lg;
+            vertical-stretch: 1;
+            alignment: start;
+
+            Text {
+                text: root.chapter;
+                color: Theme.on-background;
+                font-size: Theme.font-size-title;
+                font-weight: 700;
+                wrap: word-wrap;
+            }
+            Text {
+                text: root.body;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body-large;
+                wrap: word-wrap;
+                // Slight extra "line height" feel via letter-spacing
+                // since Slint doesn't expose `line-height` on Text.
+                letter-spacing: 0.2px;
+            }
+        }
+
+        // ----- Reading time hint -----
+        HorizontalLayout {
+            padding-left: Theme.spacing-lg;
+            padding-right: Theme.spacing-lg;
+            padding-top: Theme.spacing-xs;
+            padding-bottom: Theme.spacing-xs;
+            alignment: stretch;
+            VerticalLayout {
+                alignment: center;
+                horizontal-stretch: 1;
+                Text {
+                    text: root.reading-time-left;
+                    color: Theme.muted;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 600;
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                Image {
+                    width: 18px;
+                    height: 18px;
+                    source: @image-url("../icons/more-vertical.svg");
+                    colorize: Theme.muted;
+                    image-fit: contain;
+                    TouchArea {
+                        clicked => { root.settings-pressed(); }
+                    }
+                }
+            }
+        }
+
+        // ----- Slim progress + page indicator -----
+        VerticalLayout {
+            padding-bottom: Theme.spacing-md;
+            spacing: Theme.spacing-xs;
+
+            // Page X of Y.
+            HorizontalLayout {
+                padding-left: Theme.spacing-lg;
+                padding-right: Theme.spacing-lg;
+                alignment: stretch;
+                Text {
+                    text: "Page " + root.page-current + " of " + root.page-total;
+                    color: Theme.muted;
+                    font-size: 11px;
+                    font-weight: 600;
+                    horizontal-stretch: 1;
+                }
+                Text {
+                    text: (100 * root.progress) + "%";
+                    color: Theme.muted;
+                    font-size: 11px;
+                    font-weight: 600;
+                }
+            }
+
+            // Slim bar.
+            Rectangle {
+                height: 3px;
+                background: Theme.surface-variant;
+                Rectangle {
+                    x: 0;
+                    y: 0;
+                    width: parent.width * root.progress;
+                    height: parent.height;
+                    background: Theme.accent-info;
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,248 @@
+// PaymentSplitPage
+// =====================================================================
+//
+// Splitwise / Tab / Settle Up-style bill split screen. Demonstrates:
+//
+//   - "Total + per-member" composition: a big amount hero at the top
+//     with the venue / occasion subtitle, then a vertical list of
+//     members each showing their share and current settlement state
+//     (Paid / Owes you / You owe).
+//   - Tone-tinted status per row: `accent-success` for "paid",
+//     `accent-warning` for "owes you", `accent-danger` for "you owe",
+//     and the amount picks up the same colour.
+//   - Settle-up CTA in the footer + secondary "Add expense" TextButton.
+
+import { Theme, Tone } from "../theme.slint";
+import { AppBar } from "../app-bar.slint";
+import { SectionHeader } from "../section-header.slint";
+import { Avatar } from "../avatar.slint";
+import { Divider } from "../divider.slint";
+import { MobileButton, TextButton } from "../button.slint";
+
+// One participant row.
+//
+// `state` drives the tone:
+//   0 = paid (success)
+//   1 = owes you (warning)
+//   2 = you owe (danger)
+//   3 = neutral / settled
+component MemberRow inherits Rectangle {
+    in property <string> initials;
+    in property <string> name;
+    in property <string> share;
+    in property <string> status;
+    in property <int> state: 0;
+
+    horizontal-stretch: 1;
+    min-height: 72px;
+
+    property <Tone> row-tone:
+          state == 0 ? Tone.success
+        : state == 1 ? Tone.warning
+        : state == 2 ? Tone.danger
+        : Tone.default;
+
+    HorizontalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+
+        VerticalLayout {
+            alignment: center;
+            Avatar {
+                fallback: root.initials;
+                size: 44px;
+            }
+        }
+
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: root.name;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+            HorizontalLayout {
+                spacing: Theme.spacing-xs;
+                alignment: start;
+                Rectangle {
+                    width: status-text.preferred-width + 14px;
+                    height: 20px;
+                    border-radius: 4px;
+                    background:
+                          row-tone == Tone.success ? Theme.accent-success
+                        : row-tone == Tone.warning ? Theme.accent-warning
+                        : row-tone == Tone.danger  ? Theme.accent-danger
+                        : Theme.surface-variant;
+                    status-text := Text {
+                        text: root.status;
+                        color: row-tone == Tone.default ? Theme.muted : Theme.on-primary;
+                        font-size: 10px;
+                        font-weight: 700;
+                        letter-spacing: 0.5px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                }
+            }
+        }
+
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.share;
+                color:
+                      row-tone == Tone.success ? Theme.accent-success
+                    : row-tone == Tone.warning ? Theme.accent-warning
+                    : row-tone == Tone.danger  ? Theme.accent-danger
+                    : Theme.on-surface;
+                font-size: Theme.font-size-body-large;
+                font-weight: 700;
+                horizontal-alignment: right;
+            }
+        }
+    }
+}
+
+export component PaymentSplitPage inherits Rectangle {
+    in property <string> total: "$184.50";
+    in property <string> occasion: "Tartine Manufactory · last night";
+    in property <string> when: "Tuesday, May 13 · paid by Greg";
+    callback back-pressed();
+    callback edit-pressed();
+    callback add-expense-pressed();
+    callback settle-up-pressed();
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "Split a bill";
+            leading-icon: @image-url("../icons/arrow-left.svg");
+            trailing-icon: @image-url("../icons/pencil.svg");
+            leading-pressed => { root.back-pressed(); }
+            trailing-pressed => { root.edit-pressed(); }
+        }
+
+        // ----- Hero summary -----
+        VerticalLayout {
+            padding-top: Theme.spacing-lg;
+            padding-bottom: Theme.spacing-md;
+            spacing: 4px;
+
+            HorizontalLayout {
+                alignment: center;
+                Text {
+                    text: "TOTAL";
+                    color: Theme.muted;
+                    font-size: 10px;
+                    font-weight: 700;
+                    letter-spacing: 0.5px;
+                }
+            }
+            HorizontalLayout {
+                alignment: center;
+                Text {
+                    text: root.total;
+                    color: Theme.on-background;
+                    font-size: 48px;
+                    font-weight: 300;
+                }
+            }
+            HorizontalLayout {
+                alignment: center;
+                Text {
+                    text: root.occasion;
+                    color: Theme.on-surface;
+                    font-size: Theme.font-size-body;
+                    font-weight: 600;
+                }
+            }
+            HorizontalLayout {
+                alignment: center;
+                Text {
+                    text: root.when;
+                    color: Theme.muted;
+                    font-size: Theme.font-size-caption;
+                }
+            }
+        }
+
+        SectionHeader { text: "5 PEOPLE · EQUAL SPLIT"; }
+
+        MemberRow {
+            initials: "GR";
+            name: "Greg Raymond (you)";
+            share: "$36.90";
+            status: "PAID";
+            state: 0;
+        }
+        Divider { }
+        MemberRow {
+            initials: "AR";
+            name: "Anika Ravi";
+            share: "$36.90";
+            status: "OWES YOU";
+            state: 1;
+        }
+        Divider { }
+        MemberRow {
+            initials: "DV";
+            name: "Devika Sharma";
+            share: "$36.90";
+            status: "OWES YOU";
+            state: 1;
+        }
+        Divider { }
+        MemberRow {
+            initials: "LE";
+            name: "Léa Bernard";
+            share: "$36.90";
+            status: "SETTLED";
+            state: 3;
+        }
+        Divider { }
+        MemberRow {
+            initials: "MK";
+            name: "Marco Kovač";
+            share: "$36.90";
+            status: "PAID YOU";
+            state: 0;
+        }
+
+        Rectangle { vertical-stretch: 1; }
+
+        // ----- Sticky footer -----
+        Rectangle {
+            background: Theme.surface-1;
+            drop-shadow-blur: Theme.elevation-2-blur;
+            drop-shadow-color: Theme.elevation-2-color;
+            drop-shadow-offset-y: -4px;
+            height: 96px;
+            VerticalLayout {
+                padding: Theme.spacing-md;
+                spacing: Theme.spacing-sm;
+                MobileButton {
+                    text: "Settle up · $73.80 owed to you";
+                    tone: Tone.success;
+                    max-height: 48px;
+                    clicked => { root.settle-up-pressed(); }
+                }
+                HorizontalLayout {
+                    alignment: center;
+                    TextButton {
+                        text: "Add another expense";
+                        clicked => { root.add-expense-pressed(); }
+                    }
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,345 @@
+// AppPermissionsPage
+// =====================================================================
+//
+// Android-style per-app permissions screen. Distinct from
+// `AccountSettingsPage` (account-level) and `WiFiSettingsPage` (system
+// network). Demonstrates:
+//
+//   - Per-app header card: app icon disc + app name + version + open-
+//     in-store chevron.
+//   - Three tabs: "Permissions" (selected) / "Storage" / "Notifications".
+//   - Per-permission row: leading tone-tinted icon disc + permission
+//     name + access state caption (e.g. "Allowed only while in use"
+//     warning, "Allowed all the time" success, "Denied" danger,
+//     "Ask every time" info) + chevron-right.
+//   - Recent access strip beneath the toggles: tiny dot-chart per
+//     permission showing the last 24 h of access events.
+//   - Trailing destructive section: "Force stop" and "Clear data"
+//     rendered as danger-toned nav rows.
+
+import { Theme, Tone } from "../theme.slint";
+import { AppBar } from "../app-bar.slint";
+import { SectionHeader } from "../section-header.slint";
+import { Divider } from "../divider.slint";
+import { TabBar, Tab } from "../tab-bar.slint";
+
+// One permission row.
+component PermissionRow inherits Rectangle {
+    in property <image> icon;
+    in property <string> name;
+    in property <string> state-label;
+    in property <Tone> tone: Tone.default;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: root.name;
+    accessible-action-default => { root.clicked(); }
+
+    horizontal-stretch: 1;
+    min-height: 64px;
+    background: touch.pressed ? Theme.surface-pressed : transparent;
+    animate background { duration: Theme.motion-fast; }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 36px;
+                height: 36px;
+                border-radius: self.width / 2;
+                background:
+                      root.tone == Tone.success ? Theme.accent-success
+                    : root.tone == Tone.warning ? Theme.accent-warning
+                    : root.tone == Tone.danger  ? Theme.accent-danger
+                    : root.tone == Tone.info    ? Theme.accent-info
+                    : Theme.surface-variant;
+                Image {
+                    width: 18px;
+                    height: 18px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: root.icon;
+                    colorize: root.tone == Tone.default ? Theme.on-surface : Theme.on-primary;
+                    image-fit: contain;
+                }
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: root.name;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+            Text {
+                text: root.state-label;
+                color:
+                      root.tone == Tone.success ? Theme.accent-success
+                    : root.tone == Tone.warning ? Theme.accent-warning
+                    : root.tone == Tone.danger  ? Theme.accent-danger
+                    : root.tone == Tone.info    ? Theme.accent-info
+                    : Theme.muted;
+                font-size: Theme.font-size-caption;
+                font-weight: 600;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Image {
+                width: 16px;
+                height: 16px;
+                source: @image-url("../icons/chevron-right.svg");
+                colorize: Theme.muted;
+                image-fit: contain;
+            }
+        }
+    }
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+// 24-dot access-history strip — each dot indicates whether the permis-
+// sion was accessed in that hour.
+component AccessStrip inherits Rectangle {
+    in property <[bool]> hours;
+    in property <Tone> tone;
+
+    horizontal-stretch: 1;
+    height: 16px;
+    HorizontalLayout {
+        spacing: 2px;
+        alignment: stretch;
+        for hit in root.hours : VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            Rectangle {
+                width: 6px;
+                height: 8px;
+                border-radius: 3px;
+                background: hit
+                    ? (
+                          root.tone == Tone.success ? Theme.accent-success
+                        : root.tone == Tone.warning ? Theme.accent-warning
+                        : root.tone == Tone.danger  ? Theme.accent-danger
+                        : root.tone == Tone.info    ? Theme.accent-info
+                        : Theme.primary
+                      )
+                    : Theme.surface-variant;
+            }
+        }
+    }
+}
+
+export component AppPermissionsPage inherits Rectangle {
+    in property <string> app-name: "Slint Mobile";
+    in property <string> version: "v1.13.4 · installed Apr 12";
+    in-out property <int> active-tab: 0;
+    callback back-pressed();
+    callback row-pressed(string);
+    callback force-stop-pressed();
+    callback clear-data-pressed();
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "App info";
+            leading-icon: @image-url("../icons/arrow-left.svg");
+            trailing-icon: @image-url("../icons/more-vertical.svg");
+            leading-pressed => { root.back-pressed(); }
+        }
+
+        // App header card.
+        Rectangle {
+            background: Theme.surface-1;
+            drop-shadow-blur: Theme.elevation-1-blur;
+            drop-shadow-color: Theme.elevation-1-color;
+            drop-shadow-offset-y: Theme.elevation-1-y;
+            HorizontalLayout {
+                padding: Theme.spacing-md;
+                spacing: Theme.spacing-md;
+                alignment: stretch;
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 56px;
+                        height: 56px;
+                        border-radius: 14px;
+                        background: @linear-gradient(135deg, #4f8cff 0%, #1f4eaa 100%);
+                        Text {
+                            text: "SM";
+                            color: Theme.on-primary;
+                            font-size: Theme.font-size-body;
+                            font-weight: 800;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
+                        }
+                    }
+                }
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    alignment: center;
+                    spacing: 2px;
+                    Text {
+                        text: root.app-name;
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-body-large;
+                        font-weight: 700;
+                    }
+                    Text {
+                        text: root.version;
+                        color: Theme.muted;
+                        font-size: Theme.font-size-caption;
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Image {
+                        width: 16px;
+                        height: 16px;
+                        source: @image-url("../icons/chevron-right.svg");
+                        colorize: Theme.muted;
+                        image-fit: contain;
+                    }
+                }
+            }
+        }
+
+        // Tabs.
+        TabBar {
+            Tab { label: "Permissions"; active: true; }
+            Tab { label: "Storage"; }
+            Tab { label: "Notifications"; }
+        }
+
+        SectionHeader { text: "ALLOWED"; }
+        PermissionRow {
+            icon: @image-url("../icons/pin.svg");
+            name: "Location";
+            state-label: "Allowed only while in use · last 12 min";
+            tone: Tone.warning;
+            clicked => { root.row-pressed(self.name); }
+        }
+        Divider { }
+        PermissionRow {
+            icon: @image-url("../icons/bell.svg");
+            name: "Notifications";
+            state-label: "Allowed · interruptive";
+            tone: Tone.info;
+            clicked => { root.row-pressed(self.name); }
+        }
+        Divider { }
+        PermissionRow {
+            icon: @image-url("../icons/profile.svg");
+            name: "Contacts";
+            state-label: "Allowed all the time";
+            tone: Tone.success;
+            clicked => { root.row-pressed(self.name); }
+        }
+
+        SectionHeader { text: "ASK EVERY TIME"; }
+        PermissionRow {
+            icon: @image-url("../icons/star.svg");
+            name: "Camera";
+            state-label: "Ask every time";
+            tone: Tone.default;
+            clicked => { root.row-pressed(self.name); }
+        }
+        Divider { }
+        PermissionRow {
+            icon: @image-url("../icons/play.svg");
+            name: "Microphone";
+            state-label: "Ask every time";
+            tone: Tone.default;
+            clicked => { root.row-pressed(self.name); }
+        }
+
+        SectionHeader { text: "DENIED"; }
+        PermissionRow {
+            icon: @image-url("../icons/heart.svg");
+            name: "Health & body sensors";
+            state-label: "Denied";
+            tone: Tone.danger;
+            clicked => { root.row-pressed(self.name); }
+        }
+        Divider { }
+        PermissionRow {
+            icon: @image-url("../icons/inbox.svg");
+            name: "SMS & call history";
+            state-label: "Denied";
+            tone: Tone.danger;
+            clicked => { root.row-pressed(self.name); }
+        }
+
+        SectionHeader { text: "LOCATION · LAST 24 H"; }
+        VerticalLayout {
+            padding: Theme.spacing-md;
+            spacing: 4px;
+            AccessStrip {
+                tone: Tone.warning;
+                hours: [
+                    false, false, false, false, false, false,
+                    false, true,  true,  false, true,  true,
+                    false, false, true,  false, false, false,
+                    false, false, false, false, false, false,
+                ];
+            }
+            HorizontalLayout {
+                Text {
+                    text: "00:00";
+                    color: Theme.muted;
+                    font-size: 10px;
+                    font-weight: 700;
+                    horizontal-stretch: 1;
+                }
+                Text {
+                    text: "12:00";
+                    color: Theme.muted;
+                    font-size: 10px;
+                    font-weight: 700;
+                    horizontal-stretch: 1;
+                    horizontal-alignment: center;
+                }
+                Text {
+                    text: "now";
+                    color: Theme.muted;
+                    font-size: 10px;
+                    font-weight: 700;
+                    horizontal-stretch: 1;
+                    horizontal-alignment: right;
+                }
+            }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+
+        SectionHeader { text: "DANGER ZONE"; }
+        PermissionRow {
+            icon: @image-url("../icons/close.svg");
+            name: "Force stop";
+            state-label: "Closes the app immediately";
+            tone: Tone.danger;
+            clicked => { root.force-stop-pressed(); }
+        }
+        Divider { }
+        PermissionRow {
+            icon: @image-url("../icons/queue.svg");
+            name: "Clear app data";
+            state-label: "Removes 184 MB of local data";
+            tone: Tone.danger;
+            clicked => { root.clear-data-pressed(); }
+        }
+    }
+}

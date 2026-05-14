@@ -1,0 +1,292 @@
+// JobListingPage
+// =====================================================================
+//
+// Single job posting view — the "tap into a listing from a job feed"
+// surface. Demonstrates:
+//
+//   - Company header card: square logo placeholder + company name +
+//     "Apply by" date + bookmark trailing.
+//   - Role title block: large headline + meta chip row (Remote / Full-
+//     time / Senior) + salary band + posted date.
+//   - Sectioned description: ABOUT / REQUIREMENTS / WHAT WE OFFER, with
+//     bullet-style rows under each, the bullet glyph rendered as a
+//     small primary disc on the leading edge.
+//   - Sticky bottom CTA bar: Save (secondary) + Apply now (primary).
+
+import { Theme, Tone } from "../theme.slint";
+import { AppBar } from "../app-bar.slint";
+import { Chip } from "../chip.slint";
+import { Divider } from "../divider.slint";
+import { MobileButton } from "../button.slint";
+import { ScrollView } from "std-widgets.slint";
+
+// One bullet point in the description sections.
+component Bullet inherits Rectangle {
+    in property <string> text;
+    in property <Tone> tone: Tone.default;
+
+    HorizontalLayout {
+        padding-top: Theme.spacing-xs;
+        padding-bottom: Theme.spacing-xs;
+        spacing: Theme.spacing-sm;
+        alignment: stretch;
+        VerticalLayout {
+            alignment: start;
+            padding-top: 6px;
+            Rectangle {
+                width: 6px;
+                height: 6px;
+                border-radius: 3px;
+                background:
+                      root.tone == Tone.success ? Theme.accent-success
+                    : root.tone == Tone.warning ? Theme.accent-warning
+                    : root.tone == Tone.danger  ? Theme.accent-danger
+                    : root.tone == Tone.info    ? Theme.accent-info
+                    : Theme.primary;
+            }
+        }
+        Text {
+            text: root.text;
+            color: Theme.on-surface;
+            font-size: Theme.font-size-body;
+            wrap: word-wrap;
+            horizontal-stretch: 1;
+        }
+    }
+}
+
+// One section header inside the description (smaller than the page-
+// level SectionHeader so the role title still anchors the page).
+component DescSectionHeader inherits Rectangle {
+    in property <string> text;
+    height: 36px;
+    VerticalLayout {
+        alignment: center;
+        Text {
+            text: root.text;
+            color: Theme.on-background;
+            font-size: Theme.font-size-body-large;
+            font-weight: 700;
+        }
+    }
+}
+
+export component JobListingPage inherits Rectangle {
+    in property <string> company: "Patagonia";
+    in property <string> apply-by: "Apply by Fri, May 30";
+    in property <string> role: "Senior Mobile Engineer";
+    in property <string> salary: "$165K — $200K · equity";
+    in property <string> location: "San Francisco · Hybrid";
+    in property <string> posted: "Posted 3 days ago · 142 applicants";
+    callback back-pressed();
+    callback save-pressed();
+    callback share-pressed();
+    callback apply-pressed();
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "Job listing";
+            leading-icon: @image-url("../icons/arrow-left.svg");
+            trailing-icon: @image-url("../icons/send.svg");
+            leading-pressed => { root.back-pressed(); }
+            trailing-pressed => { root.share-pressed(); }
+        }
+
+        ScrollView {
+            vertical-stretch: 1;
+            horizontal-stretch: 1;
+            viewport-width: 412px;
+            viewport-height: 1400px;
+            VerticalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-md;
+                alignment: start;
+
+                // ----- Company card -----
+                Rectangle {
+                    background: Theme.surface-1;
+                    border-radius: Theme.radius-md;
+                    drop-shadow-blur: Theme.elevation-1-blur;
+                    drop-shadow-color: Theme.elevation-1-color;
+                    drop-shadow-offset-y: Theme.elevation-1-y;
+                    height: 80px;
+                    HorizontalLayout {
+                        padding: Theme.spacing-md;
+                        spacing: Theme.spacing-md;
+                        alignment: stretch;
+                        // Logo placeholder.
+                        Rectangle {
+                            width: 48px;
+                            height: 48px;
+                            border-radius: 8px;
+                            background: @linear-gradient(135deg, #b91c1c 0%, #7f1d1d 100%);
+                            Text {
+                                text: "P";
+                                color: #ffffff;
+                                font-size: 24px;
+                                font-weight: 800;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                width: parent.width;
+                                height: parent.height;
+                            }
+                        }
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            alignment: center;
+                            spacing: 2px;
+                            Text {
+                                text: root.company;
+                                color: Theme.on-surface;
+                                font-size: Theme.font-size-body-large;
+                                font-weight: 700;
+                            }
+                            Text {
+                                text: root.apply-by;
+                                color: Theme.accent-warning;
+                                font-size: Theme.font-size-caption;
+                                font-weight: 600;
+                            }
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            Image {
+                                width: 22px;
+                                height: 22px;
+                                source: @image-url("../icons/queue.svg");
+                                colorize: Theme.muted;
+                                image-fit: contain;
+                                TouchArea {
+                                    clicked => { root.save-pressed(); }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ----- Role header -----
+                Text {
+                    text: root.role;
+                    color: Theme.on-background;
+                    font-size: Theme.font-size-headline;
+                    font-weight: 700;
+                    wrap: word-wrap;
+                }
+                Text {
+                    text: root.salary;
+                    color: Theme.on-surface;
+                    font-size: Theme.font-size-body-large;
+                    font-weight: 600;
+                }
+                Text {
+                    text: root.location;
+                    color: Theme.muted;
+                    font-size: Theme.font-size-body;
+                }
+                HorizontalLayout {
+                    spacing: Theme.spacing-sm;
+                    Chip { label: "Remote"; selected: true; }
+                    Chip { label: "Full-time"; }
+                    Chip { label: "Senior"; }
+                    Chip { label: "Rust"; }
+                }
+                Text {
+                    text: root.posted;
+                    color: Theme.muted;
+                    font-size: Theme.font-size-caption;
+                }
+
+                Divider { }
+
+                // ----- About -----
+                DescSectionHeader { text: "About the role"; }
+                Text {
+                    text: "We're hiring a senior engineer to lead the mobile platform team. You'll own the Slint-on-Android stack end-to-end: cargo-apk builds, the gesture system, theme distribution, and the design-system rollout currently in iteration 16.";
+                    color: Theme.on-surface;
+                    font-size: Theme.font-size-body;
+                    wrap: word-wrap;
+                }
+
+                // ----- Requirements -----
+                DescSectionHeader { text: "What we're looking for"; }
+                Bullet {
+                    text: "6+ years shipping production mobile clients in Rust, Swift, or Kotlin.";
+                }
+                Bullet {
+                    text: "Direct experience with a declarative UI framework (Slint, Compose, SwiftUI, Flutter).";
+                }
+                Bullet {
+                    text: "Comfortable owning build pipelines and reproducible toolchains (cargo, Bazel, Gradle).";
+                    tone: Tone.info;
+                }
+                Bullet {
+                    text: "Track record of mentoring 2+ engineers.";
+                    tone: Tone.success;
+                }
+
+                // ----- Offer -----
+                DescSectionHeader { text: "What we offer"; }
+                Bullet {
+                    text: "Salary $165K – $200K + meaningful equity.";
+                    tone: Tone.success;
+                }
+                Bullet {
+                    text: "Hybrid 3 days / week in SF, or fully remote in PT/MT/CT zones.";
+                    tone: Tone.info;
+                }
+                Bullet {
+                    text: "Time, gear and conference budgets uncapped within reason.";
+                }
+                Bullet {
+                    text: "Quarterly retreats; last one was Asilomar.";
+                }
+
+                Divider { }
+
+                // ----- Skills gap -----
+                DescSectionHeader { text: "How you compare"; }
+                Bullet {
+                    text: "Your Rust experience exceeds the bar.";
+                    tone: Tone.success;
+                }
+                Bullet {
+                    text: "You haven't shipped Compose or SwiftUI before — likely fine, mention transferable declarative-UI work.";
+                    tone: Tone.warning;
+                }
+            }
+        }
+
+        // ----- Sticky CTA bar -----
+        Rectangle {
+            background: Theme.surface-1;
+            drop-shadow-blur: Theme.elevation-2-blur;
+            drop-shadow-color: Theme.elevation-2-color;
+            drop-shadow-offset-y: -4px;
+            height: 80px;
+            HorizontalLayout {
+                padding: Theme.spacing-md;
+                spacing: Theme.spacing-md;
+                MobileButton {
+                    text: "Save";
+                    primary: false;
+                    horizontal-stretch: 1;
+                    max-height: 48px;
+                    clicked => { root.save-pressed(); }
+                }
+                MobileButton {
+                    text: "Apply now";
+                    horizontal-stretch: 2;
+                    max-height: 48px;
+                    tone: Tone.info;
+                    clicked => { root.apply-pressed(); }
+                }
+            }
+        }
+    }
+}

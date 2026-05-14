@@ -1,0 +1,279 @@
+// SeatSelectionPage
+// =====================================================================
+//
+// A seat-map picker — airline / cinema / event "choose your seats".
+// Distinct from `BoardingPassPage` (the issued ticket) and
+// `FlightSearchPage` (choosing a flight). Demonstrates a grid-map
+// surface:
+//
+//   - A curved "screen / front of cabin" indicator.
+//   - A legend chip row (Available / Selected / Taken / Extra legroom).
+//   - The seat grid: rows labelled A–F with an aisle gap, each cell a
+//     small rounded square coloured by state.
+//   - A sticky summary footer: chosen seats + total + Confirm CTA.
+
+import { Theme, Tone } from "../theme.slint";
+import { AppBar } from "../app-bar.slint";
+import { MobileButton } from "../button.slint";
+
+// One seat cell. `state`: 0 available / 1 selected / 2 taken /
+// 3 premium (extra legroom, still available).
+component Seat inherits Rectangle {
+    in property <int> state: 0;
+    callback clicked();
+
+    width: 30px;
+    height: 30px;
+    border-radius: 7px;
+    background:
+          root.state == 1 ? Theme.primary
+        : root.state == 2 ? Theme.surface-variant
+        : root.state == 3 ? Theme.accent-info.with-alpha(0.28)
+        : Theme.surface-2;
+    border-width: root.state == 3 ? 1px : 0px;
+    border-color: Theme.accent-info;
+    opacity: root.state == 2 ? 0.5 : 1.0;
+    animate background { duration: Theme.motion-fast; }
+
+    // Selected seats show a check.
+    if root.state == 1: Image {
+        width: 14px;
+        height: 14px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        source: @image-url("../icons/check.svg");
+        colorize: Theme.on-primary;
+        image-fit: contain;
+    }
+    touch := TouchArea {
+        clicked => {
+            if (root.state != 2) {
+                root.clicked();
+            }
+        }
+    }
+}
+
+// One legend entry.
+component LegendItem inherits HorizontalLayout {
+    in property <string> label;
+    in property <brush> swatch;
+    in property <bool> outlined: false;
+
+    spacing: 5px;
+    Rectangle {
+        width: 14px;
+        height: 14px;
+        y: (parent.height - self.height) / 2;
+        border-radius: 4px;
+        background: root.swatch;
+        border-width: root.outlined ? 1px : 0px;
+        border-color: Theme.accent-info;
+    }
+    Text {
+        text: root.label;
+        color: Theme.muted;
+        font-size: 10px;
+        font-weight: 700;
+        vertical-alignment: center;
+    }
+}
+
+// One seat row: a row label, three seats, an aisle, three seats.
+component SeatRow inherits HorizontalLayout {
+    in property <string> label;
+    in property <int> s0;
+    in property <int> s1;
+    in property <int> s2;
+    in property <int> s3;
+    in property <int> s4;
+    in property <int> s5;
+
+    spacing: 8px;
+    alignment: center;
+    VerticalLayout {
+        alignment: center;
+        Text {
+            text: root.label;
+            color: Theme.muted;
+            font-size: 11px;
+            font-weight: 800;
+            width: 16px;
+            horizontal-alignment: center;
+        }
+    }
+    Seat { state: root.s0; }
+    Seat { state: root.s1; }
+    Seat { state: root.s2; }
+    Rectangle { width: 18px; }
+    Seat { state: root.s3; }
+    Seat { state: root.s4; }
+    Seat { state: root.s5; }
+}
+
+export component SeatSelectionPage inherits Rectangle {
+    in property <string> flight: "NW 482 · SFO → JFK";
+    in property <string> seats: "12A, 12B";
+    in property <string> total: "$58.00";
+    callback back-pressed();
+    callback help-pressed();
+    callback confirm-pressed();
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "Select seats";
+            leading-icon: @image-url("../icons/arrow-left.svg");
+            trailing-icon: @image-url("../icons/bell.svg");
+            leading-pressed => { root.back-pressed(); }
+            trailing-pressed => { root.help-pressed(); }
+        }
+
+        // Flight strip.
+        Rectangle {
+            background: Theme.surface-1;
+            height: 44px;
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.flight;
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-caption;
+                        font-weight: 800;
+                    }
+                }
+            }
+        }
+
+        // Screen / front indicator.
+        Rectangle {
+            height: 56px;
+            VerticalLayout {
+                alignment: center;
+                spacing: 6px;
+                Rectangle {
+                    width: 220px;
+                    height: 6px;
+                    x: (parent.width - self.width) / 2;
+                    border-radius: 3px;
+                    background: Theme.surface-variant;
+                }
+                Text {
+                    text: "FRONT OF CABIN";
+                    color: Theme.muted;
+                    font-size: 10px;
+                    font-weight: 800;
+                    letter-spacing: 1px;
+                    horizontal-alignment: center;
+                }
+            }
+        }
+
+        // Legend.
+        Rectangle {
+            height: 36px;
+            HorizontalLayout {
+                alignment: center;
+                spacing: Theme.spacing-md;
+                LegendItem { label: "Available"; swatch: Theme.surface-2; }
+                LegendItem { label: "Selected"; swatch: Theme.primary; }
+                LegendItem { label: "Taken"; swatch: Theme.surface-variant; }
+                LegendItem {
+                    label: "Legroom";
+                    swatch: Theme.accent-info.with-alpha(0.28);
+                    outlined: true;
+                }
+            }
+        }
+
+        // Seat grid.
+        VerticalLayout {
+            padding: Theme.spacing-md;
+            spacing: 8px;
+            alignment: start;
+            SeatRow { label: "10"; s0: 3; s1: 3; s2: 3; s3: 3; s4: 3; s5: 3; }
+            SeatRow { label: "11"; s0: 0; s1: 2; s2: 0; s3: 0; s4: 0; s5: 2; }
+            SeatRow { label: "12"; s0: 1; s1: 1; s2: 0; s3: 2; s4: 0; s5: 0; }
+            SeatRow { label: "13"; s0: 0; s1: 0; s2: 2; s3: 0; s4: 2; s5: 0; }
+            SeatRow { label: "14"; s0: 2; s1: 0; s2: 0; s3: 0; s4: 0; s5: 0; }
+            SeatRow { label: "15"; s0: 0; s1: 0; s2: 0; s3: 2; s4: 2; s5: 0; }
+            SeatRow { label: "16"; s0: 0; s1: 2; s2: 0; s3: 0; s4: 0; s5: 2; }
+            SeatRow { label: "17"; s0: 2; s1: 2; s2: 0; s3: 0; s4: 0; s5: 0; }
+            // Column letters.
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: center;
+                Rectangle { width: 16px; }
+                for letter in ["A", "B", "C"]: Text {
+                    text: letter;
+                    color: Theme.muted;
+                    font-size: 10px;
+                    font-weight: 800;
+                    width: 30px;
+                    horizontal-alignment: center;
+                }
+                Rectangle { width: 18px; }
+                for letter in ["D", "E", "F"]: Text {
+                    text: letter;
+                    color: Theme.muted;
+                    font-size: 10px;
+                    font-weight: 800;
+                    width: 30px;
+                    horizontal-alignment: center;
+                }
+            }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+
+        // Sticky summary + confirm.
+        Rectangle {
+            background: Theme.surface-1;
+            drop-shadow-blur: Theme.elevation-2-blur;
+            drop-shadow-color: Theme.elevation-2-color;
+            drop-shadow-offset-y: -4px;
+            height: 112px;
+            VerticalLayout {
+                padding: Theme.spacing-md;
+                spacing: Theme.spacing-sm;
+                HorizontalLayout {
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        spacing: 2px;
+                        Text {
+                            text: "Selected: " + root.seats;
+                            color: Theme.on-surface;
+                            font-size: Theme.font-size-body;
+                            font-weight: 700;
+                        }
+                        Text {
+                            text: "2 seats · economy";
+                            color: Theme.muted;
+                            font-size: Theme.font-size-caption;
+                        }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        Text {
+                            text: root.total;
+                            color: Theme.on-surface;
+                            font-size: Theme.font-size-title;
+                            font-weight: 800;
+                        }
+                    }
+                }
+                MobileButton {
+                    text: "Confirm seats";
+                    primary: true;
+                    max-height: 48px;
+                    clicked => { root.confirm-pressed(); }
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,392 @@
+// PaymentMethodPage
+// =====================================================================
+//
+// Saved payment methods — the Apple Wallet / Revolut / Cash App
+// "manage how I pay" surface. Distinct from `WalletPage` (account
+// dashboard with cards + transactions) and `CartPage` (in-progress
+// checkout). Demonstrates:
+//
+//   - Default card hero: a full-width credit-card visual at the top
+//     pinned with a DEFAULT pill in the corner so the user knows
+//     which card will be charged at checkout.
+//   - "Saved cards" list: each row carries a thumb-shaped mini card
+//     swatch (brand-tinted) + brand + last-four + expiry + tone pill
+//     for status (EXPIRES SOON warning, EXPIRED danger).
+//   - "Quick pay" row: Apple Pay + Google Pay + PayPal + bank-transfer
+//     pills.
+//   - "Add new" row at the bottom + a Card-removal CTA.
+
+import { Theme, Tone } from "../theme.slint";
+import { AppBar } from "../app-bar.slint";
+import { SectionHeader } from "../section-header.slint";
+import { Divider } from "../divider.slint";
+import { MobileButton, TextButton } from "../button.slint";
+
+// Default-card hero — same gradient-and-meta pattern WalletPage uses,
+// adapted to a full-width layout.
+component DefaultCard inherits Rectangle {
+    in property <string> brand;
+    in property <string> last-four;
+    in property <string> holder;
+    in property <string> expiry;
+    in property <brush> gradient;
+
+    horizontal-stretch: 1;
+    height: 200px;
+    border-radius: Theme.radius-lg;
+    background: root.gradient;
+    drop-shadow-blur: Theme.elevation-2-blur;
+    drop-shadow-color: Theme.elevation-2-color;
+    drop-shadow-offset-y: Theme.elevation-2-y;
+    clip: true;
+
+    // DEFAULT pill — top-right.
+    Rectangle {
+        x: parent.width - self.width - Theme.spacing-md;
+        y: Theme.spacing-md;
+        width: default-text.preferred-width + 14px;
+        height: 22px;
+        border-radius: 11px;
+        background: #ffffff33;
+        default-text := Text {
+            text: "DEFAULT";
+            color: #ffffff;
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: 0.5px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            width: parent.width;
+            height: parent.height;
+        }
+    }
+
+    // Chip + brand mark.
+    Rectangle {
+        x: Theme.spacing-md;
+        y: Theme.spacing-md;
+        width: 44px;
+        height: 32px;
+        border-radius: 4px;
+        background: @linear-gradient(135deg, #d4af37 0%, #a07e1a 100%);
+    }
+    Text {
+        text: root.brand;
+        x: Theme.spacing-md;
+        y: 72px;
+        color: #ffffff;
+        font-size: Theme.font-size-title;
+        font-weight: 800;
+        letter-spacing: 2px;
+    }
+
+    // Last four + holder + expiry along the bottom.
+    Text {
+        text: "•••• •••• •••• " + root.last-four;
+        x: Theme.spacing-md;
+        y: parent.height - 60px;
+        color: #ffffff;
+        font-size: Theme.font-size-title;
+        font-weight: 700;
+        letter-spacing: 2px;
+    }
+    HorizontalLayout {
+        x: Theme.spacing-md;
+        y: parent.height - 28px;
+        width: parent.width - 2 * Theme.spacing-md;
+        Text {
+            text: root.holder;
+            color: #ffffffcc;
+            font-size: Theme.font-size-caption;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            horizontal-stretch: 1;
+        }
+        Text {
+            text: root.expiry;
+            color: #ffffffcc;
+            font-size: Theme.font-size-caption;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+    }
+}
+
+// One saved-card row.
+component CardRow inherits Rectangle {
+    in property <string> brand;
+    in property <string> last-four;
+    in property <string> expiry;
+    in property <color> swatch;
+    in property <int> state: 0;   // 0 active, 1 expires soon, 2 expired
+
+    horizontal-stretch: 1;
+    min-height: 72px;
+
+    HorizontalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+
+        // Mini card swatch.
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 48px;
+                height: 32px;
+                border-radius: 4px;
+                background: root.swatch;
+                Rectangle {
+                    x: 4px;
+                    y: 6px;
+                    width: 8px;
+                    height: 6px;
+                    border-radius: 1px;
+                    background: #ffffff66;
+                }
+            }
+        }
+
+        // Brand + last-four.
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            HorizontalLayout {
+                spacing: Theme.spacing-xs;
+                Text {
+                    text: root.brand;
+                    color: Theme.on-surface;
+                    font-size: Theme.font-size-body;
+                    font-weight: 700;
+                }
+                Text {
+                    text: "•• " + root.last-four;
+                    color: Theme.muted;
+                    font-size: Theme.font-size-body;
+                    font-weight: 600;
+                    letter-spacing: 0.5px;
+                }
+            }
+            Text {
+                text: "Expires " + root.expiry;
+                color:
+                      root.state == 1 ? Theme.accent-warning
+                    : root.state == 2 ? Theme.accent-danger
+                    : Theme.muted;
+                font-size: Theme.font-size-caption;
+            }
+        }
+
+        // Status pill.
+        VerticalLayout {
+            alignment: center;
+            if root.state > 0: Rectangle {
+                width: status-text.preferred-width + 12px;
+                height: 20px;
+                border-radius: 4px;
+                background:
+                      root.state == 1 ? Theme.accent-warning
+                    : Theme.accent-danger;
+                status-text := Text {
+                    text: root.state == 1 ? "EXPIRES SOON" : "EXPIRED";
+                    color: Theme.on-primary;
+                    font-size: 9px;
+                    font-weight: 800;
+                    letter-spacing: 0.5px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+            }
+        }
+    }
+}
+
+// Quick-pay pill — a coloured rounded badge with brand glyph + label.
+component QuickPayPill inherits Rectangle {
+    in property <string> label;
+    in property <image> icon;
+    in property <color> brand;
+    in property <bool> active: false;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-action-default => { root.clicked(); }
+
+    horizontal-stretch: 1;
+    height: 60px;
+    background:
+          root.active
+        ? root.brand
+        : Theme.surface-1;
+    border-radius: Theme.radius-md;
+    border-width: 1px;
+    border-color: root.active ? root.brand : Theme.outline;
+    drop-shadow-blur: Theme.elevation-1-blur;
+    drop-shadow-color: Theme.elevation-1-color;
+    drop-shadow-offset-y: Theme.elevation-1-y;
+
+    HorizontalLayout {
+        spacing: Theme.spacing-sm;
+        alignment: center;
+        VerticalLayout {
+            alignment: center;
+            Image {
+                width: 20px;
+                height: 20px;
+                source: root.icon;
+                colorize: root.active ? #ffffff : root.brand;
+                image-fit: contain;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.active ? #ffffff : Theme.on-surface;
+                font-size: Theme.font-size-caption;
+                font-weight: 700;
+            }
+        }
+    }
+    TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+export component PaymentMethodPage inherits Rectangle {
+    callback back-pressed();
+    callback add-card-pressed();
+    callback quick-pay-pressed(string);
+    callback card-pressed(string);
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "Payment methods";
+            leading-icon: @image-url("../icons/arrow-left.svg");
+            trailing-icon: @image-url("../icons/plus.svg");
+            leading-pressed => { root.back-pressed(); }
+            trailing-pressed => { root.add-card-pressed(); }
+        }
+
+        VerticalLayout {
+            padding: Theme.spacing-md;
+            spacing: Theme.spacing-md;
+            alignment: start;
+
+            // Default card hero.
+            DefaultCard {
+                brand: "VISA";
+                last-four: "4242";
+                holder: "GREG RAYMOND";
+                expiry: "08/29";
+                gradient: @linear-gradient(135deg, #1e3a8a 0%, #0f1d4d 100%);
+            }
+
+            // Quick pay row.
+            Text {
+                text: "Quick pay";
+                color: Theme.on-background;
+                font-size: Theme.font-size-body;
+                font-weight: 700;
+            }
+            HorizontalLayout {
+                spacing: Theme.spacing-sm;
+                QuickPayPill {
+                    label: "Apple Pay";
+                    icon: @image-url("../icons/heart.svg");
+                    brand: #000000;
+                    active: true;
+                    clicked => { root.quick-pay-pressed("apple"); }
+                }
+                QuickPayPill {
+                    label: "Google Pay";
+                    icon: @image-url("../icons/check.svg");
+                    brand: #4285f4;
+                    clicked => { root.quick-pay-pressed("google"); }
+                }
+                QuickPayPill {
+                    label: "PayPal";
+                    icon: @image-url("../icons/send.svg");
+                    brand: #003087;
+                    clicked => { root.quick-pay-pressed("paypal"); }
+                }
+            }
+        }
+
+        SectionHeader { text: "OTHER CARDS"; }
+        CardRow {
+            brand: "Mastercard";
+            last-four: "7782";
+            expiry: "05/26";
+            state: 1;
+            swatch: #b91c1c;
+        }
+        Divider { }
+        CardRow {
+            brand: "Amex";
+            last-four: "1009";
+            expiry: "12/27";
+            swatch: #1a1a1a;
+        }
+        Divider { }
+        CardRow {
+            brand: "Visa Debit";
+            last-four: "5510";
+            expiry: "02/25";
+            state: 2;
+            swatch: #4f8cff;
+        }
+
+        SectionHeader { text: "ALTERNATIVES"; }
+        CardRow {
+            brand: "Bank transfer";
+            last-four: "3349";
+            expiry: "primary checking";
+            state: 0;
+            swatch: Theme.accent-success;
+        }
+        Divider { }
+        CardRow {
+            brand: "Klarna · Pay in 4";
+            last-four: "active";
+            expiry: "$1,200 limit · 0% interest";
+            state: 0;
+            swatch: #ffa8c5;
+        }
+
+        Rectangle { vertical-stretch: 1; }
+
+        // Sticky add-new + manage row.
+        Rectangle {
+            background: Theme.surface-1;
+            drop-shadow-blur: Theme.elevation-2-blur;
+            drop-shadow-color: Theme.elevation-2-color;
+            drop-shadow-offset-y: -4px;
+            height: 96px;
+            VerticalLayout {
+                padding: Theme.spacing-md;
+                spacing: Theme.spacing-sm;
+                MobileButton {
+                    text: "Add new card or method";
+                    tone: Tone.info;
+                    max-height: 48px;
+                    clicked => { root.add-card-pressed(); }
+                }
+                HorizontalLayout {
+                    alignment: center;
+                    TextButton {
+                        text: "Manage saved methods";
+                    }
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,230 @@
+// MusicLibraryPage
+// =====================================================================
+//
+// List + grid template — a music / video / podcast / photo library
+// home screen with a horizontally-scrolling "Featured" carousel above
+// a 2-column grid of saved items. Exercises a horizontal `ScrollView`
+// (the carousel) and a layered vertical `ScrollView` (the whole page),
+// neither of which the other templates use.
+//
+// Specification
+// -------------
+//
+// Geometry
+//   - AppBar with menu + search.
+//   - Featured carousel — 184-px-wide cards, horizontally scrollable.
+//   - `YOUR LIBRARY` section header.
+//   - 2-column grid of 176-px-wide tiles (album art + title + artist).
+//
+// Slint constraint
+//   - Inner image dimensions are HARDCODED rather than computed from
+//     `parent.width` / `self.width`. Slint's layout engine treats
+//     `height: self.width` as a binding loop when the element sits
+//     inside a Flickable viewport whose width itself depends on
+//     content sizes (and our nested ScrollView setup hits exactly that
+//     case). Hardcoding the inner square dimensions side-steps the
+//     loop; the trade-off is that tile sizes don't reflow with page
+//     width — acceptable for the mobile target where the window is a
+//     fixed 412 px.
+
+import { Theme } from "../theme.slint";
+import { AppBar } from "../app-bar.slint";
+import { SectionHeader } from "../section-header.slint";
+import { ScrollView } from "std-widgets.slint";
+
+export struct AlbumEntry {
+    title: string,
+    artist: string,
+    cover: image,
+}
+
+component FeaturedCard inherits Rectangle {
+    in property <AlbumEntry> album;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: album.title;
+    accessible-description: album.artist;
+    accessible-action-default => { root.clicked(); }
+
+    width: 184px;
+    background: transparent;
+
+    VerticalLayout {
+        spacing: Theme.spacing-sm;
+
+        Rectangle {
+            width: 184px;
+            height: 184px;
+            border-radius: Theme.radius-md;
+            clip: true;
+            drop-shadow-blur: Theme.elevation-1-blur;
+            drop-shadow-color: Theme.elevation-1-color;
+            drop-shadow-offset-y: Theme.elevation-1-y;
+
+            Image {
+                width: parent.width;
+                height: parent.height;
+                source: root.album.cover;
+                image-fit: ImageFit.cover;
+            }
+        }
+        Text {
+            text: root.album.title;
+            color: Theme.on-background;
+            font-size: Theme.font-size-body-large;
+            font-weight: 600;
+            overflow: elide;
+        }
+        Text {
+            text: root.album.artist;
+            color: Theme.muted;
+            font-size: Theme.font-size-body;
+            overflow: elide;
+        }
+    }
+
+    TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+component GridTile inherits Rectangle {
+    in property <AlbumEntry> album;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: album.title;
+    accessible-description: album.artist;
+    accessible-action-default => { root.clicked(); }
+
+    width: 176px;
+    background: transparent;
+
+    VerticalLayout {
+        spacing: Theme.spacing-sm;
+
+        Rectangle {
+            width: 176px;
+            height: 176px;
+            border-radius: Theme.radius-md;
+            clip: true;
+            drop-shadow-blur: Theme.elevation-1-blur;
+            drop-shadow-color: Theme.elevation-1-color;
+            drop-shadow-offset-y: Theme.elevation-1-y;
+
+            Image {
+                width: parent.width;
+                height: parent.height;
+                source: root.album.cover;
+                image-fit: ImageFit.cover;
+            }
+        }
+        Text {
+            text: root.album.title;
+            color: Theme.on-background;
+            font-size: Theme.font-size-body;
+            font-weight: 600;
+            overflow: elide;
+        }
+        Text {
+            text: root.album.artist;
+            color: Theme.muted;
+            font-size: Theme.font-size-caption;
+            overflow: elide;
+        }
+    }
+
+    TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+export component MusicLibraryPage inherits Rectangle {
+    in property <[AlbumEntry]> featured: [
+        { title: "Tail Recursion", artist: "Functional Coffee", cover: @image-url("../icons/album-blue.svg") },
+        { title: "Emerald Layers", artist: "Greenfield Trio", cover: @image-url("../icons/album-emerald.svg") },
+        { title: "Sunset Stack", artist: "Marco · ops", cover: @image-url("../icons/album-sunset.svg") },
+    ];
+    in property <[AlbumEntry]> library: [
+        { title: "After Hours", artist: "Petra Lindquist", cover: @image-url("../icons/album-emerald.svg") },
+        { title: "Cold Compile", artist: "Functional Coffee", cover: @image-url("../icons/album-blue.svg") },
+        { title: "Late Night Linter", artist: "Marco · ops", cover: @image-url("../icons/album-sunset.svg") },
+        { title: "Pretty Print", artist: "Greenfield Trio", cover: @image-url("../icons/album-blue.svg") },
+        { title: "Untyped Holiday", artist: "Petra Lindquist", cover: @image-url("../icons/album-emerald.svg") },
+        { title: "Stack Trace", artist: "Functional Coffee", cover: @image-url("../icons/album-sunset.svg") },
+    ];
+    callback menu-pressed();
+    callback search-pressed();
+    callback album-pressed(AlbumEntry);
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "Music";
+            leading-icon: @image-url("../icons/menu.svg");
+            trailing-icon: @image-url("../icons/search.svg");
+            leading-pressed => { root.menu-pressed(); }
+            trailing-pressed => { root.search-pressed(); }
+        }
+
+        ScrollView {
+            vertical-stretch: 1;
+
+            VerticalLayout {
+                alignment: start;
+                spacing: Theme.spacing-md;
+                padding-top: Theme.spacing-md;
+                padding-bottom: Theme.spacing-lg;
+
+                SectionHeader { text: "FEATURED"; }
+
+                // Horizontal carousel — viewport-width is static
+                // (3 cards × (184 + 16) + 16 padding = 616) to avoid
+                // Slint's binding-loop detector treating a length-
+                // dependent viewport as cyclic.
+                ScrollView {
+                    height: 268px;
+                    horizontal-scrollbar-policy: ScrollBarPolicy.always-off;
+                    vertical-scrollbar-policy: ScrollBarPolicy.always-off;
+                    viewport-width: 632px;
+                    HorizontalLayout {
+                        spacing: Theme.spacing-md;
+                        padding-left: Theme.spacing-md;
+                        padding-right: Theme.spacing-md;
+                        for album in root.featured: FeaturedCard {
+                            album: album;
+                            clicked => { root.album-pressed(album); }
+                        }
+                    }
+                }
+
+                SectionHeader { text: "YOUR LIBRARY"; }
+
+                // 2-column grid (rows of HorizontalLayout pairs).
+                for row in [
+                    {a: root.library[0], b: root.library[1]},
+                    {a: root.library[2], b: root.library[3]},
+                    {a: root.library[4], b: root.library[5]},
+                ]: HorizontalLayout {
+                    spacing: Theme.spacing-md;
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-bottom: Theme.spacing-md;
+                    alignment: center;
+                    GridTile {
+                        album: row.a;
+                        clicked => { root.album-pressed(row.a); }
+                    }
+                    GridTile {
+                        album: row.b;
+                        clicked => { root.album-pressed(row.b); }
+                    }
+                }
+            }
+        }
+    }
+}

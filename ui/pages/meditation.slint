@@ -1,0 +1,286 @@
+// MeditationPage
+// =====================================================================
+//
+// Breathing-exercise hero + session library. Sibling to TimerPage but
+// tuned for a calm, ambient app surface (Calm, Headspace, Balance).
+// Demonstrates:
+//
+//   - Layered concentric circles with falling opacity — the visual
+//     metaphor for "expanding breath": a tight inner disc, then two
+//     halo rings each progressively larger + more transparent.
+//   - "Breathe in / Breathe out" guide caption above the ring, time-
+//     elapsed counter below. Both pinned to the centre of the canvas.
+//   - A session library — horizontally scrollable cards (10 / 15 / 20 /
+//     30 min) each with its own background gradient and a play disc.
+//   - A "RECENT" list below using the existing ListItem-like compact
+//     row layout, with a tone-tinted leading marker per session.
+
+import { Theme, Tone } from "../theme.slint";
+import { AppBar } from "../app-bar.slint";
+import { SectionHeader } from "../section-header.slint";
+import { Divider } from "../divider.slint";
+import { ScrollView } from "std-widgets.slint";
+
+// One session card — a tappable rectangle with gradient + duration +
+// title. Used in the horizontal "Pick a length" rail.
+component SessionCard inherits Rectangle {
+    in property <string> minutes;
+    in property <string> title;
+    in property <brush> fill;
+
+    width: 160px;
+    height: 200px;
+    background: root.fill;
+    border-radius: Theme.radius-lg;
+    drop-shadow-blur: Theme.elevation-1-blur;
+    drop-shadow-color: Theme.elevation-1-color;
+    drop-shadow-offset-y: Theme.elevation-1-y;
+    clip: true;
+
+    // Play disc — bottom-right corner.
+    Rectangle {
+        x: parent.width - self.width - Theme.spacing-md;
+        y: parent.height - self.height - Theme.spacing-md;
+        width: 44px;
+        height: 44px;
+        border-radius: self.width / 2;
+        background: #ffffff44;
+        Image {
+            width: 18px;
+            height: 18px;
+            x: (parent.width - self.width) / 2 + 1px;
+            y: (parent.height - self.height) / 2;
+            source: @image-url("../icons/play.svg");
+            colorize: #ffffff;
+            image-fit: contain;
+        }
+    }
+
+    VerticalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-xs;
+        Text {
+            text: root.minutes + " min";
+            color: #ffffff;
+            font-size: Theme.font-size-headline;
+            font-weight: 700;
+        }
+        Text {
+            text: root.title;
+            color: #ffffffcc;
+            font-size: Theme.font-size-caption;
+            wrap: word-wrap;
+        }
+    }
+}
+
+// One row in the RECENT list — small leading dot + title + duration.
+component RecentRow inherits Rectangle {
+    in property <string> title;
+    in property <string> duration;
+    in property <string> when;
+    in property <Tone> tone: Tone.default;
+
+    min-height: 56px;
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 10px;
+                height: 10px;
+                border-radius: 5px;
+                background:
+                      root.tone == Tone.success ? Theme.accent-success
+                    : root.tone == Tone.warning ? Theme.accent-warning
+                    : root.tone == Tone.danger  ? Theme.accent-danger
+                    : root.tone == Tone.info    ? Theme.accent-info
+                    : Theme.muted;
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: root.title;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 500;
+                overflow: elide;
+            }
+            Text {
+                text: root.when;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.duration;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+                font-weight: 600;
+                horizontal-alignment: right;
+            }
+        }
+    }
+}
+
+export component MeditationPage inherits Rectangle {
+    in property <string> phase: "BREATHE IN";
+    in property <string> elapsed: "01:24";
+    in property <string> session-name: "Morning calm";
+    callback back-pressed();
+    callback share-pressed();
+    callback session-pressed(string);
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: root.session-name;
+            leading-icon: @image-url("../icons/arrow-left.svg");
+            trailing-icon: @image-url("../icons/more-vertical.svg");
+            leading-pressed => { root.back-pressed(); }
+            trailing-pressed => { root.share-pressed(); }
+        }
+
+        // ----- Hero: phase caption + concentric breath rings -----
+        Rectangle {
+            height: 320px;
+            VerticalLayout {
+                padding-top: Theme.spacing-md;
+                spacing: Theme.spacing-sm;
+                HorizontalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.phase;
+                        color: Theme.accent-info;
+                        font-size: Theme.font-size-body;
+                        font-weight: 700;
+                        letter-spacing: 2px;
+                    }
+                }
+                // Ring stack — three concentric circles, each larger
+                // and more transparent. The outermost faintest, the
+                // innermost the brightest core disc.
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 220px;
+                        height: 220px;
+
+                        // Outer halo.
+                        Rectangle {
+                            x: 0;
+                            y: 0;
+                            width: 220px;
+                            height: 220px;
+                            border-radius: 110px;
+                            background: Theme.accent-info;
+                            opacity: 0.12;
+                        }
+                        // Mid halo.
+                        Rectangle {
+                            x: 30px;
+                            y: 30px;
+                            width: 160px;
+                            height: 160px;
+                            border-radius: 80px;
+                            background: Theme.accent-info;
+                            opacity: 0.25;
+                        }
+                        // Inner disc.
+                        Rectangle {
+                            x: 60px;
+                            y: 60px;
+                            width: 100px;
+                            height: 100px;
+                            border-radius: 50px;
+                            background: @radial-gradient(circle, #4f8cff 0%, #1f4eaa 100%);
+                            drop-shadow-blur: 24px;
+                            drop-shadow-color: #4f8cff66;
+                            drop-shadow-offset-y: 0px;
+                            // Elapsed time.
+                            Text {
+                                text: root.elapsed;
+                                color: #ffffff;
+                                font-size: Theme.font-size-title;
+                                font-weight: 600;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                width: parent.width;
+                                height: parent.height;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ----- Session library -----
+        SectionHeader { text: "PICK A LENGTH"; }
+        ScrollView {
+            height: 220px;
+            horizontal-stretch: 1;
+            viewport-width: 4 * 160px + 5 * Theme.spacing-sm;
+            viewport-height: 204px;
+            HorizontalLayout {
+                spacing: Theme.spacing-sm;
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                SessionCard {
+                    minutes: "5";
+                    title: "Box breathing";
+                    fill: @linear-gradient(135deg, #4f8cff 0%, #1f4eaa 100%);
+                }
+                SessionCard {
+                    minutes: "10";
+                    title: "Body scan";
+                    fill: @linear-gradient(135deg, #16a34a 0%, #14532d 100%);
+                }
+                SessionCard {
+                    minutes: "15";
+                    title: "Focus reset";
+                    fill: @linear-gradient(135deg, #9333ea 0%, #581c87 100%);
+                }
+                SessionCard {
+                    minutes: "20";
+                    title: "Sleep wind-down";
+                    fill: @linear-gradient(135deg, #0e7490 0%, #134e4a 100%);
+                }
+            }
+        }
+
+        SectionHeader { text: "RECENT"; }
+        RecentRow {
+            title: "Morning calm";
+            duration: "10:00";
+            when: "today, 07:14";
+            tone: Tone.info;
+        }
+        Divider { }
+        RecentRow {
+            title: "Pre-meeting reset";
+            duration: "5:00";
+            when: "yesterday, 13:50";
+            tone: Tone.success;
+        }
+        Divider { }
+        RecentRow {
+            title: "Body scan";
+            duration: "20:00";
+            when: "Mon, 22:18";
+            tone: Tone.default;
+        }
+
+        Rectangle { vertical-stretch: 1; }
+    }
+}

@@ -1,0 +1,353 @@
+// EmailThreadPage
+// =====================================================================
+//
+// Single email thread view — sender header + subject + body + quoted
+// reply chain + attachment chips + action row. Demonstrates:
+//
+//   - Label-pill row right under the subject (Inbox / Slint / Priority)
+//     that mirrors how Gmail / Superhuman / Hey render thread metadata.
+//   - Inline attachment cards with file-icon + filename + size + an
+//     ellipsis trailing affordance.
+//   - Quote-block visual: collapsed `> ` rail (2px outline-coloured) on
+//     the left edge of the older messages in the thread.
+//   - Bottom action bar (Reply / Reply all / Forward) anchored above
+//     the keyboard area.
+
+import { Theme, Tone } from "../theme.slint";
+import { AppBar } from "../app-bar.slint";
+import { Avatar } from "../avatar.slint";
+import { Chip } from "../chip.slint";
+import { Divider } from "../divider.slint";
+import { MobileButton, TextButton } from "../button.slint";
+import { ScrollView } from "std-widgets.slint";
+
+// One attachment card.
+component AttachmentChip inherits Rectangle {
+    in property <string> name;
+    in property <string> size;
+    in property <color> icon-color: Theme.accent-info;
+
+    height: 56px;
+    width: 200px;
+    background: Theme.surface-2;
+    border-radius: Theme.radius-md;
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-sm;
+        padding-right: Theme.spacing-sm;
+        padding-top: Theme.spacing-xs;
+        padding-bottom: Theme.spacing-xs;
+        spacing: Theme.spacing-sm;
+        alignment: stretch;
+        // Faux file icon.
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 36px;
+                height: 40px;
+                border-radius: 4px;
+                background: root.icon-color;
+                Text {
+                    text: "PDF";
+                    color: Theme.on-primary;
+                    font-size: 9px;
+                    font-weight: 700;
+                    letter-spacing: 0.5px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: root.name;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-caption;
+                font-weight: 600;
+                overflow: elide;
+            }
+            Text {
+                text: root.size;
+                color: Theme.muted;
+                font-size: 10px;
+            }
+        }
+    }
+}
+
+// One bottom action button (Reply, Reply all, Forward) — vertical
+// icon + label stack.
+component ActionButton inherits Rectangle {
+    in property <image> icon;
+    in property <string> label;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-action-default => { root.clicked(); }
+
+    horizontal-stretch: 1;
+    height: 56px;
+    background: touch.pressed ? Theme.surface-pressed : transparent;
+
+    animate background { duration: Theme.motion-fast; }
+
+    VerticalLayout {
+        spacing: 2px;
+        padding-top: Theme.spacing-xs;
+        padding-bottom: Theme.spacing-xs;
+        alignment: center;
+        HorizontalLayout {
+            alignment: center;
+            Image {
+                width: 20px;
+                height: 20px;
+                source: root.icon;
+                colorize: Theme.primary;
+                image-fit: contain;
+            }
+        }
+        HorizontalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: Theme.primary;
+                font-size: 10px;
+                font-weight: 700;
+                letter-spacing: 0.3px;
+            }
+        }
+    }
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+// A nested quoted message — leading 2-px outline rail on the left, dim
+// content. Used for the previous message(s) in the thread.
+component QuotedMessage inherits Rectangle {
+    in property <string> initials;
+    in property <string> author;
+    in property <string> when;
+    in property <string> body;
+
+    horizontal-stretch: 1;
+
+    HorizontalLayout {
+        padding-top: Theme.spacing-sm;
+        padding-bottom: Theme.spacing-sm;
+        padding-right: Theme.spacing-md;
+        spacing: Theme.spacing-sm;
+        alignment: stretch;
+
+        // Quote rail.
+        Rectangle {
+            width: 4px;
+            background: Theme.outline;
+        }
+
+        VerticalLayout {
+            horizontal-stretch: 1;
+            spacing: Theme.spacing-xs;
+            HorizontalLayout {
+                spacing: Theme.spacing-sm;
+                Avatar {
+                    fallback: root.initials;
+                    size: 28px;
+                }
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    spacing: 2px;
+                    Text {
+                        text: root.author;
+                        color: Theme.muted;
+                        font-size: Theme.font-size-caption;
+                        font-weight: 600;
+                    }
+                    Text {
+                        text: root.when;
+                        color: Theme.muted;
+                        font-size: 10px;
+                    }
+                }
+            }
+            Text {
+                text: root.body;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+                wrap: word-wrap;
+            }
+        }
+    }
+}
+
+export component EmailThreadPage inherits Rectangle {
+    in property <string> subject: "Design review: Tone enum rollout + Drawer primitive";
+    in property <string> sender: "Priya Rao";
+    in property <string> sender-email: "priya@slint.dev";
+    in property <string> when: "Today, 14:32";
+    in property <string> body:
+        "Hi Greg —\n\nLooked through the iteration 10–13 work. The Tone enum migration is exactly what I wanted: every status-aware component now reads from the same source, and the Dialog refactor is a particularly clean win.\n\nTwo follow-ups before we ship:\n  • Add `tone` to Snackbar's action button colour as well — right now only the dot is tinted.\n  • The Drawer's inner-edge shadow gets clipped at the screen edge. Move the perforation rectangles inside the parent and the offset-x will fall onto the page beneath as expected.\n\nLGTM otherwise. Ship it.\n\nPriya";
+    callback back-pressed();
+    callback archive-pressed();
+    callback delete-pressed();
+    callback reply-pressed();
+    callback reply-all-pressed();
+    callback forward-pressed();
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "Inbox";
+            leading-icon: @image-url("../icons/arrow-left.svg");
+            trailing-icon: @image-url("../icons/more-vertical.svg");
+            leading-pressed => { root.back-pressed(); }
+        }
+
+        ScrollView {
+            vertical-stretch: 1;
+            horizontal-stretch: 1;
+            viewport-width: 412px;
+            viewport-height: 1200px;
+            VerticalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-md;
+
+                // ----- Subject -----
+                Text {
+                    text: root.subject;
+                    color: Theme.on-background;
+                    font-size: Theme.font-size-title;
+                    font-weight: 700;
+                    wrap: word-wrap;
+                }
+
+                // ----- Labels -----
+                HorizontalLayout {
+                    spacing: Theme.spacing-sm;
+                    Chip { label: "Inbox"; selected: true; }
+                    Chip { label: "Slint"; }
+                    Chip { label: "Priority"; }
+                }
+
+                Divider { }
+
+                // ----- Sender row -----
+                HorizontalLayout {
+                    spacing: Theme.spacing-md;
+                    alignment: stretch;
+                    Avatar {
+                        fallback: "PR";
+                        size: 44px;
+                    }
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        alignment: center;
+                        spacing: 2px;
+                        HorizontalLayout {
+                            Text {
+                                text: root.sender;
+                                color: Theme.on-surface;
+                                font-size: Theme.font-size-body;
+                                font-weight: 600;
+                                horizontal-stretch: 1;
+                            }
+                            Text {
+                                text: root.when;
+                                color: Theme.muted;
+                                font-size: Theme.font-size-caption;
+                            }
+                        }
+                        Text {
+                            text: "to me · " + root.sender-email;
+                            color: Theme.muted;
+                            font-size: Theme.font-size-caption;
+                        }
+                    }
+                }
+
+                // ----- Body -----
+                Text {
+                    text: root.body;
+                    color: Theme.on-surface;
+                    font-size: Theme.font-size-body;
+                    wrap: word-wrap;
+                }
+
+                // ----- Attachments -----
+                Text {
+                    text: "2 ATTACHMENTS";
+                    color: Theme.muted;
+                    font-size: 10px;
+                    font-weight: 700;
+                    letter-spacing: 0.5px;
+                }
+                HorizontalLayout {
+                    spacing: Theme.spacing-sm;
+                    AttachmentChip {
+                        name: "tone-rollout.pdf";
+                        size: "412 KB";
+                        icon-color: Theme.accent-danger;
+                    }
+                    AttachmentChip {
+                        name: "drawer-shadow-fix.pdf";
+                        size: "88 KB";
+                        icon-color: Theme.accent-info;
+                    }
+                }
+
+                Divider { }
+
+                // ----- Quoted thread -----
+                QuotedMessage {
+                    initials: "GR";
+                    author: "Greg Raymond";
+                    when: "Today, 12:40";
+                    body: "Tagging you on the iteration 13 PR — Tone enum + Dialog refactor are in, plus Drawer primitive lands here too. Mind taking a pass?";
+                }
+                QuotedMessage {
+                    initials: "AR";
+                    author: "Anika Ravi";
+                    when: "Yesterday, 17:08";
+                    body: "Worth flagging that the new Tone enum should also drive Banner's action-label colour, not just the leading icon — I noticed that on the Wallet snapshot.";
+                }
+            }
+        }
+
+        // ----- Sticky action bar -----
+        Rectangle {
+            background: Theme.surface-1;
+            drop-shadow-blur: Theme.elevation-2-blur;
+            drop-shadow-color: Theme.elevation-2-color;
+            drop-shadow-offset-y: -4px;
+            HorizontalLayout {
+                ActionButton {
+                    icon: @image-url("../icons/arrow-left.svg");
+                    label: "REPLY";
+                    clicked => { root.reply-pressed(); }
+                }
+                ActionButton {
+                    icon: @image-url("../icons/send.svg");
+                    label: "REPLY ALL";
+                    clicked => { root.reply-all-pressed(); }
+                }
+                ActionButton {
+                    icon: @image-url("../icons/chevron-right.svg");
+                    label: "FORWARD";
+                    clicked => { root.forward-pressed(); }
+                }
+            }
+        }
+    }
+}

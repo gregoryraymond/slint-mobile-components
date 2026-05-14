@@ -1,0 +1,91 @@
+// EmptyState
+// =====================================================================
+//
+// "Nothing to show yet" — a full-bleed illustration + headline +
+// description + optional CTA shown when a list, search result, inbox,
+// or similar surface is empty.
+//
+// Specification
+// -------------
+//
+// Geometry
+//   - Fills its parent layout cell (`horizontal-stretch: 1`,
+//     `vertical-stretch: 1`).
+//   - All content centred horizontally and vertically by a VerticalLayout
+//     with `alignment: center`.
+//   - 32 px outer padding; 16 px between stacked elements.
+//
+// Content
+//   - `icon` (image, optional): 64 × 64 glyph at the top, tinted
+//     `Theme.muted`. Hidden when empty.
+//   - `title` (string): headline, 20 px / weight-600, `Theme.on-background`.
+//   - `description` (string, optional): explanatory caption below the
+//     title, word-wraps, `Theme.muted`.
+//   - `action-label` (string, optional): when set, a primary
+//     `MobileButton` appears at the bottom; tapping it fires
+//     `action-pressed()`.
+
+import { Theme } from "theme.slint";
+import { MobileButton } from "button.slint";
+
+export component EmptyState inherits Rectangle {
+    in property <image> icon;
+    in property <string> title;
+    in property <string> description;
+    in property <string> action-label;
+    callback action-pressed();
+
+    horizontal-stretch: 1;
+    vertical-stretch: 1;
+    background: transparent;
+
+    VerticalLayout {
+        alignment: center;
+        spacing: Theme.spacing-md;
+        padding: Theme.spacing-xl;
+
+        if root.icon.width > 0: HorizontalLayout {
+            alignment: center;
+            Image {
+                width: 64px;
+                height: 64px;
+                source: root.icon;
+                colorize: Theme.muted;
+                image-fit: contain;
+            }
+        }
+
+        HorizontalLayout {
+            alignment: center;
+            Text {
+                text: root.title;
+                color: Theme.on-background;
+                font-size: Theme.font-size-title;
+                font-weight: 600;
+                horizontal-alignment: center;
+            }
+        }
+
+        if root.description != "": HorizontalLayout {
+            alignment: center;
+            Text {
+                text: root.description;
+                color: Theme.muted;
+                font-size: Theme.font-size-body;
+                horizontal-alignment: center;
+                wrap: word-wrap;
+            }
+        }
+
+        if root.action-label != "": HorizontalLayout {
+            alignment: center;
+            padding-top: Theme.spacing-sm;
+            MobileButton {
+                text: root.action-label;
+                min-width: 160px;
+                max-width: 240px;
+                clicked => { root.action-pressed(); }
+            }
+        }
+    }
+}

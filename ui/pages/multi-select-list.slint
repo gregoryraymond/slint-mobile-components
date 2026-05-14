@@ -1,0 +1,357 @@
+// MultiSelectListPage
+// =====================================================================
+//
+// Inbox-in-selection-mode — Gmail / Apple Mail / Files-app style.
+// The user has long-pressed an item to enter selection mode, and the
+// catalogue tracks how the surface should reshape:
+//
+//   - AppBar title flips from "Inbox" → "3 selected" and the leading
+//     icon becomes a close-× to exit selection mode. A trailing
+//     "Select all" affordance shows up.
+//   - Per-row layout swaps the avatar for a Checkbox; selected rows
+//     get a tone-tinted surface highlight.
+//   - Bottom action bar slides up with bulk actions (Archive / Tag /
+//     Mute / Delete). Each action is tone-tinted appropriately.
+
+import { Theme, Tone } from "../theme.slint";
+import { Avatar } from "../avatar.slint";
+import { Checkbox } from "../checkbox.slint";
+import { Divider } from "../divider.slint";
+
+// One inbox row with optional selection state.
+component InboxRow inherits Rectangle {
+    in property <string> initials;
+    in property <string> sender;
+    in property <string> subject;
+    in property <string> preview;
+    in property <string> when;
+    in property <bool> unread: false;
+    in-out property <bool> selected: false;
+    callback toggled();
+
+    accessible-role: button;
+    accessible-label: root.sender + ": " + root.subject;
+    accessible-checkable: true;
+    accessible-checked: root.selected;
+    accessible-action-default => {
+        root.selected = !root.selected;
+        root.toggled();
+    }
+
+    horizontal-stretch: 1;
+    min-height: 80px;
+    background:
+          root.selected
+        ? #4f8cff22
+        : (touch.pressed ? Theme.surface-pressed : transparent);
+    animate background { duration: Theme.motion-fast; }
+
+    // Leading info-tone selected indicator stripe.
+    if root.selected: Rectangle {
+        x: 0;
+        y: 0;
+        width: 3px;
+        height: parent.height;
+        background: Theme.accent-info;
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        padding-top: Theme.spacing-sm;
+        padding-bottom: Theme.spacing-sm;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+
+        // Checkbox replaces the avatar.
+        VerticalLayout {
+            alignment: center;
+            Checkbox {
+                checked <=> root.selected;
+                toggled => { root.toggled(); }
+            }
+        }
+
+        // Avatar shrunk, sits beside the checkbox.
+        VerticalLayout {
+            alignment: center;
+            Avatar {
+                fallback: root.initials;
+                size: 36px;
+            }
+        }
+
+        // Subject + preview + when.
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            HorizontalLayout {
+                spacing: Theme.spacing-xs;
+                Text {
+                    text: root.sender;
+                    color: Theme.on-surface;
+                    font-size: Theme.font-size-body;
+                    font-weight: root.unread ? 700 : 600;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+                Text {
+                    text: root.when;
+                    color: root.unread ? Theme.accent-info : Theme.muted;
+                    font-size: Theme.font-size-caption;
+                    font-weight: root.unread ? 700 : 500;
+                }
+            }
+            Text {
+                text: root.subject;
+                color: root.unread ? Theme.on-surface : Theme.muted;
+                font-size: Theme.font-size-caption;
+                font-weight: root.unread ? 700 : 500;
+                overflow: elide;
+            }
+            Text {
+                text: root.preview;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+                overflow: elide;
+            }
+        }
+    }
+
+    touch := TouchArea {
+        clicked => {
+            root.selected = !root.selected;
+            root.toggled();
+        }
+    }
+}
+
+// One bottom-action button — icon + label, tone-tinted.
+component ActionButton inherits Rectangle {
+    in property <image> icon;
+    in property <string> label;
+    in property <Tone> tone: Tone.default;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-action-default => { root.clicked(); }
+
+    horizontal-stretch: 1;
+    height: 60px;
+    background: touch.pressed ? Theme.surface-pressed : transparent;
+    animate background { duration: Theme.motion-fast; }
+
+    property <color> tint:
+          root.tone == Tone.success ? Theme.accent-success
+        : root.tone == Tone.warning ? Theme.accent-warning
+        : root.tone == Tone.danger  ? Theme.accent-danger
+        : root.tone == Tone.info    ? Theme.accent-info
+        : Theme.on-surface;
+
+    VerticalLayout {
+        spacing: 2px;
+        alignment: center;
+        HorizontalLayout {
+            alignment: center;
+            Image {
+                width: 22px;
+                height: 22px;
+                source: root.icon;
+                colorize: tint;
+                image-fit: contain;
+            }
+        }
+        HorizontalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: tint;
+                font-size: 10px;
+                font-weight: 800;
+                letter-spacing: 0.3px;
+            }
+        }
+    }
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+export component MultiSelectListPage inherits Rectangle {
+    in property <int> selected-count: 3;
+    callback exit-selection-pressed();
+    callback select-all-pressed();
+    callback archive-pressed();
+    callback tag-pressed();
+    callback mute-pressed();
+    callback delete-pressed();
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        // Selection-mode AppBar.
+        Rectangle {
+            background: Theme.accent-info;
+            height: 56px;
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                spacing: Theme.spacing-md;
+                alignment: stretch;
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 32px;
+                        height: 32px;
+                        Image {
+                            width: 22px;
+                            height: 22px;
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                            source: @image-url("../icons/close.svg");
+                            colorize: Theme.on-primary;
+                            image-fit: contain;
+                        }
+                        TouchArea {
+                            clicked => { root.exit-selection-pressed(); }
+                        }
+                    }
+                }
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    alignment: center;
+                    Text {
+                        text: root.selected-count + " selected";
+                        color: Theme.on-primary;
+                        font-size: Theme.font-size-body-large;
+                        font-weight: 800;
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: "Select all";
+                        color: Theme.on-primary;
+                        font-size: Theme.font-size-caption;
+                        font-weight: 800;
+                        letter-spacing: 0.3px;
+                        TouchArea {
+                            clicked => { root.select-all-pressed(); }
+                        }
+                    }
+                }
+            }
+        }
+
+        InboxRow {
+            initials: "PR";
+            sender: "Priya Rao";
+            subject: "Design review: Tone enum rollout";
+            preview: "LGTM otherwise. Ship it.";
+            when: "14:32";
+            unread: true;
+            selected: true;
+        }
+        Divider { }
+        InboxRow {
+            initials: "AR";
+            sender: "Anika Ravi";
+            subject: "Re: Slint Conf agenda";
+            preview: "Marco confirmed the catering for Thursday.";
+            when: "13:08";
+            unread: true;
+            selected: true;
+        }
+        Divider { }
+        InboxRow {
+            initials: "DV";
+            sender: "Devika Sharma";
+            subject: "Drawer primitive — final pass";
+            preview: "Resolve thread — looks good.";
+            when: "11:42";
+            unread: false;
+            selected: true;
+        }
+        Divider { }
+        InboxRow {
+            initials: "LE";
+            sender: "Léa Bernard";
+            subject: "Fado dinner Thursday?";
+            preview: "Mesa de Frades has space at 19:30 if we book today.";
+            when: "10:15";
+            unread: false;
+            selected: false;
+        }
+        Divider { }
+        InboxRow {
+            initials: "MK";
+            sender: "Marco Kovač";
+            subject: "Cargo-apk Apple Silicon writeup";
+            preview: "Draft attached — feedback welcome.";
+            when: "yesterday";
+            unread: false;
+            selected: false;
+        }
+        Divider { }
+        InboxRow {
+            initials: "SY";
+            sender: "Sarah Yuen";
+            subject: "Book club · May read poll";
+            preview: "Voted: The Origin of Programming Languages.";
+            when: "yesterday";
+            unread: false;
+            selected: false;
+        }
+        Divider { }
+        InboxRow {
+            initials: "TM";
+            sender: "Tomás Mendes";
+            subject: "Lisbon trip — group chat";
+            preview: "Anyone got reco for fado in Alfama?";
+            when: "Mon";
+            unread: false;
+            selected: false;
+        }
+
+        Rectangle { vertical-stretch: 1; }
+
+        // Sticky bulk action bar.
+        Rectangle {
+            background: Theme.surface-1;
+            drop-shadow-blur: Theme.elevation-2-blur;
+            drop-shadow-color: Theme.elevation-2-color;
+            drop-shadow-offset-y: -4px;
+            height: 72px;
+            HorizontalLayout {
+                ActionButton {
+                    icon: @image-url("../icons/queue.svg");
+                    label: "ARCHIVE";
+                    tone: Tone.success;
+                    clicked => { root.archive-pressed(); }
+                }
+                ActionButton {
+                    icon: @image-url("../icons/star.svg");
+                    label: "TAG";
+                    tone: Tone.info;
+                    clicked => { root.tag-pressed(); }
+                }
+                ActionButton {
+                    icon: @image-url("../icons/bell.svg");
+                    label: "MUTE";
+                    tone: Tone.warning;
+                    clicked => { root.mute-pressed(); }
+                }
+                ActionButton {
+                    icon: @image-url("../icons/close.svg");
+                    label: "DELETE";
+                    tone: Tone.danger;
+                    clicked => { root.delete-pressed(); }
+                }
+            }
+        }
+    }
+}

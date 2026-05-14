@@ -1,0 +1,305 @@
+// PaywallPage
+// =====================================================================
+//
+// Three-tier pricing comparison (Free / Pro / Team) — the conversion
+// surface app store onboarding flows + B2B SaaS dashboards converge on.
+// Demonstrates:
+//
+//   - Three side-by-side tier cards where one card is visually elevated
+//     (the recommended tier — Pro) via a "Most popular" pill, an info-
+//     tone outline ring, and a slightly taller bounding box.
+//   - Feature checklist with a check / dash glyph per row (inclusion vs
+//     omission), tinted by tone.
+//   - A persistent footer CTA — "Subscribe" with the recommended tier's
+//     accent, plus a tiny "restore purchase" textbutton beside it.
+//
+// Layout
+// ------
+//
+//   AppBar — close (x) leading + "Restore" text in trailing slot
+//   Hero block — headline + subhead
+//   Three TierCards in a horizontal row (free/pro/team)
+//   FAQ-style accordion teaser (3 collapsed rows)
+//   Footer — Subscribe primary button + small restore link
+
+import { Theme, Tone } from "../theme.slint";
+import { AppBar } from "../app-bar.slint";
+import { MobileButton, TextButton } from "../button.slint";
+import { Divider } from "../divider.slint";
+
+// One feature row inside a tier card. `included: false` swaps the
+// leading glyph from a check to a dash and dims the row.
+component FeatureRow inherits Rectangle {
+    in property <string> text;
+    in property <bool> included: true;
+
+    height: 24px;
+    HorizontalLayout {
+        spacing: Theme.spacing-sm;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Image {
+                width: 14px;
+                height: 14px;
+                source: root.included
+                    ? @image-url("../icons/check.svg")
+                    : @image-url("../icons/minus.svg");
+                colorize: root.included ? Theme.accent-success : Theme.muted;
+                image-fit: contain;
+            }
+        }
+        Text {
+            text: root.text;
+            color: root.included ? Theme.on-surface : Theme.muted;
+            opacity: root.included ? 1.0 : 0.7;
+            font-size: Theme.font-size-caption;
+            vertical-alignment: center;
+        }
+    }
+}
+
+// One pricing tier card.
+//
+// Layout switched from horizontal-row tiers to a vertical stack — at
+// 412 px mobile width, three side-by-side cards push the third
+// off-screen. Vertical stacking also lets each tier comfortably show
+// its full feature checklist without truncation.
+component TierCard inherits Rectangle {
+    in property <string> name;
+    in property <string> price;
+    in property <string> price-unit: "/mo";
+    in property <string> tagline;
+    in property <bool> recommended: false;
+
+    horizontal-stretch: 1;
+    background: root.recommended ? Theme.surface-2 : Theme.surface-1;
+    border-radius: Theme.radius-md;
+    drop-shadow-blur: root.recommended ? Theme.elevation-2-blur : Theme.elevation-1-blur;
+    drop-shadow-color: root.recommended ? Theme.elevation-2-color : Theme.elevation-1-color;
+    drop-shadow-offset-y: root.recommended ? Theme.elevation-2-y : Theme.elevation-1-y;
+    border-width: root.recommended ? 1px : 0px;
+    border-color: Theme.accent-info;
+
+    // "Most popular" pill — only on the recommended tier, anchored to
+    // the top-right corner so the card edge "carries" the badge.
+    if root.recommended: Rectangle {
+        x: parent.width - self.width - Theme.spacing-md;
+        y: -10px;
+        width: pop-text.preferred-width + 16px;
+        height: 20px;
+        border-radius: 10px;
+        background: Theme.accent-info;
+        pop-text := Text {
+            text: "MOST POPULAR";
+            color: Theme.on-primary;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            width: parent.width;
+            height: parent.height;
+        }
+    }
+
+    VerticalLayout {
+        padding: Theme.spacing-md;
+        padding-top: root.recommended ? Theme.spacing-md + 6px : Theme.spacing-md;
+        spacing: Theme.spacing-sm;
+
+        // Header: tier name (left) + price (right) on the same row, so
+        // the vertical card stays compact while keeping the two key
+        // pieces of info visually anchored to opposite edges.
+        HorizontalLayout {
+            spacing: Theme.spacing-sm;
+            alignment: stretch;
+            VerticalLayout {
+                horizontal-stretch: 1;
+                spacing: 2px;
+                Text {
+                    text: root.name;
+                    color: Theme.on-surface;
+                    font-size: Theme.font-size-body-large;
+                    font-weight: 700;
+                }
+                Text {
+                    text: root.tagline;
+                    color: Theme.muted;
+                    font-size: Theme.font-size-caption;
+                }
+            }
+            HorizontalLayout {
+                spacing: 2px;
+                alignment: end;
+                Text {
+                    text: root.price;
+                    color: Theme.on-surface;
+                    font-size: Theme.font-size-title;
+                    font-weight: 700;
+                }
+                VerticalLayout {
+                    alignment: end;
+                    padding-bottom: 4px;
+                    Text {
+                        text: root.price-unit;
+                        color: Theme.muted;
+                        font-size: Theme.font-size-caption;
+                    }
+                }
+            }
+        }
+        Divider { }
+        @children
+    }
+}
+
+// FAQ teaser row — collapsed accordion.
+component FaqRow inherits Rectangle {
+    in property <string> question;
+
+    height: 48px;
+    HorizontalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+        Text {
+            text: root.question;
+            color: Theme.on-surface;
+            font-size: Theme.font-size-body;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+        Image {
+            width: 16px;
+            height: 16px;
+            source: @image-url("../icons/chevron-right.svg");
+            colorize: Theme.muted;
+            image-fit: contain;
+            vertical-alignment: center;
+        }
+    }
+}
+
+export component PaywallPage inherits Rectangle {
+    in property <int> selected-tier: 1;   // 0=Free, 1=Pro, 2=Team
+    callback close-pressed();
+    callback restore-pressed();
+    callback tier-selected(int);
+    callback subscribe-pressed();
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "Upgrade";
+            leading-icon: @image-url("../icons/close.svg");
+            leading-pressed => { root.close-pressed(); }
+        }
+
+        VerticalLayout {
+            padding: Theme.spacing-md;
+            spacing: Theme.spacing-md;
+            vertical-stretch: 1;
+
+            // ----- Hero -----
+            VerticalLayout {
+                spacing: Theme.spacing-xs;
+                Text {
+                    text: "Unlock everything";
+                    color: Theme.on-background;
+                    font-size: Theme.font-size-headline;
+                    font-weight: 700;
+                }
+                Text {
+                    text: "Choose the plan that fits how you work. Cancel anytime.";
+                    color: Theme.muted;
+                    font-size: Theme.font-size-body;
+                    wrap: word-wrap;
+                }
+            }
+
+            // ----- Tier cards (vertical stack) -----
+            VerticalLayout {
+                spacing: Theme.spacing-md;
+                padding-top: Theme.spacing-sm;
+                TierCard {
+                    name: "Free";
+                    tagline: "Get started";
+                    price: "$0";
+                    price-unit: "/mo";
+                    FeatureRow { text: "1 project"; }
+                    FeatureRow { text: "Community support"; }
+                    FeatureRow { text: "Team workspaces"; included: false; }
+                }
+                TierCard {
+                    name: "Pro";
+                    tagline: "For individuals shipping production work";
+                    price: "$12";
+                    price-unit: "/mo";
+                    recommended: true;
+                    FeatureRow { text: "Unlimited projects"; }
+                    FeatureRow { text: "Email support"; }
+                    FeatureRow { text: "Premium templates"; }
+                    FeatureRow { text: "Custom domain"; }
+                }
+                TierCard {
+                    name: "Team";
+                    tagline: "Collaborate with up to 25 seats";
+                    price: "$28";
+                    price-unit: "/mo";
+                    FeatureRow { text: "Everything in Pro"; }
+                    FeatureRow { text: "Team workspaces"; }
+                    FeatureRow { text: "SSO + audit log"; }
+                    FeatureRow { text: "Priority support"; }
+                }
+            }
+
+            // ----- FAQ teaser -----
+            VerticalLayout {
+                spacing: 0;
+                padding-top: Theme.spacing-md;
+                Text {
+                    text: "Frequently asked";
+                    color: Theme.on-background;
+                    font-size: Theme.font-size-body-large;
+                    font-weight: 600;
+                }
+                Rectangle { height: Theme.spacing-sm; }
+                FaqRow { question: "Can I switch plans later?"; }
+                Divider { }
+                FaqRow { question: "How does billing work?"; }
+                Divider { }
+                FaqRow { question: "What payment methods do you support?"; }
+            }
+
+            Rectangle { vertical-stretch: 1; }
+        }
+
+        // ----- Footer CTA -----
+        Rectangle {
+            background: Theme.surface-1;
+            drop-shadow-blur: Theme.elevation-2-blur;
+            drop-shadow-color: Theme.elevation-2-color;
+            drop-shadow-offset-y: -4px;
+            VerticalLayout {
+                padding: Theme.spacing-md;
+                spacing: Theme.spacing-sm;
+                MobileButton {
+                    text: "Subscribe to Pro — $12/mo";
+                    tone: Tone.info;
+                    clicked => { root.subscribe-pressed(); }
+                }
+                HorizontalLayout {
+                    alignment: center;
+                    TextButton {
+                        text: "Restore purchase";
+                        clicked => { root.restore-pressed(); }
+                    }
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,256 @@
+// TrendingTopicsPage
+// =====================================================================
+//
+// Twitter / Threads-style trending list — the "what people are talking
+// about right now" surface. Distinct from `NewsArticleFeedPage`
+// (articles) and `SearchResultsPage` (active search). Demonstrates:
+//
+//   - "For you / Trending / News / Sports / Tech" tab strip + small
+//     "Trends for you" header card.
+//   - Numbered trend rows: rank + category caption + topic name +
+//     post-count, with a Top mover pill tone-tinted (warning for fast-
+//     climbing, danger for falling).
+//   - Right-edge × on each row so users can dismiss a trend from
+//     "For you" — a known X/Threads pattern.
+
+import { Theme, Tone } from "../theme.slint";
+import { AppBar } from "../app-bar.slint";
+import { TabBar, Tab } from "../tab-bar.slint";
+import { Divider } from "../divider.slint";
+
+// One trending row.
+component TrendRow inherits Rectangle {
+    in property <int> rank;
+    in property <string> category;
+    in property <string> topic;
+    in property <string> posts;
+    in property <Tone> mover-tone: Tone.default;
+    in property <string> mover-label;
+    callback dismissed();
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: root.topic;
+    accessible-action-default => { root.clicked(); }
+
+    horizontal-stretch: 1;
+    min-height: 72px;
+    background: touch.pressed ? Theme.surface-pressed : transparent;
+    animate background { duration: Theme.motion-fast; }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        padding-top: Theme.spacing-sm;
+        padding-bottom: Theme.spacing-sm;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+
+        // Rank.
+        VerticalLayout {
+            alignment: center;
+            width: 32px;
+            Text {
+                text: "·  " + root.rank;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+                font-weight: 800;
+            }
+        }
+
+        // Body.
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: root.category;
+                color: Theme.muted;
+                font-size: 10px;
+                font-weight: 800;
+                letter-spacing: 0.5px;
+            }
+            HorizontalLayout {
+                spacing: Theme.spacing-xs;
+                alignment: start;
+                Text {
+                    text: root.topic;
+                    color: Theme.on-surface;
+                    font-size: Theme.font-size-body;
+                    font-weight: 800;
+                    vertical-alignment: center;
+                }
+                if root.mover-label != "": Rectangle {
+                    width: mv-text.preferred-width + 12px;
+                    height: 18px;
+                    border-radius: 4px;
+                    background:
+                          root.mover-tone == Tone.success ? Theme.accent-success
+                        : root.mover-tone == Tone.warning ? Theme.accent-warning
+                        : root.mover-tone == Tone.danger  ? Theme.accent-danger
+                        : Theme.surface-variant;
+                    mv-text := Text {
+                        text: root.mover-label;
+                        color: Theme.on-primary;
+                        font-size: 9px;
+                        font-weight: 800;
+                        letter-spacing: 0.3px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                }
+            }
+            Text {
+                text: root.posts;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+            }
+        }
+
+        // Dismiss × button.
+        VerticalLayout {
+            alignment: start;
+            padding-top: 2px;
+            Image {
+                width: 14px;
+                height: 14px;
+                source: @image-url("../icons/close.svg");
+                colorize: Theme.muted;
+                image-fit: contain;
+                TouchArea {
+                    clicked => { root.dismissed(); }
+                }
+            }
+        }
+    }
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+export component TrendingTopicsPage inherits Rectangle {
+    callback back-pressed();
+    callback search-pressed();
+    callback trend-pressed(string);
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "Explore";
+            leading-icon: @image-url("../icons/arrow-left.svg");
+            trailing-icon: @image-url("../icons/search.svg");
+            leading-pressed => { root.back-pressed(); }
+            trailing-pressed => { root.search-pressed(); }
+        }
+
+        TabBar {
+            Tab { label: "For you"; active: true; }
+            Tab { label: "Trending"; }
+            Tab { label: "News"; }
+            Tab { label: "Sports"; }
+        }
+
+        // Header card.
+        VerticalLayout {
+            padding: Theme.spacing-md;
+            spacing: 2px;
+            HorizontalLayout {
+                Text {
+                    text: "Trends for you";
+                    color: Theme.on-background;
+                    font-size: Theme.font-size-body-large;
+                    font-weight: 800;
+                    horizontal-stretch: 1;
+                }
+                Image {
+                    width: 18px;
+                    height: 18px;
+                    source: @image-url("../icons/more-vertical.svg");
+                    colorize: Theme.muted;
+                    image-fit: contain;
+                    vertical-alignment: center;
+                }
+            }
+            Text {
+                text: "Based on the people you follow, your location, and what you've read in the last 24 h.";
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+                wrap: word-wrap;
+            }
+        }
+
+        // Trend rows.
+        TrendRow {
+            rank: 1;
+            category: "TECHNOLOGY · TRENDING";
+            topic: "#SlintConf2026";
+            posts: "12.4K posts · last 12 h";
+            mover-tone: Tone.warning;
+            mover-label: "TOP MOVER";
+        }
+        Divider { }
+        TrendRow {
+            rank: 2;
+            category: "RUST";
+            topic: "Cargo-apk on Apple Silicon";
+            posts: "8,210 posts";
+            mover-tone: Tone.success;
+            mover-label: "+148%";
+        }
+        Divider { }
+        TrendRow {
+            rank: 3;
+            category: "AI · BREAKING";
+            topic: "Claude 5 ships Tuesday";
+            posts: "92.1K posts";
+            mover-tone: Tone.danger;
+            mover-label: "LIVE";
+        }
+        Divider { }
+        TrendRow {
+            rank: 4;
+            category: "MOBILE";
+            topic: "WebView-less is the future";
+            posts: "4,402 posts";
+        }
+        Divider { }
+        TrendRow {
+            rank: 5;
+            category: "OPEN SOURCE";
+            topic: "Tone enum migration in slint-mobile-components";
+            posts: "1,184 posts";
+            mover-tone: Tone.success;
+            mover-label: "+62%";
+        }
+        Divider { }
+        TrendRow {
+            rank: 6;
+            category: "SPORTS · TRENDING";
+            topic: "Warriors vs. Lakers tonight";
+            posts: "210K posts";
+        }
+        Divider { }
+        TrendRow {
+            rank: 7;
+            category: "CULTURE";
+            topic: "Memmo Alfama re-opening Friday";
+            posts: "892 posts · Lisbon";
+        }
+        Divider { }
+        TrendRow {
+            rank: 8;
+            category: "DESIGN";
+            topic: "Tailwind v5 vs. CSS-only design systems";
+            posts: "6,810 posts";
+            mover-tone: Tone.danger;
+            mover-label: "−18%";
+        }
+
+        Rectangle { vertical-stretch: 1; }
+    }
+}

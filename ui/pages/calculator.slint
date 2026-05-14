@@ -1,0 +1,170 @@
+// CalculatorPage
+// =====================================================================
+//
+// Standard phone calculator — the canonical iOS / Android / PCalc-style
+// screen. Single-purpose surface where most of the canvas is buttons.
+// Demonstrates:
+//
+//   - Big right-aligned display anchored to the top: prior expression
+//     in muted text + current result in giant 64 px Light.
+//   - 4-column × 5-row button grid: top row is utility (AC / +/− / %)
+//     and the rightmost column carries operators (÷ × − +) in a
+//     warning-toned column so it's easy to scan.
+//   - "=" key spans an entire row width as the primary CTA (info-tone).
+//   - "0" key wider than the other digit keys, matching Apple's
+//     calculator layout.
+
+import { Theme, Tone } from "../theme.slint";
+import { AppBar } from "../app-bar.slint";
+
+// One calculator button.
+//
+// `kind`:
+//   0 = digit (surface-1)
+//   1 = utility (surface-2 / muted text)
+//   2 = operator (warning tint)
+//   3 = primary (info tint)
+component CalcKey inherits Rectangle {
+    in property <string> label;
+    in property <int> kind: 0;
+    in property <bool> wide: false;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-action-default => { root.clicked(); }
+
+    horizontal-stretch: root.wide ? 2 : 1;
+    height: 72px;
+    border-radius: 36px;
+    background:
+          touch.pressed
+        ? (
+              root.kind == 3 ? Theme.accent-info.darker(0.15)
+            : root.kind == 2 ? Theme.accent-warning.darker(0.15)
+            : root.kind == 1 ? Theme.surface-pressed
+            : Theme.surface-pressed
+          )
+        : (
+              root.kind == 3 ? Theme.accent-info
+            : root.kind == 2 ? Theme.accent-warning
+            : root.kind == 1 ? Theme.surface-2
+            : Theme.surface-1
+          );
+    animate background { duration: Theme.motion-fast; }
+
+    Text {
+        text: root.label;
+        color:
+              root.kind >= 2 ? Theme.on-primary
+            : Theme.on-surface;
+        font-size: root.kind == 1 ? 22px : 26px;
+        font-weight: root.kind >= 2 ? 800 : 500;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: parent.width;
+        height: parent.height;
+    }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+export component CalculatorPage inherits Rectangle {
+    in property <string> expression: "248 × 14";
+    in property <string> result: "3,472";
+    callback back-pressed();
+    callback key-pressed(string);
+    callback equals-pressed();
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "Calculator";
+            leading-icon: @image-url("../icons/arrow-left.svg");
+            trailing-icon: @image-url("../icons/more-vertical.svg");
+            leading-pressed => { root.back-pressed(); }
+        }
+
+        // ----- Display -----
+        Rectangle {
+            horizontal-stretch: 1;
+            vertical-stretch: 1;
+            VerticalLayout {
+                padding: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                alignment: end;
+                HorizontalLayout {
+                    Text {
+                        text: root.expression;
+                        color: Theme.muted;
+                        font-size: Theme.font-size-body-large;
+                        font-weight: 500;
+                        horizontal-stretch: 1;
+                        horizontal-alignment: right;
+                    }
+                }
+                HorizontalLayout {
+                    Text {
+                        text: root.result;
+                        color: Theme.on-background;
+                        font-size: 64px;
+                        font-weight: 200;
+                        horizontal-stretch: 1;
+                        horizontal-alignment: right;
+                    }
+                }
+            }
+        }
+
+        // ----- Keypad -----
+        VerticalLayout {
+            padding: Theme.spacing-md;
+            spacing: Theme.spacing-sm;
+
+            // Utility row: AC / +/− / % / ÷
+            HorizontalLayout {
+                spacing: Theme.spacing-sm;
+                CalcKey { label: "AC";  kind: 1; clicked => { root.key-pressed(self.label); } }
+                CalcKey { label: "+/−"; kind: 1; clicked => { root.key-pressed(self.label); } }
+                CalcKey { label: "%";   kind: 1; clicked => { root.key-pressed(self.label); } }
+                CalcKey { label: "÷";   kind: 2; clicked => { root.key-pressed(self.label); } }
+            }
+            // 7 8 9 ×
+            HorizontalLayout {
+                spacing: Theme.spacing-sm;
+                CalcKey { label: "7"; kind: 0; clicked => { root.key-pressed(self.label); } }
+                CalcKey { label: "8"; kind: 0; clicked => { root.key-pressed(self.label); } }
+                CalcKey { label: "9"; kind: 0; clicked => { root.key-pressed(self.label); } }
+                CalcKey { label: "×"; kind: 2; clicked => { root.key-pressed(self.label); } }
+            }
+            // 4 5 6 −
+            HorizontalLayout {
+                spacing: Theme.spacing-sm;
+                CalcKey { label: "4"; kind: 0; clicked => { root.key-pressed(self.label); } }
+                CalcKey { label: "5"; kind: 0; clicked => { root.key-pressed(self.label); } }
+                CalcKey { label: "6"; kind: 0; clicked => { root.key-pressed(self.label); } }
+                CalcKey { label: "−"; kind: 2; clicked => { root.key-pressed(self.label); } }
+            }
+            // 1 2 3 +
+            HorizontalLayout {
+                spacing: Theme.spacing-sm;
+                CalcKey { label: "1"; kind: 0; clicked => { root.key-pressed(self.label); } }
+                CalcKey { label: "2"; kind: 0; clicked => { root.key-pressed(self.label); } }
+                CalcKey { label: "3"; kind: 0; clicked => { root.key-pressed(self.label); } }
+                CalcKey { label: "+"; kind: 2; clicked => { root.key-pressed(self.label); } }
+            }
+            // wide 0, ., =
+            HorizontalLayout {
+                spacing: Theme.spacing-sm;
+                CalcKey { label: "0"; kind: 0; wide: true; clicked => { root.key-pressed(self.label); } }
+                CalcKey { label: "."; kind: 0; clicked => { root.key-pressed(self.label); } }
+                CalcKey { label: "="; kind: 3; clicked => { root.equals-pressed(); } }
+            }
+        }
+    }
+}

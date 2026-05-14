@@ -1,0 +1,315 @@
+// AppStoreListingPage
+// =====================================================================
+//
+// App-listing detail — iOS App Store / Google Play "tap into an app"
+// surface. Distinct from `AppPermissionsPage` (installed-app settings)
+// and `ProductDetailPage` (physical product). Demonstrates:
+//
+//   - Header card: large rounded app icon + name + developer + 4.7 ★
+//     rating + Get/Update CTA pill on the right.
+//   - Horizontal screenshot strip (4 portrait gradients).
+//   - Stat bar: rating / size / age / chart-rank (4 cells with tiny
+//     tone-tinted captions).
+//   - Description card with optional read-more chevron.
+//   - "What's new" version-notes card.
+//   - Reuses the histogram + helpful pattern from
+//     `ReviewSummaryPage` for the ratings breakdown.
+
+import { Theme, Tone } from "../theme.slint";
+import { AppBar } from "../app-bar.slint";
+import { SectionHeader } from "../section-header.slint";
+import { Divider } from "../divider.slint";
+import { ScrollView } from "std-widgets.slint";
+
+// One stat tile in the 4-cell strip.
+component StatTile inherits Rectangle {
+    in property <string> label;
+    in property <string> value;
+    in property <string> caption;
+    in property <Tone> tone: Tone.default;
+
+    horizontal-stretch: 1;
+    VerticalLayout {
+        padding: Theme.spacing-sm;
+        spacing: 2px;
+        alignment: center;
+        Text {
+            text: root.label;
+            color: Theme.muted;
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: 0.5px;
+            horizontal-alignment: center;
+        }
+        Text {
+            text: root.value;
+            color:
+                  root.tone == Tone.success ? Theme.accent-success
+                : root.tone == Tone.warning ? Theme.accent-warning
+                : root.tone == Tone.danger  ? Theme.accent-danger
+                : root.tone == Tone.info    ? Theme.accent-info
+                : Theme.on-surface;
+            font-size: Theme.font-size-body-large;
+            font-weight: 800;
+            horizontal-alignment: center;
+        }
+        Text {
+            text: root.caption;
+            color: Theme.muted;
+            font-size: 9px;
+            horizontal-alignment: center;
+        }
+    }
+}
+
+// One screenshot frame in the strip.
+component ScreenshotFrame inherits Rectangle {
+    in property <brush> tint;
+    in property <string> overlay;
+
+    width: 200px;
+    height: 360px;
+    border-radius: Theme.radius-md;
+    background: root.tint;
+    clip: true;
+    drop-shadow-blur: Theme.elevation-1-blur;
+    drop-shadow-color: Theme.elevation-1-color;
+    drop-shadow-offset-y: Theme.elevation-1-y;
+    VerticalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-xs;
+        alignment: end;
+        Text {
+            text: root.overlay;
+            color: #ffffff;
+            font-size: Theme.font-size-body;
+            font-weight: 800;
+            wrap: word-wrap;
+        }
+    }
+}
+
+export component AppStoreListingPage inherits Rectangle {
+    in property <string> app-name: "Tartine";
+    in property <string> developer: "Tartine Bakery";
+    in property <string> rating: "4.7";
+    in property <string> review-count: "12K";
+    callback back-pressed();
+    callback share-pressed();
+    callback get-pressed();
+    callback screenshot-pressed(int);
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "App listing";
+            leading-icon: @image-url("../icons/arrow-left.svg");
+            trailing-icon: @image-url("../icons/send.svg");
+            leading-pressed => { root.back-pressed(); }
+            trailing-pressed => { root.share-pressed(); }
+        }
+
+        VerticalLayout {
+            padding: Theme.spacing-md;
+            spacing: Theme.spacing-md;
+            alignment: start;
+
+            // App header.
+            HorizontalLayout {
+                spacing: Theme.spacing-md;
+                alignment: stretch;
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 80px;
+                        height: 80px;
+                        border-radius: 20px;
+                        background: @linear-gradient(135deg, #d4751a 0%, #7a2e0a 100%);
+                        Text {
+                            text: "T";
+                            color: Theme.on-primary;
+                            font-size: 36px;
+                            font-weight: 800;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
+                        }
+                    }
+                }
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    alignment: center;
+                    spacing: 2px;
+                    Text {
+                        text: root.app-name;
+                        color: Theme.on-background;
+                        font-size: Theme.font-size-title;
+                        font-weight: 800;
+                    }
+                    Text {
+                        text: "Order ahead · pickup · loyalty";
+                        color: Theme.muted;
+                        font-size: Theme.font-size-caption;
+                    }
+                    HorizontalLayout {
+                        spacing: 2px;
+                        padding-top: 2px;
+                        for index in 5 : Image {
+                            width: 12px;
+                            height: 12px;
+                            source: @image-url("../icons/star.svg");
+                            colorize:
+                                  index < 4 ? Theme.accent-warning
+                                : Theme.surface-variant;
+                            image-fit: contain;
+                            vertical-alignment: center;
+                        }
+                        Text {
+                            text: " " + root.rating + " · " + root.review-count + " ratings";
+                            color: Theme.muted;
+                            font-size: Theme.font-size-caption;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 80px;
+                        height: 36px;
+                        border-radius: 18px;
+                        background: get-touch.pressed ? Theme.accent-info.darker(0.15) : Theme.accent-info;
+                        animate background { duration: Theme.motion-fast; }
+                        Text {
+                            text: "GET";
+                            color: Theme.on-primary;
+                            font-size: 12px;
+                            font-weight: 800;
+                            letter-spacing: 1px;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
+                        }
+                        get-touch := TouchArea {
+                            clicked => { root.get-pressed(); }
+                        }
+                    }
+                }
+            }
+
+            // Stat strip.
+            Rectangle {
+                background: Theme.surface-1;
+                border-radius: Theme.radius-md;
+                drop-shadow-blur: Theme.elevation-1-blur;
+                drop-shadow-color: Theme.elevation-1-color;
+                drop-shadow-offset-y: Theme.elevation-1-y;
+                HorizontalLayout {
+                    padding: Theme.spacing-sm;
+                    alignment: stretch;
+                    StatTile {
+                        label: "RATING";
+                        value: "4.7";
+                        caption: "12K reviews";
+                        tone: Tone.warning;
+                    }
+                    Rectangle { width: 1px; background: Theme.outline; }
+                    StatTile {
+                        label: "SIZE";
+                        value: "42 MB";
+                        caption: "iPhone & iPad";
+                    }
+                    Rectangle { width: 1px; background: Theme.outline; }
+                    StatTile {
+                        label: "AGE";
+                        value: "4+";
+                        caption: "Made for all";
+                    }
+                    Rectangle { width: 1px; background: Theme.outline; }
+                    StatTile {
+                        label: "CHART";
+                        value: "#3";
+                        caption: "Food & Drink";
+                        tone: Tone.info;
+                    }
+                }
+            }
+        }
+
+        // Screenshot strip.
+        SectionHeader { text: "PREVIEW"; }
+        ScrollView {
+            height: 400px;
+            horizontal-stretch: 1;
+            viewport-width: 4 * 200px + 5 * Theme.spacing-sm;
+            viewport-height: 380px;
+            HorizontalLayout {
+                spacing: Theme.spacing-sm;
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                padding-top: Theme.spacing-xs;
+                ScreenshotFrame {
+                    tint: @linear-gradient(180deg, #d4751a 0%, #7a2e0a 100%);
+                    overlay: "Order ahead\nfrom your local bakery";
+                }
+                ScreenshotFrame {
+                    tint: @linear-gradient(180deg, #4f8cff 0%, #1f4eaa 100%);
+                    overlay: "Track your\norder live";
+                }
+                ScreenshotFrame {
+                    tint: @linear-gradient(180deg, #16a34a 0%, #14532d 100%);
+                    overlay: "Loyalty points\nfor every visit";
+                }
+                ScreenshotFrame {
+                    tint: @linear-gradient(180deg, #9333ea 0%, #4c1d95 100%);
+                    overlay: "Save your\nfavourites";
+                }
+            }
+        }
+
+        // Description card.
+        VerticalLayout {
+            padding: Theme.spacing-md;
+            spacing: Theme.spacing-sm;
+            Text {
+                text: "About this app";
+                color: Theme.on-background;
+                font-size: Theme.font-size-body-large;
+                font-weight: 800;
+            }
+            Text {
+                text: "Order ahead from Tartine Manufactory, Tartine Bakery, and select pop-ups. Earn a loyalty stamp on every coffee, redeem for pastries and t-shirts, and pay with whatever method you've got loaded — Apple Pay, card, or store credit.\n\nNew in this version: tap-and-pay at the counter, three new pop-up partners, and a snappier order-tracking screen.";
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                wrap: word-wrap;
+            }
+        }
+
+        // What's new.
+        SectionHeader { text: "WHAT'S NEW · v3.14"; }
+        VerticalLayout {
+            padding: Theme.spacing-md;
+            spacing: 4px;
+            Text {
+                text: "Released 3 days ago · 4.7 MB update";
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+                font-weight: 700;
+            }
+            Text {
+                text: "Tap-and-pay at the counter (US/UK first), three new pop-ups, faster live order tracking, miscellaneous bug fixes.";
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                wrap: word-wrap;
+            }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+    }
+}

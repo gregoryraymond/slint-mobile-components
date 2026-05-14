@@ -26,17 +26,33 @@
 //     action label appears at the trailing edge; tapping it fires
 //     `action-pressed()`.
 
-import { Theme } from "theme.slint";
+import { Theme, Tone } from "theme.slint";
 
 export component Banner inherits Rectangle {
     in property <image> icon;
     in property <string> message;
     in property <string> action-label;
+    in property <Tone> tone: Tone.default;
     callback action-pressed();
 
+    // Resolved tone colour — the leading icon adopts this tint so the
+    // banner reads as informational / warning / etc. at a glance. When
+    // `tone` is `default`, the icon stays muted.
+    property <color> tone-color:
+          root.tone == Tone.success ? Theme.accent-success
+        : root.tone == Tone.warning ? Theme.accent-warning
+        : root.tone == Tone.danger  ? Theme.accent-danger
+        : root.tone == Tone.info    ? Theme.accent-info
+        : Theme.muted;
+
     horizontal-stretch: 1;
-    background: Theme.surface;
+    background: Theme.surface-1;
     border-radius: Theme.radius-md;
+    // Elevation tier 1 — banners are persistent context, not a transient
+    // overlay; they lift just enough off the page to feel raised.
+    drop-shadow-blur: Theme.elevation-1-blur;
+    drop-shadow-color: Theme.elevation-1-color;
+    drop-shadow-offset-y: Theme.elevation-1-y;
 
     HorizontalLayout {
         padding: Theme.spacing-md;
@@ -47,7 +63,7 @@ export component Banner inherits Rectangle {
             width: 24px;
             height: 24px;
             source: root.icon;
-            colorize: Theme.muted;
+            colorize: root.tone-color;
             image-fit: contain;
             vertical-alignment: center;
         }

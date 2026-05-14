@@ -1,0 +1,297 @@
+// CameraCapturePage
+// =====================================================================
+//
+// A camera viewfinder — the default "take a photo" screen. Distinct
+// from `DocumentScannerPage` (edge-detection brackets) and
+// `QRScannerPage` (a scan window). Demonstrates a full-bleed capture
+// surface:
+//
+//   - A full-bleed viewfinder (a gradient stand-in) with a subtle
+//     rule-of-thirds grid and a tap-to-focus square.
+//   - A top control row: flash / timer / aspect-ratio chips.
+//   - A horizontal mode strip with the active mode centred.
+//   - A bottom bar: a gallery thumbnail, the big shutter button, and
+//     a flip-camera disc.
+
+import { Theme, Tone } from "../theme.slint";
+
+// A small round top-control with a glyph label.
+component TopControl inherits Rectangle {
+    in property <string> glyph;
+    in property <string> a11y;
+    in property <bool> active: false;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: root.a11y;
+    accessible-action-default => { root.clicked(); }
+
+    width: 40px;
+    height: 40px;
+    border-radius: 20px;
+    background: root.active ? #ffffffdd : #00000066;
+    animate background { duration: Theme.motion-fast; }
+
+    Text {
+        text: root.glyph;
+        color: root.active ? #0a0d12 : #ffffff;
+        font-size: Theme.font-size-body;
+        font-weight: 800;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: parent.width;
+        height: parent.height;
+    }
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+// One mode label in the mode strip.
+component ModeLabel inherits Rectangle {
+    in property <string> label;
+    in property <bool> active: false;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-action-default => { root.clicked(); }
+
+    horizontal-stretch: 1;
+    height: 32px;
+
+    Text {
+        text: root.label;
+        color: root.active ? Theme.accent-warning : #ffffff99;
+        font-size: Theme.font-size-caption;
+        font-weight: 800;
+        letter-spacing: 0.5px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: parent.width;
+        height: parent.height;
+    }
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+export component CameraCapturePage inherits Rectangle {
+    in-out property <int> mode: 0;
+    in-out property <bool> flash: false;
+    callback close-pressed();
+    callback shutter-pressed();
+    callback flip-pressed();
+    callback gallery-pressed();
+    callback mode-pressed(int);
+
+    background: #05070b;
+
+    // ----- Viewfinder -----
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+        background: @linear-gradient(160deg, #3a4150 0%, #0c0f16 100%);
+        clip: true;
+        // Rule-of-thirds grid.
+        Rectangle {
+            x: parent.width / 3;
+            y: 0;
+            width: 1px;
+            height: parent.height;
+            background: #ffffff22;
+        }
+        Rectangle {
+            x: parent.width * 2 / 3;
+            y: 0;
+            width: 1px;
+            height: parent.height;
+            background: #ffffff22;
+        }
+        Rectangle {
+            x: 0;
+            y: parent.height / 3;
+            width: parent.width;
+            height: 1px;
+            background: #ffffff22;
+        }
+        Rectangle {
+            x: 0;
+            y: parent.height * 2 / 3;
+            width: parent.width;
+            height: 1px;
+            background: #ffffff22;
+        }
+        // Tap-to-focus square.
+        Rectangle {
+            x: parent.width * 0.56;
+            y: parent.height * 0.42;
+            width: 72px;
+            height: 72px;
+            border-radius: 6px;
+            background: transparent;
+            border-width: 2px;
+            border-color: Theme.accent-warning;
+        }
+    }
+
+    // ----- Top control row -----
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: 88px;
+        background: @linear-gradient(180deg, #000000aa 0%, #00000000 100%);
+        HorizontalLayout {
+            x: Theme.spacing-md;
+            y: Theme.spacing-lg;
+            width: parent.width - 2 * Theme.spacing-md;
+            height: 40px;
+            // Close.
+            TopControl {
+                glyph: "✕";
+                a11y: "Close";
+                clicked => { root.close-pressed(); }
+            }
+            Rectangle { horizontal-stretch: 1; }
+            HorizontalLayout {
+                spacing: Theme.spacing-sm;
+                TopControl {
+                    glyph: "⚡";
+                    a11y: "Flash";
+                    active: root.flash;
+                    clicked => {
+                        root.flash = !root.flash;
+                    }
+                }
+                TopControl {
+                    glyph: "⏱";
+                    a11y: "Timer";
+                    clicked => { }
+                }
+                TopControl {
+                    glyph: "3:4";
+                    a11y: "Aspect ratio";
+                    clicked => { }
+                }
+            }
+        }
+    }
+
+    // ----- Bottom controls -----
+    Rectangle {
+        x: 0;
+        y: parent.height - self.height;
+        width: parent.width;
+        height: 188px;
+        background: @linear-gradient(180deg, #00000000 0%, #000000dd 45%);
+        VerticalLayout {
+            y: 0;
+            x: 0;
+            width: parent.width;
+            height: parent.height;
+            padding-bottom: Theme.spacing-lg;
+            spacing: Theme.spacing-md;
+            alignment: end;
+
+            // Mode strip.
+            HorizontalLayout {
+                x: Theme.spacing-md;
+                width: parent.width - 2 * Theme.spacing-md;
+                ModeLabel {
+                    label: "VIDEO";
+                    active: root.mode == 0;
+                    clicked => { root.mode = 0; root.mode-pressed(0); }
+                }
+                ModeLabel {
+                    label: "PHOTO";
+                    active: root.mode == 1;
+                    clicked => { root.mode = 1; root.mode-pressed(1); }
+                }
+                ModeLabel {
+                    label: "PORTRAIT";
+                    active: root.mode == 2;
+                    clicked => { root.mode = 2; root.mode-pressed(2); }
+                }
+                ModeLabel {
+                    label: "NIGHT";
+                    active: root.mode == 3;
+                    clicked => { root.mode = 3; root.mode-pressed(3); }
+                }
+            }
+
+            // Shutter row.
+            HorizontalLayout {
+                x: Theme.spacing-lg;
+                width: parent.width - 2 * Theme.spacing-lg;
+                height: 72px;
+                alignment: space-between;
+                // Gallery thumbnail.
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 48px;
+                        height: 48px;
+                        border-radius: Theme.radius-sm;
+                        background: @linear-gradient(135deg, #4f8cff 0%, #b45309 100%);
+                        border-width: 2px;
+                        border-color: #ffffff66;
+                        clip: true;
+                        TouchArea {
+                            clicked => { root.gallery-pressed(); }
+                        }
+                    }
+                }
+                // Shutter.
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 72px;
+                        height: 72px;
+                        border-radius: 36px;
+                        background: #ffffff;
+                        Rectangle {
+                            width: 60px;
+                            height: 60px;
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                            border-radius: 30px;
+                            background: touch-shutter.pressed ? #dddddd : #ffffff;
+                            border-width: 3px;
+                            border-color: #05070b;
+                            animate background { duration: Theme.motion-fast; }
+                        }
+                        touch-shutter := TouchArea {
+                            clicked => { root.shutter-pressed(); }
+                        }
+                    }
+                }
+                // Flip camera.
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 48px;
+                        height: 48px;
+                        border-radius: 24px;
+                        background: #ffffff22;
+                        Text {
+                            text: "⟲";
+                            color: #ffffff;
+                            font-size: 22px;
+                            font-weight: 800;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
+                        }
+                        TouchArea {
+                            clicked => { root.flip-pressed(); }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

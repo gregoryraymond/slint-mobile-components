@@ -1,0 +1,129 @@
+// MapPage
+// =====================================================================
+//
+// Overlay-shaped template — full-bleed map background, floating search
+// Card pinned at the top, BottomSheet of nearby POIs pinned at the
+// bottom. The first page to combine surface-1 (the search card) with
+// surface-2 (the bottom sheet) over a third visual layer (the map
+// "canvas") — exercises the full elevation system.
+//
+// Specification
+// -------------
+//
+// Geometry
+//   - Page root is a plain Rectangle (NOT a VerticalLayout) — children
+//     are positioned absolutely so the map covers the whole area and
+//     the floating chrome overlays on top.
+//   - Map: `Image` filling parent, `image-fit: cover` with the
+//     `map-bg.svg` placeholder (a road grid + park polygon).
+//   - Search card: floating at the top, 16 px from each side, ~60 px
+//     below the top edge so it clears a typical status bar.
+//   - BottomSheet: pinned to the bottom edge, fixed height 360 px,
+//     covering roughly the lower 40 % of the viewport.
+
+import { Theme } from "../theme.slint";
+import { BottomSheet } from "../bottom-sheet.slint";
+import { Card } from "../card.slint";
+import { ListItem } from "../list-item.slint";
+import { SectionHeader } from "../section-header.slint";
+import { ScrollView } from "std-widgets.slint";
+
+export struct PointOfInterest {
+    name: string,
+    category: string,
+    distance: string,
+}
+
+export component MapPage inherits Rectangle {
+    in property <string> query;
+    in property <[PointOfInterest]> nearby: [
+        { name: "Slint HQ",            category: "Office",       distance: "0.2 km" },
+        { name: "Functional Coffee",   category: "Coffee shop",  distance: "0.5 km" },
+        { name: "Vasagatan Loppis",    category: "Flea market",  distance: "0.8 km" },
+        { name: "Greenfield Park",     category: "Park",         distance: "1.2 km" },
+    ];
+    callback search-edited(string);
+    callback poi-pressed(PointOfInterest);
+
+    background: Theme.background;
+
+    // ----- Map canvas -----
+    Image {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+        source: @image-url("../icons/map-bg.svg");
+        image-fit: ImageFit.cover;
+    }
+
+    // ----- Floating search bar (top) -----
+    Rectangle {
+        x: Theme.spacing-md;
+        y: Theme.spacing-xl + Theme.spacing-md;
+        width: parent.width - 2 * Theme.spacing-md;
+        height: 52px;
+        background: Theme.surface-1;
+        border-radius: Theme.radius-md;
+        drop-shadow-blur: Theme.elevation-2-blur;
+        drop-shadow-color: Theme.elevation-2-color;
+        drop-shadow-offset-y: Theme.elevation-2-y;
+
+        HorizontalLayout {
+            padding-left: Theme.spacing-md;
+            padding-right: Theme.spacing-md;
+            spacing: Theme.spacing-md;
+            alignment: stretch;
+
+            VerticalLayout {
+                alignment: center;
+                Image {
+                    width: 22px;
+                    height: 22px;
+                    source: @image-url("../icons/search.svg");
+                    colorize: Theme.muted;
+                    image-fit: contain;
+                }
+            }
+
+            VerticalLayout {
+                horizontal-stretch: 1;
+                alignment: center;
+                Text {
+                    text: root.query == "" ? "Search places" : root.query;
+                    color: root.query == "" ? Theme.muted : Theme.on-surface;
+                    font-size: Theme.font-size-body-large;
+                }
+            }
+        }
+    }
+
+    // ----- Bottom sheet of nearby POIs -----
+    // Children are inserted directly into BottomSheet's `@children`
+    // slot (which sits inside its internal VerticalLayout). Passing
+    // them as siblings — not wrapped in another VL — keeps
+    // `vertical-stretch` on the ScrollView effective; an extra VL in
+    // the middle silently breaks the stretch chain.
+    BottomSheet {
+        x: 0;
+        y: parent.height - self.height;
+        width: parent.width;
+        height: 360px;
+
+        SectionHeader { text: "NEARBY"; }
+
+        ScrollView {
+            vertical-stretch: 1;
+            VerticalLayout {
+                alignment: start;
+                for poi in root.nearby: ListItem {
+                    title: poi.name;
+                    subtitle: poi.category + " · " + poi.distance;
+                    leading-icon: @image-url("../icons/pin.svg");
+                    trailing-icon: @image-url("../icons/chevron-right.svg");
+                    clicked => { root.poi-pressed(poi); }
+                }
+            }
+        }
+    }
+}

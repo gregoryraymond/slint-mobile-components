@@ -1,0 +1,351 @@
+// RoomThermostatPage
+// =====================================================================
+//
+// Nest / Ecobee / Honeywell-style single-device thermostat. Distinct
+// from `SmartHomePage` (multi-device dashboard). Demonstrates:
+//
+//   - Big circular "dial" — outer ring shows the heating arc, inner
+//     content shows current temperature giant + target sub-line +
+//     mode pill. Two minus/plus discs on the left/right adjust target.
+//   - Mode SegmentedControl (Heat / Cool / Auto / Off) below the
+//     dial.
+//   - Schedule preview cards row showing the next 3 set points.
+//   - Sticky "Away / Home" mode toggle pair.
+
+import { Theme, Tone } from "../theme.slint";
+import { AppBar } from "../app-bar.slint";
+import { SegmentedControl } from "../segmented-control.slint";
+import { Divider } from "../divider.slint";
+
+// Reusable ring band — local copy so this page is self-contained.
+component RingBand inherits Rectangle {
+    in property <length> radius;
+    in property <length> stroke: 18px;
+    in property <color> track-color: #ffffff14;
+    in property <color> fill-color: Theme.accent-warning;
+    in property <float> progress: 1.0;
+
+    width: 2 * root.radius;
+    height: 2 * root.radius;
+    Rectangle {
+        width: parent.width;
+        height: parent.height;
+        border-radius: self.width / 2;
+        border-width: root.stroke;
+        border-color: root.track-color;
+        background: transparent;
+    }
+    Rectangle {
+        width: parent.width;
+        height: parent.height;
+        border-radius: self.width / 2;
+        border-width: root.stroke;
+        border-color: root.fill-color;
+        opacity: root.progress;
+        background: transparent;
+    }
+}
+
+// One adjustment disc (− / +) flanking the dial.
+component AdjustDisc inherits Rectangle {
+    in property <string> glyph;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-action-default => { root.clicked(); }
+
+    width: 48px;
+    height: 48px;
+    border-radius: self.width / 2;
+    background: touch.pressed ? Theme.surface-pressed : Theme.surface-1;
+    drop-shadow-blur: Theme.elevation-1-blur;
+    drop-shadow-color: Theme.elevation-1-color;
+    drop-shadow-offset-y: Theme.elevation-1-y;
+    animate background { duration: Theme.motion-fast; }
+
+    Text {
+        text: root.glyph;
+        color: Theme.on-surface;
+        font-size: 22px;
+        font-weight: 800;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: parent.width;
+        height: parent.height;
+    }
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+// One schedule preview card.
+component SchedulePill inherits Rectangle {
+    in property <string> when;
+    in property <string> temp;
+    in property <string> label;
+    in property <Tone> tone: Tone.default;
+
+    horizontal-stretch: 1;
+    height: 72px;
+    background: Theme.surface-1;
+    border-radius: Theme.radius-md;
+    border-width: root.tone == Tone.default ? 0px : 1px;
+    border-color:
+          root.tone == Tone.success ? Theme.accent-success
+        : root.tone == Tone.warning ? Theme.accent-warning
+        : root.tone == Tone.info    ? Theme.accent-info
+        : Theme.outline;
+    drop-shadow-blur: Theme.elevation-1-blur;
+    drop-shadow-color: Theme.elevation-1-color;
+    drop-shadow-offset-y: Theme.elevation-1-y;
+
+    VerticalLayout {
+        padding: Theme.spacing-sm;
+        spacing: 2px;
+        alignment: center;
+        Text {
+            text: root.when;
+            color: Theme.muted;
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: 0.5px;
+        }
+        Text {
+            text: root.temp;
+            color: Theme.on-surface;
+            font-size: Theme.font-size-title;
+            font-weight: 700;
+        }
+        Text {
+            text: root.label;
+            color: Theme.muted;
+            font-size: Theme.font-size-caption;
+        }
+    }
+}
+
+export component RoomThermostatPage inherits Rectangle {
+    in property <string> room: "Living room";
+    in property <string> current: "21°";
+    in property <string> target: "22.5°";
+    in property <int> mode-index: 0;     // 0 Heat, 1 Cool, 2 Auto, 3 Off
+    in-out property <bool> away-mode: false;
+    in property <float> heat-progress: 0.62;
+    callback back-pressed();
+    callback minus-pressed();
+    callback plus-pressed();
+    callback away-pressed();
+    callback edit-schedule-pressed();
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: root.room;
+            leading-icon: @image-url("../icons/arrow-left.svg");
+            trailing-icon: @image-url("../icons/more-vertical.svg");
+            leading-pressed => { root.back-pressed(); }
+        }
+
+        VerticalLayout {
+            padding: Theme.spacing-md;
+            spacing: Theme.spacing-md;
+            alignment: start;
+
+            // ----- Dial -----
+            Rectangle {
+                height: 280px;
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: Theme.spacing-md;
+                    VerticalLayout {
+                        alignment: center;
+                        AdjustDisc {
+                            glyph: "−";
+                            clicked => { root.minus-pressed(); }
+                        }
+                    }
+                    Rectangle {
+                        width: 240px;
+                        height: 240px;
+                        // Ring.
+                        RingBand {
+                            x: 0;
+                            y: 0;
+                            radius: 120px;
+                            stroke: 18px;
+                            fill-color:
+                                  root.mode-index == 0 ? Theme.accent-warning
+                                : root.mode-index == 1 ? Theme.accent-info
+                                : Theme.muted;
+                            progress: root.heat-progress;
+                        }
+                        // Centre content.
+                        VerticalLayout {
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                            width: parent.width - 60px;
+                            height: parent.height - 60px;
+                            alignment: center;
+                            spacing: 4px;
+                            HorizontalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: mode-text.preferred-width + 16px;
+                                    height: 20px;
+                                    border-radius: 10px;
+                                    background:
+                                          root.mode-index == 0 ? Theme.accent-warning
+                                        : root.mode-index == 1 ? Theme.accent-info
+                                        : Theme.surface-2;
+                                    mode-text := Text {
+                                        text:
+                                              root.mode-index == 0 ? "HEAT"
+                                            : root.mode-index == 1 ? "COOL"
+                                            : root.mode-index == 2 ? "AUTO"
+                                            : "OFF";
+                                        color:
+                                              root.mode-index < 2 ? Theme.on-primary
+                                            : Theme.muted;
+                                        font-size: 10px;
+                                        font-weight: 800;
+                                        letter-spacing: 0.5px;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                        width: parent.width;
+                                        height: parent.height;
+                                    }
+                                }
+                            }
+                            HorizontalLayout {
+                                alignment: center;
+                                Text {
+                                    text: root.current;
+                                    color: Theme.on-background;
+                                    font-size: 72px;
+                                    font-weight: 200;
+                                }
+                            }
+                            HorizontalLayout {
+                                alignment: center;
+                                Text {
+                                    text: "Target · " + root.target;
+                                    color: Theme.muted;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 600;
+                                }
+                            }
+                        }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        AdjustDisc {
+                            glyph: "+";
+                            clicked => { root.plus-pressed(); }
+                        }
+                    }
+                }
+            }
+
+            // ----- Mode picker -----
+            SegmentedControl {
+                options: ["Heat", "Cool", "Auto", "Off"];
+                selected-index: root.mode-index;
+            }
+
+            Divider { }
+
+            // ----- Schedule preview -----
+            Text {
+                text: "Next set points";
+                color: Theme.on-background;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+            HorizontalLayout {
+                spacing: Theme.spacing-sm;
+                SchedulePill {
+                    when: "16:00";
+                    temp: "22°";
+                    label: "Comfort";
+                    tone: Tone.warning;
+                }
+                SchedulePill {
+                    when: "22:00";
+                    temp: "19°";
+                    label: "Sleep";
+                    tone: Tone.info;
+                }
+                SchedulePill {
+                    when: "06:30";
+                    temp: "21°";
+                    label: "Morning";
+                    tone: Tone.success;
+                }
+            }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+
+        // ----- Away / Home toggle row -----
+        Rectangle {
+            background: Theme.surface-1;
+            drop-shadow-blur: Theme.elevation-2-blur;
+            drop-shadow-color: Theme.elevation-2-color;
+            drop-shadow-offset-y: -4px;
+            height: 88px;
+            HorizontalLayout {
+                padding: Theme.spacing-md;
+                spacing: Theme.spacing-md;
+                alignment: stretch;
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    alignment: center;
+                    spacing: 2px;
+                    Text {
+                        text: root.away-mode ? "Away mode" : "Home mode";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-body-large;
+                        font-weight: 700;
+                    }
+                    Text {
+                        text:
+                              root.away-mode
+                            ? "Set-points lowered. Tap to switch."
+                            : "Following schedule. Tap to switch.";
+                        color: Theme.muted;
+                        font-size: Theme.font-size-caption;
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 56px;
+                        height: 32px;
+                        border-radius: 16px;
+                        background:
+                              root.away-mode ? Theme.accent-warning
+                            : Theme.accent-success;
+                        Rectangle {
+                            x: root.away-mode ? parent.width - self.width - 3px : 3px;
+                            y: 3px;
+                            width: 26px;
+                            height: 26px;
+                            border-radius: 13px;
+                            background: #ffffff;
+                            animate x { duration: Theme.motion-fast; }
+                        }
+                        TouchArea {
+                            clicked => {
+                                root.away-mode = !root.away-mode;
+                                root.away-pressed();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

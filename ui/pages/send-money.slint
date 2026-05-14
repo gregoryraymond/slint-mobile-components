@@ -1,0 +1,301 @@
+// SendMoneyPage
+// =====================================================================
+//
+// A send-money / bank-transfer screen — the "pay a person" flow.
+// Distinct from `PaymentMethodPage` (manage cards), `PaymentSplitPage`
+// (split a bill), and `CurrencyConverterPage` (FX maths). Demonstrates
+// an amount-entry surface:
+//
+//   - A recipient card (avatar + name + handle).
+//   - A large centred amount display with a currency glyph.
+//   - A from-account selector pill + a short note pill.
+//   - A numeric keypad (3x4, with a backspace key).
+//   - A sticky Send CTA echoing the amount.
+
+import { Theme, Tone } from "../theme.slint";
+import { AppBar } from "../app-bar.slint";
+import { Avatar } from "../avatar.slint";
+import { MobileButton } from "../button.slint";
+
+// One keypad key. `kind`: 0 digit / 1 backspace.
+component Key inherits Rectangle {
+    in property <string> digit;
+    in property <int> kind: 0;
+    callback pressed();
+
+    accessible-role: button;
+    accessible-label: root.kind == 1 ? "Delete" : root.digit;
+    accessible-action-default => { root.pressed(); }
+
+    horizontal-stretch: 1;
+    height: 56px;
+    border-radius: Theme.radius-md;
+    background: touch.pressed ? Theme.surface-pressed : transparent;
+    animate background { duration: Theme.motion-fast; }
+
+    if root.kind == 0: Text {
+        text: root.digit;
+        color: Theme.on-surface;
+        font-size: Theme.font-size-headline;
+        font-weight: 700;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: parent.width;
+        height: parent.height;
+    }
+    if root.kind == 1: Image {
+        width: 24px;
+        height: 24px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        source: @image-url("../icons/close.svg");
+        colorize: Theme.muted;
+        image-fit: contain;
+    }
+    touch := TouchArea {
+        clicked => { root.pressed(); }
+    }
+}
+
+// A small selector pill (account / note).
+component SelectorPill inherits Rectangle {
+    in property <image> icon;
+    in property <string> label;
+    in property <string> value;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-action-default => { root.clicked(); }
+
+    horizontal-stretch: 1;
+    height: 52px;
+    border-radius: Theme.radius-md;
+    background: touch.pressed ? Theme.surface-pressed : Theme.surface-1;
+    border-width: 1px;
+    border-color: Theme.surface-variant;
+    animate background { duration: Theme.motion-fast; }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        spacing: Theme.spacing-sm;
+        alignment: stretch;
+        VerticalLayout {
+            alignment: center;
+            Image {
+                width: 18px;
+                height: 18px;
+                source: root.icon;
+                colorize: Theme.muted;
+                image-fit: contain;
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 1px;
+            Text {
+                text: root.label;
+                color: Theme.muted;
+                font-size: 9px;
+                font-weight: 800;
+                letter-spacing: 0.3px;
+            }
+            Text {
+                text: root.value;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-caption;
+                font-weight: 700;
+                overflow: elide;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Image {
+                width: 14px;
+                height: 14px;
+                source: @image-url("../icons/chevron-right.svg");
+                colorize: Theme.muted;
+                image-fit: contain;
+            }
+        }
+    }
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+export component SendMoneyPage inherits Rectangle {
+    in property <string> recipient: "Marco Kessler";
+    in property <string> handle: "@marco.k · Northwind Bank";
+    in property <string> initials: "MK";
+    in property <string> amount: "240";
+    in property <string> account: "Everyday · ·· 4471";
+    in property <string> note: "Dinner + cab";
+    callback back-pressed();
+    callback key-pressed(string);
+    callback account-pressed();
+    callback note-pressed();
+    callback send-pressed();
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "Send money";
+            leading-icon: @image-url("../icons/close.svg");
+            leading-pressed => { root.back-pressed(); }
+        }
+
+        VerticalLayout {
+            padding: Theme.spacing-md;
+            spacing: Theme.spacing-md;
+            alignment: start;
+
+            // Recipient card.
+            Rectangle {
+                height: 76px;
+                border-radius: Theme.radius-md;
+                background: Theme.surface-1;
+                drop-shadow-blur: Theme.elevation-1-blur;
+                drop-shadow-color: Theme.elevation-1-color;
+                drop-shadow-offset-y: Theme.elevation-1-y;
+                HorizontalLayout {
+                    padding: Theme.spacing-md;
+                    spacing: Theme.spacing-md;
+                    alignment: stretch;
+                    VerticalLayout {
+                        alignment: center;
+                        Avatar {
+                            fallback: root.initials;
+                            size: 44px;
+                        }
+                    }
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        alignment: center;
+                        spacing: 2px;
+                        Text {
+                            text: "To " + root.recipient;
+                            color: Theme.on-surface;
+                            font-size: Theme.font-size-body-large;
+                            font-weight: 800;
+                        }
+                        Text {
+                            text: root.handle;
+                            color: Theme.muted;
+                            font-size: Theme.font-size-caption;
+                        }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        Image {
+                            width: 18px;
+                            height: 18px;
+                            source: @image-url("../icons/check.svg");
+                            colorize: Theme.accent-success;
+                            image-fit: contain;
+                        }
+                    }
+                }
+            }
+
+            // Amount display.
+            Rectangle {
+                height: 96px;
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: 4px;
+                    VerticalLayout {
+                        alignment: start;
+                        padding-top: 14px;
+                        Text {
+                            text: "$";
+                            color: Theme.muted;
+                            font-size: Theme.font-size-headline;
+                            font-weight: 800;
+                        }
+                    }
+                    Text {
+                        text: root.amount;
+                        color: Theme.on-background;
+                        font-size: 64px;
+                        font-weight: 800;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+
+            // Selector pills.
+            HorizontalLayout {
+                spacing: Theme.spacing-sm;
+                SelectorPill {
+                    icon: @image-url("../icons/inbox.svg");
+                    label: "FROM";
+                    value: root.account;
+                    clicked => { root.account-pressed(); }
+                }
+                SelectorPill {
+                    icon: @image-url("../icons/pencil.svg");
+                    label: "NOTE";
+                    value: root.note;
+                    clicked => { root.note-pressed(); }
+                }
+            }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+
+        // Keypad.
+        VerticalLayout {
+            padding-left: Theme.spacing-md;
+            padding-right: Theme.spacing-md;
+            spacing: 4px;
+            HorizontalLayout {
+                spacing: 4px;
+                Key { digit: "1"; pressed => { root.key-pressed("1"); } }
+                Key { digit: "2"; pressed => { root.key-pressed("2"); } }
+                Key { digit: "3"; pressed => { root.key-pressed("3"); } }
+            }
+            HorizontalLayout {
+                spacing: 4px;
+                Key { digit: "4"; pressed => { root.key-pressed("4"); } }
+                Key { digit: "5"; pressed => { root.key-pressed("5"); } }
+                Key { digit: "6"; pressed => { root.key-pressed("6"); } }
+            }
+            HorizontalLayout {
+                spacing: 4px;
+                Key { digit: "7"; pressed => { root.key-pressed("7"); } }
+                Key { digit: "8"; pressed => { root.key-pressed("8"); } }
+                Key { digit: "9"; pressed => { root.key-pressed("9"); } }
+            }
+            HorizontalLayout {
+                spacing: 4px;
+                Key { digit: "."; pressed => { root.key-pressed("."); } }
+                Key { digit: "0"; pressed => { root.key-pressed("0"); } }
+                Key { kind: 1; pressed => { root.key-pressed("del"); } }
+            }
+        }
+
+        // Sticky send.
+        Rectangle {
+            background: Theme.surface-1;
+            drop-shadow-blur: Theme.elevation-2-blur;
+            drop-shadow-color: Theme.elevation-2-color;
+            drop-shadow-offset-y: -4px;
+            height: 80px;
+            HorizontalLayout {
+                padding: Theme.spacing-md;
+                MobileButton {
+                    text: "Send $" + root.amount;
+                    primary: true;
+                    max-height: 48px;
+                    clicked => { root.send-pressed(); }
+                }
+            }
+        }
+    }
+}

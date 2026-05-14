@@ -1,0 +1,106 @@
+// SegmentedControl
+// =====================================================================
+//
+// Pill-shaped horizontal strip that lets the user pick exactly one of a
+// small set of options. Equivalent to iOS's `UISegmentedControl` — best
+// for 2–4 mutually-exclusive choices that the user reads at a glance
+// (e.g. "All / Active / Done" filter or a unit toggle). For larger sets
+// reach for `TabBar` or a `Picker` instead.
+//
+// Specification
+// -------------
+//
+// Geometry
+//   - Fixed height: 36 px. Pill border-radius (`height / 2`) on the
+//     outer container.
+//   - Each segment is `horizontal-stretch: 1` with `min-width: 0`, so
+//     the segments split the bar into equal slots regardless of label
+//     length.
+//   - Background: `Theme.surface-variant` (the inactive track).
+//
+// Content
+//   - `options` (`[string]`): the labels, in order. Driven by a
+//     standard Slint model so callers can bind a Rust `Vec<SharedString>`
+//     or pass an inline array literal.
+//   - `selected-index` (in-out int, default 0): the chosen option's
+//     index. Set externally OR updated automatically when the user taps
+//     a segment.
+//
+// Interaction
+//   - Tap a segment → `selected-index` is set to that segment's index,
+//     `changed(int)` fires.
+//   - The selected segment fills with `Theme.primary` and uses
+//     `Theme.on-primary` text; non-selected segments use
+//     `Theme.on-surface` text with no fill.
+
+import { Theme } from "theme.slint";
+
+component Segment inherits Rectangle {
+    in property <string> label;
+    in property <bool> selected: false;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-checkable: true;
+    accessible-checked: root.selected;
+    accessible-action-default => { root.clicked(); }
+
+    horizontal-stretch: 1;
+    min-width: 0;
+    height: 32px;
+    border-radius: self.height / 2;
+    background: root.selected
+        ? Theme.primary
+        : (touch.pressed ? Theme.surface-pressed : transparent);
+    clip: true;
+
+    animate background { duration: Theme.motion-fast; }
+
+    Text {
+        width: parent.width;
+        height: parent.height;
+        text: root.label;
+        color: root.selected ? Theme.on-primary : Theme.on-surface;
+        font-size: Theme.font-size-body;
+        font-weight: root.selected ? 600 : 500;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        overflow: elide;
+        animate color { duration: Theme.motion-fast; }
+    }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+export component SegmentedControl inherits Rectangle {
+    in property <[string]> options;
+    in-out property <int> selected-index: 0;
+    callback changed(int);
+
+    // 2 px inset between the outer pill and the segment row gives the
+    // selected segment's pill-fill a clean breath of track around it.
+    height: 36px;
+    horizontal-stretch: 1;
+    border-radius: self.height / 2;
+    background: Theme.surface-variant;
+
+    HorizontalLayout {
+        x: 2px;
+        y: 2px;
+        width: parent.width - 4px;
+        height: parent.height - 4px;
+        spacing: 0;
+
+        for option[i] in root.options: Segment {
+            label: option;
+            selected: root.selected-index == i;
+            clicked => {
+                root.selected-index = i;
+                root.changed(i);
+            }
+        }
+    }
+}

@@ -1,0 +1,298 @@
+// JournalEntryPage
+// =====================================================================
+//
+// Daily journal entry composer — Day One / Stoic / Reflectly-style.
+// Distinct from `WriteReviewPage` (product review) and the chat /
+// inbox screens. Demonstrates:
+//
+//   - Big date header centred at the top + sub-line ("Day 142 · 12 in
+//     a row").
+//   - 5-mood selector (Awful / Bad / OK / Good / Great) rendered as a
+//     row of tone-tinted disc + caption. Selected mood scales up its
+//     disc and adds a primary outline ring.
+//   - Multi-paragraph entry body (prefilled prose) in a card.
+//   - Tag chip strip (#work, #travel, #family, etc).
+//   - Gratitude bullet list — three "I'm grateful for…" entries.
+
+import { Theme, Tone } from "../theme.slint";
+import { AppBar } from "../app-bar.slint";
+import { Chip } from "../chip.slint";
+import { Divider } from "../divider.slint";
+import { MobileButton, TextButton } from "../button.slint";
+
+// One mood disc.
+component MoodDisc inherits Rectangle {
+    in property <string> glyph;
+    in property <string> label;
+    in property <Tone> tone;
+    in property <bool> selected: false;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-action-default => { root.clicked(); }
+
+    width: 64px;
+    height: 80px;
+
+    VerticalLayout {
+        spacing: 4px;
+        alignment: center;
+        HorizontalLayout {
+            alignment: center;
+            Rectangle {
+                width: root.selected ? 56px : 48px;
+                height: root.selected ? 56px : 48px;
+                border-radius: self.width / 2;
+                background:
+                      root.tone == Tone.success ? Theme.accent-success
+                    : root.tone == Tone.warning ? Theme.accent-warning
+                    : root.tone == Tone.danger  ? Theme.accent-danger
+                    : root.tone == Tone.info    ? Theme.accent-info
+                    : Theme.surface-variant;
+                border-width: root.selected ? 3px : 0px;
+                border-color: Theme.primary;
+                Text {
+                    text: root.glyph;
+                    color: root.tone == Tone.default ? Theme.on-surface : Theme.on-primary;
+                    font-size: 22px;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+            }
+        }
+        HorizontalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.selected ? Theme.on-background : Theme.muted;
+                font-size: 10px;
+                font-weight: 700;
+                letter-spacing: 0.3px;
+                horizontal-alignment: center;
+            }
+        }
+    }
+    TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+// One gratitude bullet.
+component GratitudeLine inherits Rectangle {
+    in property <string> text;
+    in property <int> index;
+
+    min-height: 36px;
+    HorizontalLayout {
+        spacing: Theme.spacing-sm;
+        alignment: start;
+        VerticalLayout {
+            alignment: start;
+            padding-top: 4px;
+            Rectangle {
+                width: 22px;
+                height: 22px;
+                border-radius: 11px;
+                background: Theme.accent-success;
+                Text {
+                    text: root.index;
+                    color: Theme.on-primary;
+                    font-size: 11px;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+            }
+        }
+        Text {
+            text: root.text;
+            color: Theme.on-surface;
+            font-size: Theme.font-size-body;
+            wrap: word-wrap;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+    }
+}
+
+export component JournalEntryPage inherits Rectangle {
+    in property <string> date-headline: "Wednesday, May 14";
+    in property <string> streak-line: "Day 142 · 12 in a row";
+    in-out property <int> selected-mood: 4;     // 1..5
+    in property <string> entry:
+        "Shipped iteration 19 of the mobile-components catalogue. The Tone enum migration is finally everywhere, and the new templates feel like a coherent system instead of a pile of one-offs.\n\nSpent the afternoon with Léa and Anika at Memmo Alfama planning the Slint Conf dry run. Got ramen for dinner. Tired but the good kind.";
+    callback back-pressed();
+    callback save-pressed();
+    callback mood-pressed(int);
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "Journal";
+            leading-icon: @image-url("../icons/arrow-left.svg");
+            trailing-icon: @image-url("../icons/queue.svg");
+            leading-pressed => { root.back-pressed(); }
+        }
+
+        VerticalLayout {
+            padding-left: Theme.spacing-md;
+            padding-right: Theme.spacing-md;
+            padding-top: Theme.spacing-md;
+            spacing: Theme.spacing-md;
+            alignment: start;
+
+            // Date hero.
+            VerticalLayout {
+                spacing: 2px;
+                HorizontalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.date-headline;
+                        color: Theme.on-background;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 700;
+                    }
+                }
+                HorizontalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.streak-line;
+                        color: Theme.accent-success;
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                    }
+                }
+            }
+
+            // Mood selector.
+            HorizontalLayout {
+                alignment: center;
+                spacing: Theme.spacing-xs;
+                MoodDisc {
+                    glyph: ":(";
+                    label: "AWFUL";
+                    tone: Tone.danger;
+                    selected: root.selected-mood == 1;
+                    clicked => { root.mood-pressed(1); }
+                }
+                MoodDisc {
+                    glyph: ":/";
+                    label: "BAD";
+                    tone: Tone.warning;
+                    selected: root.selected-mood == 2;
+                    clicked => { root.mood-pressed(2); }
+                }
+                MoodDisc {
+                    glyph: ":|";
+                    label: "OK";
+                    tone: Tone.default;
+                    selected: root.selected-mood == 3;
+                    clicked => { root.mood-pressed(3); }
+                }
+                MoodDisc {
+                    glyph: ":)";
+                    label: "GOOD";
+                    tone: Tone.info;
+                    selected: root.selected-mood == 4;
+                    clicked => { root.mood-pressed(4); }
+                }
+                MoodDisc {
+                    glyph: ":D";
+                    label: "GREAT";
+                    tone: Tone.success;
+                    selected: root.selected-mood == 5;
+                    clicked => { root.mood-pressed(5); }
+                }
+            }
+
+            // Entry card.
+            Rectangle {
+                background: Theme.surface-1;
+                border-radius: Theme.radius-md;
+                drop-shadow-blur: Theme.elevation-1-blur;
+                drop-shadow-color: Theme.elevation-1-color;
+                drop-shadow-offset-y: Theme.elevation-1-y;
+                VerticalLayout {
+                    padding: Theme.spacing-md;
+                    spacing: Theme.spacing-sm;
+                    Text {
+                        text: "WHAT HAPPENED TODAY";
+                        color: Theme.muted;
+                        font-size: 10px;
+                        font-weight: 800;
+                        letter-spacing: 0.5px;
+                    }
+                    Text {
+                        text: root.entry;
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-body;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+
+            // Tag chips.
+            HorizontalLayout {
+                spacing: Theme.spacing-sm;
+                Chip { label: "#work"; selected: true; }
+                Chip { label: "#friends"; selected: true; }
+                Chip { label: "#travel"; }
+                Chip { label: "#family"; }
+            }
+
+            Divider { }
+
+            // Gratitude.
+            Text {
+                text: "Three things I'm grateful for";
+                color: Theme.on-background;
+                font-size: Theme.font-size-body-large;
+                font-weight: 700;
+            }
+            VerticalLayout {
+                spacing: Theme.spacing-xs;
+                GratitudeLine {
+                    index: 1;
+                    text: "Léa pinging me to grab lunch — I'd otherwise have stayed at the desk all day.";
+                }
+                GratitudeLine {
+                    index: 2;
+                    text: "The Tone enum migration shipping cleanly — Priya's review caught the Snackbar action edge case.";
+                }
+                GratitudeLine {
+                    index: 3;
+                    text: "Walking home along the Marina — sunset over the Golden Gate doesn't get old.";
+                }
+            }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+
+        // Sticky save.
+        Rectangle {
+            background: Theme.surface-1;
+            drop-shadow-blur: Theme.elevation-2-blur;
+            drop-shadow-color: Theme.elevation-2-color;
+            drop-shadow-offset-y: -4px;
+            height: 80px;
+            HorizontalLayout {
+                padding: Theme.spacing-md;
+                MobileButton {
+                    text: "Save entry · day 142";
+                    tone: Tone.success;
+                    max-height: 48px;
+                    clicked => { root.save-pressed(); }
+                }
+            }
+        }
+    }
+}

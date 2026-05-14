@@ -1,0 +1,301 @@
+// MedicationPage
+// =====================================================================
+//
+// Medication / supplement tracker — Medisafe / Round-Health-style.
+// Demonstrates a tonally rich health-tracking template:
+//
+//   - Daily summary hero: "Today · 3 of 6 doses taken" + a horizontal
+//     7-dot adherence streak strip showing the last 7 days.
+//   - Time-of-day grouped sections (MORNING / NOON / EVENING / NIGHT)
+//     with per-dose rows: pill icon + drug name + dose + time +
+//     status pill (TAKEN success, DUE info, MISSED danger).
+//   - Sticky bottom "Mark all morning taken" CTA.
+
+import { Theme, Tone } from "../theme.slint";
+import { AppBar } from "../app-bar.slint";
+import { SectionHeader } from "../section-header.slint";
+import { Divider } from "../divider.slint";
+import { MobileButton } from "../button.slint";
+
+// Dose row.
+component DoseRow inherits Rectangle {
+    in property <string> drug;
+    in property <string> dose;
+    in property <string> when;
+    in property <int> state: 0;   // 0=due, 1=taken, 2=missed, 3=scheduled
+    in property <color> pill-color: Theme.accent-info;
+
+    horizontal-stretch: 1;
+    min-height: 64px;
+
+    HorizontalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+
+        // Pill icon — a tablet-shaped rectangle in the brand color.
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 36px;
+                height: 24px;
+                border-radius: 12px;
+                background: root.pill-color;
+                // Inner highlight band.
+                Rectangle {
+                    x: 1px;
+                    y: 0;
+                    width: parent.width - 2px;
+                    height: parent.height / 2;
+                    border-top-left-radius: 12px;
+                    border-top-right-radius: 12px;
+                    background: #ffffff33;
+                }
+            }
+        }
+
+        // Drug + dose.
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: root.drug;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+            Text {
+                text: root.dose + " · " + root.when;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+            }
+        }
+
+        // Status pill.
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: status-text.preferred-width + 16px;
+                height: 22px;
+                border-radius: 11px;
+                background:
+                      root.state == 1 ? Theme.accent-success
+                    : root.state == 0 ? Theme.accent-info
+                    : root.state == 2 ? Theme.accent-danger
+                    : Theme.surface-variant;
+                status-text := Text {
+                    text:
+                          root.state == 1 ? "TAKEN"
+                        : root.state == 0 ? "DUE"
+                        : root.state == 2 ? "MISSED"
+                        : "LATER";
+                    color: root.state == 3 ? Theme.muted : Theme.on-primary;
+                    font-size: 10px;
+                    font-weight: 800;
+                    letter-spacing: 0.5px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+            }
+        }
+    }
+}
+
+// Streak dot row — 7 daily dots (today on the right, 6 prior days).
+component StreakStrip inherits Rectangle {
+    horizontal-stretch: 1;
+    HorizontalLayout {
+        spacing: Theme.spacing-xs;
+        alignment: stretch;
+        for state in [1, 1, 2, 1, 1, 1, 0] : VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            HorizontalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 24px;
+                    height: 24px;
+                    border-radius: 12px;
+                    background:
+                          state == 1 ? Theme.accent-success
+                        : state == 2 ? Theme.accent-danger
+                        : Theme.surface-variant;
+                    Text {
+                        text:
+                              state == 1 ? "✓"
+                            : state == 2 ? "✕"
+                            : "?";
+                        color: state == 0 ? Theme.muted : Theme.on-primary;
+                        font-size: 11px;
+                        font-weight: 800;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component MedicationPage inherits Rectangle {
+    in property <string> when: "Today, May 14";
+    in property <string> summary: "3 of 6 doses taken · 1 missed";
+    callback back-pressed();
+    callback mark-all-pressed();
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "Medications";
+            leading-icon: @image-url("../icons/arrow-left.svg");
+            trailing-icon: @image-url("../icons/plus.svg");
+            leading-pressed => { root.back-pressed(); }
+        }
+
+        // ----- Hero summary -----
+        VerticalLayout {
+            padding: Theme.spacing-md;
+            spacing: Theme.spacing-sm;
+
+            Rectangle {
+                background: Theme.surface-1;
+                border-radius: Theme.radius-md;
+                drop-shadow-blur: Theme.elevation-1-blur;
+                drop-shadow-color: Theme.elevation-1-color;
+                drop-shadow-offset-y: Theme.elevation-1-y;
+                height: 140px;
+
+                VerticalLayout {
+                    padding: Theme.spacing-md;
+                    spacing: Theme.spacing-sm;
+                    Text {
+                        text: root.when;
+                        color: Theme.muted;
+                        font-size: 10px;
+                        font-weight: 800;
+                        letter-spacing: 0.5px;
+                    }
+                    HorizontalLayout {
+                        spacing: Theme.spacing-sm;
+                        alignment: stretch;
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            spacing: 2px;
+                            Text {
+                                text: "3 / 6";
+                                color: Theme.on-surface;
+                                font-size: 36px;
+                                font-weight: 300;
+                            }
+                            Text {
+                                text: root.summary;
+                                color: Theme.muted;
+                                font-size: Theme.font-size-caption;
+                            }
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            Rectangle {
+                                width: 56px;
+                                height: 56px;
+                                border-radius: self.width / 2;
+                                background: Theme.accent-success;
+                                Text {
+                                    text: "50%";
+                                    color: Theme.on-primary;
+                                    font-size: Theme.font-size-body-large;
+                                    font-weight: 800;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                            }
+                        }
+                    }
+                    StreakStrip { }
+                }
+            }
+        }
+
+        SectionHeader { text: "MORNING · 08:00"; }
+        DoseRow {
+            drug: "Vitamin D3";
+            dose: "1000 IU · 1 capsule";
+            when: "08:00";
+            state: 1;
+            pill-color: Theme.accent-warning;
+        }
+        Divider { }
+        DoseRow {
+            drug: "Omega-3";
+            dose: "1000 mg · 1 softgel";
+            when: "08:00";
+            state: 1;
+            pill-color: Theme.accent-info;
+        }
+        Divider { }
+        DoseRow {
+            drug: "Metformin";
+            dose: "500 mg · 1 tablet";
+            when: "08:30";
+            state: 2;
+            pill-color: Theme.accent-danger;
+        }
+
+        SectionHeader { text: "NOON · 13:00"; }
+        DoseRow {
+            drug: "Magnesium glycinate";
+            dose: "200 mg · 1 capsule";
+            when: "13:00";
+            state: 1;
+            pill-color: Theme.accent-success;
+        }
+
+        SectionHeader { text: "EVENING · 19:00"; }
+        DoseRow {
+            drug: "Metformin";
+            dose: "500 mg · 1 tablet";
+            when: "19:00";
+            state: 0;
+            pill-color: Theme.accent-danger;
+        }
+        Divider { }
+        DoseRow {
+            drug: "Probiotic";
+            dose: "10 B CFU · 1 capsule";
+            when: "19:30";
+            state: 3;
+            pill-color: Theme.accent-info;
+        }
+
+        Rectangle { vertical-stretch: 1; }
+
+        // Sticky CTA — most actionable: log all morning doses at once.
+        Rectangle {
+            background: Theme.surface-1;
+            drop-shadow-blur: Theme.elevation-2-blur;
+            drop-shadow-color: Theme.elevation-2-color;
+            drop-shadow-offset-y: -4px;
+            height: 80px;
+            HorizontalLayout {
+                padding: Theme.spacing-md;
+                MobileButton {
+                    text: "Mark evening dose taken";
+                    tone: Tone.success;
+                    max-height: 48px;
+                    clicked => { root.mark-all-pressed(); }
+                }
+            }
+        }
+    }
+}

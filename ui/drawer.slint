@@ -1,0 +1,109 @@
+// Drawer
+// =====================================================================
+//
+// Side-sheet overlay anchored to the left or right edge of the screen —
+// the fourth overlay primitive in the catalogue (alongside BottomSheet,
+// Dialog, and Snackbar). Use it for navigation sidebars (the classic
+// "hamburger drawer"), filter panels on a list view, account switchers,
+// or any "secondary surface that slides in from the edge".
+//
+// Like Dialog and Snackbar, this component renders ONLY the drawer
+// surface — the host page is responsible for the dim scrim and for
+// driving the open/closed state. The recommended recipe (also used in
+// `SnapDrawer`):
+//
+//   if drawer-open: Rectangle {
+//       // Scrim — covers the page beneath, tap to dismiss.
+//       width: parent.width;
+//       height: parent.height;
+//       background: #00000099;
+//       TouchArea {
+//           clicked => { drawer-open = false; }
+//       }
+//       // Drawer panel.
+//       Drawer {
+//           edge: DrawerEdge.left;
+//           height: parent.height;
+//           // The drawer reports its own preferred width (320 px); the
+//           // host pins it to the chosen edge.
+//           x: 0;
+//           // ...contents passed via @children...
+//       }
+//   }
+//
+// Specification
+// -------------
+//
+// Geometry
+//   - Width: 320 px by default (caller can override via `width`). This
+//     matches the Material guideline "drawer should leave at least 56 dp
+//     of the underlying surface visible on a typical phone screen".
+//   - Height: full parent height — host page sets `height: parent.height`.
+//   - Corners: only the inner edge is rounded (`Theme.radius-lg`). The
+//     edge flush against the screen stays square so the drawer reads as
+//     attached, not free-floating.
+//
+// Style
+//   - Fill: `Theme.surface-2` (raised tier — same elevation as Dialog
+//     and BottomSheet, since all three are "the temporary panel above
+//     the page").
+//   - Shadow: `elevation-2-*` tokens, offset along the inner edge so
+//     the shadow falls onto the visible page slice (the edge against
+//     the screen casts no shadow — there's nothing to shadow onto).
+//
+// Edge
+//   - `edge` (`DrawerEdge` enum, default `left`). Drives which inner
+//     corners are rounded and which way the inner-edge shadow falls.
+//     Positioning along x/y is the host page's job — Drawer doesn't
+//     anchor itself.
+//
+// Content
+//   - `@children`. The drawer is a passive panel; the host decides what
+//     goes inside (typically a header row + a stack of `ListItem`s and
+//     a `Divider`).
+//
+// Accessibility
+//   - No `accessible-role` set on the chrome itself — interactive
+//     children carry their own a11y. Host pages should announce the
+//     open/close transition via their own announcement channel; an
+//     `accessible-label` can be set on the Drawer instance to give the
+//     panel a name ("Main navigation", "Filters").
+
+import { Theme } from "theme.slint";
+
+export enum DrawerEdge {
+    left,
+    right,
+}
+
+export component Drawer inherits Rectangle {
+    in property <DrawerEdge> edge: DrawerEdge.left;
+
+    width: 320px;
+    background: Theme.surface-2;
+    // Round only the inner corners — the edge flush to the screen is
+    // square so the panel reads as docked rather than floating.
+    border-top-left-radius:     root.edge == DrawerEdge.right ? Theme.radius-lg : 0px;
+    border-bottom-left-radius:  root.edge == DrawerEdge.right ? Theme.radius-lg : 0px;
+    border-top-right-radius:    root.edge == DrawerEdge.left  ? Theme.radius-lg : 0px;
+    border-bottom-right-radius: root.edge == DrawerEdge.left  ? Theme.radius-lg : 0px;
+    // Shadow falls onto the visible page slice — positive X for a
+    // left-edge drawer (shadow on the right side), negative X for a
+    // right-edge drawer. Y stays neutral; the drawer is full-height so
+    // a Y-offset shadow wouldn't make sense.
+    drop-shadow-blur:     Theme.elevation-2-blur;
+    drop-shadow-color:    Theme.elevation-2-color;
+    drop-shadow-offset-x: root.edge == DrawerEdge.left ? 4px : -4px;
+    drop-shadow-offset-y: 0px;
+    clip: true;
+
+    // `alignment: start` so the header + list items pack against the
+    // top of the drawer rather than stretching across the full height.
+    // The host can drop a `Rectangle { vertical-stretch: 1 }` between
+    // groups (or at the bottom) to push subsequent content to the
+    // footer of the drawer.
+    VerticalLayout {
+        alignment: start;
+        @children
+    }
+}

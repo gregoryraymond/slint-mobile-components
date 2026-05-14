@@ -13,7 +13,7 @@
 //   - Optional label above the field adds ~22px height (caption text +
 //     4px spacing).
 //   - Full width (`horizontal-stretch: 1`).
-//   - Border-radius: `Theme.radius-md` (12px); background `Theme.surface`.
+//   - Border-radius: `Theme.radius-md` (12px); background `Theme.surface-1`.
 //
 // Border / focus
 //   - Resting: 1px `Theme.outline`.
@@ -72,13 +72,16 @@ export component TextField inherits Rectangle {
 
         field := Rectangle {
             min-height: Theme.touch-target;
-            background: Theme.surface;
+            background: Theme.surface-1;
             border-radius: Theme.radius-md;
-            border-width: input.has-focus ? 2px : 1px;
-            border-color: input.has-focus ? Theme.primary : Theme.outline;
+            // No border at rest — surface-1 fill is the edge. The focus
+            // ring is the only intentional border in the library
+            // (DESIGN.md exception).
+            border-width: input.has-focus ? 2px : 0px;
+            border-color: Theme.primary;
             opacity: root.enabled ? 1.0 : 0.5;
 
-            animate border-color { duration: Theme.motion-fast; }
+            animate border-width { duration: Theme.motion-fast; }
 
             if input.text == "" && root.placeholder != "": Text {
                 x: Theme.spacing-md;

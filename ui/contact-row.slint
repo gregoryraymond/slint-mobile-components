@@ -1,0 +1,131 @@
+// ContactRow
+// =====================================================================
+//
+// The shape that kept recurring across `InboxPage`, `DashboardPage`,
+// `SearchResultsPage` (and is implicit in `ProfilePage`'s follower
+// list): **Avatar + 2-line text + optional trailing meta**. Lifting
+// it as a single primitive collapses ~150 lines of near-duplicate row
+// layout and unifies behaviour for tap feedback, accessibility, and
+// theming.
+//
+// Specification
+// -------------
+//
+// Geometry
+//   - Min-height: 64 px (Material list-row floor). Adjusts naturally
+//     when the subtitle is empty or the avatar size is bumped up.
+//   - Full layout-cell width (`horizontal-stretch: 1`).
+//   - 16 px horizontal padding (lines up with the existing
+//     `SectionHeader` and `ListItem`).
+//
+// Slots
+//   - `initials` (string): used as the `Avatar.fallback` text. Avatar
+//     is always rendered; pass the bound `image-source` via the
+//     `avatar` property if a photo is available.
+//   - `avatar-size` (length, default 40 px) — bump to 32 px for
+//     compact rows (activity feeds), 44 px for inbox messages.
+//   - `title` (string): primary line, font-size-body-large.
+//   - `subtitle` (string, optional): secondary line, muted. Hidden when
+//     empty.
+//   - `trailing-text` (string, optional): right-aligned meta — usually
+//     a timestamp. Hidden when empty.
+//   - `badge-count` (int, default 0): when > 0, a `Badge` appears
+//     under the trailing-text. Dot variant when ==0 is NOT shown — pass
+//     a non-zero count to enable.
+//
+// State
+//   - `emphasized` (bool, default false) — when true, the title goes
+//     weight-600 and the trailing-text adopts `Theme.primary` colour
+//     + weight-600. Use for unread inbox rows, active conversations.
+//   - Press feedback: row tints to `Theme.surface-pressed`. Emits
+//     `clicked()` on tap.
+//
+// Accessibility
+//   - `accessible-role: list-item` with the title as label and
+//     subtitle as description.
+
+import { Theme } from "theme.slint";
+import { Avatar } from "avatar.slint";
+import { Badge } from "badge.slint";
+
+export component ContactRow inherits Rectangle {
+    in property <string> initials;
+    in property <image> avatar;
+    in property <length> avatar-size: 40px;
+    in property <string> title;
+    in property <string> subtitle;
+    in property <string> trailing-text;
+    in property <int> badge-count: 0;
+    in property <bool> emphasized: false;
+    callback clicked();
+
+    accessible-role: list-item;
+    accessible-label: title;
+    accessible-description: subtitle;
+    accessible-action-default => { root.clicked(); }
+
+    min-height: 64px;
+    horizontal-stretch: 1;
+    background: touch.pressed ? Theme.surface-pressed : transparent;
+
+    animate background { duration: Theme.motion-fast; }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        padding-top: Theme.spacing-sm;
+        padding-bottom: Theme.spacing-sm;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+
+        VerticalLayout {
+            alignment: center;
+            Avatar {
+                source: root.avatar;
+                fallback: root.initials;
+                size: root.avatar-size;
+            }
+        }
+
+        VerticalLayout {
+            horizontal-stretch: 1;
+            spacing: 2px;
+            alignment: center;
+            Text {
+                text: root.title;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body-large;
+                font-weight: root.emphasized ? 600 : 500;
+                overflow: elide;
+            }
+            if root.subtitle != "": Text {
+                text: root.subtitle;
+                color: Theme.muted;
+                font-size: Theme.font-size-body;
+                overflow: elide;
+            }
+        }
+
+        if root.trailing-text != "" || root.badge-count > 0: VerticalLayout {
+            spacing: Theme.spacing-xs;
+            alignment: center;
+            if root.trailing-text != "": HorizontalLayout {
+                alignment: end;
+                Text {
+                    text: root.trailing-text;
+                    color: root.emphasized ? Theme.primary : Theme.muted;
+                    font-size: Theme.font-size-caption;
+                    font-weight: root.emphasized ? 600 : 400;
+                }
+            }
+            if root.badge-count > 0: HorizontalLayout {
+                alignment: end;
+                Badge { count: root.badge-count; }
+            }
+        }
+    }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}

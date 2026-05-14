@@ -1,0 +1,314 @@
+// RestaurantMenuPage
+// =====================================================================
+//
+// Restaurant header + menu category strip + dish cards + sticky cart
+// footer. This is the canonical food-delivery screen — DoorDash /
+// Uber Eats / Deliveroo all share the same skeleton — and it
+// demonstrates:
+//
+//   - A full-bleed hero image strip + AppBar overlay (back button on a
+//     translucent backdrop so it's legible on any image).
+//   - Restaurant meta block (name, cuisine, rating, eta) underlapping
+//     the hero (negative top-margin via absolute positioning is messy
+//     in Slint — we just stack vertically and rely on the hero ending
+//     at a known height).
+//   - Sticky category chip rail.
+//   - Menu items as horizontal rows (text-left, thumb-right) — text
+//     emphasis goes to dish name + description + price.
+//   - Persistent footer: "View cart · 3 items · $34.50".
+
+import { Theme, Tone } from "../theme.slint";
+import { AppBar } from "../app-bar.slint";
+import { SectionHeader } from "../section-header.slint";
+import { Chip } from "../chip.slint";
+import { Divider } from "../divider.slint";
+import { MobileButton } from "../button.slint";
+import { ScrollView } from "std-widgets.slint";
+
+// One menu item row.
+component DishRow inherits Rectangle {
+    in property <string> name;
+    in property <string> description;
+    in property <string> price;
+    in property <bool> popular: false;
+    in property <brush> thumb-fill;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: root.name;
+    accessible-action-default => { root.clicked(); }
+
+    horizontal-stretch: 1;
+    min-height: 112px;
+    background: touch.pressed ? Theme.surface-pressed : transparent;
+    animate background { duration: Theme.motion-fast; }
+
+    HorizontalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+
+        // Meta column.
+        VerticalLayout {
+            horizontal-stretch: 1;
+            spacing: 4px;
+
+            HorizontalLayout {
+                spacing: Theme.spacing-xs;
+                alignment: start;
+                Text {
+                    text: root.name;
+                    color: Theme.on-surface;
+                    font-size: Theme.font-size-body-large;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                }
+                if root.popular: Rectangle {
+                    width: pop-text.preferred-width + 12px;
+                    height: 18px;
+                    border-radius: 4px;
+                    background: Theme.accent-warning;
+                    pop-text := Text {
+                        text: "POPULAR";
+                        color: Theme.on-primary;
+                        font-size: 9px;
+                        font-weight: 700;
+                        letter-spacing: 0.5px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                }
+            }
+            Text {
+                text: root.description;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+                wrap: word-wrap;
+            }
+            Text {
+                text: root.price;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 700;
+            }
+        }
+
+        // Thumbnail with a + glyph corner.
+        Rectangle {
+            width: 88px;
+            height: 88px;
+            border-radius: Theme.radius-md;
+            background: root.thumb-fill;
+            clip: true;
+            // Add button — bottom-right corner of the thumb.
+            Rectangle {
+                x: parent.width - self.width - 6px;
+                y: parent.height - self.height - 6px;
+                width: 28px;
+                height: 28px;
+                border-radius: self.width / 2;
+                background: Theme.surface-1;
+                drop-shadow-blur: Theme.elevation-1-blur;
+                drop-shadow-color: Theme.elevation-1-color;
+                drop-shadow-offset-y: Theme.elevation-1-y;
+                Image {
+                    width: 14px;
+                    height: 14px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: @image-url("../icons/plus.svg");
+                    colorize: Theme.on-surface;
+                    image-fit: contain;
+                }
+            }
+        }
+    }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+export component RestaurantMenuPage inherits Rectangle {
+    in property <string> restaurant: "Tartine Manufactory";
+    in property <string> cuisine: "Bakery · Brunch · Café";
+    in property <string> rating: "★ 4.7 (2,341)";
+    in property <string> eta: "20–30 min · 0.4 mi";
+    in property <int> cart-count: 3;
+    in property <string> cart-total: "$34.50";
+    callback back-pressed();
+    callback heart-pressed();
+    callback dish-pressed(string);
+    callback view-cart-pressed();
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        // ----- Hero image strip + overlay AppBar -----
+        Rectangle {
+            height: 200px;
+            background: @linear-gradient(135deg, #d4751a 0%, #7a2e0a 100%);
+            clip: true;
+
+            // Translucent back / heart buttons.
+            Rectangle {
+                x: Theme.spacing-md;
+                y: Theme.spacing-md;
+                width: 40px;
+                height: 40px;
+                border-radius: self.width / 2;
+                background: #00000066;
+                Image {
+                    width: 20px;
+                    height: 20px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: @image-url("../icons/arrow-left.svg");
+                    colorize: #ffffff;
+                    image-fit: contain;
+                }
+                TouchArea {
+                    clicked => { root.back-pressed(); }
+                }
+            }
+            Rectangle {
+                x: parent.width - self.width - Theme.spacing-md;
+                y: Theme.spacing-md;
+                width: 40px;
+                height: 40px;
+                border-radius: self.width / 2;
+                background: #00000066;
+                Image {
+                    width: 20px;
+                    height: 20px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: @image-url("../icons/heart.svg");
+                    colorize: #ffffff;
+                    image-fit: contain;
+                }
+                TouchArea {
+                    clicked => { root.heart-pressed(); }
+                }
+            }
+        }
+
+        // ----- Restaurant meta -----
+        VerticalLayout {
+            padding: Theme.spacing-md;
+            spacing: Theme.spacing-xs;
+            Text {
+                text: root.restaurant;
+                color: Theme.on-background;
+                font-size: Theme.font-size-headline;
+                font-weight: 700;
+            }
+            Text {
+                text: root.cuisine;
+                color: Theme.muted;
+                font-size: Theme.font-size-body;
+            }
+            HorizontalLayout {
+                spacing: Theme.spacing-md;
+                padding-top: 2px;
+                Text {
+                    text: root.rating;
+                    color: Theme.accent-warning;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 600;
+                }
+                Text {
+                    text: root.eta;
+                    color: Theme.muted;
+                    font-size: Theme.font-size-caption;
+                }
+            }
+        }
+
+        // ----- Category chip strip -----
+        ScrollView {
+            height: 56px;
+            horizontal-stretch: 1;
+            viewport-width: 700px;
+            viewport-height: 40px;
+            HorizontalLayout {
+                spacing: Theme.spacing-sm;
+                padding: Theme.spacing-sm;
+                Chip { label: "Popular"; selected: true; }
+                Chip { label: "Breakfast"; }
+                Chip { label: "Pastries"; }
+                Chip { label: "Sandwiches"; }
+                Chip { label: "Salads"; }
+                Chip { label: "Drinks"; }
+                Chip { label: "Desserts"; }
+            }
+        }
+
+        SectionHeader { text: "POPULAR"; }
+        DishRow {
+            name: "Avocado toast";
+            description: "Country bread, smashed avocado, lemon, sea salt, chili crisp.";
+            price: "$14.00";
+            popular: true;
+            thumb-fill: @linear-gradient(135deg, #6dba63 0%, #2f5a2b 100%);
+            clicked => { root.dish-pressed(self.name); }
+        }
+        Divider { }
+        DishRow {
+            name: "Morning bun";
+            description: "House-laminated croissant dough, sugar + cardamom + orange zest.";
+            price: "$5.50";
+            popular: true;
+            thumb-fill: @linear-gradient(135deg, #f2b75e 0%, #a3621e 100%);
+            clicked => { root.dish-pressed(self.name); }
+        }
+
+        SectionHeader { text: "BREAKFAST"; }
+        DishRow {
+            name: "Soft scramble + sourdough";
+            description: "Three pasture eggs, slow scrambled with butter, served on toast.";
+            price: "$15.00";
+            thumb-fill: @linear-gradient(135deg, #f5d97e 0%, #c69e26 100%);
+            clicked => { root.dish-pressed(self.name); }
+        }
+        Divider { }
+        DishRow {
+            name: "Granola bowl";
+            description: "House granola, seasonal compote, yogurt, raw honey, mint.";
+            price: "$11.50";
+            thumb-fill: @linear-gradient(135deg, #c486e4 0%, #6b3da0 100%);
+            clicked => { root.dish-pressed(self.name); }
+        }
+
+        SectionHeader { text: "DRINKS"; }
+        DishRow {
+            name: "Cortado";
+            description: "Equal parts espresso + steamed milk, served in a 4 oz glass.";
+            price: "$4.75";
+            thumb-fill: @linear-gradient(135deg, #6b3e1a 0%, #2b1707 100%);
+            clicked => { root.dish-pressed(self.name); }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+
+        // ----- Sticky cart footer -----
+        Rectangle {
+            background: Theme.surface-1;
+            drop-shadow-blur: Theme.elevation-2-blur;
+            drop-shadow-color: Theme.elevation-2-color;
+            drop-shadow-offset-y: -4px;
+            HorizontalLayout {
+                padding: Theme.spacing-md;
+                MobileButton {
+                    text: "View cart · " + root.cart-count + " items · " + root.cart-total;
+                    tone: Tone.info;
+                    clicked => { root.view-cart-pressed(); }
+                }
+            }
+        }
+    }
+}
