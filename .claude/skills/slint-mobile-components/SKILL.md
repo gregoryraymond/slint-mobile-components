@@ -71,7 +71,7 @@ so screen readers AND the behavior-test harness can drive it.
 
 ## Theme (design tokens) — single source of truth
 
-`ui/theme.slint` exposes one `global Theme` with `in-out` properties so
+`crates/theme/ui/theme.slint` exposes one `global Theme` with `in-out` properties so
 consuming apps can rebind at runtime. Token groups:
 
 - **Colour**: `background`, `surface`, `surface-variant`, `surface-pressed`, `primary`, `primary-pressed`, `on-primary`, `on-background`, `on-surface`, `muted`, `outline`, `danger`, `success`
@@ -101,7 +101,7 @@ emulator. The justfile sets `ANDROID_HOME`, `ANDROID_NDK_ROOT`,
 
 Walking example — adding a hypothetical `Foo`:
 
-1. **Create `ui/foo.slint`** with a spec docstring at the top:
+1. **Create `crates/components/ui/foo.slint`** with a spec docstring at the top:
 
    ```slint
    // Foo
@@ -118,7 +118,7 @@ Walking example — adding a hypothetical `Foo`:
    // Accessibility: <accessible-role + label + default-action>
    // Composition: <where this fits in a page>
 
-   import { Theme } from "theme.slint";
+   import { Theme } from "@mobile-theme/theme.slint";
 
    export component Foo inherits Rectangle {
        in property <string> label;
@@ -139,14 +139,15 @@ Walking example — adding a hypothetical `Foo`:
    }
    ```
 
-2. **Add a section to `ui/gallery.slint`** Toolbox — import at the top
-   of the file, then add a `VerticalLayout { SectionLabel { text: "FOO"; } Foo { ... } }`
+2. **Add a section to `ui/gallery.slint`** (in the root crate) Toolbox —
+   `import { Foo } from "@mobile-components/foo.slint";` at the top of the
+   file, then add a `VerticalLayout { SectionLabel { text: "FOO"; } Foo { ... } }`
    alongside the other sections.
 
 3. **Snapshot scene** in `tests/snapshot_scenes.slint`:
 
    ```slint
-   import { Foo } from "../ui/foo.slint";
+   import { Foo } from "@mobile-components/foo.slint";
 
    export component SnapFoo inherits Window {
        preferred-width: 320px;
@@ -240,7 +241,7 @@ doesn't compile.
 - Snapshot rendering uses `MinimalSoftwareWindow` + `SoftwareRenderer::render(&mut [Rgb565Pixel], stride)`. Slint doesn't ship an `Rgb8Pixel` target — manually expand Rgb565 → RGB8 with `(r << 3) | (r >> 2)` for the high-bit replication.
 
 ### Resources + assets
-- `@image-url(path)` resolves the path RELATIVE TO THE .slint FILE containing the macro, not the compiling file. From `ui/pages/home.slint`, `@image-url("../icons/home.svg")` points at `ui/icons/home.svg`.
+- `@image-url(path)` resolves the path RELATIVE TO THE .slint FILE containing the macro, not the compiling file. Across crate boundaries use the `@mobile-components/icons/<name>.svg` alias — e.g. `@image-url("@mobile-components/icons/home.svg")` from any page in `crates/pages-*/ui/`. Components living in `crates/components/ui/` can still use sibling paths like `"icons/home.svg"`.
 - All shipped icons are solid-fill SVGs with `fill="#000"`. Slint's `Image.colorize` tints them at render time — DON'T set colour in the SVG, set it in `colorize`. See `CLAUDE.md` for the rule that icons within a single element type must render at visually identical size (achieved by fixed 24×24 `Image { width: 24px; height: 24px; }`).
 
 ## Useful Slint syntax patterns (cheat-sheet)
@@ -279,9 +280,10 @@ animate background { duration: Theme.motion-fast; easing: ease-out; }
 
 - `README.md` — user-facing guide (consumption recipe, test workflow)
 - `CLAUDE.md` — iconography rule (icons within same element type must be visually identical size)
-- `ui/theme.slint` — design tokens
-- `ui/<component>.slint` — components, each with a spec docstring at top
-- `ui/gallery.slint` — desktop preview + CI compile entry
+- `crates/theme/ui/theme.slint` — design tokens (`@mobile-theme/theme.slint`)
+- `crates/components/ui/<component>.slint` — widgets, each with a spec docstring at top (`@mobile-components/<file>.slint`)
+- `crates/pages-<cat>/ui/<page>.slint` — page templates by category (`@mobile-pages-<cat>/<file>.slint`)
+- `ui/gallery.slint` — desktop preview + CI compile entry (root crate aggregator)
 - `examples/gallery.rs` — desktop preview runner (`--features gallery`)
 - `tests/snapshot_scenes.slint` + `tests/snapshots.rs` — visual regression
 - `tests/behavior_scenes.slint` + `tests/behavior.rs` — accessibility-driven behavior tests

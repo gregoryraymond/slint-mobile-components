@@ -16,10 +16,13 @@ fn main() {
     // `ElementHandle` in i-slint-backend-testing (used by the behavior
     // tests) needs Slint's compile-time debug info to traverse the
     // element tree by accessible label / element id / type name. The
-    // flag is also harmless when the behavior tests aren't running, so
-    // we set it unconditionally — consumers who query elements at
-    // runtime via accessibility get it for free.
-    std::env::set_var("SLINT_EMIT_DEBUG_INFO", "1");
+    // metadata is enormous (it's literally extra strings + element
+    // tables baked into every generated component) and pushes rustc's
+    // memory through the roof on `snapshot_scenes.slint`. Only set it
+    // when the behaviors feature is on — that's the only consumer.
+    if std::env::var_os("CARGO_FEATURE_BEHAVIORS").is_some() {
+        std::env::set_var("SLINT_EMIT_DEBUG_INFO", "1");
+    }
 
     let config = || {
         slint_build::CompilerConfiguration::new().with_library_paths(HashMap::from([
@@ -74,8 +77,15 @@ fn main() {
         ]))
     };
 
-    slint_build::compile_with_config("ui/gallery.slint", config())
-        .expect("Slint build failed");
+    // `ui/gallery.slint` is the desktop-preview entry — it imports every
+    // widget and ~80 pages, so compiling it pulls a massive slint codegen
+    // through one rustc invocation. Each pages-* and crates/components
+    // crate now compiles its own validation, so root only needs gallery
+    // when the `gallery` example is actually being built.
+    if std::env::var_os("CARGO_FEATURE_GALLERY").is_some() {
+        slint_build::compile_with_config("ui/gallery.slint", config())
+            .expect("Slint build failed");
+    }
     slint_build::compile_with_config("tests/snapshot_scenes.slint", config())
         .expect("Snapshot scenes build failed");
     slint_build::compile_with_config("tests/behavior_scenes.slint", config())

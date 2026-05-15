@@ -1,5 +1,31 @@
 # slint-mobile-components — Claude notes
 
+## Workspace layout
+
+The repo is a Cargo workspace, split for compile-time scope:
+
+- `crates/theme/` — design tokens (`Theme`, `Tone`, `ColorScheme`).
+  `.slint` files imported as `@mobile-theme/theme.slint`.
+- `crates/components/` — the 31 reusable widgets + shared `icons/`.
+  Imported as `@mobile-components/<file>.slint`.
+- `crates/pages-{auth,commerce,finance,health,media,misc,productivity,social,system,travel}/`
+  — full-screen page templates (~145 total), one crate per category.
+  Imported as `@mobile-pages-<cat>/<file>.slint`.
+- Root crate (`./ui/`) — `gallery.slint`, `showcase.slint`, plus
+  `tests/snapshot_scenes.slint` and `tests/behavior_scenes.slint`.
+  These are the aggregators that import from every sub-crate.
+  Available as `@mobile-aggregator/gallery.slint` etc.
+
+Downstream consumers (`android-demo/`, external apps) wire the
+`library_paths` by calling `slint_mobile_components::library_paths()`
+from their `build.rs` — see `android-demo/build.rs` as the reference.
+
+When adding a new page: drop it in the relevant `crates/pages-<cat>/ui/`,
+update the aggregator (`ui/gallery.slint`, `ui/showcase.slint`,
+`tests/snapshot_scenes.slint`) with the matching import + `Snap…Page`
+scene. No new crate is needed unless the page genuinely doesn't fit any
+existing category — and `pages-misc/` is the catch-all.
+
 ## Iconography
 
 **Icons used within a single element type must render at visually identical
@@ -8,7 +34,7 @@ size.** This applies to every `BottomNavItem`'s `icon-text`, every
 and `Fab`'s `icon-text`.
 
 The current scaffold uses bare Unicode glyphs (e.g. `⌂` `⌕` `✉` `☺` in
-the BottomNav of `ui/pages/home.slint`) — those four characters come from
+the BottomNav of `crates/pages-misc/ui/home.slint`) — those four characters come from
 different Unicode blocks and have wildly different intrinsic heights /
 widths, so the bottom-nav row looks ragged. Same risk in any other place
 arbitrary Unicode is dropped into an `icon-text` string.

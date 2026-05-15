@@ -22,7 +22,7 @@ use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
 use slint_mobile_components::Showcase;
 
 // Page file-stems in the exact cell order of `ui/showcase.slint`. This
-// list and that file are generated together by `.claude/gen_showcase.py`
+// list and that file are generated together by `cargo xtask gen-showcase`
 // — regenerate both if the page set changes.
 const PAGE_NAMES: &[&str] = &[
     "home", "settings", "login", "podcast", "inbox", "profile", "chat", "dashboard",

@@ -1,0 +1,221 @@
+//! Page-category data and helpers.
+//!
+//! The category table is the single source of truth: which pages live in
+//! which `crates/pages-<cat>/` directory. Everything else (showcase
+//! display order, snapshot scene aggregator, library_paths wiring) is
+//! derived from here or from filesystem scans.
+
+/// All page categories in workspace order. Adding a new category here
+/// only updates the data; consumers iterate this slice.
+pub const CATEGORIES: &[(&str, &[&str])] = &[
+    (
+        "auth",
+        &[
+            "login",
+            "signup",
+            "onboarding",
+            "onboarding-hint",
+            "welcome-splash",
+            "two-factor-auth",
+            "app-lock",
+            "app-permissions",
+        ],
+    ),
+    (
+        "commerce",
+        &[
+            "cart",
+            "checkout",
+            "product-detail",
+            "order-history",
+            "order-tracking",
+            "app-store-listing",
+            "restaurant-menu",
+            "grocery-list",
+            "recipe",
+            "store-locator",
+            "review-summary",
+            "write-review",
+        ],
+    ),
+    (
+        "finance",
+        &[
+            "wallet",
+            "send-money",
+            "payment-methods",
+            "payment-split",
+            "mortgage-calculator",
+            "net-worth",
+            "budget-overview",
+            "crypto-portfolio",
+            "investment-detail",
+            "savings-goal",
+            "stock-watchlist",
+            "currency-converter",
+            "expense-report",
+            "gift-card",
+            "donation",
+            "tip-jar",
+            "invoice",
+            "paywall",
+            "subscriptions",
+            "loyalty-card",
+            "referral",
+        ],
+    ),
+    (
+        "health",
+        &[
+            "activity-rings",
+            "sleep-tracking",
+            "workout-session",
+            "meditation",
+            "habit-tracker",
+            "meal-log",
+            "nutrition-label",
+            "medication",
+            "doctor-appointment",
+            "lab-results",
+            "insurance-claim",
+            "weekly-meal-plan",
+            "pet-adoption",
+        ],
+    ),
+    (
+        "media",
+        &[
+            "audiobook-player",
+            "podcast",
+            "music-library",
+            "playlist-detail",
+            "album-detail",
+            "video-player",
+            "video-feed",
+            "live-stream",
+            "media-lockscreen",
+            "equalizer",
+            "photo-grid",
+            "photo-viewer",
+            "camera-capture",
+            "voice-recorder",
+            "voicemail",
+            "e-reader",
+        ],
+    ),
+    (
+        "misc",
+        &[
+            "smart-home",
+            "room-thermostat",
+            "smart-tv-remote",
+            "weather",
+            "wordle-puzzle",
+            "quiz",
+            "leaderboard",
+            "achievements",
+            "game-lobby",
+            "calculator",
+            "dashboard",
+            "home",
+            "voting-ballot",
+            "poll-results",
+            "code-review",
+            "event-detail",
+            "job-listing",
+            "tv-show-detail",
+            "live-sports-score",
+            "delivery-driver",
+        ],
+    ),
+    (
+        "productivity",
+        &[
+            "task-list",
+            "calendar",
+            "countdown-event",
+            "world-clock",
+            "timer",
+            "journal-entry",
+            "reading-list",
+            "file-browser",
+            "document-scanner",
+            "qr-scanner",
+            "form-wizard",
+            "multi-select-list",
+            "download-manager",
+            "search-results",
+        ],
+    ),
+    (
+        "social",
+        &[
+            "inbox",
+            "chat",
+            "group-chat-list",
+            "email-thread",
+            "message-composer",
+            "comments",
+            "news-feed",
+            "post-detail",
+            "post-creator",
+            "profile",
+            "profile-edit",
+            "contact-detail",
+            "address-book",
+            "community-forum",
+            "trending-topics",
+            "video-call",
+            "dialer",
+        ],
+    ),
+    (
+        "system",
+        &[
+            "settings",
+            "account-settings",
+            "appearance-settings",
+            "wifi-settings",
+            "security-checkup",
+            "storage-manager",
+            "notification-center",
+            "app-error",
+            "bug-report",
+            "help-center",
+        ],
+    ),
+    (
+        "travel",
+        &[
+            "flight-search",
+            "hotel-booking",
+            "boarding-pass",
+            "trip-itinerary",
+            "ride-share-booking",
+            "carpool-search",
+            "driver-on-the-way",
+            "turn-by-turn-nav",
+            "transit-departures",
+            "map",
+            "parking-session",
+            "seat-selection",
+            "country-selector",
+            "timezone-converter",
+        ],
+    ),
+];
+
+/// Returns the category each page stem belongs to, panicking if absent.
+/// Use `category_of_opt` when the page might not be known.
+pub fn category_of(stem: &str) -> &'static str {
+    category_of_opt(stem).unwrap_or_else(|| panic!("stem not categorised: {stem}"))
+}
+
+pub fn category_of_opt(stem: &str) -> Option<&'static str> {
+    for (cat, pages) in CATEGORIES {
+        if pages.contains(&stem) {
+            return Some(cat);
+        }
+    }
+    None
+}
