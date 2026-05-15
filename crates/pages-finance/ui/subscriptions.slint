@@ -1,0 +1,283 @@
+// SubscriptionsPage
+// =====================================================================
+//
+// Recurring-charges dashboard — Rocket Money / Bobby / Origin-style.
+// Distinct from `WalletPage` (one-off transactions) and `CartPage`
+// (in-progress purchase). Demonstrates:
+//
+//   - "Monthly total" hero with annualised projection beneath.
+//   - Sort / filter chip row (All / By cost / Free trial / Cancelled).
+//   - Per-subscription row: branded logo disc (initial in tone-tinted
+//     fill), service name + meta (renewing tomorrow, free trial ends,
+//     etc), price + cycle stack, tone-pill status (Active / Trial /
+//     Cancelled / Past due).
+
+import { Theme, Tone } from "@mobile-theme/theme.slint";
+import { AppBar } from "@mobile-components/app-bar.slint";
+import { SectionHeader } from "@mobile-components/section-header.slint";
+import { Chip } from "@mobile-components/chip.slint";
+import { Divider } from "@mobile-components/divider.slint";
+
+// One subscription row.
+component SubscriptionRow inherits Rectangle {
+    in property <string> service;
+    in property <string> meta;
+    in property <string> price;
+    in property <string> cycle;
+    in property <string> badge;
+    in property <string> status;
+    in property <color> brand;
+    in property <int> state: 0;     // 0 active, 1 trial, 2 paused, 3 past-due
+
+    horizontal-stretch: 1;
+    min-height: 72px;
+
+    HorizontalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+
+        // Logo disc.
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 40px;
+                height: 40px;
+                border-radius: 8px;
+                background: root.brand;
+                Text {
+                    text: root.badge;
+                    color: Theme.on-primary;
+                    font-size: Theme.font-size-body;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+            }
+        }
+
+        // Service + meta + status pill.
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            HorizontalLayout {
+                spacing: Theme.spacing-xs;
+                Text {
+                    text: root.service;
+                    color: Theme.on-surface;
+                    font-size: Theme.font-size-body;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                }
+                Rectangle {
+                    width: status-text.preferred-width + 12px;
+                    height: 18px;
+                    border-radius: 4px;
+                    background:
+                          root.state == 0 ? Theme.accent-success
+                        : root.state == 1 ? Theme.accent-info
+                        : root.state == 2 ? Theme.surface-variant
+                        : Theme.accent-danger;
+                    status-text := Text {
+                        text: root.status;
+                        color: root.state == 2 ? Theme.muted : Theme.on-primary;
+                        font-size: 9px;
+                        font-weight: 800;
+                        letter-spacing: 0.3px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                }
+            }
+            Text {
+                text: root.meta;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+            }
+        }
+
+        // Price column.
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: root.price;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body-large;
+                font-weight: 700;
+                horizontal-alignment: right;
+            }
+            Text {
+                text: root.cycle;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+                horizontal-alignment: right;
+            }
+        }
+    }
+}
+
+export component SubscriptionsPage inherits Rectangle {
+    in property <string> monthly-total: "$84.42";
+    in property <string> annualised: "$1,013 / year · 11 active subscriptions";
+    callback back-pressed();
+    callback add-pressed();
+    callback row-pressed(string);
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "Subscriptions";
+            leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
+            trailing-icon: @image-url("@mobile-components/icons/plus.svg");
+            leading-pressed => { root.back-pressed(); }
+        }
+
+        // ----- Total hero -----
+        VerticalLayout {
+            padding-top: Theme.spacing-md;
+            padding-bottom: Theme.spacing-sm;
+            spacing: 2px;
+            HorizontalLayout {
+                alignment: center;
+                Text {
+                    text: "MONTHLY";
+                    color: Theme.muted;
+                    font-size: 10px;
+                    font-weight: 800;
+                    letter-spacing: 0.5px;
+                }
+            }
+            HorizontalLayout {
+                alignment: center;
+                Text {
+                    text: root.monthly-total;
+                    color: Theme.on-background;
+                    font-size: 48px;
+                    font-weight: 300;
+                }
+            }
+            HorizontalLayout {
+                alignment: center;
+                Text {
+                    text: root.annualised;
+                    color: Theme.muted;
+                    font-size: Theme.font-size-caption;
+                }
+            }
+        }
+
+        // ----- Filters -----
+        HorizontalLayout {
+            padding-left: Theme.spacing-md;
+            padding-right: Theme.spacing-md;
+            padding-bottom: Theme.spacing-sm;
+            spacing: Theme.spacing-sm;
+            Chip { label: "All"; selected: true; }
+            Chip { label: "By cost"; }
+            Chip { label: "Trials"; }
+            Chip { label: "Cancelled"; }
+        }
+
+        SectionHeader { text: "RENEWING THIS WEEK"; }
+        SubscriptionRow {
+            service: "Spotify Family";
+            badge: "S";
+            meta: "Renews tomorrow · annual";
+            price: "$16.99";
+            cycle: "/mo";
+            status: "ACTIVE";
+            state: 0;
+            brand: #1db954;
+        }
+        Divider { }
+        SubscriptionRow {
+            service: "iCloud+ 200 GB";
+            badge: "iC";
+            meta: "Renews Fri · annual";
+            price: "$2.99";
+            cycle: "/mo";
+            status: "ACTIVE";
+            state: 0;
+            brand: #0091ff;
+        }
+        Divider { }
+        SubscriptionRow {
+            service: "Claude Pro";
+            badge: "C";
+            meta: "Free trial ends in 3 days";
+            price: "$20.00";
+            cycle: "/mo";
+            status: "TRIAL";
+            state: 1;
+            brand: #d97757;
+        }
+
+        SectionHeader { text: "ACTIVE"; }
+        SubscriptionRow {
+            service: "Netflix Premium";
+            badge: "N";
+            meta: "Renews May 28";
+            price: "$22.99";
+            cycle: "/mo";
+            status: "ACTIVE";
+            state: 0;
+            brand: #e50914;
+        }
+        Divider { }
+        SubscriptionRow {
+            service: "Adobe Creative Cloud";
+            badge: "A";
+            meta: "Renews Jun 02 · annual";
+            price: "$59.99";
+            cycle: "/mo";
+            status: "ACTIVE";
+            state: 0;
+            brand: #fa0f00;
+        }
+        Divider { }
+        SubscriptionRow {
+            service: "1Password Family";
+            badge: "1P";
+            meta: "Renews Jun 14 · annual";
+            price: "$4.99";
+            cycle: "/mo";
+            status: "ACTIVE";
+            state: 0;
+            brand: #406ee2;
+        }
+
+        SectionHeader { text: "NEEDS ATTENTION"; }
+        SubscriptionRow {
+            service: "The Athletic";
+            badge: "TA";
+            meta: "Card expired · update payment";
+            price: "$5.99";
+            cycle: "/mo";
+            status: "PAST DUE";
+            state: 3;
+            brand: #1c1c1c;
+        }
+        Divider { }
+        SubscriptionRow {
+            service: "Headspace";
+            badge: "H";
+            meta: "Paused until June";
+            price: "$12.99";
+            cycle: "/mo";
+            status: "PAUSED";
+            state: 2;
+            brand: #f47d31;
+        }
+
+        Rectangle { vertical-stretch: 1; }
+    }
+}

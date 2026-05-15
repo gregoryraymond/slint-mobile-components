@@ -1,0 +1,347 @@
+// CommunityForumPage
+// =====================================================================
+//
+// Reddit / Lemmy / Discourse-style community thread list. Distinct from
+// `NewsArticleFeedPage` (editorial feed), `CommentsPage` (single
+// thread's replies), and `TrendingTopicsPage` (cross-topic trends).
+// Demonstrates a vote-driven list:
+//
+//   - Community header card: icon + r/name + member count + Join pill.
+//   - Sort chip strip (Hot / New / Top / Rising).
+//   - Post cards: a left vote rail (up arrow / score / down arrow,
+//     tinted by the user's vote state), the post title + flair pill,
+//     a meta line (author · time · comment count), and an optional
+//     thumbnail on the right.
+
+import { Theme, Tone } from "@mobile-theme/theme.slint";
+import { AppBar } from "@mobile-components/app-bar.slint";
+import { Chip } from "@mobile-components/chip.slint";
+import { Divider } from "@mobile-components/divider.slint";
+
+// One post card.
+//
+// `vote`: -1 downvoted, 0 none, +1 upvoted.
+component PostCard inherits Rectangle {
+    in property <string> title;
+    in property <string> flair;
+    in property <Tone> flair-tone: Tone.default;
+    in property <string> meta;
+    in property <string> comments;
+    in property <string> score;
+    in property <int> vote: 0;
+    in property <bool> has-thumb: false;
+    in property <brush> thumb-fill;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: root.title;
+    accessible-action-default => { root.clicked(); }
+
+    horizontal-stretch: 1;
+    min-height: 96px;
+    background: touch.pressed ? Theme.surface-pressed : transparent;
+    animate background { duration: Theme.motion-fast; }
+
+    HorizontalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+
+        // Vote rail.
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            width: 36px;
+            Image {
+                width: 18px;
+                height: 18px;
+                source: @image-url("@mobile-components/icons/arrow-left.svg");
+                colorize: root.vote > 0 ? Theme.accent-warning : Theme.muted;
+                image-fit: contain;
+            }
+            Text {
+                text: root.score;
+                color:
+                      root.vote > 0 ? Theme.accent-warning
+                    : root.vote < 0 ? Theme.accent-info
+                    : Theme.on-surface;
+                font-size: Theme.font-size-caption;
+                font-weight: 800;
+                horizontal-alignment: center;
+            }
+            Image {
+                width: 18px;
+                height: 18px;
+                source: @image-url("@mobile-components/icons/chevron-right.svg");
+                colorize: root.vote < 0 ? Theme.accent-info : Theme.muted;
+                image-fit: contain;
+            }
+        }
+
+        // Body.
+        VerticalLayout {
+            horizontal-stretch: 1;
+            spacing: 4px;
+            HorizontalLayout {
+                spacing: Theme.spacing-xs;
+                alignment: start;
+                if root.flair != "": Rectangle {
+                    width: flair-text.preferred-width + 12px;
+                    height: 18px;
+                    border-radius: 4px;
+                    background:
+                          root.flair-tone == Tone.success ? Theme.accent-success
+                        : root.flair-tone == Tone.warning ? Theme.accent-warning
+                        : root.flair-tone == Tone.danger  ? Theme.accent-danger
+                        : root.flair-tone == Tone.info    ? Theme.accent-info
+                        : Theme.surface-variant;
+                    flair-text := Text {
+                        text: root.flair;
+                        color: root.flair-tone == Tone.default ? Theme.muted : Theme.on-primary;
+                        font-size: 9px;
+                        font-weight: 800;
+                        letter-spacing: 0.3px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                }
+            }
+            Text {
+                text: root.title;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 700;
+                wrap: word-wrap;
+            }
+            HorizontalLayout {
+                spacing: Theme.spacing-md;
+                Text {
+                    text: root.meta;
+                    color: Theme.muted;
+                    font-size: Theme.font-size-caption;
+                    horizontal-stretch: 1;
+                }
+                HorizontalLayout {
+                    spacing: 4px;
+                    Image {
+                        width: 12px;
+                        height: 12px;
+                        source: @image-url("@mobile-components/icons/inbox.svg");
+                        colorize: Theme.muted;
+                        image-fit: contain;
+                        vertical-alignment: center;
+                    }
+                    Text {
+                        text: root.comments;
+                        color: Theme.muted;
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+
+        // Optional thumbnail.
+        if root.has-thumb: VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 64px;
+                height: 64px;
+                border-radius: Theme.radius-sm;
+                background: root.thumb-fill;
+                clip: true;
+            }
+        }
+    }
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+export component CommunityForumPage inherits Rectangle {
+    in property <string> community: "r/rust";
+    in property <string> members: "318k members · 1.2k online";
+    in-out property <bool> joined: true;
+    callback back-pressed();
+    callback search-pressed();
+    callback join-pressed();
+    callback post-pressed(string);
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: root.community;
+            leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
+            trailing-icon: @image-url("@mobile-components/icons/search.svg");
+            leading-pressed => { root.back-pressed(); }
+            trailing-pressed => { root.search-pressed(); }
+        }
+
+        // Community header card.
+        Rectangle {
+            background: Theme.surface-1;
+            drop-shadow-blur: Theme.elevation-1-blur;
+            drop-shadow-color: Theme.elevation-1-color;
+            drop-shadow-offset-y: Theme.elevation-1-y;
+            HorizontalLayout {
+                padding: Theme.spacing-md;
+                spacing: Theme.spacing-md;
+                alignment: stretch;
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 44px;
+                        height: 44px;
+                        border-radius: self.width / 2;
+                        background: @linear-gradient(135deg, #f59e0b 0%, #b45309 100%);
+                        Text {
+                            text: "r/";
+                            color: Theme.on-primary;
+                            font-size: 16px;
+                            font-weight: 800;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
+                        }
+                    }
+                }
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    alignment: center;
+                    spacing: 2px;
+                    Text {
+                        text: root.community;
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-body-large;
+                        font-weight: 800;
+                    }
+                    Text {
+                        text: root.members;
+                        color: Theme.muted;
+                        font-size: Theme.font-size-caption;
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 80px;
+                        height: 36px;
+                        border-radius: 18px;
+                        background: root.joined ? Theme.surface-variant : Theme.accent-info;
+                        Text {
+                            text: root.joined ? "Joined" : "Join";
+                            color: root.joined ? Theme.on-surface : Theme.on-primary;
+                            font-size: Theme.font-size-caption;
+                            font-weight: 800;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
+                        }
+                        TouchArea {
+                            clicked => {
+                                root.joined = !root.joined;
+                                root.join-pressed();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Sort chips.
+        HorizontalLayout {
+            padding: Theme.spacing-sm;
+            padding-left: Theme.spacing-md;
+            padding-right: Theme.spacing-md;
+            spacing: Theme.spacing-sm;
+            Chip { label: "Hot"; selected: true; }
+            Chip { label: "New"; }
+            Chip { label: "Top"; }
+            Chip { label: "Rising"; }
+        }
+
+        Divider { }
+
+        PostCard {
+            title: "Slint 2.0 lands full Android support — pure-Rust UI, zero WebView";
+            flair: "ANNOUNCEMENT";
+            flair-tone: Tone.info;
+            meta: "u/anika.ravi · 3h";
+            comments: "284";
+            score: "4.2k";
+            vote: 1;
+            has-thumb: true;
+            thumb-fill: @linear-gradient(135deg, #1e3a8a 0%, #4f8cff 100%);
+            clicked => { root.post-pressed(self.title); }
+        }
+        Divider { }
+        PostCard {
+            title: "Why does cargo-apk pick the wrong NDK on Apple Silicon? (workaround inside)";
+            flair: "HELP";
+            flair-tone: Tone.warning;
+            meta: "u/marco_k · 6h";
+            comments: "47";
+            score: "612";
+            vote: 0;
+            clicked => { root.post-pressed(self.title); }
+        }
+        Divider { }
+        PostCard {
+            title: "I built a 117-page mobile component catalogue in Slint — snapshot-tested";
+            flair: "SHOWCASE";
+            flair-tone: Tone.success;
+            meta: "u/graymond · 8h";
+            comments: "131";
+            score: "2.8k";
+            vote: 1;
+            has-thumb: true;
+            thumb-fill: @linear-gradient(135deg, #16a34a 0%, #14532d 100%);
+            clicked => { root.post-pressed(self.title); }
+        }
+        Divider { }
+        PostCard {
+            title: "Hot take: the borrow checker made me a better designer";
+            flair: "DISCUSSION";
+            flair-tone: Tone.default;
+            meta: "u/night_owl_dev · 11h";
+            comments: "418";
+            score: "1.1k";
+            vote: -1;
+            clicked => { root.post-pressed(self.title); }
+        }
+        Divider { }
+        PostCard {
+            title: "PSA: `slint fmt` is in nightly and it's genuinely good";
+            flair: "NEWS";
+            flair-tone: Tone.info;
+            meta: "u/lea_b · 14h";
+            comments: "62";
+            score: "903";
+            vote: 0;
+            clicked => { root.post-pressed(self.title); }
+        }
+        Divider { }
+        PostCard {
+            title: "Rewrote our Electron settings panel in Slint — 240 MB → 11 MB";
+            flair: "SHOWCASE";
+            flair-tone: Tone.success;
+            meta: "u/devika_s · 1d";
+            comments: "208";
+            score: "5.6k";
+            vote: 1;
+            has-thumb: true;
+            thumb-fill: @linear-gradient(135deg, #9333ea 0%, #4c1d95 100%);
+            clicked => { root.post-pressed(self.title); }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+    }
+}

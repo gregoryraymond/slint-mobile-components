@@ -1,0 +1,303 @@
+// InvoicePage
+// =====================================================================
+//
+// Invoice / receipt view — FreshBooks / Stripe Invoicing / Wave-style.
+// Distinct from `CartPage` (pre-purchase) and `OrderHistoryPage`
+// (list of past orders). Demonstrates a document-shaped surface:
+//
+//   - Status banner pinned at the top (Paid success / Due info /
+//     Overdue danger).
+//   - Issuer → client header block with invoice number + dates.
+//   - Line-item "table": each row is description (+ qty/unit-price
+//     subline) and an amount, with a faint divider between rows.
+//   - Totals stack (subtotal / discount / tax / total emphasised).
+//   - Footer: payment method note + Pay / Download CTAs.
+
+import { Theme, Tone } from "@mobile-theme/theme.slint";
+import { AppBar } from "@mobile-components/app-bar.slint";
+import { SectionHeader } from "@mobile-components/section-header.slint";
+import { Banner } from "@mobile-components/banner.slint";
+import { Divider } from "@mobile-components/divider.slint";
+import { MobileButton, TextButton } from "@mobile-components/button.slint";
+
+// One line-item row.
+component LineItem inherits Rectangle {
+    in property <string> description;
+    in property <string> detail;
+    in property <string> amount;
+
+    horizontal-stretch: 1;
+    min-height: 56px;
+    HorizontalLayout {
+        padding-top: Theme.spacing-sm;
+        padding-bottom: Theme.spacing-sm;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: root.description;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+                wrap: word-wrap;
+            }
+            Text {
+                text: root.detail;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.amount;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 700;
+                horizontal-alignment: right;
+            }
+        }
+    }
+}
+
+// One totals row.
+component TotalRow inherits Rectangle {
+    in property <string> label;
+    in property <string> value;
+    in property <bool> emphasize: false;
+    in property <Tone> tone: Tone.default;
+
+    horizontal-stretch: 1;
+    height: emphasize ? 40px : 28px;
+    HorizontalLayout {
+        Text {
+            text: root.label;
+            color: root.emphasize ? Theme.on-background : Theme.muted;
+            font-size: root.emphasize ? Theme.font-size-body-large : Theme.font-size-body;
+            font-weight: root.emphasize ? 800 : 500;
+            horizontal-stretch: 1;
+            vertical-alignment: center;
+        }
+        Text {
+            text: root.value;
+            color:
+                  root.tone == Tone.success ? Theme.accent-success
+                : root.tone == Tone.danger  ? Theme.accent-danger
+                : Theme.on-surface;
+            font-size: root.emphasize ? Theme.font-size-title : Theme.font-size-body;
+            font-weight: root.emphasize ? 800 : 700;
+            horizontal-alignment: right;
+            vertical-alignment: center;
+        }
+    }
+}
+
+export component InvoicePage inherits Rectangle {
+    in property <string> invoice-no: "INV-2026-0418";
+    in property <string> issuer: "Slint Studio LLC";
+    in property <string> client: "Patagonia, Inc.";
+    in property <string> issued: "Issued May 02 · Due May 16, 2026";
+    in property <int> status: 2;     // 0 paid, 1 due, 2 overdue
+    callback back-pressed();
+    callback share-pressed();
+    callback pay-pressed();
+    callback download-pressed();
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: root.invoice-no;
+            leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
+            trailing-icon: @image-url("@mobile-components/icons/send.svg");
+            leading-pressed => { root.back-pressed(); }
+            trailing-pressed => { root.share-pressed(); }
+        }
+
+        VerticalLayout {
+            padding: Theme.spacing-md;
+            spacing: Theme.spacing-md;
+            alignment: start;
+
+            // Status banner.
+            Banner {
+                icon:
+                      root.status == 0 ? @image-url("@mobile-components/icons/check.svg")
+                    : root.status == 1 ? @image-url("@mobile-components/icons/bell.svg")
+                    : @image-url("@mobile-components/icons/close.svg");
+                message:
+                      root.status == 0 ? "Paid in full · May 14 via Visa ·• 4242"
+                    : root.status == 1 ? "Payment due in 2 days · auto-charge on May 16"
+                    : "Overdue by 1 day · a late fee of 1.5% applies after 7 days";
+                tone:
+                      root.status == 0 ? Tone.success
+                    : root.status == 1 ? Tone.info
+                    : Tone.danger;
+            }
+
+            // Issuer → client header.
+            Rectangle {
+                background: Theme.surface-1;
+                border-radius: Theme.radius-md;
+                drop-shadow-blur: Theme.elevation-1-blur;
+                drop-shadow-color: Theme.elevation-1-color;
+                drop-shadow-offset-y: Theme.elevation-1-y;
+                VerticalLayout {
+                    padding: Theme.spacing-md;
+                    spacing: Theme.spacing-sm;
+                    HorizontalLayout {
+                        spacing: Theme.spacing-md;
+                        alignment: stretch;
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            spacing: 2px;
+                            Text {
+                                text: "FROM";
+                                color: Theme.muted;
+                                font-size: 10px;
+                                font-weight: 800;
+                                letter-spacing: 0.5px;
+                            }
+                            Text {
+                                text: root.issuer;
+                                color: Theme.on-surface;
+                                font-size: Theme.font-size-body;
+                                font-weight: 700;
+                            }
+                            Text {
+                                text: "billing@slint.studio";
+                                color: Theme.muted;
+                                font-size: Theme.font-size-caption;
+                            }
+                        }
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            spacing: 2px;
+                            Text {
+                                text: "BILL TO";
+                                color: Theme.muted;
+                                font-size: 10px;
+                                font-weight: 800;
+                                letter-spacing: 0.5px;
+                            }
+                            Text {
+                                text: root.client;
+                                color: Theme.on-surface;
+                                font-size: Theme.font-size-body;
+                                font-weight: 700;
+                            }
+                            Text {
+                                text: "ap@patagonia.com";
+                                color: Theme.muted;
+                                font-size: Theme.font-size-caption;
+                            }
+                        }
+                    }
+                    Divider { }
+                    Text {
+                        text: root.issued;
+                        color: Theme.muted;
+                        font-size: Theme.font-size-caption;
+                        font-weight: 600;
+                    }
+                }
+            }
+        }
+
+        SectionHeader { text: "LINE ITEMS"; }
+
+        VerticalLayout {
+            padding-left: Theme.spacing-md;
+            padding-right: Theme.spacing-md;
+            spacing: 0;
+            LineItem {
+                description: "Mobile design-system build";
+                detail: "40 hrs · $140 / hr";
+                amount: "$5,600.00";
+            }
+            Divider { }
+            LineItem {
+                description: "Snapshot-test harness setup";
+                detail: "8 hrs · $140 / hr";
+                amount: "$1,120.00";
+            }
+            Divider { }
+            LineItem {
+                description: "Accessibility audit";
+                detail: "Fixed-fee deliverable";
+                amount: "$900.00";
+            }
+            Divider { }
+            LineItem {
+                description: "On-call support · May";
+                detail: "Retainer";
+                amount: "$500.00";
+            }
+        }
+
+        VerticalLayout {
+            padding: Theme.spacing-md;
+            spacing: Theme.spacing-md;
+
+            // Totals card.
+            Rectangle {
+                background: Theme.surface-1;
+                border-radius: Theme.radius-md;
+                drop-shadow-blur: Theme.elevation-1-blur;
+                drop-shadow-color: Theme.elevation-1-color;
+                drop-shadow-offset-y: Theme.elevation-1-y;
+                VerticalLayout {
+                    padding: Theme.spacing-md;
+                    spacing: Theme.spacing-xs;
+                    TotalRow { label: "Subtotal"; value: "$8,120.00"; }
+                    TotalRow {
+                        label: "Early-pay discount (5%)";
+                        value: "−$406.00";
+                        tone: Tone.success;
+                    }
+                    TotalRow { label: "Tax (8.625%)"; value: "$665.10"; }
+                    Divider { }
+                    TotalRow {
+                        label: "Total due";
+                        value: "$8,379.10";
+                        emphasize: true;
+                        tone: root.status == 2 ? Tone.danger : Tone.default;
+                    }
+                }
+            }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+
+        // Footer CTAs.
+        Rectangle {
+            background: Theme.surface-1;
+            drop-shadow-blur: Theme.elevation-2-blur;
+            drop-shadow-color: Theme.elevation-2-color;
+            drop-shadow-offset-y: -4px;
+            height: 96px;
+            VerticalLayout {
+                padding: Theme.spacing-md;
+                spacing: Theme.spacing-sm;
+                MobileButton {
+                    text: "Pay $8,379.10 now";
+                    tone: Tone.success;
+                    max-height: 44px;
+                    clicked => { root.pay-pressed(); }
+                }
+                HorizontalLayout {
+                    alignment: center;
+                    TextButton {
+                        text: "Download PDF";
+                        clicked => { root.download-pressed(); }
+                    }
+                }
+            }
+        }
+    }
+}

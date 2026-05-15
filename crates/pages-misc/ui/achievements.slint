@@ -1,0 +1,335 @@
+// AchievementsPage
+// =====================================================================
+//
+// Achievements / badges screen — the gamification "trophy case".
+// Distinct from `LeaderboardPage` (ranking against others) and
+// `QuizPage` (an in-progress game). Demonstrates a badge-grid surface:
+//
+//   - Level header: a level disc + an XP progress bar to the next
+//     level + a "X of Y unlocked" count.
+//   - A 3-column grid of badge tiles — earned tiles are tone-tinted
+//     and bright, locked tiles are dim with a lock glyph.
+//   - A recently-unlocked list beneath.
+
+import { Theme, Tone } from "@mobile-theme/theme.slint";
+import { AppBar } from "@mobile-components/app-bar.slint";
+import { SectionHeader } from "@mobile-components/section-header.slint";
+import { Divider } from "@mobile-components/divider.slint";
+
+// One badge tile. `tone` tints an earned badge; `locked` dims it.
+component BadgeTile inherits Rectangle {
+    in property <image> icon;
+    in property <string> label;
+    in property <Tone> tone: Tone.default;
+    in property <bool> locked: false;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-action-default => { root.clicked(); }
+
+    horizontal-stretch: 1;
+    height: 108px;
+    border-radius: Theme.radius-md;
+    background: touch.pressed ? Theme.surface-pressed : Theme.surface-1;
+    border-width: 1px;
+    border-color: Theme.surface-variant;
+    opacity: root.locked ? 0.55 : 1.0;
+    animate background { duration: Theme.motion-fast; }
+
+    VerticalLayout {
+        alignment: center;
+        spacing: 8px;
+        HorizontalLayout {
+            alignment: center;
+            Rectangle {
+                width: 48px;
+                height: 48px;
+                border-radius: 24px;
+                background: root.locked ? Theme.surface-2
+                    : root.tone == Tone.success ? Theme.accent-success
+                    : root.tone == Tone.warning ? Theme.accent-warning
+                    : root.tone == Tone.info    ? Theme.accent-info
+                    : root.tone == Tone.danger  ? Theme.accent-danger
+                    : Theme.primary;
+                Image {
+                    width: 24px;
+                    height: 24px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: root.locked ? @image-url("@mobile-components/icons/lock.svg") : root.icon;
+                    colorize: root.locked ? Theme.muted : Theme.on-primary;
+                    image-fit: contain;
+                }
+            }
+        }
+        Text {
+            text: root.label;
+            color: root.locked ? Theme.muted : Theme.on-surface;
+            font-size: Theme.font-size-caption;
+            font-weight: 700;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+    }
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+// One recently-unlocked list row.
+component UnlockRow inherits Rectangle {
+    in property <image> icon;
+    in property <string> title;
+    in property <string> detail;
+    in property <Tone> tone: Tone.default;
+    in property <string> xp;
+
+    horizontal-stretch: 1;
+    min-height: 60px;
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 36px;
+                height: 36px;
+                border-radius: 18px;
+                background:
+                      root.tone == Tone.success ? Theme.accent-success
+                    : root.tone == Tone.warning ? Theme.accent-warning
+                    : root.tone == Tone.info    ? Theme.accent-info
+                    : Theme.primary;
+                Image {
+                    width: 18px;
+                    height: 18px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: root.icon;
+                    colorize: Theme.on-primary;
+                    image-fit: contain;
+                }
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: root.title;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+            Text {
+                text: root.detail;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.xp;
+                color: Theme.accent-warning;
+                font-size: Theme.font-size-caption;
+                font-weight: 800;
+            }
+        }
+    }
+}
+
+export component AchievementsPage inherits Rectangle {
+    in property <int> level: 12;
+    in property <string> xp-label: "2,840 / 3,500 XP";
+    in property <float> xp-progress: 0.81;
+    in property <string> unlocked-count: "18 of 30 unlocked";
+    callback back-pressed();
+    callback share-pressed();
+    callback badge-pressed(string);
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "Achievements";
+            leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
+            trailing-icon: @image-url("@mobile-components/icons/send.svg");
+            leading-pressed => { root.back-pressed(); }
+            trailing-pressed => { root.share-pressed(); }
+        }
+
+        // Level header.
+        Rectangle {
+            background: Theme.surface-1;
+            drop-shadow-blur: Theme.elevation-1-blur;
+            drop-shadow-color: Theme.elevation-1-color;
+            drop-shadow-offset-y: Theme.elevation-1-y;
+            HorizontalLayout {
+                padding: Theme.spacing-md;
+                spacing: Theme.spacing-md;
+                alignment: stretch;
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 56px;
+                        height: 56px;
+                        border-radius: 28px;
+                        background: @linear-gradient(135deg, #f59e0b 0%, #b45309 100%);
+                        Text {
+                            text: "" + root.level;
+                            color: #ffffff;
+                            font-size: Theme.font-size-headline;
+                            font-weight: 800;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
+                        }
+                    }
+                }
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    alignment: center;
+                    spacing: 6px;
+                    HorizontalLayout {
+                        Text {
+                            text: "Level " + root.level;
+                            color: Theme.on-surface;
+                            font-size: Theme.font-size-title;
+                            font-weight: 800;
+                            horizontal-stretch: 1;
+                        }
+                        Text {
+                            text: root.unlocked-count;
+                            color: Theme.muted;
+                            font-size: Theme.font-size-caption;
+                            font-weight: 600;
+                        }
+                    }
+                    Rectangle {
+                        height: 8px;
+                        border-radius: 4px;
+                        background: Theme.surface-variant;
+                        Rectangle {
+                            x: 0;
+                            width: parent.width * root.xp-progress;
+                            height: parent.height;
+                            border-radius: 4px;
+                            background: Theme.accent-warning;
+                        }
+                    }
+                    Text {
+                        text: root.xp-label;
+                        color: Theme.muted;
+                        font-size: Theme.font-size-caption;
+                        font-weight: 600;
+                    }
+                }
+            }
+        }
+
+        SectionHeader { text: "BADGES"; }
+        VerticalLayout {
+            padding-left: Theme.spacing-md;
+            padding-right: Theme.spacing-md;
+            spacing: Theme.spacing-sm;
+            HorizontalLayout {
+                spacing: Theme.spacing-sm;
+                BadgeTile {
+                    icon: @image-url("@mobile-components/icons/check.svg");
+                    label: "First Steps";
+                    tone: Tone.success;
+                    clicked => { root.badge-pressed("First Steps"); }
+                }
+                BadgeTile {
+                    icon: @image-url("@mobile-components/icons/star.svg");
+                    label: "7-Day Streak";
+                    tone: Tone.warning;
+                    clicked => { root.badge-pressed("7-Day Streak"); }
+                }
+                BadgeTile {
+                    icon: @image-url("@mobile-components/icons/heart.svg");
+                    label: "Crowd Favourite";
+                    tone: Tone.danger;
+                    clicked => { root.badge-pressed("Crowd Favourite"); }
+                }
+            }
+            HorizontalLayout {
+                spacing: Theme.spacing-sm;
+                BadgeTile {
+                    icon: @image-url("@mobile-components/icons/send.svg");
+                    label: "Sharer";
+                    tone: Tone.info;
+                    clicked => { root.badge-pressed("Sharer"); }
+                }
+                BadgeTile {
+                    icon: @image-url("@mobile-components/icons/queue.svg");
+                    label: "Collector";
+                    tone: Tone.default;
+                    clicked => { root.badge-pressed("Collector"); }
+                }
+                BadgeTile {
+                    icon: @image-url("@mobile-components/icons/star.svg");
+                    label: "Marathon";
+                    locked: true;
+                    clicked => { root.badge-pressed("Marathon"); }
+                }
+            }
+            HorizontalLayout {
+                spacing: Theme.spacing-sm;
+                BadgeTile {
+                    icon: @image-url("@mobile-components/icons/star.svg");
+                    label: "Night Owl";
+                    locked: true;
+                    clicked => { root.badge-pressed("Night Owl"); }
+                }
+                BadgeTile {
+                    icon: @image-url("@mobile-components/icons/star.svg");
+                    label: "Perfectionist";
+                    locked: true;
+                    clicked => { root.badge-pressed("Perfectionist"); }
+                }
+                BadgeTile {
+                    icon: @image-url("@mobile-components/icons/star.svg");
+                    label: "Legend";
+                    locked: true;
+                    clicked => { root.badge-pressed("Legend"); }
+                }
+            }
+        }
+
+        SectionHeader { text: "RECENTLY UNLOCKED"; }
+        UnlockRow {
+            icon: @image-url("@mobile-components/icons/star.svg");
+            title: "7-Day Streak";
+            detail: "Unlocked today";
+            tone: Tone.warning;
+            xp: "+150 XP";
+        }
+        Divider { }
+        UnlockRow {
+            icon: @image-url("@mobile-components/icons/send.svg");
+            title: "Sharer";
+            detail: "Unlocked 3 days ago";
+            tone: Tone.info;
+            xp: "+80 XP";
+        }
+        Divider { }
+        UnlockRow {
+            icon: @image-url("@mobile-components/icons/heart.svg");
+            title: "Crowd Favourite";
+            detail: "Unlocked last week";
+            tone: Tone.danger;
+            xp: "+200 XP";
+        }
+
+        Rectangle { vertical-stretch: 1; }
+    }
+}

@@ -1,0 +1,352 @@
+// CurrencyConverterPage
+// =====================================================================
+//
+// Bidirectional currency converter — the Revolut / Wise / Cash App
+// "transfer money" surface, distilled to its two anchor pieces:
+//
+//   - "From / To" stacked cards with a circular swap button between
+//     them. Each card carries: currency code (USD / EUR), 2-letter
+//     flag glyph in a tinted disc, and a big editable amount on the
+//     right. The To-card amount is read-only / computed.
+//   - A rate strip beneath ("1 USD = 0.92 EUR · updated 14:32") + a
+//     tone-tinted 24h delta.
+//   - Sparkline showing the 30-day FX trend.
+//   - "Popular pairs" rows below for quick switching to other rates.
+
+import { Theme, Tone } from "@mobile-theme/theme.slint";
+import { AppBar } from "@mobile-components/app-bar.slint";
+import { SectionHeader } from "@mobile-components/section-header.slint";
+import { Divider } from "@mobile-components/divider.slint";
+
+// One currency card — flag disc + currency code + amount.
+component CurrencyCard inherits Rectangle {
+    in property <string> code;
+    in property <string> name;
+    in property <string> flag-letters;
+    in property <color> flag-color;
+    in property <string> amount;
+    in property <bool> editable: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    height: 96px;
+    background: Theme.surface-1;
+    border-radius: Theme.radius-md;
+    drop-shadow-blur: Theme.elevation-1-blur;
+    drop-shadow-color: Theme.elevation-1-color;
+    drop-shadow-offset-y: Theme.elevation-1-y;
+
+    HorizontalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+
+        // Flag disc.
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 44px;
+                height: 44px;
+                border-radius: self.width / 2;
+                background: root.flag-color;
+                Text {
+                    text: root.flag-letters;
+                    color: Theme.on-primary;
+                    font-size: Theme.font-size-body-large;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+            }
+        }
+
+        // Currency code + name.
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            width: 92px;
+            Text {
+                text: root.code;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body-large;
+                font-weight: 700;
+            }
+            Text {
+                text: root.name;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+                overflow: elide;
+            }
+        }
+
+        // Amount.
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            Text {
+                text: root.amount;
+                color: root.editable ? Theme.on-surface : Theme.muted;
+                font-size: Theme.font-size-headline;
+                font-weight: root.editable ? 800 : 600;
+                horizontal-alignment: right;
+            }
+        }
+    }
+    TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+// One popular-pair row — From → To with rate and 24h trend.
+component PairRow inherits Rectangle {
+    in property <string> pair;
+    in property <string> rate;
+    in property <string> change;
+    in property <int> direction: 1;
+
+    min-height: 56px;
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: root.pair;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+            Text {
+                text: root.rate;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.change;
+                color:
+                      root.direction > 0 ? Theme.accent-success
+                    : root.direction < 0 ? Theme.accent-danger
+                    : Theme.muted;
+                font-size: Theme.font-size-body;
+                font-weight: 700;
+                horizontal-alignment: right;
+            }
+        }
+    }
+}
+
+// Stylised 30-day sparkline — same approach as CryptoPortfolioPage's
+// hero sparkline (a row of variable-height bars; Slint lacks a path
+// primitive in this version).
+component Sparkline inherits Rectangle {
+    in property <[int]> bars;
+    in property <color> stroke: Theme.accent-success;
+
+    HorizontalLayout {
+        spacing: 2px;
+        alignment: stretch;
+        for value[index] in root.bars : VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: end;
+            Rectangle {
+                width: 4px;
+                height: parent.height * value / 100;
+                background: root.stroke;
+                border-top-left-radius: 2px;
+                border-top-right-radius: 2px;
+            }
+        }
+    }
+}
+
+export component CurrencyConverterPage inherits Rectangle {
+    in property <string> from-code: "USD";
+    in property <string> from-amount: "1,000.00";
+    in property <string> to-code: "EUR";
+    in property <string> to-amount: "920.30";
+    in property <string> rate: "1 USD = 0.92030 EUR";
+    in property <string> rate-when: "Mid-market · updated 14:32";
+    in property <string> rate-change: "+0.18%";
+    in property <int> rate-direction: 1;
+    callback back-pressed();
+    callback swap-pressed();
+    callback pair-pressed(string);
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "Convert";
+            leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
+            trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
+            leading-pressed => { root.back-pressed(); }
+        }
+
+        VerticalLayout {
+            padding: Theme.spacing-md;
+            spacing: Theme.spacing-sm;
+
+            // ----- From / Swap / To stack -----
+            Rectangle {
+                height: 216px;
+
+                // From card (top).
+                CurrencyCard {
+                    x: 0;
+                    y: 0;
+                    width: parent.width;
+                    code: root.from-code;
+                    name: "US dollar";
+                    flag-letters: "US";
+                    flag-color: #4f8cff;
+                    amount: root.from-amount;
+                    editable: true;
+                }
+
+                // To card (bottom).
+                CurrencyCard {
+                    x: 0;
+                    y: parent.height - self.height;
+                    width: parent.width;
+                    code: root.to-code;
+                    name: "Euro";
+                    flag-letters: "EU";
+                    flag-color: #f59e0b;
+                    amount: root.to-amount;
+                    editable: false;
+                }
+
+                // Swap button — centred between cards.
+                Rectangle {
+                    x: parent.width - self.width - Theme.spacing-md;
+                    y: (parent.height - self.height) / 2;
+                    width: 44px;
+                    height: 44px;
+                    border-radius: self.width / 2;
+                    background: Theme.primary;
+                    drop-shadow-blur: Theme.elevation-2-blur;
+                    drop-shadow-color: Theme.elevation-2-color;
+                    drop-shadow-offset-y: Theme.elevation-2-y;
+                    Image {
+                        width: 20px;
+                        height: 20px;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        source: @image-url("@mobile-components/icons/skip-forward.svg");
+                        colorize: Theme.on-primary;
+                        image-fit: contain;
+                    }
+                    TouchArea {
+                        clicked => { root.swap-pressed(); }
+                    }
+                }
+            }
+
+            // ----- Rate strip -----
+            // Explicit height to stop the HorizontalLayout from
+            // vertically stretching to fill its parent VerticalLayout
+            // cell — without this the rate caption + delta drift to
+            // opposite ends of a 200px-tall row.
+            Rectangle {
+                height: 52px;
+                HorizontalLayout {
+                    spacing: Theme.spacing-sm;
+                    alignment: stretch;
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        alignment: center;
+                        spacing: 2px;
+                        Text {
+                            text: root.rate;
+                            color: Theme.on-surface;
+                            font-size: Theme.font-size-body;
+                            font-weight: 700;
+                        }
+                        Text {
+                            text: root.rate-when;
+                            color: Theme.muted;
+                            font-size: Theme.font-size-caption;
+                        }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        Text {
+                            text: root.rate-change + " · 24h";
+                            color:
+                                  root.rate-direction > 0 ? Theme.accent-success
+                                : root.rate-direction < 0 ? Theme.accent-danger
+                                : Theme.muted;
+                            font-size: Theme.font-size-body;
+                            font-weight: 700;
+                        }
+                    }
+                }
+            }
+
+            // ----- 30-day sparkline -----
+            Rectangle {
+                height: 80px;
+                background: Theme.surface-1;
+                border-radius: Theme.radius-md;
+                drop-shadow-blur: Theme.elevation-1-blur;
+                drop-shadow-color: Theme.elevation-1-color;
+                drop-shadow-offset-y: Theme.elevation-1-y;
+                VerticalLayout {
+                    padding: Theme.spacing-sm;
+                    Sparkline {
+                        horizontal-stretch: 1;
+                        height: 60px;
+                        stroke: Theme.accent-success;
+                        bars: [
+                            48, 52, 50, 47, 51, 54, 56, 53, 58, 61,
+                            59, 62, 65, 63, 67, 71, 68, 72, 74, 70,
+                            73, 76, 78, 75, 79, 82, 84, 81, 85, 88
+                        ];
+                    }
+                }
+            }
+        }
+
+        SectionHeader { text: "POPULAR PAIRS"; }
+        PairRow {
+            pair: "USD → GBP";
+            rate: "1 USD = 0.7912 GBP";
+            change: "−0.12%";
+            direction: -1;
+        }
+        Divider { }
+        PairRow {
+            pair: "USD → JPY";
+            rate: "1 USD = 156.84 JPY";
+            change: "+0.34%";
+            direction: 1;
+        }
+        Divider { }
+        PairRow {
+            pair: "EUR → GBP";
+            rate: "1 EUR = 0.8597 GBP";
+            change: "0.00%";
+            direction: 0;
+        }
+        Divider { }
+        PairRow {
+            pair: "USD → AUD";
+            rate: "1 USD = 1.5108 AUD";
+            change: "+0.46%";
+            direction: 1;
+        }
+
+        Rectangle { vertical-stretch: 1; }
+    }
+}

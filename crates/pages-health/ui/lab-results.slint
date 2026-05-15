@@ -1,0 +1,303 @@
+// LabResultsPage
+// =====================================================================
+//
+// A lab-results report — the "your blood work is back" screen.
+// Distinct from `MedicationPage` (dosing schedule) and
+// `ReviewSummaryPage` (ratings). Demonstrates a clinical data surface:
+//
+//   - A panel header card: panel name + collected date + an overall
+//     status pill.
+//   - Result rows grouped by panel section: each shows the test name,
+//     the measured value + unit, the reference range, and a tone dot
+//     — green in-range, warning borderline, danger out-of-range.
+//   - A doctor's-note card at the bottom.
+
+import { Theme, Tone } from "@mobile-theme/theme.slint";
+import { AppBar } from "@mobile-components/app-bar.slint";
+import { SectionHeader } from "@mobile-components/section-header.slint";
+import { Divider } from "@mobile-components/divider.slint";
+
+// One result row. `status`: 0 in-range / 1 borderline / 2 out-of-range.
+component ResultRow inherits Rectangle {
+    in property <string> test;
+    in property <string> value;
+    in property <string> unit;
+    in property <string> range;
+    in property <int> status: 0;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: root.test;
+    accessible-action-default => { root.clicked(); }
+
+    horizontal-stretch: 1;
+    min-height: 64px;
+    background: touch.pressed ? Theme.surface-pressed : transparent;
+    animate background { duration: Theme.motion-fast; }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+        // Status dot.
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 10px;
+                height: 10px;
+                border-radius: 5px;
+                background:
+                      root.status == 2 ? Theme.accent-danger
+                    : root.status == 1 ? Theme.accent-warning
+                    : Theme.accent-success;
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: root.test;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 700;
+            }
+            Text {
+                text: "Ref: " + root.range;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            HorizontalLayout {
+                spacing: 3px;
+                alignment: end;
+                Text {
+                    text: root.value;
+                    color:
+                          root.status == 2 ? Theme.accent-danger
+                        : root.status == 1 ? Theme.accent-warning
+                        : Theme.on-surface;
+                    font-size: Theme.font-size-body-large;
+                    font-weight: 800;
+                }
+                VerticalLayout {
+                    alignment: end;
+                    padding-bottom: 2px;
+                    Text {
+                        text: root.unit;
+                        color: Theme.muted;
+                        font-size: Theme.font-size-caption;
+                        font-weight: 600;
+                    }
+                }
+            }
+            Text {
+                text: root.status == 2 ? "Out of range"
+                    : root.status == 1 ? "Borderline"
+                    : "In range";
+                color:
+                      root.status == 2 ? Theme.accent-danger
+                    : root.status == 1 ? Theme.accent-warning
+                    : Theme.accent-success;
+                font-size: 10px;
+                font-weight: 800;
+                horizontal-alignment: right;
+            }
+        }
+    }
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+export component LabResultsPage inherits Rectangle {
+    in property <string> panel: "Comprehensive Metabolic Panel";
+    in property <string> collected: "Collected 12 May 2026 · Quest Diagnostics";
+    callback back-pressed();
+    callback share-pressed();
+    callback result-pressed(string);
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "Lab results";
+            leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
+            trailing-icon: @image-url("@mobile-components/icons/send.svg");
+            leading-pressed => { root.back-pressed(); }
+            trailing-pressed => { root.share-pressed(); }
+        }
+
+        VerticalLayout {
+            padding: Theme.spacing-md;
+            spacing: Theme.spacing-md;
+            alignment: start;
+
+            // Panel header.
+            Rectangle {
+                border-radius: Theme.radius-md;
+                background: Theme.surface-1;
+                drop-shadow-blur: Theme.elevation-1-blur;
+                drop-shadow-color: Theme.elevation-1-color;
+                drop-shadow-offset-y: Theme.elevation-1-y;
+                VerticalLayout {
+                    padding: Theme.spacing-md;
+                    spacing: Theme.spacing-sm;
+                    HorizontalLayout {
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            spacing: 3px;
+                            Text {
+                                text: root.panel;
+                                color: Theme.on-surface;
+                                font-size: Theme.font-size-title;
+                                font-weight: 800;
+                                wrap: word-wrap;
+                            }
+                            Text {
+                                text: root.collected;
+                                color: Theme.muted;
+                                font-size: Theme.font-size-caption;
+                            }
+                        }
+                    }
+                    Rectangle {
+                        height: 32px;
+                        border-radius: 8px;
+                        background: Theme.accent-warning.with-alpha(0.16);
+                        HorizontalLayout {
+                            padding-left: 10px;
+                            spacing: 6px;
+                            alignment: start;
+                            VerticalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: 8px;
+                                    height: 8px;
+                                    border-radius: 4px;
+                                    background: Theme.accent-warning;
+                                }
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                Text {
+                                    text: "2 results need attention — review with your doctor";
+                                    color: Theme.accent-warning;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 700;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        SectionHeader { text: "ELECTROLYTES & FLUIDS"; }
+        ResultRow {
+            test: "Sodium";
+            value: "139";
+            unit: "mmol/L";
+            range: "135–145";
+            status: 0;
+            clicked => { root.result-pressed("Sodium"); }
+        }
+        Divider { }
+        ResultRow {
+            test: "Potassium";
+            value: "5.3";
+            unit: "mmol/L";
+            range: "3.5–5.1";
+            status: 2;
+            clicked => { root.result-pressed("Potassium"); }
+        }
+        Divider { }
+        ResultRow {
+            test: "Chloride";
+            value: "104";
+            unit: "mmol/L";
+            range: "98–107";
+            status: 0;
+            clicked => { root.result-pressed("Chloride"); }
+        }
+
+        SectionHeader { text: "KIDNEY & LIVER"; }
+        ResultRow {
+            test: "Creatinine";
+            value: "0.95";
+            unit: "mg/dL";
+            range: "0.70–1.30";
+            status: 0;
+            clicked => { root.result-pressed("Creatinine"); }
+        }
+        Divider { }
+        ResultRow {
+            test: "ALT";
+            value: "46";
+            unit: "U/L";
+            range: "7–45";
+            status: 1;
+            clicked => { root.result-pressed("ALT"); }
+        }
+        Divider { }
+        ResultRow {
+            test: "Glucose, fasting";
+            value: "118";
+            unit: "mg/dL";
+            range: "70–99";
+            status: 2;
+            clicked => { root.result-pressed("Glucose"); }
+        }
+
+        // Doctor's note.
+        Rectangle {
+            min-height: Theme.spacing-md;
+        }
+        Rectangle {
+            border-radius: Theme.radius-md;
+            background: Theme.accent-info.with-alpha(0.12);
+            HorizontalLayout {
+                padding: Theme.spacing-md;
+                spacing: Theme.spacing-sm;
+                alignment: stretch;
+                VerticalLayout {
+                    alignment: start;
+                    Image {
+                        width: 18px;
+                        height: 18px;
+                        source: @image-url("@mobile-components/icons/pencil.svg");
+                        colorize: Theme.accent-info;
+                        image-fit: contain;
+                    }
+                }
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    spacing: 3px;
+                    Text {
+                        text: "Note from Dr. Feldman";
+                        color: Theme.accent-info;
+                        font-size: Theme.font-size-caption;
+                        font-weight: 800;
+                    }
+                    Text {
+                        text: "Slightly elevated glucose and potassium. Let's recheck fasting in 6 weeks — cut back on added sugar in the meantime.";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-caption;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+        }
+
+        Rectangle {
+            min-height: Theme.spacing-md;
+        }
+        Rectangle { vertical-stretch: 1; }
+    }
+}

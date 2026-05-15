@@ -1,0 +1,335 @@
+// DoctorAppointmentPage
+// =====================================================================
+//
+// Appointment booking — the Zocdoc / Practo / hospital-app "pick a
+// slot" screen. Distinct from `CalendarPage` (month view of one's own
+// agenda) and `EventDetailPage` (a one-off event with a Buy CTA).
+// Demonstrates a slot-picker booking surface:
+//
+//   - Doctor card: avatar + name + specialty + a rating / experience
+//     meta line.
+//   - A visit-type SegmentedControl (In-person / Video / Home visit).
+//   - A horizontal date strip — day-of-week + date discs, the
+//     selected one filled.
+//   - A time-slot grid — 3 columns of pill buttons, the chosen one
+//     filled, sold-out ones dimmed.
+//   - A sticky summary + Book CTA.
+
+import { Theme, Tone } from "@mobile-theme/theme.slint";
+import { AppBar } from "@mobile-components/app-bar.slint";
+import { SectionHeader } from "@mobile-components/section-header.slint";
+import { Avatar } from "@mobile-components/avatar.slint";
+import { SegmentedControl } from "@mobile-components/segmented-control.slint";
+import { MobileButton } from "@mobile-components/button.slint";
+
+// One date disc in the horizontal strip.
+component DateDisc inherits Rectangle {
+    in property <string> dow;
+    in property <string> day;
+    in property <bool> selected: false;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: root.dow + " " + root.day;
+    accessible-action-default => { root.clicked(); }
+
+    width: 52px;
+    height: 68px;
+    border-radius: Theme.radius-md;
+    background: root.selected ? Theme.primary
+        : touch.pressed ? Theme.surface-pressed : Theme.surface-1;
+    border-width: root.selected ? 0px : 1px;
+    border-color: Theme.surface-variant;
+    animate background { duration: Theme.motion-fast; }
+
+    VerticalLayout {
+        alignment: center;
+        spacing: 4px;
+        Text {
+            text: root.dow;
+            color: root.selected ? Theme.on-primary : Theme.muted;
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: 0.3px;
+            horizontal-alignment: center;
+        }
+        Text {
+            text: root.day;
+            color: root.selected ? Theme.on-primary : Theme.on-surface;
+            font-size: Theme.font-size-body-large;
+            font-weight: 800;
+            horizontal-alignment: center;
+        }
+    }
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+// One time-slot pill. `state`: 0 available / 1 selected / 2 sold-out.
+component SlotPill inherits Rectangle {
+    in property <string> label;
+    in property <int> state: 0;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-action-default => {
+        if (root.state != 2) {
+            root.clicked();
+        }
+    }
+
+    horizontal-stretch: 1;
+    height: 44px;
+    border-radius: Theme.radius-md;
+    background:
+          root.state == 1 ? Theme.primary
+        : root.state == 2 ? Theme.surface-2
+        : Theme.surface-1;
+    border-width: root.state == 0 ? 1px : 0px;
+    border-color: Theme.surface-variant;
+    opacity: root.state == 2 ? 0.4 : 1.0;
+    animate background { duration: Theme.motion-fast; }
+
+    Text {
+        text: root.label;
+        color: root.state == 1 ? Theme.on-primary : Theme.on-surface;
+        font-size: Theme.font-size-caption;
+        font-weight: 700;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: parent.width;
+        height: parent.height;
+    }
+    touch := TouchArea {
+        clicked => {
+            if (root.state != 2) {
+                root.clicked();
+            }
+        }
+    }
+}
+
+export component DoctorAppointmentPage inherits Rectangle {
+    in property <string> doctor: "Dr. Naomi Feldman";
+    in property <string> specialty: "Dermatology";
+    in property <string> doctor-meta: "4.9 ★ (612) · 14 yrs experience";
+    in-out property <int> visit-type: 1;
+    in-out property <int> selected-date: 2;
+    in-out property <int> selected-slot: 4;
+    in property <string> summary: "Video visit · Wed 20 May · 11:30 AM";
+    callback back-pressed();
+    callback favourite-pressed();
+    callback book-pressed();
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "Book appointment";
+            leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
+            trailing-icon: @image-url("@mobile-components/icons/heart.svg");
+            leading-pressed => { root.back-pressed(); }
+            trailing-pressed => { root.favourite-pressed(); }
+        }
+
+        VerticalLayout {
+            padding: Theme.spacing-md;
+            spacing: Theme.spacing-md;
+            alignment: start;
+
+            // Doctor card.
+            Rectangle {
+                border-radius: Theme.radius-lg;
+                background: Theme.surface-1;
+                drop-shadow-blur: Theme.elevation-1-blur;
+                drop-shadow-color: Theme.elevation-1-color;
+                drop-shadow-offset-y: Theme.elevation-1-y;
+                HorizontalLayout {
+                    padding: Theme.spacing-md;
+                    spacing: Theme.spacing-md;
+                    alignment: stretch;
+                    VerticalLayout {
+                        alignment: center;
+                        Avatar {
+                            fallback: "NF";
+                            size: 56px;
+                        }
+                    }
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        alignment: center;
+                        spacing: 3px;
+                        Text {
+                            text: root.doctor;
+                            color: Theme.on-surface;
+                            font-size: Theme.font-size-title;
+                            font-weight: 800;
+                        }
+                        Text {
+                            text: root.specialty;
+                            color: Theme.primary;
+                            font-size: Theme.font-size-caption;
+                            font-weight: 700;
+                        }
+                        Text {
+                            text: root.doctor-meta;
+                            color: Theme.muted;
+                            font-size: Theme.font-size-caption;
+                        }
+                    }
+                }
+            }
+
+            // Visit type.
+            SegmentedControl {
+                options: ["In-person", "Video", "Home visit"];
+                selected-index <=> root.visit-type;
+            }
+        }
+
+        SectionHeader { text: "SELECT A DATE"; }
+        Rectangle {
+            height: 92px;
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                spacing: Theme.spacing-sm;
+                alignment: space-between;
+                DateDisc {
+                    dow: "MON";
+                    day: "18";
+                    selected: root.selected-date == 0;
+                    clicked => { root.selected-date = 0; }
+                }
+                DateDisc {
+                    dow: "TUE";
+                    day: "19";
+                    selected: root.selected-date == 1;
+                    clicked => { root.selected-date = 1; }
+                }
+                DateDisc {
+                    dow: "WED";
+                    day: "20";
+                    selected: root.selected-date == 2;
+                    clicked => { root.selected-date = 2; }
+                }
+                DateDisc {
+                    dow: "THU";
+                    day: "21";
+                    selected: root.selected-date == 3;
+                    clicked => { root.selected-date = 3; }
+                }
+                DateDisc {
+                    dow: "FRI";
+                    day: "22";
+                    selected: root.selected-date == 4;
+                    clicked => { root.selected-date = 4; }
+                }
+            }
+        }
+
+        SectionHeader { text: "AVAILABLE TIMES"; }
+        VerticalLayout {
+            padding-left: Theme.spacing-md;
+            padding-right: Theme.spacing-md;
+            padding-bottom: Theme.spacing-md;
+            spacing: Theme.spacing-sm;
+            HorizontalLayout {
+                spacing: Theme.spacing-sm;
+                SlotPill {
+                    label: "9:00 AM";
+                    state: root.selected-slot == 0 ? 1 : 0;
+                    clicked => { root.selected-slot = 0; }
+                }
+                SlotPill {
+                    label: "9:45 AM";
+                    state: 2;
+                }
+                SlotPill {
+                    label: "10:30 AM";
+                    state: root.selected-slot == 2 ? 1 : 0;
+                    clicked => { root.selected-slot = 2; }
+                }
+            }
+            HorizontalLayout {
+                spacing: Theme.spacing-sm;
+                SlotPill {
+                    label: "11:30 AM";
+                    state: root.selected-slot == 4 ? 1 : 0;
+                    clicked => { root.selected-slot = 4; }
+                }
+                SlotPill {
+                    label: "1:15 PM";
+                    state: root.selected-slot == 5 ? 1 : 0;
+                    clicked => { root.selected-slot = 5; }
+                }
+                SlotPill {
+                    label: "2:00 PM";
+                    state: 2;
+                }
+            }
+            HorizontalLayout {
+                spacing: Theme.spacing-sm;
+                SlotPill {
+                    label: "3:30 PM";
+                    state: root.selected-slot == 7 ? 1 : 0;
+                    clicked => { root.selected-slot = 7; }
+                }
+                SlotPill {
+                    label: "4:15 PM";
+                    state: root.selected-slot == 8 ? 1 : 0;
+                    clicked => { root.selected-slot = 8; }
+                }
+                SlotPill {
+                    label: "5:00 PM";
+                    state: root.selected-slot == 9 ? 1 : 0;
+                    clicked => { root.selected-slot = 9; }
+                }
+            }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+
+        // Sticky summary + CTA.
+        Rectangle {
+            background: Theme.surface-1;
+            drop-shadow-blur: Theme.elevation-2-blur;
+            drop-shadow-color: Theme.elevation-2-color;
+            drop-shadow-offset-y: -4px;
+            height: 112px;
+            VerticalLayout {
+                padding: Theme.spacing-md;
+                spacing: Theme.spacing-sm;
+                HorizontalLayout {
+                    spacing: 6px;
+                    alignment: start;
+                    Image {
+                        width: 14px;
+                        height: 14px;
+                        source: @image-url("@mobile-components/icons/check.svg");
+                        colorize: Theme.accent-success;
+                        image-fit: contain;
+                        vertical-alignment: center;
+                    }
+                    Text {
+                        text: root.summary;
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                        vertical-alignment: center;
+                    }
+                }
+                MobileButton {
+                    text: "Confirm booking";
+                    primary: true;
+                    max-height: 48px;
+                    clicked => { root.book-pressed(); }
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,367 @@
+// PlaylistDetailPage
+// =====================================================================
+//
+// Spotify / Apple Music playlist detail — the "tap into a playlist
+// from your library" surface. Sister to MusicLibraryPage (browse) and
+// PodcastPage (single-track playback). Demonstrates:
+//
+//   - Gradient cover hero (220 px tall) underlying a translucent
+//     AppBar — title fades in only once the user scrolls, here we
+//     render the AppBar as transparent over the gradient so the meta
+//     reads first.
+//   - Title block: playlist name in 28 px headline + creator + meta
+//     line (track count + duration + listener count).
+//   - Action row: huge play disc + shuffle / download / more icons.
+//   - Track list — each row: track number, title + artist, "playing now"
+//     indicator on the active row, duration on the right.
+
+import { Theme, Tone } from "@mobile-theme/theme.slint";
+import { AppBar } from "@mobile-components/app-bar.slint";
+import { SectionHeader } from "@mobile-components/section-header.slint";
+import { Divider } from "@mobile-components/divider.slint";
+import { ScrollView } from "std-widgets.slint";
+
+// One track row.
+component TrackRow inherits Rectangle {
+    in property <int> position: 0;
+    in property <string> title;
+    in property <string> artist;
+    in property <string> duration;
+    in property <bool> playing: false;
+    in property <bool> liked: false;
+
+    horizontal-stretch: 1;
+    min-height: 60px;
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        padding-top: Theme.spacing-xs;
+        padding-bottom: Theme.spacing-xs;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+
+        // Position or "now-playing" indicator.
+        VerticalLayout {
+            alignment: center;
+            width: 28px;
+            if root.playing: Rectangle {
+                width: 18px;
+                height: 18px;
+                Image {
+                    width: 16px;
+                    height: 16px;
+                    source: @image-url("@mobile-components/icons/play.svg");
+                    colorize: Theme.accent-success;
+                    image-fit: contain;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                }
+            }
+            if !root.playing: Text {
+                text: root.position;
+                color: Theme.muted;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+                horizontal-alignment: right;
+            }
+        }
+
+        // Title + artist.
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: root.title;
+                color: root.playing ? Theme.accent-success : Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: root.playing ? 700 : 500;
+                overflow: elide;
+            }
+            Text {
+                text: root.artist;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+                overflow: elide;
+            }
+        }
+
+        // Heart + duration.
+        VerticalLayout {
+            alignment: center;
+            Image {
+                width: 16px;
+                height: 16px;
+                source: @image-url("@mobile-components/icons/heart.svg");
+                colorize: root.liked ? Theme.accent-danger : Theme.muted;
+                image-fit: contain;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.duration;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+                font-weight: 600;
+            }
+        }
+    }
+}
+
+// One bottom action icon button (shuffle / download / more).
+component MiniActionButton inherits Rectangle {
+    in property <image> icon;
+    in property <bool> active: false;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-action-default => { root.clicked(); }
+
+    width: 44px;
+    height: 44px;
+    Image {
+        width: 22px;
+        height: 22px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        source: root.icon;
+        colorize: root.active ? Theme.accent-success : Theme.muted;
+        image-fit: contain;
+    }
+    TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+export component PlaylistDetailPage inherits Rectangle {
+    in property <string> playlist: "Late-night focus";
+    in property <string> creator: "Made by you";
+    in property <string> meta: "24 tracks · 1h 42m · 218 listeners this week";
+    in-out property <bool> shuffle: false;
+    in-out property <bool> downloaded: true;
+    callback back-pressed();
+    callback play-pressed();
+    callback shuffle-pressed();
+    callback download-pressed();
+    callback more-pressed();
+    callback track-pressed(string);
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        // ----- Gradient cover hero -----
+        Rectangle {
+            height: 240px;
+            background: @linear-gradient(180deg, #6e3a9d 0%, #1a1d24 100%);
+            clip: true;
+
+            // Translucent back / more buttons.
+            HorizontalLayout {
+                x: 0;
+                y: 0;
+                width: parent.width;
+                height: 56px;
+                padding: Theme.spacing-md;
+                alignment: stretch;
+                Rectangle {
+                    width: 36px;
+                    height: 36px;
+                    border-radius: self.width / 2;
+                    background: #00000066;
+                    Image {
+                        width: 18px;
+                        height: 18px;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        source: @image-url("@mobile-components/icons/arrow-left.svg");
+                        colorize: #ffffff;
+                        image-fit: contain;
+                    }
+                    TouchArea {
+                        clicked => { root.back-pressed(); }
+                    }
+                }
+                Rectangle { horizontal-stretch: 1; }
+                Rectangle {
+                    width: 36px;
+                    height: 36px;
+                    border-radius: self.width / 2;
+                    background: #00000066;
+                    Image {
+                        width: 18px;
+                        height: 18px;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        source: @image-url("@mobile-components/icons/more-vertical.svg");
+                        colorize: #ffffff;
+                        image-fit: contain;
+                    }
+                    TouchArea {
+                        clicked => { root.more-pressed(); }
+                    }
+                }
+            }
+
+            // Cover square — centred, 140×140.
+            Rectangle {
+                x: (parent.width - self.width) / 2;
+                y: 64px;
+                width: 140px;
+                height: 140px;
+                border-radius: Theme.radius-md;
+                background: @linear-gradient(135deg, #9333ea 0%, #4c1d95 100%);
+                drop-shadow-blur: Theme.elevation-3-blur;
+                drop-shadow-color: Theme.elevation-3-color;
+                drop-shadow-offset-y: Theme.elevation-3-y;
+                // Faux music note overlay.
+                Image {
+                    width: 56px;
+                    height: 56px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: @image-url("@mobile-components/icons/play.svg");
+                    colorize: #ffffff88;
+                    image-fit: contain;
+                }
+            }
+        }
+
+        // ----- Title + meta -----
+        VerticalLayout {
+            padding-left: Theme.spacing-md;
+            padding-right: Theme.spacing-md;
+            padding-top: Theme.spacing-md;
+            spacing: Theme.spacing-xs;
+            Text {
+                text: root.playlist;
+                color: Theme.on-background;
+                font-size: Theme.font-size-headline;
+                font-weight: 700;
+                horizontal-alignment: center;
+            }
+            Text {
+                text: root.creator;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 500;
+                horizontal-alignment: center;
+            }
+            Text {
+                text: root.meta;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+                horizontal-alignment: center;
+            }
+        }
+
+        // ----- Action row -----
+        Rectangle {
+            height: 80px;
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                spacing: Theme.spacing-sm;
+                alignment: stretch;
+                // Mini actions on the left.
+                HorizontalLayout {
+                    spacing: 0;
+                    alignment: start;
+                    horizontal-stretch: 1;
+                    VerticalLayout {
+                        alignment: center;
+                        MiniActionButton {
+                            icon: @image-url("@mobile-components/icons/queue.svg");
+                            active: root.shuffle;
+                            clicked => {
+                                root.shuffle = !root.shuffle;
+                                root.shuffle-pressed();
+                            }
+                        }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        MiniActionButton {
+                            icon: @image-url("@mobile-components/icons/check.svg");
+                            active: root.downloaded;
+                            clicked => {
+                                root.downloaded = !root.downloaded;
+                                root.download-pressed();
+                            }
+                        }
+                    }
+                }
+                // Big play disc on the right.
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 64px;
+                        height: 64px;
+                        border-radius: self.width / 2;
+                        background: Theme.accent-success;
+                        drop-shadow-blur: Theme.elevation-2-blur;
+                        drop-shadow-color: Theme.elevation-2-color;
+                        drop-shadow-offset-y: Theme.elevation-2-y;
+                        Image {
+                            width: 28px;
+                            height: 28px;
+                            x: (parent.width - self.width) / 2 + 2px;
+                            y: (parent.height - self.height) / 2;
+                            source: @image-url("@mobile-components/icons/play.svg");
+                            colorize: Theme.on-primary;
+                            image-fit: contain;
+                        }
+                        TouchArea {
+                            clicked => { root.play-pressed(); }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ----- Tracks -----
+        TrackRow {
+            position: 1;
+            title: "Aero — Vol. III";
+            artist: "Hidden Orchestra";
+            duration: "4:42";
+            playing: true;
+            liked: true;
+        }
+        Divider { }
+        TrackRow {
+            position: 2;
+            title: "Garden City Movement";
+            artist: "Tel Aviv Sessions";
+            duration: "3:58";
+        }
+        Divider { }
+        TrackRow {
+            position: 3;
+            title: "Nightcall";
+            artist: "Kavinsky";
+            duration: "4:18";
+            liked: true;
+        }
+        Divider { }
+        TrackRow {
+            position: 4;
+            title: "Time";
+            artist: "Hans Zimmer";
+            duration: "4:35";
+        }
+        Divider { }
+        TrackRow {
+            position: 5;
+            title: "An Ending (Ascent)";
+            artist: "Brian Eno";
+            duration: "4:55";
+            liked: true;
+        }
+
+        Rectangle { vertical-stretch: 1; }
+    }
+}

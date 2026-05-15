@@ -1,0 +1,326 @@
+// TurnByTurnNavPage
+// =====================================================================
+//
+// Active driving navigation — Google Maps / Waze / Apple Maps "you're
+// en route" screen. Distinct from `MapPage` (browse + POI sheet),
+// `RideShareBookingPage` (book a ride), and `DriverOnTheWayPage`
+// (waiting for a driver). Demonstrates a navigation surface:
+//
+//   - Top instruction banner: a large turn-arrow disc + "In 400 m"
+//     + the road name, on an info-tone band.
+//   - "Then" secondary instruction strip beneath it.
+//   - Full-bleed route map filling the middle (the existing map-bg
+//     asset + a route polyline approximation + current-position
+//     puck).
+//   - Bottom status bar: ETA + remaining distance + remaining time,
+//     with mute + overview + exit controls.
+
+import { Theme, Tone } from "@mobile-theme/theme.slint";
+
+export component TurnByTurnNavPage inherits Rectangle {
+    in property <string> primary-distance: "400 m";
+    in property <string> primary-road: "Turn right onto Valencia St";
+    in property <string> then-instruction: "Then continue 1.2 km on Valencia St";
+    in property <string> eta: "14:58";
+    in property <string> remaining: "12 min · 5.4 km";
+    callback exit-pressed();
+    callback mute-pressed();
+    callback overview-pressed();
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        // ----- Primary instruction banner -----
+        Rectangle {
+            background: Theme.accent-info;
+            VerticalLayout {
+                padding: Theme.spacing-md;
+                spacing: Theme.spacing-sm;
+                HorizontalLayout {
+                    spacing: Theme.spacing-md;
+                    alignment: stretch;
+                    // Turn-arrow disc.
+                    VerticalLayout {
+                        alignment: center;
+                        Rectangle {
+                            width: 56px;
+                            height: 56px;
+                            border-radius: 14px;
+                            background: #ffffff22;
+                            Image {
+                                width: 32px;
+                                height: 32px;
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+                                source: @image-url("@mobile-components/icons/chevron-right.svg");
+                                colorize: #ffffff;
+                                image-fit: contain;
+                            }
+                        }
+                    }
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        alignment: center;
+                        spacing: 2px;
+                        Text {
+                            text: "In " + root.primary-distance;
+                            color: #ffffffcc;
+                            font-size: Theme.font-size-body;
+                            font-weight: 700;
+                        }
+                        Text {
+                            text: root.primary-road;
+                            color: #ffffff;
+                            font-size: Theme.font-size-title;
+                            font-weight: 800;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+            }
+        }
+        // "Then" strip.
+        Rectangle {
+            background: Theme.accent-info.darker(0.2);
+            height: 36px;
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: "THEN";
+                        color: #ffffff99;
+                        font-size: 10px;
+                        font-weight: 800;
+                        letter-spacing: 0.5px;
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    Text {
+                        text: root.then-instruction;
+                        color: #ffffffcc;
+                        font-size: Theme.font-size-caption;
+                        font-weight: 600;
+                        overflow: elide;
+                    }
+                }
+            }
+        }
+
+        // ----- Route map -----
+        Rectangle {
+            vertical-stretch: 1;
+            background: Theme.surface-variant;
+            clip: true;
+            Image {
+                width: parent.width * 1.6;
+                height: parent.height * 1.4;
+                x: -parent.width * 0.3;
+                y: -parent.height * 0.2;
+                source: @image-url("@mobile-components/icons/map-bg.svg");
+                colorize: Theme.muted;
+                image-fit: cover;
+                opacity: 0.4;
+            }
+            // Route polyline — a stack of segments approximating a path.
+            Rectangle {
+                x: parent.width * 0.30;
+                y: parent.height * 0.62;
+                width: 8px;
+                height: parent.height * 0.30;
+                border-radius: 4px;
+                background: Theme.accent-info;
+            }
+            Rectangle {
+                x: parent.width * 0.30;
+                y: parent.height * 0.58;
+                width: parent.width * 0.36;
+                height: 8px;
+                border-radius: 4px;
+                background: Theme.accent-info;
+            }
+            Rectangle {
+                x: parent.width * 0.62;
+                y: parent.height * 0.22;
+                width: 8px;
+                height: parent.height * 0.40;
+                border-radius: 4px;
+                background: Theme.accent-info;
+            }
+            // Turn node.
+            Rectangle {
+                x: parent.width * 0.62 - 6px;
+                y: parent.height * 0.58 - 6px;
+                width: 20px;
+                height: 20px;
+                border-radius: 10px;
+                background: #ffffff;
+                border-width: 4px;
+                border-color: Theme.accent-info;
+            }
+            // Current-position puck.
+            Rectangle {
+                x: parent.width * 0.30 - 8px;
+                y: parent.height * 0.86;
+                width: 28px;
+                height: 28px;
+                border-radius: 14px;
+                background: Theme.primary;
+                border-width: 4px;
+                border-color: #ffffff;
+                drop-shadow-blur: Theme.elevation-2-blur;
+                drop-shadow-color: Theme.elevation-2-color;
+                drop-shadow-offset-y: Theme.elevation-2-y;
+            }
+            // Destination flag.
+            Rectangle {
+                x: parent.width * 0.62;
+                y: parent.height * 0.18;
+                width: 28px;
+                height: 28px;
+                border-radius: 6px;
+                background: Theme.accent-danger;
+                border-width: 3px;
+                border-color: #ffffff;
+                Image {
+                    width: 14px;
+                    height: 14px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: @image-url("@mobile-components/icons/pin.svg");
+                    colorize: #ffffff;
+                    image-fit: contain;
+                }
+            }
+
+            // Re-centre + speed-limit floating buttons on the right.
+            VerticalLayout {
+                x: parent.width - 60px;
+                y: parent.height / 2 - 60px;
+                spacing: Theme.spacing-sm;
+                Rectangle {
+                    width: 48px;
+                    height: 48px;
+                    border-radius: self.width / 2;
+                    background: Theme.surface-1;
+                    drop-shadow-blur: Theme.elevation-1-blur;
+                    drop-shadow-color: Theme.elevation-1-color;
+                    drop-shadow-offset-y: Theme.elevation-1-y;
+                    Image {
+                        width: 22px;
+                        height: 22px;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        source: @image-url("@mobile-components/icons/pin.svg");
+                        colorize: Theme.accent-info;
+                        image-fit: contain;
+                    }
+                    TouchArea {
+                        clicked => { root.overview-pressed(); }
+                    }
+                }
+                // Speed-limit badge.
+                Rectangle {
+                    width: 48px;
+                    height: 48px;
+                    border-radius: self.width / 2;
+                    background: #ffffff;
+                    border-width: 4px;
+                    border-color: Theme.accent-danger;
+                    Text {
+                        text: "25";
+                        color: #0a0d12;
+                        font-size: 18px;
+                        font-weight: 800;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                }
+            }
+        }
+
+        // ----- Bottom status bar -----
+        Rectangle {
+            background: Theme.surface-1;
+            drop-shadow-blur: Theme.elevation-2-blur;
+            drop-shadow-color: Theme.elevation-2-color;
+            drop-shadow-offset-y: -4px;
+            height: 96px;
+            HorizontalLayout {
+                padding: Theme.spacing-md;
+                spacing: Theme.spacing-md;
+                alignment: stretch;
+                // Exit.
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 56px;
+                        height: 56px;
+                        border-radius: self.width / 2;
+                        background: Theme.accent-danger;
+                        Image {
+                            width: 22px;
+                            height: 22px;
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                            source: @image-url("@mobile-components/icons/close.svg");
+                            colorize: Theme.on-primary;
+                            image-fit: contain;
+                        }
+                        TouchArea {
+                            clicked => { root.exit-pressed(); }
+                        }
+                    }
+                }
+                // ETA block.
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    alignment: center;
+                    spacing: 2px;
+                    Text {
+                        text: root.eta + " arrival";
+                        color: Theme.accent-success;
+                        font-size: Theme.font-size-title;
+                        font-weight: 800;
+                    }
+                    Text {
+                        text: root.remaining;
+                        color: Theme.muted;
+                        font-size: Theme.font-size-caption;
+                        font-weight: 600;
+                    }
+                }
+                // Mute.
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 56px;
+                        height: 56px;
+                        border-radius: self.width / 2;
+                        background: Theme.surface-variant;
+                        Image {
+                            width: 22px;
+                            height: 22px;
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                            source: @image-url("@mobile-components/icons/bell.svg");
+                            colorize: Theme.on-surface;
+                            image-fit: contain;
+                        }
+                        TouchArea {
+                            clicked => { root.mute-pressed(); }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

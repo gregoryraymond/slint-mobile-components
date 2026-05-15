@@ -1,0 +1,133 @@
+// Chip
+// =====================================================================
+//
+// Pill-shaped, tappable, optionally toggleable tag used for filters,
+// categories, choices, and small actionable labels. Sits inside a row
+// of similar chips (think "filter chips" in Material 3).
+//
+// Specification
+// -------------
+//
+// Geometry
+//   - Fixed height: 32 px (Material chip standard).
+//   - Pill shape: border-radius = height / 2.
+//   - Min-width: derived from content (label + optional icons + padding).
+//   - 12 px horizontal padding when neither icon slot is used; tighter
+//     8 px around each icon when present so the glyph doesn't crowd the
+//     pill edge.
+//
+// Content
+//   - `label` (string): the chip's text, centred vertically.
+//   - `leading-icon` (image, optional): 16 × 16 glyph before the label,
+//     tinted to match the foreground colour.
+//   - `dismissible` (bool, default false): when true, an X glyph is
+//     shown on the right; tapping it fires `dismissed()` instead of
+//     `clicked()`. Tapping anywhere else still fires `clicked()`.
+//
+// State
+//   - `selected` (in-out bool, default false): when true, the chip
+//     adopts the primary colour pair (filled `primary`, text
+//     `on-primary`). When false, surface-variant fill with normal
+//     foreground.
+//   - `enabled` (bool, default true): dims to 0.5 opacity and disables
+//     touch when false.
+//
+// Interaction
+//   - Tap on the body fires `clicked()` and toggles `selected`. Use the
+//     callback when the parent owns selection state; the in-out
+//     property also lets you drive selection programmatically without
+//     listening to the callback.
+//   - Tap on the X (when `dismissible`) fires `dismissed()` and does
+//     NOT fire `clicked()` or toggle.
+//
+// Composition
+//   - Lay out a row of chips inside a `HorizontalLayout` (or wrap with
+//     a Flow when wrapping is needed — Slint doesn't ship a flow layout
+//     yet, so manual wrapping until then).
+
+import { Theme } from "@mobile-theme/theme.slint";
+
+export component Chip inherits Rectangle {
+    in property <string> label;
+    in property <image> leading-icon;
+    in property <bool> dismissible: false;
+    in-out property <bool> selected: false;
+    in property <bool> enabled: true;
+    callback clicked();
+    callback dismissed();
+
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-checkable: true;
+    accessible-checked: root.selected;
+    accessible-enabled: root.enabled;
+    accessible-action-default => {
+        root.selected = !root.selected;
+        root.clicked();
+    }
+
+    height: 32px;
+    border-radius: self.height / 2;
+    // No border — `surface-variant` fill carries the unselected
+    // state's visual edge against the page.
+    background: root.selected
+        ? (body-touch.pressed ? Theme.primary-pressed : Theme.primary)
+        : (body-touch.pressed ? Theme.surface-pressed : Theme.surface-variant);
+    opacity: root.enabled ? 1.0 : 0.5;
+
+    animate background { duration: Theme.motion-fast; }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md - 4px;
+        padding-right: root.dismissible ? Theme.spacing-sm : Theme.spacing-md - 4px;
+        spacing: Theme.spacing-sm;
+        alignment: center;
+
+        if root.leading-icon.width > 0: Image {
+            width: 16px;
+            height: 16px;
+            source: root.leading-icon;
+            colorize: root.selected ? Theme.on-primary : Theme.on-surface;
+            image-fit: contain;
+            vertical-alignment: center;
+        }
+
+        Text {
+            text: root.label;
+            color: root.selected ? Theme.on-primary : Theme.on-surface;
+            font-size: Theme.font-size-body;
+            font-weight: 500;
+            vertical-alignment: center;
+            animate color { duration: Theme.motion-fast; }
+        }
+
+        if root.dismissible: Rectangle {
+            width: 18px;
+            height: 18px;
+            border-radius: self.width / 2;
+            background: dismiss-touch.pressed ? Theme.surface-pressed : transparent;
+
+            Image {
+                width: 12px;
+                height: 12px;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                source: @image-url("icons/close.svg");
+                colorize: root.selected ? Theme.on-primary : Theme.muted;
+                image-fit: contain;
+            }
+
+            dismiss-touch := TouchArea {
+                clicked => { root.dismissed(); }
+            }
+        }
+    }
+
+    body-touch := TouchArea {
+        enabled: root.enabled;
+        clicked => {
+            root.selected = !root.selected;
+            root.clicked();
+        }
+    }
+}

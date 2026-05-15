@@ -1,0 +1,76 @@
+// Card
+// =====================================================================
+//
+// Slightly raised surface used to group related content into a single
+// rectangular module. Pages stack cards vertically with `spacing-md` to
+// build feed/dashboard layouts.
+//
+// Specification
+// -------------
+//
+// Geometry
+//   - Full width of its layout cell (`horizontal-stretch: 1`).
+//   - Border-radius: `Theme.radius-md` (12px).
+//   - Drop shadow: 8px blur, 2px Y offset, 25 % black — subtle raise
+//     against the page background.
+//
+// Content
+//   - `title` (string, optional): renders as a 20px / weight-600 line
+//     using `Theme.on-surface`. Omitted if empty.
+//   - `subtitle` (string, optional): 14px muted text below the title,
+//     word-wraps over multiple lines. Omitted if empty.
+//   - `@children`: any extra elements stack below the subtitle with
+//     `Theme.spacing-sm` between them.
+//
+// State
+//   - `tappable` (bool, default false): when true, the card responds to
+//     touch (press feedback + emits `clicked()`). Leave false for
+//     decorative / informational cards so taps fall through to anything
+//     beneath.
+//
+// Use one card per content unit — don't nest cards inside cards.
+import { Theme } from "@mobile-theme/theme.slint";
+
+export component Card inherits Rectangle {
+    in property <string> title;
+    in property <string> subtitle;
+    in property <bool> tappable: false;
+    callback clicked();
+
+    background: touch.pressed && root.tappable ? Theme.surface-pressed : Theme.surface-1;
+    border-radius: Theme.radius-md;
+    // Elevation tier 1 — base elevation per DESIGN.md.
+    drop-shadow-blur: Theme.elevation-1-blur;
+    drop-shadow-color: Theme.elevation-1-color;
+    drop-shadow-offset-y: Theme.elevation-1-y;
+    horizontal-stretch: 1;
+
+    animate background { duration: Theme.motion-fast; }
+
+    VerticalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-sm;
+
+        if root.title != "": Text {
+            text: root.title;
+            color: Theme.on-surface;
+            font-size: Theme.font-size-title;
+            font-weight: 600;
+        }
+
+        if root.subtitle != "": Text {
+            text: root.subtitle;
+            color: Theme.muted;
+            font-size: Theme.font-size-body;
+            wrap: word-wrap;
+        }
+
+        @children
+    }
+
+    touch := TouchArea {
+        enabled: root.tappable;
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}

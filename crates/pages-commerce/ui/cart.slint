@@ -1,0 +1,283 @@
+// CartPage
+// =====================================================================
+//
+// Shopping cart — the surface that anchors any e-commerce flow between
+// "browse" (ProductDetailPage / RestaurantMenuPage) and "pay"
+// (CheckoutPage). Demonstrates:
+//
+//   - Line-item row layout: thumbnail-left, variant + price-right,
+//     with a Stepper inline for quantity and a small × remove button
+//     in the top-right of each row.
+//   - "Apply promo code" inline expansion — a TextField + Apply button
+//     pair acting as a single inline composite.
+//   - Totals breakdown (Subtotal / Shipping / Tax / Total) anchored
+//     beneath the items as a Card.
+//   - Sticky bottom CTA with the cart total inline in the button label.
+
+import { Theme, Tone } from "@mobile-theme/theme.slint";
+import { AppBar } from "@mobile-components/app-bar.slint";
+import { SectionHeader } from "@mobile-components/section-header.slint";
+import { TextField } from "@mobile-components/text-field.slint";
+import { MobileButton, TextButton } from "@mobile-components/button.slint";
+import { Stepper } from "@mobile-components/stepper.slint";
+import { Divider } from "@mobile-components/divider.slint";
+
+// One cart line.
+component CartLine inherits Rectangle {
+    in property <string> name;
+    in property <string> variant;
+    in property <string> price;
+    in-out property <int> qty: 1;
+    in property <brush> thumb-fill;
+    callback removed();
+    callback qty-changed();
+
+    horizontal-stretch: 1;
+    min-height: 120px;
+
+    HorizontalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+
+        // Thumb.
+        VerticalLayout {
+            alignment: start;
+            Rectangle {
+                width: 80px;
+                height: 80px;
+                border-radius: Theme.radius-md;
+                background: root.thumb-fill;
+                clip: true;
+            }
+        }
+
+        // Meta + stepper.
+        VerticalLayout {
+            horizontal-stretch: 1;
+            spacing: 4px;
+            HorizontalLayout {
+                spacing: Theme.spacing-sm;
+                alignment: stretch;
+                Text {
+                    text: root.name;
+                    color: Theme.on-surface;
+                    font-size: Theme.font-size-body;
+                    font-weight: 600;
+                    overflow: elide;
+                    horizontal-stretch: 1;
+                }
+                // Remove button.
+                Rectangle {
+                    width: 20px;
+                    height: 20px;
+                    Image {
+                        width: 14px;
+                        height: 14px;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        source: @image-url("@mobile-components/icons/close.svg");
+                        colorize: Theme.muted;
+                        image-fit: contain;
+                    }
+                    TouchArea {
+                        clicked => { root.removed(); }
+                    }
+                }
+            }
+            Text {
+                text: root.variant;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+            }
+            Rectangle { vertical-stretch: 1; }
+            HorizontalLayout {
+                spacing: Theme.spacing-sm;
+                alignment: stretch;
+                VerticalLayout {
+                    alignment: end;
+                    Stepper {
+                        value <=> root.qty;
+                    }
+                }
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    alignment: end;
+                    Text {
+                        text: root.price;
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-body-large;
+                        font-weight: 700;
+                        horizontal-alignment: right;
+                    }
+                }
+            }
+        }
+    }
+}
+
+// One total row in the totals card.
+component TotalRow inherits Rectangle {
+    in property <string> label;
+    in property <string> value;
+    in property <bool> emphasize: false;
+
+    horizontal-stretch: 1;
+    height: emphasize ? 36px : 28px;
+    HorizontalLayout {
+        Text {
+            text: root.label;
+            color: root.emphasize ? Theme.on-surface : Theme.muted;
+            font-size: root.emphasize ? Theme.font-size-body-large : Theme.font-size-body;
+            font-weight: root.emphasize ? 700 : 500;
+            horizontal-stretch: 1;
+            vertical-alignment: center;
+        }
+        Text {
+            text: root.value;
+            color: root.emphasize ? Theme.on-surface : Theme.on-surface;
+            font-size: root.emphasize ? Theme.font-size-body-large : Theme.font-size-body;
+            font-weight: root.emphasize ? 800 : 600;
+            horizontal-alignment: right;
+            vertical-alignment: center;
+        }
+    }
+}
+
+export component CartPage inherits Rectangle {
+    in property <string> total: "$216.40";
+    callback back-pressed();
+    callback save-for-later-pressed();
+    callback promo-applied(string);
+    callback checkout-pressed();
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "Cart · 3 items";
+            leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
+            trailing-icon: @image-url("@mobile-components/icons/queue.svg");
+            leading-pressed => { root.back-pressed(); }
+            trailing-pressed => { root.save-for-later-pressed(); }
+        }
+
+        VerticalLayout {
+            padding-top: 0;
+            spacing: 0;
+
+            CartLine {
+                name: "Houdini windbreaker";
+                variant: "Slate blue · M";
+                price: "$129.00";
+                qty: 1;
+                thumb-fill: @linear-gradient(135deg, #506b8e 0%, #1f2a3b 100%);
+            }
+            Divider { }
+            CartLine {
+                name: "Capilene base layer";
+                variant: "Olive · L";
+                price: "$45.00";
+                qty: 1;
+                thumb-fill: @linear-gradient(135deg, #6b8e50 0%, #2a3b1f 100%);
+            }
+            Divider { }
+            CartLine {
+                name: "Trail crew socks";
+                variant: "Charcoal · 3-pack";
+                price: "$24.00";
+                qty: 2;
+                thumb-fill: @linear-gradient(135deg, #3a3a3a 0%, #1a1a1a 100%);
+            }
+        }
+
+        VerticalLayout {
+            padding-left: Theme.spacing-md;
+            padding-right: Theme.spacing-md;
+            padding-top: Theme.spacing-md;
+            spacing: Theme.spacing-md;
+
+            // Promo code row.
+            Rectangle {
+                background: Theme.surface-1;
+                border-radius: Theme.radius-md;
+                height: 72px;
+                drop-shadow-blur: Theme.elevation-1-blur;
+                drop-shadow-color: Theme.elevation-1-color;
+                drop-shadow-offset-y: Theme.elevation-1-y;
+                HorizontalLayout {
+                    padding: Theme.spacing-sm;
+                    spacing: Theme.spacing-sm;
+                    alignment: stretch;
+                    VerticalLayout {
+                        alignment: center;
+                        horizontal-stretch: 1;
+                        TextField {
+                            label: "";
+                            placeholder: "Promo code";
+                            text: "EARLYSPRING";
+                        }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        MobileButton {
+                            text: "Apply";
+                            primary: false;
+                            horizontal-stretch: 0;
+                            min-width: 84px;
+                            max-height: 44px;
+                            clicked => { root.promo-applied(""); }
+                        }
+                    }
+                }
+            }
+
+            // Totals card.
+            Rectangle {
+                background: Theme.surface-1;
+                border-radius: Theme.radius-md;
+                drop-shadow-blur: Theme.elevation-1-blur;
+                drop-shadow-color: Theme.elevation-1-color;
+                drop-shadow-offset-y: Theme.elevation-1-y;
+                height: 192px;
+
+                VerticalLayout {
+                    padding: Theme.spacing-md;
+                    spacing: Theme.spacing-xs;
+                    TotalRow { label: "Subtotal"; value: "$222.00"; }
+                    TotalRow { label: "Shipping (Standard, 3–5 days)"; value: "$8.40"; }
+                    TotalRow { label: "Estimated tax"; value: "$18.00"; }
+                    TotalRow { label: "Promo · EARLYSPRING"; value: "−$32.00"; }
+                    Divider { }
+                    TotalRow {
+                        label: "Total";
+                        value: "$216.40";
+                        emphasize: true;
+                    }
+                }
+            }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+
+        // Sticky checkout footer.
+        Rectangle {
+            background: Theme.surface-1;
+            drop-shadow-blur: Theme.elevation-2-blur;
+            drop-shadow-color: Theme.elevation-2-color;
+            drop-shadow-offset-y: -4px;
+            height: 80px;
+            HorizontalLayout {
+                padding: Theme.spacing-md;
+                MobileButton {
+                    text: "Checkout · " + root.total;
+                    tone: Tone.info;
+                    max-height: 48px;
+                    clicked => { root.checkout-pressed(); }
+                }
+            }
+        }
+    }
+}

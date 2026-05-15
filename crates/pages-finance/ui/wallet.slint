@@ -1,0 +1,317 @@
+// WalletPage
+// =====================================================================
+//
+// Stack of credit-card visualisations + a recent-transactions list.
+// Demonstrates two patterns that don't surface elsewhere in the catalogue:
+//
+//   - Dramatic layered card visualisation. The top card sits prominently
+//     forward, with the next two cards peeking from behind it; each
+//     subsequent card is `y` offset down + slightly horizontally inset.
+//   - Right-aligned currency in a list row. Transaction amounts use a
+//     tabular treatment so columns of figures line up — Theme.muted for
+//     debits, Theme.accent-success for incoming credits.
+//
+// Layout
+// ------
+//
+//   AppBar — "Wallet" with + trailing icon
+//   Card stack (top card forward, 2 behind)
+//     - Each card: brand mark, account number, holder, expiry
+//   Section header: "RECENT"
+//   TransactionRow × N
+
+import { Theme, Tone } from "@mobile-theme/theme.slint";
+import { AppBar } from "@mobile-components/app-bar.slint";
+import { SectionHeader } from "@mobile-components/section-header.slint";
+import { Divider } from "@mobile-components/divider.slint";
+
+// One credit card visual.
+component CreditCard inherits Rectangle {
+    in property <string> brand: "VISA";
+    in property <string> last-four: "4242";
+    in property <string> holder: "GREG RAYMOND";
+    in property <string> expiry: "08/29";
+    in property <brush> gradient:
+        @linear-gradient(135deg, #1e3a8a 0%, #0f1d4d 100%);
+
+    width: 320px;
+    height: 180px;
+    background: root.gradient;
+    border-radius: Theme.radius-lg;
+    drop-shadow-blur: Theme.elevation-2-blur;
+    drop-shadow-color: Theme.elevation-2-color;
+    drop-shadow-offset-y: Theme.elevation-2-y;
+    clip: true;
+
+    // Brand mark — top-right.
+    Text {
+        text: root.brand;
+        x: parent.width - self.preferred-width - Theme.spacing-md;
+        y: Theme.spacing-md;
+        color: #ffffff;
+        font-size: Theme.font-size-title;
+        font-weight: 700;
+        letter-spacing: 2px;
+    }
+
+    // Chip placeholder — top-left.
+    Rectangle {
+        x: Theme.spacing-md;
+        y: Theme.spacing-md + 32px;
+        width: 40px;
+        height: 30px;
+        border-radius: 4px;
+        background: @linear-gradient(135deg, #d4af37 0%, #a07e1a 100%);
+    }
+
+    // Card number block — •••• •••• •••• 4242.
+    Text {
+        text: "•••• •••• •••• " + root.last-four;
+        x: Theme.spacing-md;
+        y: parent.height - 56px;
+        color: #ffffff;
+        font-size: Theme.font-size-body-large;
+        font-weight: 600;
+        letter-spacing: 2px;
+    }
+
+    // Holder + expiry along the bottom.
+    HorizontalLayout {
+        x: Theme.spacing-md;
+        y: parent.height - 28px;
+        width: parent.width - 2 * Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        Text {
+            text: root.holder;
+            color: #ffffffcc;
+            font-size: Theme.font-size-caption;
+            font-weight: 500;
+            letter-spacing: 1px;
+            horizontal-stretch: 1;
+        }
+        Text {
+            text: root.expiry;
+            color: #ffffffcc;
+            font-size: Theme.font-size-caption;
+            font-weight: 500;
+            letter-spacing: 1px;
+        }
+    }
+}
+
+// One transaction row — merchant + category + amount.
+component TransactionRow inherits Rectangle {
+    in property <string> merchant;
+    // Single-letter glyph for the leading badge. Slint strings aren't
+    // indexable so we can't derive `merchant[0]` at the binding site;
+    // callers pass the badge letter explicitly.
+    in property <string> badge;
+    in property <string> category;
+    in property <string> when;
+    in property <string> amount;
+    in property <bool> credit: false;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: root.merchant;
+    accessible-action-default => { root.clicked(); }
+
+    horizontal-stretch: 1;
+    min-height: 64px;
+    background: touch.pressed ? Theme.surface-pressed : transparent;
+
+    animate background { duration: Theme.motion-fast; }
+
+    HorizontalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+
+        // Category badge — small tone-tinted circle with first letter.
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 36px;
+                height: 36px;
+                border-radius: self.width / 2;
+                background: root.credit ? Theme.accent-success : Theme.surface-variant;
+                Text {
+                    text: root.credit ? "+" : (root.badge != "" ? root.badge : "•");
+                    color: root.credit ? Theme.on-primary : Theme.on-surface;
+                    font-size: Theme.font-size-body;
+                    font-weight: 700;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+            }
+        }
+
+        // Merchant + category.
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: root.merchant;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body-large;
+                font-weight: 500;
+                overflow: elide;
+            }
+            Text {
+                text: root.category + " · " + root.when;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+                overflow: elide;
+            }
+        }
+
+        // Amount.
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.amount;
+                color: root.credit ? Theme.accent-success : Theme.on-surface;
+                font-size: Theme.font-size-body-large;
+                font-weight: 600;
+                horizontal-alignment: right;
+            }
+        }
+    }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+export component WalletPage inherits Rectangle {
+    callback back-pressed();
+    callback add-card-pressed();
+    callback transaction-pressed(string);
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "Wallet";
+            leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
+            trailing-icon: @image-url("@mobile-components/icons/plus.svg");
+            leading-pressed => { root.back-pressed(); }
+            trailing-pressed => { root.add-card-pressed(); }
+        }
+
+        // ----- Layered card stack -----
+        //
+        // The stack is rendered inside a fixed-height Rectangle so the
+        // overlapping cards can be absolute-positioned. The bottom-most
+        // card sits behind and lower; the top card is centered.
+        Rectangle {
+            // 180 (front card) + 2 × 40 (two more cards fanned 40px each)
+            // + 12 padding so the last card's shadow has breathing room.
+            height: 280px;
+            // Card 3 (back). Fanned 80 px below the front card so the
+            // brand mark / last-four are clearly visible above it.
+            CreditCard {
+                x: (parent.width - self.width) / 2;
+                y: 80px;
+                width: 280px;
+                height: 180px;
+                opacity: 0.55;
+                brand: "AMEX";
+                last-four: "1009";
+                holder: "GREG RAYMOND";
+                expiry: "12/27";
+                gradient: @linear-gradient(135deg, #3a3a3a 0%, #1a1a1a 100%);
+            }
+            // Card 2 (mid). Fanned 40 px below the front.
+            CreditCard {
+                x: (parent.width - self.width) / 2;
+                y: 40px;
+                width: 300px;
+                height: 180px;
+                opacity: 0.8;
+                brand: "MASTERCARD";
+                last-four: "7782";
+                holder: "GREG RAYMOND";
+                expiry: "05/28";
+                gradient: @linear-gradient(135deg, #b91c1c 0%, #7f1d1d 100%);
+            }
+            // Card 1 (front).
+            CreditCard {
+                x: (parent.width - self.width) / 2;
+                y: 0;
+                brand: "VISA";
+                last-four: "4242";
+                holder: "GREG RAYMOND";
+                expiry: "08/29";
+                gradient: @linear-gradient(135deg, #1e3a8a 0%, #0f1d4d 100%);
+            }
+        }
+
+        // ----- Recent transactions -----
+        SectionHeader { text: "RECENT"; }
+
+        TransactionRow {
+            merchant: "Whole Foods Market";
+            badge: "W";
+            category: "Groceries";
+            when: "today";
+            amount: "−$48.21";
+            clicked => { root.transaction-pressed(self.merchant); }
+        }
+        Divider { }
+        TransactionRow {
+            merchant: "Uber";
+            badge: "U";
+            category: "Transport";
+            when: "today";
+            amount: "−$12.40";
+            clicked => { root.transaction-pressed(self.merchant); }
+        }
+        Divider { }
+        TransactionRow {
+            merchant: "Payroll deposit";
+            badge: "P";
+            category: "Income";
+            when: "yesterday";
+            amount: "+$3,820.00";
+            credit: true;
+            clicked => { root.transaction-pressed(self.merchant); }
+        }
+        Divider { }
+        TransactionRow {
+            merchant: "Spotify";
+            badge: "S";
+            category: "Entertainment";
+            when: "yesterday";
+            amount: "−$11.99";
+            clicked => { root.transaction-pressed(self.merchant); }
+        }
+        Divider { }
+        TransactionRow {
+            merchant: "Blue Bottle Coffee";
+            badge: "B";
+            category: "Food & drink";
+            when: "Tue";
+            amount: "−$6.50";
+            clicked => { root.transaction-pressed(self.merchant); }
+        }
+        Divider { }
+        TransactionRow {
+            merchant: "Refund — Patagonia";
+            badge: "R";
+            category: "Shopping";
+            when: "Mon";
+            amount: "+$94.00";
+            credit: true;
+            clicked => { root.transaction-pressed(self.merchant); }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+    }
+}

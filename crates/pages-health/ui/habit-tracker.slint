@@ -1,0 +1,311 @@
+// HabitTrackerPage
+// =====================================================================
+//
+// Habit tracker — Streaks / Habitify / Loop-style daily checkbox grid.
+// Demonstrates:
+//
+//   - Weekly stats card: streak count + completion percentage + small
+//     stat sub-row.
+//   - Day-of-week header row aligned with each habit's 7-cell grid
+//     so the user can scan the week vertically.
+//   - Per-habit row:
+//       icon disc (tone-tinted to the habit category)
+//       name + streak caption
+//       7 day-cells: filled = done, hollow = pending, "today" outlined
+//     Each cell is a small disc; tapping the today-cell toggles it.
+
+import { Theme, Tone } from "@mobile-theme/theme.slint";
+import { AppBar } from "@mobile-components/app-bar.slint";
+import { SectionHeader } from "@mobile-components/section-header.slint";
+import { Divider } from "@mobile-components/divider.slint";
+import { Fab } from "@mobile-components/button.slint";
+
+// One day-cell in a habit's weekly strip.
+component DayCell inherits Rectangle {
+    in property <int> state;     // 0 = empty, 1 = done, 2 = today
+    in property <Tone> tone: Tone.default;
+
+    width: 28px;
+    height: 28px;
+
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+        border-radius: self.width / 2;
+        background:
+              root.state == 1 ? (
+                  root.tone == Tone.success ? Theme.accent-success
+                : root.tone == Tone.warning ? Theme.accent-warning
+                : root.tone == Tone.danger  ? Theme.accent-danger
+                : root.tone == Tone.info    ? Theme.accent-info
+                : Theme.primary
+              )
+            : transparent;
+        border-width: root.state == 2 ? 2px : (root.state == 0 ? 1px : 0px);
+        border-color: root.state == 2 ? Theme.primary : Theme.outline;
+
+        // "Today" inner dot.
+        if root.state == 2: Rectangle {
+            width: 8px;
+            height: 8px;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            border-radius: 4px;
+            background: Theme.primary;
+        }
+        // Check glyph for done cells.
+        if root.state == 1: Image {
+            width: 14px;
+            height: 14px;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            source: @image-url("@mobile-components/icons/check.svg");
+            colorize: Theme.on-primary;
+            image-fit: contain;
+        }
+    }
+}
+
+// One habit row.
+component HabitRow inherits Rectangle {
+    in property <image> icon;
+    in property <string> name;
+    in property <string> streak;
+    in property <Tone> tone: Tone.default;
+    // Each entry: 0 = empty, 1 = done, 2 = today.
+    in property <[int]> week;
+
+    horizontal-stretch: 1;
+    min-height: 72px;
+
+    HorizontalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-sm;
+        alignment: stretch;
+
+        // Category icon disc.
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 40px;
+                height: 40px;
+                border-radius: self.width / 2;
+                background:
+                      root.tone == Tone.success ? Theme.accent-success
+                    : root.tone == Tone.warning ? Theme.accent-warning
+                    : root.tone == Tone.danger  ? Theme.accent-danger
+                    : root.tone == Tone.info    ? Theme.accent-info
+                    : Theme.primary;
+                Image {
+                    width: 20px;
+                    height: 20px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: root.icon;
+                    colorize: Theme.on-primary;
+                    image-fit: contain;
+                }
+            }
+        }
+
+        // Name + streak.
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: root.name;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+            Text {
+                text: root.streak;
+                color:
+                      root.tone == Tone.success ? Theme.accent-success
+                    : root.tone == Tone.warning ? Theme.accent-warning
+                    : root.tone == Tone.danger  ? Theme.accent-danger
+                    : root.tone == Tone.info    ? Theme.accent-info
+                    : Theme.muted;
+                font-size: Theme.font-size-caption;
+                font-weight: 600;
+            }
+        }
+
+        // 7-day grid.
+        HorizontalLayout {
+            spacing: 4px;
+            for value in root.week : VerticalLayout {
+                alignment: center;
+                DayCell {
+                    state: value;
+                    tone: root.tone;
+                }
+            }
+        }
+    }
+}
+
+export component HabitTrackerPage inherits Rectangle {
+    callback back-pressed();
+    callback add-habit-pressed();
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "Habits";
+            leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
+            trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
+            leading-pressed => { root.back-pressed(); }
+        }
+
+        VerticalLayout {
+            padding: Theme.spacing-md;
+            spacing: Theme.spacing-md;
+
+            // ----- Weekly summary card -----
+            Rectangle {
+                background: @linear-gradient(135deg, #16a34a 0%, #14532d 100%);
+                border-radius: Theme.radius-md;
+                drop-shadow-blur: Theme.elevation-2-blur;
+                drop-shadow-color: Theme.elevation-2-color;
+                drop-shadow-offset-y: Theme.elevation-2-y;
+                height: 120px;
+
+                HorizontalLayout {
+                    padding: Theme.spacing-md;
+                    spacing: Theme.spacing-md;
+                    alignment: stretch;
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        alignment: center;
+                        spacing: 2px;
+                        Text {
+                            text: "THIS WEEK";
+                            color: #ffffffaa;
+                            font-size: 10px;
+                            font-weight: 700;
+                            letter-spacing: 0.5px;
+                        }
+                        Text {
+                            text: "18 / 28 done";
+                            color: #ffffff;
+                            font-size: Theme.font-size-headline;
+                            font-weight: 700;
+                        }
+                        Text {
+                            text: "64% completion · longest streak 12 days";
+                            color: #ffffffcc;
+                            font-size: Theme.font-size-caption;
+                        }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        Rectangle {
+                            width: 64px;
+                            height: 64px;
+                            border-radius: self.width / 2;
+                            background: #ffffff22;
+                            Text {
+                                text: "64%";
+                                color: #ffffff;
+                                font-size: Theme.font-size-body-large;
+                                font-weight: 800;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                width: parent.width;
+                                height: parent.height;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ----- Day-of-week header row -----
+            HorizontalLayout {
+                spacing: Theme.spacing-sm;
+                Rectangle { horizontal-stretch: 1; }
+                HorizontalLayout {
+                    spacing: 4px;
+                    for letter in ["M", "T", "W", "T", "F", "S", "S"]: VerticalLayout {
+                        width: 28px;
+                        alignment: center;
+                        Text {
+                            text: letter;
+                            color: Theme.muted;
+                            font-size: 10px;
+                            font-weight: 700;
+                            letter-spacing: 0.5px;
+                            horizontal-alignment: center;
+                        }
+                    }
+                }
+            }
+        }
+
+        SectionHeader { text: "DAILY"; }
+        HabitRow {
+            icon: @image-url("@mobile-components/icons/heart.svg");
+            name: "Drink 2 L water";
+            streak: "🔥 12 days";
+            tone: Tone.info;
+            // Done Mon–Wed (1,1,1), today Thu = 2, Fri/Sat/Sun pending.
+            week: [1, 1, 1, 2, 0, 0, 0];
+        }
+        Divider { }
+        HabitRow {
+            icon: @image-url("@mobile-components/icons/star.svg");
+            name: "20 min focused reading";
+            streak: "🔥 5 days";
+            tone: Tone.warning;
+            week: [1, 1, 1, 2, 0, 0, 0];
+        }
+        Divider { }
+        HabitRow {
+            icon: @image-url("@mobile-components/icons/play.svg");
+            name: "30 min exercise";
+            streak: "🔥 3 days · paused yesterday";
+            tone: Tone.danger;
+            week: [1, 1, 0, 2, 0, 0, 0];
+        }
+        Divider { }
+        HabitRow {
+            icon: @image-url("@mobile-components/icons/pencil.svg");
+            name: "Journal at night";
+            streak: "🔥 8 days";
+            tone: Tone.success;
+            week: [1, 1, 1, 2, 0, 0, 0];
+        }
+
+        SectionHeader { text: "WEEKLY"; }
+        HabitRow {
+            icon: @image-url("@mobile-components/icons/queue.svg");
+            name: "Inbox zero on Friday";
+            streak: "Last week ✓";
+            tone: Tone.default;
+            week: [0, 0, 0, 2, 0, 0, 0];
+        }
+        Divider { }
+        HabitRow {
+            icon: @image-url("@mobile-components/icons/menu.svg");
+            name: "Meal prep on Sunday";
+            streak: "Last week ✓";
+            tone: Tone.success;
+            week: [0, 0, 0, 2, 0, 0, 0];
+        }
+
+        Rectangle { vertical-stretch: 1; }
+    }
+
+    Fab {
+        x: root.width - self.width - Theme.spacing-md;
+        y: root.height - self.height - Theme.spacing-md;
+        accessible-label: "Add habit";
+        clicked => { root.add-habit-pressed(); }
+    }
+}

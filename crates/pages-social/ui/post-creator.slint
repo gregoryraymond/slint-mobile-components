@@ -1,0 +1,367 @@
+// PostCreatorPage
+// =====================================================================
+//
+// New-post composer — Instagram / Threads / Bluesky-style. Demonstrates:
+//
+//   - Photo preview strip on top: a primary 320 × 240 hero rectangle
+//     for the chosen image (gradient placeholder), with a small "+ add
+//     more" tile next to it for multi-image posts.
+//   - Caption text field as the centerpiece of the form. The user has
+//     already typed something — we render that prefilled.
+//   - A row of audience-pickers and feature toggles: visibility
+//     ("Public / Friends / Only me"), a "Tag people" pill, a
+//     "Location" pill, and an "Add alt text" pill.
+//   - Cross-post checkbox group.
+//   - Sticky "Post" CTA at the bottom (info-toned).
+
+import { Theme, Tone } from "@mobile-theme/theme.slint";
+import { AppBar } from "@mobile-components/app-bar.slint";
+import { TextField } from "@mobile-components/text-field.slint";
+import { Checkbox } from "@mobile-components/checkbox.slint";
+import { Chip } from "@mobile-components/chip.slint";
+import { Divider } from "@mobile-components/divider.slint";
+import { Avatar } from "@mobile-components/avatar.slint";
+import { MobileButton, TextButton } from "@mobile-components/button.slint";
+
+// One pill-shaped affordance row: leading icon + label + chevron-right.
+component PillRow inherits Rectangle {
+    in property <image> icon;
+    in property <string> label;
+    in property <string> value;
+    in property <Tone> tone: Tone.default;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-action-default => { root.clicked(); }
+
+    horizontal-stretch: 1;
+    min-height: 52px;
+    background: touch.pressed ? Theme.surface-pressed : transparent;
+    animate background { duration: Theme.motion-fast; }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 28px;
+                height: 28px;
+                border-radius: 6px;
+                background:
+                      root.tone == Tone.success ? Theme.accent-success
+                    : root.tone == Tone.warning ? Theme.accent-warning
+                    : root.tone == Tone.danger  ? Theme.accent-danger
+                    : root.tone == Tone.info    ? Theme.accent-info
+                    : Theme.surface-variant;
+                Image {
+                    width: 14px;
+                    height: 14px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: root.icon;
+                    colorize: root.tone == Tone.default ? Theme.on-surface : Theme.on-primary;
+                    image-fit: contain;
+                }
+            }
+        }
+
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            Text {
+                text: root.label;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 500;
+            }
+        }
+
+        VerticalLayout {
+            alignment: center;
+            spacing: 0;
+            HorizontalLayout {
+                spacing: Theme.spacing-xs;
+                alignment: end;
+                Text {
+                    text: root.value;
+                    color: Theme.muted;
+                    font-size: Theme.font-size-caption;
+                    vertical-alignment: center;
+                }
+                Image {
+                    width: 14px;
+                    height: 14px;
+                    source: @image-url("@mobile-components/icons/chevron-right.svg");
+                    colorize: Theme.muted;
+                    image-fit: contain;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+// One cross-post target row — small platform icon disc + label +
+// trailing checkbox.
+component CrossPostRow inherits Rectangle {
+    in property <image> icon;
+    in property <string> label;
+    in property <color> brand;
+    in-out property <bool> checked: false;
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 24px;
+                height: 24px;
+                border-radius: 6px;
+                background: root.brand;
+                Image {
+                    width: 14px;
+                    height: 14px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: root.icon;
+                    colorize: #ffffff;
+                    image-fit: contain;
+                }
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            Text {
+                text: root.label;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Checkbox {
+                checked <=> root.checked;
+            }
+        }
+    }
+}
+
+export component PostCreatorPage inherits Rectangle {
+    in-out property <string> caption:
+        "Live theme switching demo at Slint Conf 2026 — the new Tone enum keeps every status component in sync.";
+    callback close-pressed();
+    callback add-photo-pressed();
+    callback audience-pressed();
+    callback tag-pressed();
+    callback location-pressed();
+    callback alt-text-pressed();
+    callback post-pressed();
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "New post";
+            leading-icon: @image-url("@mobile-components/icons/close.svg");
+            leading-pressed => { root.close-pressed(); }
+        }
+
+        VerticalLayout {
+            padding-left: Theme.spacing-md;
+            padding-right: Theme.spacing-md;
+            padding-top: Theme.spacing-md;
+            spacing: Theme.spacing-md;
+            alignment: start;
+
+            // ----- Photo strip -----
+            HorizontalLayout {
+                spacing: Theme.spacing-sm;
+                Rectangle {
+                    width: 200px;
+                    height: 160px;
+                    border-radius: Theme.radius-md;
+                    background: @linear-gradient(135deg, #4f8cff 0%, #1f4eaa 100%);
+                    clip: true;
+                    // Small image-counter pill.
+                    Rectangle {
+                        x: parent.width - self.width - 8px;
+                        y: parent.height - self.height - 8px;
+                        width: 32px;
+                        height: 20px;
+                        border-radius: 4px;
+                        background: #00000099;
+                        Text {
+                            text: "1 / 1";
+                            color: #ffffff;
+                            font-size: 10px;
+                            font-weight: 700;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
+                        }
+                    }
+                }
+                Rectangle {
+                    width: 96px;
+                    height: 160px;
+                    border-radius: Theme.radius-md;
+                    background: Theme.surface-variant;
+                    VerticalLayout {
+                        spacing: Theme.spacing-xs;
+                        alignment: center;
+                        HorizontalLayout {
+                            alignment: center;
+                            Image {
+                                width: 22px;
+                                height: 22px;
+                                source: @image-url("@mobile-components/icons/plus.svg");
+                                colorize: Theme.muted;
+                                image-fit: contain;
+                            }
+                        }
+                        HorizontalLayout {
+                            alignment: center;
+                            Text {
+                                text: "Add more";
+                                color: Theme.muted;
+                                font-size: Theme.font-size-caption;
+                                font-weight: 600;
+                            }
+                        }
+                    }
+                    TouchArea {
+                        clicked => { root.add-photo-pressed(); }
+                    }
+                }
+            }
+
+            // ----- Caption -----
+            HorizontalLayout {
+                spacing: Theme.spacing-sm;
+                alignment: start;
+                VerticalLayout {
+                    alignment: start;
+                    padding-top: 2px;
+                    Avatar {
+                        fallback: "GR";
+                        size: 36px;
+                    }
+                }
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    Rectangle {
+                        height: 120px;
+                        HorizontalLayout {
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                alignment: start;
+                                Text {
+                                    text: root.caption;
+                                    color: Theme.on-surface;
+                                    font-size: Theme.font-size-body-large;
+                                    wrap: word-wrap;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Divider { }
+
+        PillRow {
+            icon: @image-url("@mobile-components/icons/profile.svg");
+            label: "Audience";
+            value: "Public";
+            tone: Tone.success;
+            clicked => { root.audience-pressed(); }
+        }
+        Divider { }
+        PillRow {
+            icon: @image-url("@mobile-components/icons/heart.svg");
+            label: "Tag people";
+            value: "3 tagged";
+            tone: Tone.info;
+            clicked => { root.tag-pressed(); }
+        }
+        Divider { }
+        PillRow {
+            icon: @image-url("@mobile-components/icons/pin.svg");
+            label: "Location";
+            value: "Conference center, SF";
+            tone: Tone.warning;
+            clicked => { root.location-pressed(); }
+        }
+        Divider { }
+        PillRow {
+            icon: @image-url("@mobile-components/icons/menu.svg");
+            label: "Add alt text";
+            value: "Recommended";
+            clicked => { root.alt-text-pressed(); }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+
+        // Cross-post block + sticky CTA.
+        Rectangle {
+            background: Theme.surface-1;
+            drop-shadow-blur: Theme.elevation-2-blur;
+            drop-shadow-color: Theme.elevation-2-color;
+            drop-shadow-offset-y: -4px;
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                Text {
+                    text: "  CROSS-POST TO";
+                    color: Theme.muted;
+                    font-size: 10px;
+                    font-weight: 700;
+                    letter-spacing: 0.5px;
+                }
+                CrossPostRow {
+                    icon: @image-url("@mobile-components/icons/send.svg");
+                    label: "Threads";
+                    brand: #000000;
+                    checked: true;
+                }
+                CrossPostRow {
+                    icon: @image-url("@mobile-components/icons/inbox.svg");
+                    label: "Bluesky";
+                    brand: #0085ff;
+                    checked: false;
+                }
+                HorizontalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    MobileButton {
+                        text: "Post";
+                        tone: Tone.info;
+                        max-height: 48px;
+                        clicked => { root.post-pressed(); }
+                    }
+                }
+            }
+        }
+    }
+}

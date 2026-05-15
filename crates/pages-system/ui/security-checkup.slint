@@ -1,0 +1,252 @@
+// SecurityCheckupPage
+// =====================================================================
+//
+// A security checkup — the "is my account safe" review screen.
+// Distinct from `AppPermissionsPage` (per-app grants) and
+// `TwoFactorAuthPage` (a single OTP flow). Demonstrates a
+// status-checklist surface:
+//
+//   - An overall-status hero: a big shield-ish disc + headline + a
+//     "N issues found" subline, tinted by the worst item.
+//   - An ISSUES section: rows with a danger / warning icon disc, a
+//     title + description, and a "Fix" pill.
+//   - A SECURE section: rows with a success check, dimmer, no action.
+
+import { Theme, Tone } from "@mobile-theme/theme.slint";
+import { AppBar } from "@mobile-components/app-bar.slint";
+import { SectionHeader } from "@mobile-components/section-header.slint";
+import { Divider } from "@mobile-components/divider.slint";
+
+// One checkup row. `state`: 0 secure / 1 warning / 2 danger.
+component CheckupRow inherits Rectangle {
+    in property <string> title;
+    in property <string> detail;
+    in property <int> state: 0;
+    in property <string> action: "Fix";
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: root.title;
+    accessible-action-default => { root.clicked(); }
+
+    horizontal-stretch: 1;
+    min-height: 72px;
+    background: touch.pressed ? Theme.surface-pressed : transparent;
+    animate background { duration: Theme.motion-fast; }
+
+    HorizontalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 38px;
+                height: 38px;
+                border-radius: 19px;
+                background:
+                      root.state == 2 ? Theme.accent-danger.with-alpha(0.18)
+                    : root.state == 1 ? Theme.accent-warning.with-alpha(0.18)
+                    : Theme.accent-success.with-alpha(0.18);
+                Image {
+                    width: 18px;
+                    height: 18px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: root.state == 0
+                        ? @image-url("@mobile-components/icons/check.svg")
+                        : @image-url("@mobile-components/icons/lock.svg");
+                    colorize:
+                          root.state == 2 ? Theme.accent-danger
+                        : root.state == 1 ? Theme.accent-warning
+                        : Theme.accent-success;
+                    image-fit: contain;
+                }
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: root.title;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 700;
+            }
+            Text {
+                text: root.detail;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+                wrap: word-wrap;
+            }
+        }
+        if root.state != 0: VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: fix-text.preferred-width + 24px;
+                height: 30px;
+                border-radius: 15px;
+                background: root.state == 2 ? Theme.accent-danger : Theme.accent-warning;
+                fix-text := Text {
+                    text: root.action;
+                    color: Theme.on-primary;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+            }
+        }
+    }
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+export component SecurityCheckupPage inherits Rectangle {
+    in property <string> headline: "2 issues need your attention";
+    in property <string> subline: "Last checked just now · 6 of 8 checks passed";
+    callback back-pressed();
+    callback rescan-pressed();
+    callback item-pressed(string);
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "Security checkup";
+            leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
+            leading-pressed => { root.back-pressed(); }
+        }
+
+        VerticalLayout {
+            padding: Theme.spacing-md;
+            spacing: Theme.spacing-md;
+            alignment: start;
+
+            // Overall-status hero.
+            Rectangle {
+                height: 160px;
+                border-radius: Theme.radius-lg;
+                background: @linear-gradient(135deg, #b45309 0%, #7c2d12 100%);
+                drop-shadow-blur: Theme.elevation-2-blur;
+                drop-shadow-color: Theme.elevation-2-color;
+                drop-shadow-offset-y: Theme.elevation-2-y;
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 8px;
+                    HorizontalLayout {
+                        alignment: center;
+                        Rectangle {
+                            width: 56px;
+                            height: 56px;
+                            border-radius: 14px;
+                            background: #ffffff22;
+                            Image {
+                                width: 30px;
+                                height: 30px;
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+                                source: @image-url("@mobile-components/icons/lock.svg");
+                                colorize: #ffffff;
+                                image-fit: contain;
+                            }
+                        }
+                    }
+                    Text {
+                        text: root.headline;
+                        color: #ffffff;
+                        font-size: Theme.font-size-title;
+                        font-weight: 800;
+                        horizontal-alignment: center;
+                    }
+                    Text {
+                        text: root.subline;
+                        color: #ffffffcc;
+                        font-size: Theme.font-size-caption;
+                        font-weight: 600;
+                        horizontal-alignment: center;
+                    }
+                }
+            }
+
+            // Re-scan pill.
+            HorizontalLayout {
+                alignment: center;
+                Rectangle {
+                    width: rescan.preferred-width + 36px;
+                    height: 34px;
+                    border-radius: 17px;
+                    background: touch-rescan.pressed ? Theme.surface-pressed : Theme.surface-2;
+                    animate background { duration: Theme.motion-fast; }
+                    rescan := Text {
+                        text: "Run checkup again";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-caption;
+                        font-weight: 800;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                    touch-rescan := TouchArea {
+                        clicked => { root.rescan-pressed(); }
+                    }
+                }
+            }
+        }
+
+        SectionHeader { text: "ISSUES"; }
+        CheckupRow {
+            title: "Reused password";
+            detail: "Your password is used on 3 other sites.";
+            state: 2;
+            action: "Fix";
+            clicked => { root.item-pressed("Reused password"); }
+        }
+        Divider { }
+        CheckupRow {
+            title: "Recovery email unverified";
+            detail: "Verify it so you can regain access if locked out.";
+            state: 1;
+            action: "Verify";
+            clicked => { root.item-pressed("Recovery email"); }
+        }
+
+        SectionHeader { text: "SECURE"; }
+        CheckupRow {
+            title: "Two-factor authentication";
+            detail: "Enabled via authenticator app.";
+            state: 0;
+            clicked => { root.item-pressed("Two-factor"); }
+        }
+        Divider { }
+        CheckupRow {
+            title: "No unrecognised sign-ins";
+            detail: "All 4 active sessions are known devices.";
+            state: 0;
+            clicked => { root.item-pressed("Sign-ins"); }
+        }
+        Divider { }
+        CheckupRow {
+            title: "Biometric lock";
+            detail: "Face unlock is on for this app.";
+            state: 0;
+            clicked => { root.item-pressed("Biometric"); }
+        }
+        Divider { }
+        CheckupRow {
+            title: "Up-to-date app version";
+            detail: "You're on the latest release.";
+            state: 0;
+            clicked => { root.item-pressed("App version"); }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+    }
+}

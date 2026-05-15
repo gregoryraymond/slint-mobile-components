@@ -1,0 +1,149 @@
+// DashboardPage
+// =====================================================================
+//
+// Composite-screen template — KPI overview for an operations dashboard,
+// fintech home, ops monitor, or sales tracker. Demonstrates a 2×2 stat
+// tile grid, period switcher, and activity feed all composing existing
+// catalogue primitives (Card, SegmentedControl, ListItem, Avatar).
+
+import { Theme } from "@mobile-theme/theme.slint";
+import { AppBar } from "@mobile-components/app-bar.slint";
+import { Card } from "@mobile-components/card.slint";
+import { SegmentedControl } from "@mobile-components/segmented-control.slint";
+import { SectionHeader } from "@mobile-components/section-header.slint";
+import { ContactRow } from "@mobile-components/contact-row.slint";
+import { ScrollView } from "std-widgets.slint";
+
+export enum DashboardTrend {
+    up,
+    down,
+    flat,
+}
+
+export struct DashboardStat {
+    label: string,
+    value: string,
+    delta: string,
+    trend: DashboardTrend,
+}
+
+export struct DashboardEvent {
+    actor-initials: string,
+    actor: string,
+    action: string,
+    time: string,
+}
+
+component StatTile inherits Rectangle {
+    in property <DashboardStat> stat;
+
+    horizontal-stretch: 1;
+    vertical-stretch: 1;
+
+    Card {
+        VerticalLayout {
+            spacing: Theme.spacing-xs;
+
+            Text {
+                text: root.stat.label;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+                font-weight: 600;
+            }
+            Text {
+                text: root.stat.value;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-headline;
+                font-weight: 600;
+            }
+            Text {
+                text: root.stat.delta;
+                color: root.stat.trend == DashboardTrend.up ? Theme.accent-success
+                    : root.stat.trend == DashboardTrend.down ? Theme.accent-danger
+                    : Theme.muted;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+        }
+    }
+}
+
+export component DashboardPage inherits Rectangle {
+    in-out property <int> period-index: 0;
+    in property <[DashboardStat]> stats: [
+        { label: "REVENUE", value: "$12,438", delta: "+12.4%", trend: DashboardTrend.up },
+        { label: "ORDERS", value: "184", delta: "+3.2%", trend: DashboardTrend.up },
+        { label: "REFUNDS", value: "$420", delta: "+1.0%", trend: DashboardTrend.down },
+        { label: "AOV", value: "$67.60", delta: "0.0%", trend: DashboardTrend.flat },
+    ];
+    in property <[DashboardEvent]> events: [
+        { actor-initials: "GH", actor: "GitHub", action: "Deploy succeeded · v0.4.2", time: "2m" },
+        { actor-initials: "S", actor: "Stripe", action: "$240 received · payout pending", time: "14m" },
+        { actor-initials: "MC", actor: "Maestro CI", action: "All flows green on emulator-5554", time: "32m" },
+        { actor-initials: "PL", actor: "Petra Lindquist", action: "approved PR #248 — DESIGN.md", time: "1h" },
+        { actor-initials: "L", actor: "Linear", action: "ENG-218 moved to Done", time: "2h" },
+    ];
+    callback menu-pressed();
+    callback filter-pressed();
+    callback event-pressed(DashboardEvent);
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "Dashboard";
+            leading-icon: @image-url("@mobile-components/icons/menu.svg");
+            trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
+            leading-pressed => { root.menu-pressed(); }
+            trailing-pressed => { root.filter-pressed(); }
+        }
+
+        ScrollView {
+            vertical-stretch: 1;
+
+            VerticalLayout {
+                alignment: start;
+                padding: Theme.spacing-md;
+                spacing: Theme.spacing-md;
+
+                // Period switcher
+                SegmentedControl {
+                    options: ["Today", "Week", "Month"];
+                    selected-index <=> root.period-index;
+                }
+
+                // Stat tile grid (2 × 2)
+                VerticalLayout {
+                    spacing: Theme.spacing-md;
+                    HorizontalLayout {
+                        spacing: Theme.spacing-md;
+                        StatTile { stat: root.stats[0]; }
+                        StatTile { stat: root.stats[1]; }
+                    }
+                    HorizontalLayout {
+                        spacing: Theme.spacing-md;
+                        StatTile { stat: root.stats[2]; }
+                        StatTile { stat: root.stats[3]; }
+                    }
+                }
+
+                // Activity feed
+                SectionHeader { text: "RECENT ACTIVITY"; }
+
+                VerticalLayout {
+                    spacing: 0;
+                    for evt in root.events: ContactRow {
+                        initials: evt.actor-initials;
+                        avatar-size: 32px;
+                        title: evt.actor;
+                        subtitle: evt.action;
+                        trailing-text: evt.time;
+                        clicked => { root.event-pressed(evt); }
+                    }
+                }
+            }
+        }
+    }
+}

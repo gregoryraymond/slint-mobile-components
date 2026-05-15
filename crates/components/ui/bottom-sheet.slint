@@ -1,0 +1,70 @@
+// BottomSheet
+// =====================================================================
+//
+// The first overlay primitive in the catalogue — a partial-height
+// surface anchored to the bottom of a page that sits above the main
+// content. Used by `MapPage` for nearby POIs, and a candidate for any
+// "tap → quick action list" or "tap → details preview" pattern that
+// shouldn't fully take over the screen.
+//
+// Specification
+// -------------
+//
+// Geometry
+//   - Full layout-cell width (`horizontal-stretch: 1`).
+//   - Height: natural, sized by `@children`. The host page is
+//     responsible for positioning the BottomSheet at the bottom edge
+//     (typically via `y: parent.height - self.height`).
+//   - Top corners rounded at `Theme.radius-lg`; bottom corners flat so
+//     the sheet meets the screen edge cleanly.
+//
+// Style
+//   - Fill: `Theme.surface-2` (raised tier — one level above the page
+//     content beneath, per DESIGN.md's surface ladder).
+//   - Shadow: `elevation-2-*` tokens with `offset-y: -4 px` (pointing
+//     up, so the sheet reads as floating above the content scrolling
+//     beneath it).
+//   - Drag handle: a 36 × 4 px muted pill at the top, 50 % opacity, as
+//     a visual hint that the sheet is gesturally draggable. (This
+//     library doesn't implement the drag gesture itself — that's a
+//     host-page concern that needs scroll-axis-aware handling.)
+//
+// Accessibility
+//   - No `accessible-role` set on the chrome itself — interactive
+//     children carry their own a11y. A snap-up gesture should be
+//     announced by the host's announcement system, not the sheet.
+
+import { Theme } from "@mobile-theme/theme.slint";
+
+export component BottomSheet inherits Rectangle {
+    horizontal-stretch: 1;
+    background: Theme.surface-2;
+    border-top-left-radius: Theme.radius-lg;
+    border-top-right-radius: Theme.radius-lg;
+    drop-shadow-blur: Theme.elevation-2-blur;
+    drop-shadow-color: Theme.elevation-2-color;
+    drop-shadow-offset-y: -4px;
+    clip: true;
+
+    VerticalLayout {
+        spacing: 0;
+
+        // Drag handle row (decorative).
+        Rectangle {
+            height: 16px;
+            HorizontalLayout {
+                alignment: center;
+                padding-top: 8px;
+                Rectangle {
+                    width: 36px;
+                    height: 4px;
+                    border-radius: 2px;
+                    background: Theme.muted;
+                    opacity: 0.5;
+                }
+            }
+        }
+
+        @children
+    }
+}

@@ -1,0 +1,95 @@
+import { Theme } from "@mobile-theme/theme.slint";
+import { AppBar } from "@mobile-components/app-bar.slint";
+import { BottomNav } from "@mobile-components/bottom-nav.slint";
+import { IconButton } from "@mobile-components/icon-button.slint";
+import { Card } from "@mobile-components/card.slint";
+import { Fab } from "@mobile-components/button.slint";
+import { ScrollView } from "std-widgets.slint";
+
+// Example feed-style page: top app bar + scrollable cards + FAB +
+// bottom navigation. Use as-is, or as a layout reference when composing
+// your own pages.
+export component HomePage inherits Rectangle {
+    in-out property <int> nav-index: 0;
+    callback fab-pressed();
+    callback nav-changed(int);
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "Today";
+            trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
+        }
+
+        scroll := ScrollView {
+            vertical-stretch: 1;
+
+            VerticalLayout {
+                padding: Theme.spacing-md;
+                spacing: Theme.spacing-md;
+
+                Card {
+                    title: "Welcome back";
+                    subtitle: "Pick up where you left off, or start something new.";
+                }
+
+                Card {
+                    title: "Today's brief";
+                    subtitle: "Three updates from the projects you follow.";
+                    tappable: true;
+                }
+
+                Card {
+                    title: "Quick capture";
+                    subtitle: "Jot down a thought — it'll sync across your devices.";
+                    tappable: true;
+                }
+
+                Card {
+                    title: "Backlog";
+                    subtitle: "12 items waiting. Tap to triage.";
+                    tappable: true;
+                }
+            }
+        }
+
+        BottomNav {
+            current-index <=> root.nav-index;
+
+            IconButton {
+                label: "Home";
+                icon: @image-url("@mobile-components/icons/home.svg");
+                active: root.nav-index == 0;
+                clicked => { root.nav-index = 0; root.nav-changed(0); }
+            }
+            IconButton {
+                label: "Search";
+                icon: @image-url("@mobile-components/icons/search.svg");
+                active: root.nav-index == 1;
+                clicked => { root.nav-index = 1; root.nav-changed(1); }
+            }
+            IconButton {
+                label: "Inbox";
+                icon: @image-url("@mobile-components/icons/inbox.svg");
+                active: root.nav-index == 2;
+                clicked => { root.nav-index = 2; root.nav-changed(2); }
+            }
+            IconButton {
+                label: "Profile";
+                icon: @image-url("@mobile-components/icons/profile.svg");
+                active: root.nav-index == 3;
+                clicked => { root.nav-index = 3; root.nav-changed(3); }
+            }
+        }
+    }
+
+    // FAB anchored to the bottom-right, just above the bottom nav.
+    Fab {
+        x: parent.width - self.width - Theme.spacing-md;
+        y: parent.height - 72px - self.height - Theme.spacing-md;
+        clicked => { root.fab-pressed(); }
+    }
+}

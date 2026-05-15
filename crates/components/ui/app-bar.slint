@@ -1,0 +1,134 @@
+// AppBar
+// =====================================================================
+//
+// Top-of-page navigation strip. Holds the page title and up to two
+// icon actions (back / overflow / share / etc.). Anchored to the top
+// of the page, full bar width.
+//
+// Specification
+// -------------
+//
+// Geometry
+//   - Fixed height: 56px (Material standard).
+//   - Width: full bar (`horizontal-stretch: 1`).
+//   - Background: `Theme.background` (matches the page so the bar reads
+//     as part of the surface, not a separate band).
+//
+// Slots
+//   - Leading (left): 48 × 48 circular tap target. Shows an icon when
+//     `leading-icon` is set; otherwise the slot is empty (no background,
+//     no tap). Typical use: back arrow on detail pages.
+//   - Title (centre-left): single-line text, 20px / weight-600, in
+//     `Theme.on-background`. Stretches to fill the space between the
+//     two icon slots. Long titles overflow on the right by design.
+//   - Trailing (right): mirror of the leading slot. Typical use:
+//     overflow "⋮" or contextual action.
+//
+// Icons
+//   - `leading-icon` and `trailing-icon` are `image` properties drawn at
+//     24×24 with `colorize: Theme.on-background`. Empty image hides the
+//     slot and disables its TouchArea.
+//
+// Divider
+//   - `show-divider` (bool, default true) draws a 1px `Theme.outline`
+//     hairline along the bar's bottom edge. Turn off if the bar sits
+//     directly above another visual divider (e.g. inside a tab strip).
+//
+// Callbacks
+//   - `leading-pressed()` and `trailing-pressed()` fire on tap of the
+//     respective slot (only when its icon is set).
+import { Theme } from "@mobile-theme/theme.slint";
+
+export component AppBar inherits Rectangle {
+    in property <string> title;
+    in property <image> leading-icon;
+    in property <image> trailing-icon;
+    // Default false per DESIGN.md (no borders). Set true on a per-page
+    // basis if a hairline separator under the bar is wanted.
+    in property <bool> show-divider: false;
+    callback leading-pressed();
+    callback trailing-pressed();
+
+    height: 56px;
+    background: Theme.background;
+    horizontal-stretch: 1;
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-sm;
+        padding-right: Theme.spacing-sm;
+        spacing: Theme.spacing-xs;
+        alignment: stretch;
+
+        // Leading slot
+        Rectangle {
+            width: Theme.touch-target;
+            height: Theme.touch-target;
+            background: leading-touch.pressed && root.leading-icon.width > 0
+                ? Theme.surface-pressed : transparent;
+            border-radius: self.width / 2;
+
+            animate background { duration: Theme.motion-fast; }
+
+            if root.leading-icon.width > 0: Image {
+                width: 24px;
+                height: 24px;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                source: root.leading-icon;
+                colorize: Theme.on-background;
+                image-fit: contain;
+            }
+
+            leading-touch := TouchArea {
+                enabled: root.leading-icon.width > 0;
+                clicked => { root.leading-pressed(); }
+            }
+        }
+
+        // Title — takes all remaining horizontal space.
+        Text {
+            text: root.title;
+            color: Theme.on-background;
+            font-size: Theme.font-size-title;
+            font-weight: 600;
+            horizontal-alignment: left;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+
+        // Trailing slot
+        Rectangle {
+            width: Theme.touch-target;
+            height: Theme.touch-target;
+            background: trailing-touch.pressed && root.trailing-icon.width > 0
+                ? Theme.surface-pressed : transparent;
+            border-radius: self.width / 2;
+
+            animate background { duration: Theme.motion-fast; }
+
+            if root.trailing-icon.width > 0: Image {
+                width: 24px;
+                height: 24px;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                source: root.trailing-icon;
+                colorize: Theme.on-background;
+                image-fit: contain;
+            }
+
+            trailing-touch := TouchArea {
+                enabled: root.trailing-icon.width > 0;
+                clicked => { root.trailing-pressed(); }
+            }
+        }
+    }
+
+    // Hairline divider at the bottom edge.
+    if root.show-divider: Rectangle {
+        x: 0;
+        y: parent.height - 1px;
+        width: parent.width;
+        height: 1px;
+        background: Theme.outline;
+    }
+}

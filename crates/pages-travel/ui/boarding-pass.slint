@@ -1,0 +1,382 @@
+// BoardingPassPage
+// =====================================================================
+//
+// Airline boarding pass — the dramatic single-card surface that travel
+// apps build the entire pre-boarding experience around. Demonstrates:
+//
+//   - A "ticket-stub" visual: gradient hero block at the top + a
+//     notched divider (two semicircle cutouts at the left and right
+//     edges) + a perforated separator line, followed by a meta block
+//     and a QR-code placeholder. Notches are simulated by anchoring
+//     two `background: Theme.background`-coloured Rectangles to the
+//     boarding-pass edges where the perforation sits.
+//   - Dramatic origin → destination typography (3-letter airport codes
+//     at 56 px) with an inline plane glyph between them.
+//   - Strong status-tone cue at the bottom — "Boarding 09:30 · Gate B22"
+//     uses the success accent to read as "this is happening now".
+//
+// Layout
+// ------
+//
+//   AppBar — back + "share" trailing
+//   Ticket card:
+//     - Top hero: airline logo + flight code
+//     - Origin / destination row with codes + city + times
+//     - Meta grid: Passenger / Seat / Gate / Boarding / Class
+//     - Perforation
+//     - QR placeholder + barcode-like instructions
+//   Footer banner — boarding status
+
+import { Theme, Tone } from "@mobile-theme/theme.slint";
+import { AppBar } from "@mobile-components/app-bar.slint";
+import { Banner } from "@mobile-components/banner.slint";
+
+// One meta cell — small caption + bold value.
+component MetaCell inherits Rectangle {
+    in property <string> label;
+    in property <string> value;
+    in property <Tone> tone: Tone.default;
+
+    VerticalLayout {
+        spacing: 2px;
+        alignment: start;
+        Text {
+            text: root.label;
+            color: #ffffff99;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+        }
+        Text {
+            text: root.value;
+            color:
+                  root.tone == Tone.success ? Theme.accent-success
+                : root.tone == Tone.warning ? Theme.accent-warning
+                : root.tone == Tone.danger  ? Theme.accent-danger
+                : root.tone == Tone.info    ? Theme.accent-info
+                : #ffffff;
+            font-size: Theme.font-size-body-large;
+            font-weight: 700;
+        }
+    }
+}
+
+// Faux QR — 8 × 8 cell grid that approximates a QR's eyes + tiles.
+// Renders as a deterministic pattern (not a real QR payload), since
+// the goal is "looks like a QR at a glance" rather than encoding data.
+component FauxQR inherits Rectangle {
+    in property <length> cell-size: 8px;
+    in property <int> grid: 18;
+
+    background: #ffffff;
+    border-radius: 4px;
+    clip: true;
+
+    VerticalLayout {
+        spacing: 0;
+        padding: 6px;
+        for row-index in 16 : HorizontalLayout {
+            spacing: 0;
+            for col-index in 16 : Rectangle {
+                width: root.cell-size;
+                height: root.cell-size;
+                // Deterministic checker-ish pattern with the three
+                // typical QR finder squares in three corners.
+                background:
+                      (row-index < 3 && col-index < 3)                ? #000000
+                    : (row-index < 3 && col-index >= 13)              ? #000000
+                    : (row-index >= 13 && col-index < 3)              ? #000000
+                    // Inner whites for finder squares.
+                    : (row-index == 1 && col-index == 1)              ? #ffffff
+                    : (row-index == 1 && col-index == 14)             ? #ffffff
+                    : (row-index == 14 && col-index == 1)             ? #ffffff
+                    // Pseudo-random body.
+                    : (mod(row-index * 7 + col-index * 5, 3) == 0)    ? #000000
+                    : (mod(row-index * 3 + col-index * 11, 5) == 0)   ? #000000
+                    : #ffffff;
+            }
+        }
+    }
+}
+
+export component BoardingPassPage inherits Rectangle {
+    in property <string> origin-code: "SFO";
+    in property <string> origin-city: "San Francisco";
+    in property <string> origin-time: "07:25";
+    in property <string> dest-code: "JFK";
+    in property <string> dest-city: "New York";
+    in property <string> dest-time: "16:08";
+    in property <string> flight-code: "UA 524";
+    in property <string> passenger: "GREG RAYMOND";
+    in property <string> seat: "14A";
+    in property <string> gate: "B22";
+    in property <string> boarding: "09:30";
+    in property <string> klass: "ECONOMY";
+    callback back-pressed();
+    callback share-pressed();
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "Boarding pass";
+            leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
+            trailing-icon: @image-url("@mobile-components/icons/send.svg");
+            leading-pressed => { root.back-pressed(); }
+            trailing-pressed => { root.share-pressed(); }
+        }
+
+        VerticalLayout {
+            padding: Theme.spacing-md;
+            spacing: Theme.spacing-md;
+            vertical-stretch: 1;
+
+            // ----- Ticket card -----
+            Rectangle {
+                horizontal-stretch: 1;
+                border-radius: Theme.radius-lg;
+                background: @linear-gradient(135deg, #1e3a8a 0%, #0f1d4d 100%);
+                drop-shadow-blur: Theme.elevation-2-blur;
+                drop-shadow-color: Theme.elevation-2-color;
+                drop-shadow-offset-y: Theme.elevation-2-y;
+                clip: true;
+
+                VerticalLayout {
+                    spacing: 0;
+
+                    // Top hero — airline + flight code + status pill.
+                    VerticalLayout {
+                        padding: Theme.spacing-md;
+                        spacing: Theme.spacing-md;
+                        HorizontalLayout {
+                            spacing: Theme.spacing-sm;
+                            alignment: stretch;
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                alignment: center;
+                                Text {
+                                    text: "UNITED";
+                                    color: #ffffff;
+                                    font-size: Theme.font-size-body;
+                                    font-weight: 700;
+                                    letter-spacing: 1px;
+                                }
+                                Text {
+                                    text: root.flight-code;
+                                    color: #ffffffcc;
+                                    font-size: Theme.font-size-caption;
+                                }
+                            }
+                            Rectangle {
+                                width: status-text.preferred-width + 18px;
+                                height: 22px;
+                                border-radius: 11px;
+                                background: Theme.accent-success;
+                                status-text := Text {
+                                    text: "BOARDING";
+                                    color: Theme.on-primary;
+                                    font-size: 10px;
+                                    font-weight: 700;
+                                    letter-spacing: 0.5px;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                            }
+                        }
+
+                        // ----- Origin / destination -----
+                        HorizontalLayout {
+                            spacing: Theme.spacing-md;
+                            alignment: stretch;
+
+                            // Origin.
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                spacing: 2px;
+                                Text {
+                                    text: root.origin-code;
+                                    color: #ffffff;
+                                    font-size: 56px;
+                                    font-weight: 800;
+                                    letter-spacing: 1px;
+                                }
+                                Text {
+                                    text: root.origin-city;
+                                    color: #ffffffcc;
+                                    font-size: Theme.font-size-caption;
+                                }
+                                Text {
+                                    text: root.origin-time;
+                                    color: #ffffff;
+                                    font-size: Theme.font-size-body-large;
+                                    font-weight: 600;
+                                }
+                            }
+
+                            // Plane glyph (rotated 90° via a faux
+                            // chevron-right tinted accent).
+                            VerticalLayout {
+                                alignment: center;
+                                Image {
+                                    width: 28px;
+                                    height: 28px;
+                                    source: @image-url("@mobile-components/icons/chevron-right.svg");
+                                    colorize: #ffffff66;
+                                    image-fit: contain;
+                                }
+                            }
+
+                            // Destination.
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                spacing: 2px;
+                                Text {
+                                    text: root.dest-code;
+                                    color: #ffffff;
+                                    font-size: 56px;
+                                    font-weight: 800;
+                                    letter-spacing: 1px;
+                                    horizontal-alignment: right;
+                                }
+                                Text {
+                                    text: root.dest-city;
+                                    color: #ffffffcc;
+                                    font-size: Theme.font-size-caption;
+                                    horizontal-alignment: right;
+                                }
+                                Text {
+                                    text: root.dest-time;
+                                    color: #ffffff;
+                                    font-size: Theme.font-size-body-large;
+                                    font-weight: 600;
+                                    horizontal-alignment: right;
+                                }
+                            }
+                        }
+                    }
+
+                    // ----- Meta grid -----
+                    VerticalLayout {
+                        padding-left: Theme.spacing-md;
+                        padding-right: Theme.spacing-md;
+                        padding-bottom: Theme.spacing-md;
+                        spacing: Theme.spacing-md;
+
+                        HorizontalLayout {
+                            spacing: Theme.spacing-md;
+                            MetaCell {
+                                horizontal-stretch: 1;
+                                label: "PASSENGER";
+                                value: root.passenger;
+                            }
+                        }
+                        HorizontalLayout {
+                            spacing: Theme.spacing-md;
+                            MetaCell {
+                                horizontal-stretch: 1;
+                                label: "SEAT";
+                                value: root.seat;
+                            }
+                            MetaCell {
+                                horizontal-stretch: 1;
+                                label: "GATE";
+                                value: root.gate;
+                                tone: Tone.warning;
+                            }
+                            MetaCell {
+                                horizontal-stretch: 1;
+                                label: "BOARDING";
+                                value: root.boarding;
+                                tone: Tone.success;
+                            }
+                            MetaCell {
+                                horizontal-stretch: 1;
+                                label: "CLASS";
+                                value: root.klass;
+                            }
+                        }
+                    }
+
+                    // ----- Perforation row -----
+                    Rectangle {
+                        height: 24px;
+                        background: transparent;
+                        // Left notch.
+                        Rectangle {
+                            x: -12px;
+                            y: 0;
+                            width: 24px;
+                            height: 24px;
+                            border-radius: 12px;
+                            background: Theme.background;
+                        }
+                        // Right notch.
+                        Rectangle {
+                            x: parent.width - 12px;
+                            y: 0;
+                            width: 24px;
+                            height: 24px;
+                            border-radius: 12px;
+                            background: Theme.background;
+                        }
+                        // Dashed line — approximated by a row of dots.
+                        HorizontalLayout {
+                            padding-left: 24px;
+                            padding-right: 24px;
+                            padding-top: 11px;
+                            spacing: 4px;
+                            for i in 30 : Rectangle {
+                                horizontal-stretch: 1;
+                                height: 2px;
+                                background: #ffffff44;
+                            }
+                        }
+                    }
+
+                    // ----- QR + scan instruction -----
+                    HorizontalLayout {
+                        padding: Theme.spacing-md;
+                        spacing: Theme.spacing-md;
+                        alignment: stretch;
+
+                        FauxQR {
+                            width: 140px;
+                            height: 140px;
+                        }
+
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            alignment: center;
+                            spacing: Theme.spacing-xs;
+                            Text {
+                                text: "Scan at gate";
+                                color: #ffffff;
+                                font-size: Theme.font-size-body-large;
+                                font-weight: 700;
+                            }
+                            Text {
+                                text: "Have your QR code ready when boarding starts. Group 2 will be called at 09:35.";
+                                color: #ffffffcc;
+                                font-size: Theme.font-size-caption;
+                                wrap: word-wrap;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ----- Footer status banner -----
+            Banner {
+                icon: @image-url("@mobile-components/icons/check.svg");
+                message: "Boarding at 09:30 · Gate B22 · Group 2";
+                tone: Tone.success;
+            }
+
+            Rectangle { vertical-stretch: 1; }
+        }
+    }
+}

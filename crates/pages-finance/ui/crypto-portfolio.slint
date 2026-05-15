@@ -1,0 +1,318 @@
+// CryptoPortfolioPage
+// =====================================================================
+//
+// Portfolio summary + holdings list — the canonical surface for a
+// Coinbase / Robinhood / Trading 212-style asset tracker. Demonstrates:
+//
+//   - "Big-number hero" pattern — total portfolio value at 48 px Light,
+//     with a tone-tinted 24h delta beneath it (`accent-success` for
+//     gains, `accent-danger` for losses).
+//   - Stylised sparkline using a horizontal bar-strip approximation
+//     (Slint doesn't ship a line / path primitive in this version) —
+//     each bar's height is driven by the value of an integer in a
+//     fixed array. The strip reads as "rising / falling" at a glance.
+//   - Tabular coin rows: ticker glyph, name + ticker, mini-sparkline,
+//     price + 24h change tone-tinted in matching colour.
+//   - Time-range chip strip (1H / 1D / 1W / 1M / 1Y / ALL).
+
+import { Theme, Tone } from "@mobile-theme/theme.slint";
+import { AppBar } from "@mobile-components/app-bar.slint";
+import { SectionHeader } from "@mobile-components/section-header.slint";
+import { Chip } from "@mobile-components/chip.slint";
+import { Divider } from "@mobile-components/divider.slint";
+
+// Stylised sparkline — a horizontal strip of `count` vertical bars
+// whose heights come from the integer values in `bars`. Two flavours:
+// a big chart-area version (used for the portfolio hero) and a small
+// inline version (used in coin rows). Both share this component.
+component Sparkline inherits Rectangle {
+    in property <[int]> bars;
+    in property <color> stroke: Theme.accent-success;
+    in property <length> bar-width: 4px;
+    in property <length> bar-spacing: 2px;
+
+    background: transparent;
+
+    HorizontalLayout {
+        spacing: root.bar-spacing;
+        alignment: stretch;
+        for value[index] in root.bars : VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: end;
+            Rectangle {
+                width: root.bar-width;
+                // Bar values are integers; map them onto the parent
+                // height as a 0..100 percentage (the caller is
+                // responsible for the value range).
+                height: parent.height * value / 100;
+                background: root.stroke;
+                border-top-left-radius: 2px;
+                border-top-right-radius: 2px;
+            }
+        }
+    }
+}
+
+// One coin row.
+component CoinRow inherits Rectangle {
+    in property <string> ticker;
+    in property <string> name;
+    in property <string> price;
+    in property <string> change;
+    in property <int> change-direction: 1;   // +1 / 0 / -1
+    in property <color> glyph-color: Theme.accent-info;
+    in property <[int]> spark;
+
+    horizontal-stretch: 1;
+    min-height: 64px;
+
+    HorizontalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+
+        // Ticker glyph — round colour disc with ticker first letter.
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 36px;
+                height: 36px;
+                border-radius: self.width / 2;
+                background: root.glyph-color;
+                Text {
+                    text: root.ticker;
+                    color: Theme.on-primary;
+                    font-size: 11px;
+                    font-weight: 700;
+                    letter-spacing: 0.5px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+            }
+        }
+
+        // Name + ticker subline.
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: root.name;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+                overflow: elide;
+            }
+            Text {
+                text: root.ticker;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+            }
+        }
+
+        // Inline sparkline.
+        VerticalLayout {
+            alignment: center;
+            Sparkline {
+                width: 64px;
+                height: 32px;
+                bar-width: 3px;
+                bar-spacing: 1px;
+                bars: root.spark;
+                stroke:
+                      root.change-direction > 0 ? Theme.accent-success
+                    : root.change-direction < 0 ? Theme.accent-danger
+                    : Theme.muted;
+            }
+        }
+
+        // Price + change.
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: root.price;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 700;
+                horizontal-alignment: right;
+            }
+            Text {
+                text: root.change;
+                color:
+                      root.change-direction > 0 ? Theme.accent-success
+                    : root.change-direction < 0 ? Theme.accent-danger
+                    : Theme.muted;
+                font-size: Theme.font-size-caption;
+                font-weight: 600;
+                horizontal-alignment: right;
+            }
+        }
+    }
+}
+
+export component CryptoPortfolioPage inherits Rectangle {
+    in property <string> total: "$24,308.41";
+    in property <string> delta-amount: "+$842.10";
+    in property <string> delta-pct: "+3.59%";
+    in property <int> delta-direction: 1;
+    callback back-pressed();
+    callback search-pressed();
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "Portfolio";
+            leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
+            trailing-icon: @image-url("@mobile-components/icons/search.svg");
+            leading-pressed => { root.back-pressed(); }
+            trailing-pressed => { root.search-pressed(); }
+        }
+
+        // ----- Hero -----
+        VerticalLayout {
+            padding-top: Theme.spacing-lg;
+            padding-bottom: Theme.spacing-md;
+            spacing: 4px;
+
+            HorizontalLayout {
+                alignment: center;
+                Text {
+                    text: "Total balance";
+                    color: Theme.muted;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 600;
+                    letter-spacing: 0.5px;
+                }
+            }
+            HorizontalLayout {
+                alignment: center;
+                Text {
+                    text: root.total;
+                    color: Theme.on-background;
+                    font-size: 48px;
+                    font-weight: 300;
+                }
+            }
+            HorizontalLayout {
+                alignment: center;
+                spacing: Theme.spacing-sm;
+                Text {
+                    text: root.delta-amount + " · " + root.delta-pct + " · 24h";
+                    color:
+                          root.delta-direction > 0 ? Theme.accent-success
+                        : root.delta-direction < 0 ? Theme.accent-danger
+                        : Theme.muted;
+                    font-size: Theme.font-size-body;
+                    font-weight: 600;
+                }
+            }
+        }
+
+        // ----- Hero sparkline -----
+        Rectangle {
+            height: 120px;
+            VerticalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                padding-bottom: Theme.spacing-md;
+                Sparkline {
+                    horizontal-stretch: 1;
+                    height: 96px;
+                    bar-width: 6px;
+                    bar-spacing: 2px;
+                    bars: [
+                        32, 38, 35, 41, 47, 52, 48, 56, 61, 58,
+                        64, 68, 71, 67, 72, 79, 84, 81, 86, 88,
+                        92, 90, 95, 97
+                    ];
+                    stroke: Theme.accent-success;
+                }
+            }
+        }
+
+        // ----- Time-range chips -----
+        HorizontalLayout {
+            padding-left: Theme.spacing-md;
+            padding-right: Theme.spacing-md;
+            padding-bottom: Theme.spacing-md;
+            spacing: Theme.spacing-sm;
+            Chip { label: "1H"; }
+            Chip { label: "1D"; selected: true; }
+            Chip { label: "1W"; }
+            Chip { label: "1M"; }
+            Chip { label: "1Y"; }
+            Chip { label: "ALL"; }
+        }
+
+        // ----- Holdings list -----
+        SectionHeader { text: "HOLDINGS"; }
+
+        CoinRow {
+            ticker: "BTC";
+            name: "Bitcoin";
+            price: "$67,210";
+            change: "+2.4%";
+            change-direction: 1;
+            glyph-color: #f7931a;
+            spark: [20, 25, 32, 28, 35, 41, 48, 52, 58, 65, 72, 78];
+        }
+        Divider { }
+        CoinRow {
+            ticker: "ETH";
+            name: "Ethereum";
+            price: "$3,810";
+            change: "+5.1%";
+            change-direction: 1;
+            glyph-color: #627eea;
+            spark: [42, 38, 45, 52, 58, 64, 71, 68, 75, 82, 88, 92];
+        }
+        Divider { }
+        CoinRow {
+            ticker: "SOL";
+            name: "Solana";
+            price: "$142.60";
+            change: "−1.8%";
+            change-direction: -1;
+            glyph-color: #9945ff;
+            spark: [88, 92, 85, 80, 76, 72, 68, 64, 60, 58, 52, 48];
+        }
+        Divider { }
+        CoinRow {
+            ticker: "ADA";
+            name: "Cardano";
+            price: "$0.482";
+            change: "+0.3%";
+            change-direction: 0;
+            glyph-color: #0033ad;
+            spark: [50, 52, 51, 53, 52, 54, 53, 55, 54, 56, 55, 56];
+        }
+        Divider { }
+        CoinRow {
+            ticker: "USDC";
+            name: "USD Coin";
+            price: "$1.00";
+            change: "0.0%";
+            change-direction: 0;
+            glyph-color: #2775ca;
+            spark: [50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50];
+        }
+        Divider { }
+        CoinRow {
+            ticker: "AVAX";
+            name: "Avalanche";
+            price: "$42.18";
+            change: "−4.2%";
+            change-direction: -1;
+            glyph-color: #e84142;
+            spark: [78, 75, 72, 68, 64, 60, 58, 52, 48, 44, 40, 38];
+        }
+
+        Rectangle { vertical-stretch: 1; }
+    }
+}

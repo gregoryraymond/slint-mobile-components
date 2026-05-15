@@ -1,0 +1,325 @@
+// ParkingSessionPage
+// =====================================================================
+//
+// An active parking session — the "you're parked, meter running"
+// screen. Distinct from `TimerPage` (a generic countdown) and
+// `TransitDeparturesPage` (transit). Demonstrates a live-session
+// surface:
+//
+//   - A large elapsed-time hero with a "running" status dot and the
+//     running cost beneath.
+//   - A zone / bay info card (zone code, bay number, rate).
+//   - A small map-ish location card with a pin.
+//   - A pill row: vehicle plate + payment method.
+//   - Sticky actions: Extend (secondary) + End session (danger).
+
+import { Theme, Tone } from "@mobile-theme/theme.slint";
+import { AppBar } from "@mobile-components/app-bar.slint";
+import { MobileButton } from "@mobile-components/button.slint";
+
+// One labelled stat in the info card.
+component InfoStat inherits VerticalLayout {
+    in property <string> label;
+    in property <string> value;
+    in property <Tone> tone: Tone.default;
+
+    horizontal-stretch: 1;
+    alignment: center;
+    spacing: 3px;
+    Text {
+        text: root.label;
+        color: Theme.muted;
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: 0.3px;
+        horizontal-alignment: center;
+    }
+    Text {
+        text: root.value;
+        color:
+              root.tone == Tone.success ? Theme.accent-success
+            : root.tone == Tone.warning ? Theme.accent-warning
+            : Theme.on-surface;
+        font-size: Theme.font-size-body-large;
+        font-weight: 800;
+        horizontal-alignment: center;
+    }
+}
+
+export component ParkingSessionPage inherits Rectangle {
+    in property <string> elapsed: "1:24:06";
+    in property <string> cost: "$5.60";
+    in property <string> zone: "Zone A-14";
+    in property <string> bay: "Bay 32";
+    in property <string> rate: "$4.00 / hr";
+    in property <string> location: "Mission St & 5th — Level 2";
+    in property <string> plate: "8XYZ123";
+    in property <string> payment: "Visa ·· 4291";
+    callback back-pressed();
+    callback help-pressed();
+    callback extend-pressed();
+    callback end-pressed();
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "Parking session";
+            leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
+            trailing-icon: @image-url("@mobile-components/icons/bell.svg");
+            leading-pressed => { root.back-pressed(); }
+            trailing-pressed => { root.help-pressed(); }
+        }
+
+        VerticalLayout {
+            padding: Theme.spacing-md;
+            spacing: Theme.spacing-md;
+            alignment: start;
+
+            // Elapsed-time hero.
+            Rectangle {
+                height: 188px;
+                border-radius: Theme.radius-lg;
+                background: @linear-gradient(135deg, #1f6f4d 0%, #0b3322 100%);
+                drop-shadow-blur: Theme.elevation-2-blur;
+                drop-shadow-color: Theme.elevation-2-color;
+                drop-shadow-offset-y: Theme.elevation-2-y;
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 8px;
+                    HorizontalLayout {
+                        alignment: center;
+                        spacing: 6px;
+                        VerticalLayout {
+                            alignment: center;
+                            Rectangle {
+                                width: 8px;
+                                height: 8px;
+                                border-radius: 4px;
+                                background: #4ade80;
+                            }
+                        }
+                        Text {
+                            text: "SESSION ACTIVE";
+                            color: #ffffffcc;
+                            font-size: 11px;
+                            font-weight: 800;
+                            letter-spacing: 1px;
+                            vertical-alignment: center;
+                        }
+                    }
+                    Text {
+                        text: root.elapsed;
+                        color: #ffffff;
+                        font-size: 52px;
+                        font-weight: 800;
+                        horizontal-alignment: center;
+                    }
+                    Text {
+                        text: root.cost + " so far · " + root.rate;
+                        color: #ffffffcc;
+                        font-size: Theme.font-size-body;
+                        font-weight: 600;
+                        horizontal-alignment: center;
+                    }
+                }
+            }
+
+            // Zone / bay info card.
+            Rectangle {
+                height: 84px;
+                border-radius: Theme.radius-md;
+                background: Theme.surface-1;
+                drop-shadow-blur: Theme.elevation-1-blur;
+                drop-shadow-color: Theme.elevation-1-color;
+                drop-shadow-offset-y: Theme.elevation-1-y;
+                HorizontalLayout {
+                    padding: Theme.spacing-md;
+                    InfoStat {
+                        label: "ZONE";
+                        value: root.zone;
+                    }
+                    Rectangle {
+                        width: 1px;
+                        background: Theme.surface-variant;
+                    }
+                    InfoStat {
+                        label: "BAY";
+                        value: root.bay;
+                    }
+                    Rectangle {
+                        width: 1px;
+                        background: Theme.surface-variant;
+                    }
+                    InfoStat {
+                        label: "RATE";
+                        value: root.rate;
+                        tone: Tone.warning;
+                    }
+                }
+            }
+
+            // Location card.
+            Rectangle {
+                height: 96px;
+                border-radius: Theme.radius-md;
+                background: Theme.surface-1;
+                drop-shadow-blur: Theme.elevation-1-blur;
+                drop-shadow-color: Theme.elevation-1-color;
+                drop-shadow-offset-y: Theme.elevation-1-y;
+                clip: true;
+                HorizontalLayout {
+                    spacing: 0;
+                    // Mini map.
+                    Rectangle {
+                        width: 96px;
+                        background: Theme.surface-variant;
+                        clip: true;
+                        Image {
+                            width: parent.width * 1.8;
+                            height: parent.height * 1.8;
+                            x: -parent.width * 0.4;
+                            y: -parent.height * 0.4;
+                            source: @image-url("@mobile-components/icons/map-bg.svg");
+                            colorize: Theme.muted;
+                            image-fit: cover;
+                            opacity: 0.5;
+                        }
+                        Rectangle {
+                            width: 24px;
+                            height: 24px;
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                            border-radius: 12px;
+                            background: Theme.accent-danger;
+                            border-width: 3px;
+                            border-color: #ffffff;
+                            Image {
+                                width: 12px;
+                                height: 12px;
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+                                source: @image-url("@mobile-components/icons/pin.svg");
+                                colorize: #ffffff;
+                                image-fit: contain;
+                            }
+                        }
+                    }
+                    VerticalLayout {
+                        padding: Theme.spacing-md;
+                        alignment: center;
+                        spacing: 3px;
+                        Text {
+                            text: "LOCATION";
+                            color: Theme.muted;
+                            font-size: 10px;
+                            font-weight: 800;
+                            letter-spacing: 0.3px;
+                        }
+                        Text {
+                            text: root.location;
+                            color: Theme.on-surface;
+                            font-size: Theme.font-size-body;
+                            font-weight: 700;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+            }
+
+            // Plate + payment pills.
+            HorizontalLayout {
+                spacing: Theme.spacing-sm;
+                Rectangle {
+                    horizontal-stretch: 1;
+                    height: 44px;
+                    border-radius: Theme.radius-md;
+                    background: Theme.surface-2;
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-md;
+                        spacing: 8px;
+                        alignment: start;
+                        VerticalLayout {
+                            alignment: center;
+                            Image {
+                                width: 16px;
+                                height: 16px;
+                                source: @image-url("@mobile-components/icons/pin.svg");
+                                colorize: Theme.muted;
+                                image-fit: contain;
+                            }
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: root.plate;
+                                color: Theme.on-surface;
+                                font-size: Theme.font-size-caption;
+                                font-weight: 800;
+                            }
+                        }
+                    }
+                }
+                Rectangle {
+                    horizontal-stretch: 1;
+                    height: 44px;
+                    border-radius: Theme.radius-md;
+                    background: Theme.surface-2;
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-md;
+                        spacing: 8px;
+                        alignment: start;
+                        VerticalLayout {
+                            alignment: center;
+                            Image {
+                                width: 16px;
+                                height: 16px;
+                                source: @image-url("@mobile-components/icons/inbox.svg");
+                                colorize: Theme.muted;
+                                image-fit: contain;
+                            }
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: root.payment;
+                                color: Theme.on-surface;
+                                font-size: Theme.font-size-caption;
+                                font-weight: 800;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+
+        // Sticky actions.
+        Rectangle {
+            background: Theme.surface-1;
+            drop-shadow-blur: Theme.elevation-2-blur;
+            drop-shadow-color: Theme.elevation-2-color;
+            drop-shadow-offset-y: -4px;
+            height: 80px;
+            HorizontalLayout {
+                padding: Theme.spacing-md;
+                spacing: Theme.spacing-sm;
+                MobileButton {
+                    text: "Extend";
+                    primary: false;
+                    max-height: 48px;
+                    clicked => { root.extend-pressed(); }
+                }
+                MobileButton {
+                    text: "End session";
+                    tone: Tone.danger;
+                    max-height: 48px;
+                    clicked => { root.end-pressed(); }
+                }
+            }
+        }
+    }
+}

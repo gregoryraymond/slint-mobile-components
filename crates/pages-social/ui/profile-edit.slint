@@ -1,0 +1,313 @@
+// ProfileEditPage
+// =====================================================================
+//
+// Edit-your-profile form — the screen behind "Edit profile" on
+// `ProfilePage`. Distinct from `AccountSettingsPage` (account-level
+// prefs) and `FormWizardPage` (multi-step onboarding). Demonstrates a
+// single-screen editable form:
+//
+//   - Avatar block: the current avatar with a "Change photo" pill
+//     overlapping its lower edge.
+//   - TextFields for display name, username (with an availability
+//     tone-cue), and a multi-line bio with a character counter.
+//   - "Links" rows — website + social handles, each a tappable nav
+//     row with a tone-tinted icon disc.
+//   - Public-profile visibility toggle.
+//   - Sticky Save CTA.
+
+import { Theme, Tone } from "@mobile-theme/theme.slint";
+import { AppBar } from "@mobile-components/app-bar.slint";
+import { SectionHeader } from "@mobile-components/section-header.slint";
+import { Avatar } from "@mobile-components/avatar.slint";
+import { TextField } from "@mobile-components/text-field.slint";
+import { MobileSwitch } from "@mobile-components/switch.slint";
+import { Divider } from "@mobile-components/divider.slint";
+import { MobileButton } from "@mobile-components/button.slint";
+
+// One editable "link" nav row.
+component LinkRow inherits Rectangle {
+    in property <image> icon;
+    in property <string> label;
+    in property <string> value;
+    in property <Tone> tone: Tone.default;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-action-default => { root.clicked(); }
+
+    horizontal-stretch: 1;
+    min-height: 56px;
+    background: touch.pressed ? Theme.surface-pressed : transparent;
+    animate background { duration: Theme.motion-fast; }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 32px;
+                height: 32px;
+                border-radius: 8px;
+                background:
+                      root.tone == Tone.success ? Theme.accent-success
+                    : root.tone == Tone.warning ? Theme.accent-warning
+                    : root.tone == Tone.danger  ? Theme.accent-danger
+                    : root.tone == Tone.info    ? Theme.accent-info
+                    : Theme.surface-variant;
+                Image {
+                    width: 16px;
+                    height: 16px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: root.icon;
+                    colorize: root.tone == Tone.default ? Theme.on-surface : Theme.on-primary;
+                    image-fit: contain;
+                }
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: root.label;
+                color: Theme.muted;
+                font-size: 10px;
+                font-weight: 800;
+                letter-spacing: 0.5px;
+            }
+            Text {
+                text: root.value;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+                overflow: elide;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Image {
+                width: 16px;
+                height: 16px;
+                source: @image-url("@mobile-components/icons/chevron-right.svg");
+                colorize: Theme.muted;
+                image-fit: contain;
+            }
+        }
+    }
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+export component ProfileEditPage inherits Rectangle {
+    in property <string> display-name: "Greg Raymond";
+    in property <string> username: "graymond";
+    in property <string> bio:
+        "Building the Slint mobile-components catalogue in pure Rust. Ex-web, recovering. Lisbon ↔ SF.";
+    in-out property <bool> public-profile: true;
+    callback back-pressed();
+    callback change-photo-pressed();
+    callback link-pressed(string);
+    callback save-pressed();
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "Edit profile";
+            leading-icon: @image-url("@mobile-components/icons/close.svg");
+            leading-pressed => { root.back-pressed(); }
+        }
+
+        VerticalLayout {
+            padding: Theme.spacing-md;
+            spacing: Theme.spacing-md;
+            alignment: start;
+
+            // Avatar + change-photo.
+            HorizontalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 96px;
+                    height: 116px;
+                    Avatar {
+                        x: (parent.width - self.width) / 2;
+                        y: 0;
+                        width: 96px;
+                        height: 96px;
+                        fallback: "GR";
+                        size: 96px;
+                    }
+                    Rectangle {
+                        x: (parent.width - self.width) / 2;
+                        y: parent.height - self.height;
+                        width: change-text.preferred-width + 24px;
+                        height: 28px;
+                        border-radius: 14px;
+                        background: Theme.accent-info;
+                        drop-shadow-blur: Theme.elevation-2-blur;
+                        drop-shadow-color: Theme.elevation-2-color;
+                        drop-shadow-offset-y: Theme.elevation-2-y;
+                        change-text := Text {
+                            text: "Change photo";
+                            color: Theme.on-primary;
+                            font-size: 11px;
+                            font-weight: 800;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
+                        }
+                        TouchArea {
+                            clicked => { root.change-photo-pressed(); }
+                        }
+                    }
+                }
+            }
+
+            // Fields.
+            TextField {
+                label: "Display name";
+                placeholder: "Your name";
+                text: root.display-name;
+            }
+            TextField {
+                label: "Username";
+                placeholder: "username";
+                text: "@" + root.username;
+            }
+            HorizontalLayout {
+                Text {
+                    text: "✓ @" + root.username + " is available";
+                    color: Theme.accent-success;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 600;
+                    horizontal-stretch: 1;
+                }
+            }
+
+            // Bio.
+            Text {
+                text: "Bio";
+                color: Theme.on-background;
+                font-size: Theme.font-size-body;
+                font-weight: 700;
+            }
+            Rectangle {
+                background: Theme.surface-1;
+                border-radius: Theme.radius-md;
+                drop-shadow-blur: Theme.elevation-1-blur;
+                drop-shadow-color: Theme.elevation-1-color;
+                drop-shadow-offset-y: Theme.elevation-1-y;
+                height: 100px;
+                VerticalLayout {
+                    padding: Theme.spacing-md;
+                    Text {
+                        text: root.bio;
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-body;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+            HorizontalLayout {
+                Text {
+                    text: "Keep it under 160 characters";
+                    color: Theme.muted;
+                    font-size: 10px;
+                    horizontal-stretch: 1;
+                }
+                Text {
+                    text: "98 / 160";
+                    color: Theme.accent-success;
+                    font-size: 10px;
+                    font-weight: 700;
+                }
+            }
+        }
+
+        SectionHeader { text: "LINKS"; }
+        LinkRow {
+            icon: @image-url("@mobile-components/icons/send.svg");
+            label: "WEBSITE";
+            value: "slint.studio";
+            tone: Tone.info;
+            clicked => { root.link-pressed("website"); }
+        }
+        Divider { }
+        LinkRow {
+            icon: @image-url("@mobile-components/icons/heart.svg");
+            label: "X / TWITTER";
+            value: "@graymond";
+            tone: Tone.default;
+            clicked => { root.link-pressed("twitter"); }
+        }
+        Divider { }
+        LinkRow {
+            icon: @image-url("@mobile-components/icons/menu.svg");
+            label: "GITHUB";
+            value: "github.com/graymond2007";
+            tone: Tone.default;
+            clicked => { root.link-pressed("github"); }
+        }
+
+        SectionHeader { text: "VISIBILITY"; }
+        Rectangle {
+            min-height: 64px;
+            HorizontalLayout {
+                padding: Theme.spacing-md;
+                spacing: Theme.spacing-md;
+                alignment: stretch;
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    alignment: center;
+                    spacing: 2px;
+                    Text {
+                        text: "Public profile";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-body;
+                        font-weight: 600;
+                    }
+                    Text {
+                        text: "Anyone can find and view your profile.";
+                        color: Theme.muted;
+                        font-size: Theme.font-size-caption;
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    MobileSwitch {
+                        checked <=> root.public-profile;
+                    }
+                }
+            }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+
+        // Sticky save.
+        Rectangle {
+            background: Theme.surface-1;
+            drop-shadow-blur: Theme.elevation-2-blur;
+            drop-shadow-color: Theme.elevation-2-color;
+            drop-shadow-offset-y: -4px;
+            height: 80px;
+            HorizontalLayout {
+                padding: Theme.spacing-md;
+                MobileButton {
+                    text: "Save changes";
+                    tone: Tone.info;
+                    max-height: 48px;
+                    clicked => { root.save-pressed(); }
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,196 @@
+// Button components
+// =====================================================================
+//
+// Three buttons cover the standard mobile action vocabulary:
+//   - `MobileButton`  — primary or secondary full-width action button
+//   - `TextButton`    — compact tertiary action ("Forgot password?")
+//   - `Fab`           — floating action button (circular, raised)
+//
+// All three honour the 48dp Material touch-target floor (FAB is 56dp by
+// convention, which exceeds it).
+
+import { Theme, Tone } from "@mobile-theme/theme.slint";
+
+// MobileButton
+// ---------------------------------------------------------------------
+//
+// Specification
+//   - Geometry: full width of its layout cell (`horizontal-stretch: 1`),
+//     min-height = `Theme.touch-target` (48px). Border-radius =
+//     `Theme.radius-md` (12px).
+//   - Variant: `primary` (default true) fills with `Theme.primary` and
+//     uses `Theme.on-primary` text — the dominant CTA on a screen.
+//     `primary: false` swaps to a 1px outlined surface — use for the
+//     secondary action when both appear together.
+//   - State: `enabled` toggles 50 % opacity and disables the TouchArea.
+//     `pressed` swaps the background to `*-pressed` over `motion-fast`.
+//   - Tap area = full button bounds; emits `clicked()`.
+export component MobileButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> enabled: true;
+    in property <bool> primary: true;
+    in property <Tone> tone: Tone.default;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-enabled: root.enabled;
+    accessible-action-default => { root.clicked(); }
+
+    // Resolved tone fill — when `tone` is `default`, the brand
+    // `primary` colour drives; status tones pull the matching accent.
+    property <color> tone-fill:
+          root.tone == Tone.success ? Theme.accent-success
+        : root.tone == Tone.warning ? Theme.accent-warning
+        : root.tone == Tone.danger  ? Theme.accent-danger
+        : root.tone == Tone.info    ? Theme.accent-info
+        : Theme.primary;
+
+    min-height: Theme.touch-target;
+    horizontal-stretch: 1;
+    border-radius: Theme.radius-md;
+    // Primary variant fills with `tone-fill`; pressed state shifts to a
+    // pre-defined `primary-pressed` for the default tone, and to a
+    // darker derivation of the accent colour otherwise (we don't ship
+    // dedicated `accent-*-pressed` tokens; `.darker(0.15)` is the
+    // documented Slint API for runtime tonal shifts).
+    background: root.primary
+        ? (
+            root.tone == Tone.default
+                ? (touch.pressed ? Theme.primary-pressed : Theme.primary)
+                : (touch.pressed ? tone-fill.darker(0.15) : tone-fill)
+          )
+        : (touch.pressed ? Theme.surface-pressed : Theme.surface-1);
+    opacity: root.enabled ? 1.0 : 0.5;
+
+    animate background { duration: Theme.motion-fast; }
+
+    Text {
+        x: Theme.spacing-md;
+        y: 0;
+        width: parent.width - 2 * Theme.spacing-md;
+        height: parent.height;
+        text: root.text;
+        color: root.primary
+            ? Theme.on-primary
+            : (root.tone == Tone.default ? Theme.on-surface : tone-fill);
+        font-size: Theme.font-size-body-large;
+        font-weight: 600;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+// TextButton
+// ---------------------------------------------------------------------
+//
+// Specification
+//   - Geometry: min-height 40px (tighter than MobileButton — tertiary
+//     actions don't need the full 48dp on their own, but still fit a
+//     thumb when stacked next to another tap target). min-width 80px so
+//     short labels don't collapse to a one-character tap zone.
+//   - No background fill at rest; press feedback uses
+//     `Theme.surface-pressed`. Label colour is `Theme.primary` so the
+//     button reads as a link without being a heavy surface.
+//   - Use for tertiary actions ("Create an account", "Skip", "Learn
+//     more"). Don't use as a primary CTA.
+export component TextButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> enabled: true;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-enabled: root.enabled;
+    accessible-action-default => { root.clicked(); }
+
+    min-height: 40px;
+    min-width: 80px;
+    border-radius: Theme.radius-sm;
+    background: touch.pressed ? Theme.surface-pressed : transparent;
+    opacity: root.enabled ? 1.0 : 0.5;
+
+    animate background { duration: Theme.motion-fast; }
+
+    Text {
+        x: Theme.spacing-sm;
+        y: 0;
+        width: parent.width - 2 * Theme.spacing-sm;
+        height: parent.height;
+        text: root.text;
+        color: Theme.primary;
+        font-size: Theme.font-size-body;
+        font-weight: 600;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+// Fab — Floating Action Button
+// ---------------------------------------------------------------------
+//
+// Specification
+//   - Geometry: 56 × 56 px (Material standard), circular via
+//     `border-radius: width / 2`. Drop shadow (12 px blur, 4 px Y
+//     offset, 38 % black) raises it above page content.
+//   - Icon: defaults to `icons/plus.svg` rendered at 28×28 (slightly
+//     larger than the IconButton's 24×24 since the FAB is bigger).
+//     Override `icon` with any 24-grid SVG for other primary actions
+//     (compose, capture, etc.).
+//   - Positioning: the FAB does NOT position itself. The page that
+//     hosts it is responsible — typically anchored to the bottom-right
+//     above the BottomNav with explicit `x` / `y` bindings.
+//   - One FAB per page maximum.
+export component Fab inherits Rectangle {
+    in property <image> icon: @image-url("icons/plus.svg");
+    in property <bool> enabled: true;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-enabled: root.enabled;
+    accessible-action-default => { root.clicked(); }
+    // Callers set `accessible-label` directly on the Fab instance —
+    // there's no visible text, so we can't derive a label here.
+
+    width: 56px;
+    height: 56px;
+    border-radius: self.width / 2;
+    background: touch.pressed ? Theme.primary-pressed : Theme.primary;
+    // Elevation tier 2 — FAB floats just above page content (Material's
+    // "raised" tier). The library's tier-3 is reserved for transient
+    // overlays (Snackbar, Dialog) that visually outrank a FAB.
+    drop-shadow-blur: Theme.elevation-2-blur;
+    drop-shadow-color: Theme.elevation-2-color;
+    drop-shadow-offset-y: Theme.elevation-2-y;
+    opacity: root.enabled ? 1.0 : 0.5;
+
+    animate background { duration: Theme.motion-fast; }
+
+    Image {
+        width: 28px;
+        height: 28px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        source: root.icon;
+        colorize: Theme.on-primary;
+        image-fit: contain;
+    }
+
+    touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}

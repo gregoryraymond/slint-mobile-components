@@ -1,0 +1,351 @@
+// AccountSettingsPage
+// =====================================================================
+//
+// Account-flavoured settings — distinct from the existing
+// `SettingsPage` which is a general-purpose preferences screen. This
+// is the "Apple ID / Google Account" lookalike with:
+//
+//   - A profile-card header at the top (avatar + name + email + a
+//     "Manage" trailing chevron).
+//   - Three grouped surfaces: ACCOUNT (mostly nav rows), PRIVACY &
+//     SECURITY (MobileSwitch toggles), NOTIFICATIONS (more toggles).
+//   - A destructive "Sign out" row at the bottom rendered in danger
+//     tone — the canonical app-wide "log out" CTA.
+
+import { Theme, Tone } from "@mobile-theme/theme.slint";
+import { AppBar } from "@mobile-components/app-bar.slint";
+import { SectionHeader } from "@mobile-components/section-header.slint";
+import { Avatar } from "@mobile-components/avatar.slint";
+import { MobileSwitch } from "@mobile-components/switch.slint";
+import { Divider } from "@mobile-components/divider.slint";
+import { ScrollView } from "std-widgets.slint";
+
+// Nav row — leading icon + title + trailing chevron + optional value
+// caption ("Plan: Pro").
+component NavRow inherits Rectangle {
+    in property <image> icon;
+    in property <string> title;
+    in property <string> value;
+    in property <Tone> tone: Tone.default;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: root.title;
+    accessible-action-default => { root.clicked(); }
+
+    horizontal-stretch: 1;
+    min-height: 56px;
+    background: touch.pressed ? Theme.surface-pressed : transparent;
+    animate background { duration: Theme.motion-fast; }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 32px;
+                height: 32px;
+                border-radius: 6px;
+                background:
+                      root.tone == Tone.success ? Theme.accent-success
+                    : root.tone == Tone.warning ? Theme.accent-warning
+                    : root.tone == Tone.danger  ? Theme.accent-danger
+                    : root.tone == Tone.info    ? Theme.accent-info
+                    : Theme.surface-variant;
+                Image {
+                    width: 18px;
+                    height: 18px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: root.icon;
+                    colorize: root.tone == Tone.default ? Theme.on-surface : Theme.on-primary;
+                    image-fit: contain;
+                }
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            Text {
+                text: root.title;
+                color: root.tone == Tone.danger ? Theme.accent-danger : Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: root.tone == Tone.danger ? 600 : 500;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.value;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Image {
+                width: 16px;
+                height: 16px;
+                source: @image-url("@mobile-components/icons/chevron-right.svg");
+                colorize: Theme.muted;
+                image-fit: contain;
+            }
+        }
+    }
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+// Toggle row — leading icon + title + description + trailing
+// MobileSwitch.
+component ToggleRow inherits Rectangle {
+    in property <image> icon;
+    in property <string> title;
+    in property <string> description;
+    in-out property <bool> checked: false;
+    in property <Tone> tone: Tone.default;
+
+    horizontal-stretch: 1;
+    min-height: 64px;
+
+    HorizontalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+        VerticalLayout {
+            alignment: start;
+            padding-top: 2px;
+            Rectangle {
+                width: 32px;
+                height: 32px;
+                border-radius: 6px;
+                background:
+                      root.tone == Tone.success ? Theme.accent-success
+                    : root.tone == Tone.warning ? Theme.accent-warning
+                    : root.tone == Tone.danger  ? Theme.accent-danger
+                    : root.tone == Tone.info    ? Theme.accent-info
+                    : Theme.surface-variant;
+                Image {
+                    width: 18px;
+                    height: 18px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: root.icon;
+                    colorize: root.tone == Tone.default ? Theme.on-surface : Theme.on-primary;
+                    image-fit: contain;
+                }
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            spacing: 2px;
+            Text {
+                text: root.title;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+            Text {
+                text: root.description;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+                wrap: word-wrap;
+            }
+        }
+        VerticalLayout {
+            alignment: start;
+            padding-top: 2px;
+            MobileSwitch {
+                checked <=> root.checked;
+            }
+        }
+    }
+}
+
+export component AccountSettingsPage inherits Rectangle {
+    in property <string> name: "Greg Raymond";
+    in property <string> email: "greg@slint.dev";
+    callback back-pressed();
+    callback row-pressed(string);
+    callback sign-out-pressed();
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "Account";
+            leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
+            leading-pressed => { root.back-pressed(); }
+        }
+
+        ScrollView {
+            vertical-stretch: 1;
+            horizontal-stretch: 1;
+            viewport-width: 412px;
+            viewport-height: 1300px;
+
+            VerticalLayout {
+                spacing: 0;
+
+                // ----- Profile card -----
+                Rectangle {
+                    background: Theme.surface-1;
+                    drop-shadow-blur: Theme.elevation-1-blur;
+                    drop-shadow-color: Theme.elevation-1-color;
+                    drop-shadow-offset-y: Theme.elevation-1-y;
+                    height: 96px;
+                    HorizontalLayout {
+                        padding: Theme.spacing-md;
+                        spacing: Theme.spacing-md;
+                        alignment: stretch;
+                        VerticalLayout {
+                            alignment: center;
+                            Avatar {
+                                fallback: "GR";
+                                size: 64px;
+                            }
+                        }
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            alignment: center;
+                            spacing: 2px;
+                            Text {
+                                text: root.name;
+                                color: Theme.on-surface;
+                                font-size: Theme.font-size-body-large;
+                                font-weight: 700;
+                            }
+                            Text {
+                                text: root.email;
+                                color: Theme.muted;
+                                font-size: Theme.font-size-caption;
+                            }
+                            HorizontalLayout {
+                                spacing: Theme.spacing-xs;
+                                padding-top: 2px;
+                                Rectangle {
+                                    width: plan-text.preferred-width + 14px;
+                                    height: 18px;
+                                    border-radius: 4px;
+                                    background: Theme.accent-info;
+                                    plan-text := Text {
+                                        text: "PRO";
+                                        color: Theme.on-primary;
+                                        font-size: 10px;
+                                        font-weight: 700;
+                                        letter-spacing: 0.5px;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                        width: parent.width;
+                                        height: parent.height;
+                                    }
+                                }
+                            }
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            Image {
+                                width: 16px;
+                                height: 16px;
+                                source: @image-url("@mobile-components/icons/chevron-right.svg");
+                                colorize: Theme.muted;
+                                image-fit: contain;
+                            }
+                        }
+                    }
+                }
+
+                SectionHeader { text: "ACCOUNT"; }
+                NavRow {
+                    icon: @image-url("@mobile-components/icons/profile.svg");
+                    title: "Personal information";
+                    value: "";
+                    clicked => { root.row-pressed(self.title); }
+                }
+                Divider { }
+                NavRow {
+                    icon: @image-url("@mobile-components/icons/lock.svg");
+                    title: "Password & sign-in";
+                    value: "";
+                    clicked => { root.row-pressed(self.title); }
+                }
+                Divider { }
+                NavRow {
+                    icon: @image-url("@mobile-components/icons/star.svg");
+                    title: "Subscription";
+                    value: "Pro · annual";
+                    tone: Tone.info;
+                    clicked => { root.row-pressed(self.title); }
+                }
+                Divider { }
+                NavRow {
+                    icon: @image-url("@mobile-components/icons/queue.svg");
+                    title: "Connected apps";
+                    value: "3";
+                    clicked => { root.row-pressed(self.title); }
+                }
+
+                SectionHeader { text: "PRIVACY & SECURITY"; }
+                ToggleRow {
+                    icon: @image-url("@mobile-components/icons/lock.svg");
+                    title: "Two-factor auth";
+                    description: "Require a 6-digit code when signing in from a new device.";
+                    tone: Tone.success;
+                    checked: true;
+                }
+                Divider { }
+                ToggleRow {
+                    icon: @image-url("@mobile-components/icons/menu.svg");
+                    title: "Activity log";
+                    description: "Keep a 90-day record of sign-ins and high-risk actions.";
+                    checked: true;
+                }
+                Divider { }
+                ToggleRow {
+                    icon: @image-url("@mobile-components/icons/send.svg");
+                    title: "Personalised analytics";
+                    description: "Allow us to use behavioural data to tune recommendations.";
+                    checked: false;
+                }
+
+                SectionHeader { text: "NOTIFICATIONS"; }
+                ToggleRow {
+                    icon: @image-url("@mobile-components/icons/bell.svg");
+                    title: "Push notifications";
+                    description: "Receive alerts on this device.";
+                    tone: Tone.info;
+                    checked: true;
+                }
+                Divider { }
+                ToggleRow {
+                    icon: @image-url("@mobile-components/icons/send.svg");
+                    title: "Email digests";
+                    description: "Weekly summary every Monday at 09:00 local.";
+                    checked: true;
+                }
+                Divider { }
+                ToggleRow {
+                    icon: @image-url("@mobile-components/icons/heart.svg");
+                    title: "Marketing";
+                    description: "Promotions, new features, partner offers.";
+                    checked: false;
+                }
+
+                SectionHeader { text: "DANGER ZONE"; }
+                NavRow {
+                    icon: @image-url("@mobile-components/icons/close.svg");
+                    title: "Sign out everywhere";
+                    value: "";
+                    tone: Tone.danger;
+                    clicked => { root.sign-out-pressed(); }
+                }
+            }
+        }
+    }
+}

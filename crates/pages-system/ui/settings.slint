@@ -1,0 +1,147 @@
+import { Theme } from "@mobile-theme/theme.slint";
+import { AppBar } from "@mobile-components/app-bar.slint";
+import { ListItem } from "@mobile-components/list-item.slint";
+import { MobileSwitch } from "@mobile-components/switch.slint";
+import { SectionHeader } from "@mobile-components/section-header.slint";
+import { ScrollView } from "std-widgets.slint";
+
+// Example settings page: app bar with back arrow + a vertical list of
+// toggles and navigation rows.
+export component SettingsPage inherits Rectangle {
+    in-out property <bool> notifications-enabled: true;
+    in-out property <bool> sounds-enabled: true;
+    in-out property <bool> haptics-enabled: false;
+    callback back-pressed();
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "Settings";
+            leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
+            leading-pressed => { root.back-pressed(); }
+        }
+
+        ScrollView {
+            vertical-stretch: 1;
+
+            VerticalLayout {
+                spacing: 0;
+                padding-top: Theme.spacing-sm;
+
+                SectionHeader { text: "NOTIFICATIONS"; }
+
+                // Toggle row — ListItem with a MobileSwitch in the trailing slot.
+                // (ListItem's trailing slot is an icon string; for richer
+                // trailing content we compose with a HorizontalLayout below.)
+                Rectangle {
+                    horizontal-stretch: 1;
+                    min-height: Theme.touch-target + Theme.spacing-sm;
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-md;
+                        padding-right: Theme.spacing-md;
+                        spacing: Theme.spacing-md;
+                        alignment: stretch;
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            alignment: center;
+                            Text {
+                                text: "Push notifications";
+                                color: Theme.on-surface;
+                                font-size: Theme.font-size-body-large;
+                                font-weight: 500;
+                            }
+                            Text {
+                                text: "Get notified about new activity";
+                                color: Theme.muted;
+                                font-size: Theme.font-size-body;
+                            }
+                        }
+                        MobileSwitch {
+                            checked <=> root.notifications-enabled;
+                        }
+                    }
+                    Rectangle {
+                        x: Theme.spacing-md;
+                        y: parent.height - 1px;
+                        width: parent.width - 2 * Theme.spacing-md;
+                        height: 1px;
+                        background: Theme.outline;
+                    }
+                }
+
+                Rectangle {
+                    horizontal-stretch: 1;
+                    min-height: Theme.touch-target + Theme.spacing-sm;
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-md;
+                        padding-right: Theme.spacing-md;
+                        spacing: Theme.spacing-md;
+                        alignment: stretch;
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            alignment: center;
+                            Text {
+                                text: "Sounds";
+                                color: Theme.on-surface;
+                                font-size: Theme.font-size-body-large;
+                                font-weight: 500;
+                            }
+                        }
+                        MobileSwitch {
+                            checked <=> root.sounds-enabled;
+                        }
+                    }
+                }
+
+                Rectangle {
+                    horizontal-stretch: 1;
+                    min-height: Theme.touch-target + Theme.spacing-sm;
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-md;
+                        padding-right: Theme.spacing-md;
+                        spacing: Theme.spacing-md;
+                        alignment: stretch;
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            alignment: center;
+                            Text {
+                                text: "Haptics";
+                                color: Theme.on-surface;
+                                font-size: Theme.font-size-body-large;
+                                font-weight: 500;
+                            }
+                        }
+                        MobileSwitch {
+                            checked <=> root.haptics-enabled;
+                        }
+                    }
+                }
+
+                SectionHeader { text: "ACCOUNT"; }
+
+                ListItem {
+                    title: "Profile";
+                    subtitle: "Name, email, avatar";
+                    leading-icon: @image-url("@mobile-components/icons/profile.svg");
+                    trailing-icon: @image-url("@mobile-components/icons/chevron-right.svg");
+                }
+
+                ListItem {
+                    title: "Privacy";
+                    subtitle: "Data, permissions, exports";
+                    leading-icon: @image-url("@mobile-components/icons/lock.svg");
+                    trailing-icon: @image-url("@mobile-components/icons/chevron-right.svg");
+                }
+
+                ListItem {
+                    title: "Sign out";
+                    trailing-icon: @image-url("@mobile-components/icons/chevron-right.svg");
+                    show-divider: false;
+                }
+            }
+        }
+    }
+}

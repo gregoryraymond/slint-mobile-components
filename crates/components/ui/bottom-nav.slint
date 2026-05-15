@@ -1,0 +1,70 @@
+// BottomNav
+// =====================================================================
+//
+// Horizontal strip of `IconButton` children, anchored to the bottom of a
+// mobile page. The bar is full-bleed; the buttons inside keep their
+// natural (fixed) IconButton width and the bar decides how to distribute
+// any leftover horizontal space between them.
+//
+// Specification
+// -------------
+//
+// Geometry
+//   - Height: 72px (Material-ish bottom-nav floor; the button is 72px
+//     square and 4px of top padding makes room for the hairline divider
+//     without clipping). horizontal-stretch: 1 so the bar fills its
+//     parent's width.
+//   - Background: `Theme.surface-1` with a 1px `Theme.outline` divider on
+//     the top edge.
+//
+// Children
+//   - Hosts 2–5 IconButton children passed via `@children`. Each
+//     IconButton's `width == height == size` is preserved by the layout
+//     — see icon-button.slint for the per-button spec.
+//
+// Distribution
+//   - `distribution` (BottomNavDistribution, default `spaced`) chooses
+//     how the leftover horizontal space (bar-width − total button-width)
+//     is allocated:
+//       - `spaced`:   `space-around` — equal half-gap on the bar edges
+//         and a full-gap between adjacent buttons. Typical Android-style
+//         bottom nav with the buttons spread across the width.
+//       - `centered`: buttons cluster in the middle of the bar with no
+//         space between them; the leftover is split evenly on the left
+//         and right edges. Useful when a compact set of actions should
+//         feel like a single grouped control.
+//
+// State
+//   - `current-index` (in-out int): index of the selected button. The
+//     bar itself doesn't react to taps — the parent page reads each
+//     child IconButton's `clicked` callback and assigns `current-index`
+//     plus the matching `active` flag. See the example in
+//     `pages/home.slint`.
+//
+// Composition
+//   - Always sits at the bottom of a page; pair with `AppBar` on top
+//     and a `ScrollView` of content in between.
+
+import { Theme } from "@mobile-theme/theme.slint";
+
+export enum BottomNavDistribution {
+    centered,
+    spaced,
+}
+
+export component BottomNav inherits Rectangle {
+    in property <BottomNavDistribution> distribution: BottomNavDistribution.spaced;
+    in-out property <int> current-index: 0;
+
+    height: 72px;
+    background: Theme.surface-1;
+    horizontal-stretch: 1;
+
+    HorizontalLayout {
+        padding-top: 4px;
+        alignment: root.distribution == BottomNavDistribution.spaced
+            ? LayoutAlignment.space-around
+            : LayoutAlignment.center;
+        @children
+    }
+}

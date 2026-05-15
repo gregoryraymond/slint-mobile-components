@@ -1,0 +1,330 @@
+// StoreLocatorPage
+// =====================================================================
+//
+// A store locator — "find a shop near you". Distinct from `MapPage`
+// (a generic map + POI bottom sheet) and `AddressBookPage` (people).
+// Demonstrates a map-plus-list surface:
+//
+//   - A search field pinned below the AppBar.
+//   - A map strip with a few pins + the user's location dot.
+//   - A nearby-stores list: each row a numbered pin, the store name +
+//     address, a distance, and an open/closed tone pill with hours.
+
+import { Theme, Tone } from "@mobile-theme/theme.slint";
+import { AppBar } from "@mobile-components/app-bar.slint";
+import { Divider } from "@mobile-components/divider.slint";
+
+// One store row.
+component StoreRow inherits Rectangle {
+    in property <string> index;
+    in property <string> name;
+    in property <string> address;
+    in property <string> distance;
+    in property <bool> open: true;
+    in property <string> hours;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: root.name;
+    accessible-action-default => { root.clicked(); }
+
+    horizontal-stretch: 1;
+    min-height: 76px;
+    background: touch.pressed ? Theme.surface-pressed : transparent;
+    animate background { duration: Theme.motion-fast; }
+
+    HorizontalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 28px;
+                height: 28px;
+                border-radius: 14px;
+                background: Theme.primary;
+                Text {
+                    text: root.index;
+                    color: Theme.on-primary;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 3px;
+            Text {
+                text: root.name;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 700;
+            }
+            Text {
+                text: root.address;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+                overflow: elide;
+            }
+            HorizontalLayout {
+                spacing: 6px;
+                alignment: start;
+                Rectangle {
+                    width: status-text.preferred-width + 12px;
+                    height: 16px;
+                    border-radius: 4px;
+                    background: root.open
+                        ? Theme.accent-success.with-alpha(0.16)
+                        : Theme.accent-danger.with-alpha(0.16);
+                    status-text := Text {
+                        text: root.open ? "Open" : "Closed";
+                        color: root.open ? Theme.accent-success : Theme.accent-danger;
+                        font-size: 9px;
+                        font-weight: 800;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                }
+                Text {
+                    text: root.hours;
+                    color: Theme.muted;
+                    font-size: 10px;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 4px;
+            Text {
+                text: root.distance;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-caption;
+                font-weight: 800;
+                horizontal-alignment: right;
+            }
+            Image {
+                width: 16px;
+                height: 16px;
+                source: @image-url("@mobile-components/icons/chevron-right.svg");
+                colorize: Theme.muted;
+                image-fit: contain;
+            }
+        }
+    }
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+// A map pin marker placed on the map strip.
+component MapPin inherits Rectangle {
+    in property <string> label;
+
+    width: 26px;
+    height: 26px;
+    border-radius: 13px;
+    background: Theme.primary;
+    border-width: 3px;
+    border-color: #ffffff;
+    drop-shadow-blur: Theme.elevation-1-blur;
+    drop-shadow-color: Theme.elevation-1-color;
+    drop-shadow-offset-y: Theme.elevation-1-y;
+    Text {
+        text: root.label;
+        color: Theme.on-primary;
+        font-size: 11px;
+        font-weight: 800;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: parent.width;
+        height: parent.height;
+    }
+}
+
+export component StoreLocatorPage inherits Rectangle {
+    callback back-pressed();
+    callback search-pressed();
+    callback store-pressed(string);
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "Find a store";
+            leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
+            leading-pressed => { root.back-pressed(); }
+        }
+
+        // Search field.
+        Rectangle {
+            background: Theme.surface-1;
+            height: 64px;
+            HorizontalLayout {
+                padding: Theme.spacing-md;
+                Rectangle {
+                    height: 40px;
+                    border-radius: 20px;
+                    background: Theme.surface-2;
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-md;
+                        spacing: Theme.spacing-sm;
+                        alignment: start;
+                        VerticalLayout {
+                            alignment: center;
+                            Image {
+                                width: 16px;
+                                height: 16px;
+                                source: @image-url("@mobile-components/icons/search.svg");
+                                colorize: Theme.muted;
+                                image-fit: contain;
+                            }
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: "Search city or postcode";
+                                color: Theme.muted;
+                                font-size: Theme.font-size-body;
+                            }
+                        }
+                    }
+                    TouchArea {
+                        clicked => { root.search-pressed(); }
+                    }
+                }
+            }
+        }
+
+        // Map strip.
+        Rectangle {
+            height: 200px;
+            background: Theme.surface-variant;
+            clip: true;
+            Image {
+                width: parent.width * 1.4;
+                height: parent.height * 1.6;
+                x: -parent.width * 0.2;
+                y: -parent.height * 0.3;
+                source: @image-url("@mobile-components/icons/map-bg.svg");
+                colorize: Theme.muted;
+                image-fit: cover;
+                opacity: 0.5;
+            }
+            MapPin {
+                x: parent.width * 0.26;
+                y: parent.height * 0.34;
+                label: "1";
+            }
+            MapPin {
+                x: parent.width * 0.58;
+                y: parent.height * 0.25;
+                label: "2";
+            }
+            MapPin {
+                x: parent.width * 0.7;
+                y: parent.height * 0.6;
+                label: "3";
+            }
+            MapPin {
+                x: parent.width * 0.4;
+                y: parent.height * 0.72;
+                label: "4";
+            }
+            // User location dot.
+            Rectangle {
+                x: parent.width * 0.48;
+                y: parent.height * 0.5;
+                width: 18px;
+                height: 18px;
+                border-radius: 9px;
+                background: Theme.accent-info;
+                border-width: 3px;
+                border-color: #ffffff;
+            }
+        }
+
+        // Results header.
+        Rectangle {
+            background: Theme.surface-1;
+            height: 40px;
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    Text {
+                        text: "4 stores near you";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-caption;
+                        font-weight: 800;
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: "Sorted by distance";
+                        color: Theme.muted;
+                        font-size: Theme.font-size-caption;
+                    }
+                }
+            }
+        }
+
+        Divider { }
+
+        StoreRow {
+            index: "1";
+            name: "Foundry Coffee — Mission";
+            address: "418 Valencia St, San Francisco";
+            distance: "0.3 mi";
+            open: true;
+            hours: "Closes 8 PM";
+            clicked => { root.store-pressed("Mission"); }
+        }
+        Divider { }
+        StoreRow {
+            index: "2";
+            name: "Foundry Coffee — SoMa";
+            address: "650 Townsend St, San Francisco";
+            distance: "0.9 mi";
+            open: true;
+            hours: "Closes 6 PM";
+            clicked => { root.store-pressed("SoMa"); }
+        }
+        Divider { }
+        StoreRow {
+            index: "3";
+            name: "Foundry Coffee — Hayes Valley";
+            address: "552 Hayes St, San Francisco";
+            distance: "1.4 mi";
+            open: false;
+            hours: "Opens 7 AM";
+            clicked => { root.store-pressed("Hayes Valley"); }
+        }
+        Divider { }
+        StoreRow {
+            index: "4";
+            name: "Foundry Coffee — Embarcadero";
+            address: "1 Ferry Building, San Francisco";
+            distance: "2.1 mi";
+            open: true;
+            hours: "Closes 7 PM";
+            clicked => { root.store-pressed("Embarcadero"); }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+    }
+}

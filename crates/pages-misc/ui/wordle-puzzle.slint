@@ -1,0 +1,245 @@
+// WordlePuzzlePage
+// =====================================================================
+//
+// 5×6 daily word puzzle — Wordle / NYT Games-style. Distinct from
+// `GameLobbyPage` (multiplayer setup). Demonstrates a static, square
+// grid surface plus a custom QWERTY keyboard:
+//
+//   - Game header: date + puzzle number + Game stats trailing.
+//   - 5×6 cell grid where each cell carries a state:
+//       0 empty   — outlined, muted.
+//       1 filled  — letter typed, no judgement yet.
+//       2 absent  — muted-grey (letter not in answer).
+//       3 present — warning amber (letter in answer, wrong position).
+//       4 correct — success green.
+//   - 3-row QWERTY keyboard with `Enter` and `←` keys. Each key
+//     inherits the same state colouring as the grid cells above it.
+
+import { Theme, Tone } from "@mobile-theme/theme.slint";
+import { AppBar } from "@mobile-components/app-bar.slint";
+
+// One grid cell.
+component WordleCell inherits Rectangle {
+    in property <string> letter;
+    in property <int> state: 0;
+
+    width: 56px;
+    height: 56px;
+    border-radius: 4px;
+    background:
+          root.state == 4 ? Theme.accent-success
+        : root.state == 3 ? Theme.accent-warning
+        : root.state == 2 ? Theme.surface-variant
+        : Theme.surface-1;
+    border-width: root.state == 0 || root.state == 1 ? 2px : 0px;
+    border-color:
+          root.state == 1 ? Theme.outline
+        : Theme.surface-variant;
+
+    Text {
+        text: root.letter;
+        color:
+              root.state >= 2 ? Theme.on-primary
+            : Theme.on-surface;
+        font-size: 28px;
+        font-weight: 800;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: parent.width;
+        height: parent.height;
+    }
+}
+
+// One row of the answer grid.
+component WordleRow inherits Rectangle {
+    in property <[string]> letters;
+    in property <[int]> states;
+
+    HorizontalLayout {
+        spacing: 6px;
+        alignment: center;
+        for letter[index] in root.letters : WordleCell {
+            letter: letter;
+            state: root.states[index];
+        }
+    }
+}
+
+// One keyboard key — letter, Enter, or backspace.
+component KeyboardKey inherits Rectangle {
+    in property <string> letter;
+    in property <int> state: 0;
+    in property <length> w: 32px;
+
+    width: root.w;
+    height: 48px;
+    border-radius: 4px;
+    background:
+          root.state == 4 ? Theme.accent-success
+        : root.state == 3 ? Theme.accent-warning
+        : root.state == 2 ? Theme.surface-variant
+        : Theme.surface-1;
+    border-width: 1px;
+    border-color: Theme.outline;
+
+    Text {
+        text: root.letter;
+        color:
+              root.state >= 2 ? Theme.on-primary
+            : Theme.on-surface;
+        font-size: 14px;
+        font-weight: 700;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: parent.width;
+        height: parent.height;
+    }
+}
+
+export component WordlePuzzlePage inherits Rectangle {
+    in property <string> date-line: "Wednesday, May 14";
+    in property <string> puzzle-number: "Puzzle #1,094";
+    in property <string> streak: "Streak · 28 days";
+    callback back-pressed();
+    callback stats-pressed();
+    callback share-pressed();
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "Daily word";
+            leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
+            trailing-icon: @image-url("@mobile-components/icons/star.svg");
+            leading-pressed => { root.back-pressed(); }
+            trailing-pressed => { root.stats-pressed(); }
+        }
+
+        // Header strip.
+        HorizontalLayout {
+            padding: Theme.spacing-md;
+            spacing: Theme.spacing-md;
+            alignment: stretch;
+            VerticalLayout {
+                horizontal-stretch: 1;
+                spacing: 2px;
+                Text {
+                    text: root.date-line;
+                    color: Theme.on-background;
+                    font-size: Theme.font-size-body-large;
+                    font-weight: 700;
+                }
+                Text {
+                    text: root.puzzle-number + " · " + root.streak;
+                    color: Theme.muted;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 600;
+                }
+            }
+            Rectangle {
+                width: share-text.preferred-width + 20px;
+                height: 32px;
+                border-radius: 16px;
+                background: Theme.accent-success;
+                share-text := Text {
+                    text: "SOLVED · 4/6";
+                    color: Theme.on-primary;
+                    font-size: 10px;
+                    font-weight: 800;
+                    letter-spacing: 0.5px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+                TouchArea {
+                    clicked => { root.share-pressed(); }
+                }
+            }
+        }
+
+        // Grid.
+        VerticalLayout {
+            spacing: 6px;
+            padding-top: Theme.spacing-md;
+            padding-bottom: Theme.spacing-md;
+            WordleRow {
+                letters: ["S","L","A","T","E"];
+                states:  [2,  3,  2,  2,  3];
+            }
+            WordleRow {
+                letters: ["P","I","E","C","E"];
+                states:  [2,  3,  4,  2,  4];
+            }
+            WordleRow {
+                letters: ["N","I","E","C","E"];
+                states:  [2,  4,  4,  2,  4];
+            }
+            WordleRow {
+                letters: ["L","I","E","G","E"];
+                states:  [4,  4,  4,  4,  4];
+            }
+            // Two empty rows for unused attempts.
+            WordleRow {
+                letters: ["","","","",""];
+                states:  [0, 0, 0, 0, 0];
+            }
+            WordleRow {
+                letters: ["","","","",""];
+                states:  [0, 0, 0, 0, 0];
+            }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+
+        // QWERTY keyboard with state colouring.
+        VerticalLayout {
+            spacing: 6px;
+            padding-left: Theme.spacing-sm;
+            padding-right: Theme.spacing-sm;
+            padding-bottom: Theme.spacing-md;
+            HorizontalLayout {
+                alignment: center;
+                spacing: 4px;
+                KeyboardKey { letter: "Q"; state: 0; }
+                KeyboardKey { letter: "W"; state: 0; }
+                KeyboardKey { letter: "E"; state: 4; }
+                KeyboardKey { letter: "R"; state: 0; }
+                KeyboardKey { letter: "T"; state: 2; }
+                KeyboardKey { letter: "Y"; state: 0; }
+                KeyboardKey { letter: "U"; state: 0; }
+                KeyboardKey { letter: "I"; state: 4; }
+                KeyboardKey { letter: "O"; state: 0; }
+                KeyboardKey { letter: "P"; state: 2; }
+            }
+            HorizontalLayout {
+                alignment: center;
+                spacing: 4px;
+                KeyboardKey { letter: "A"; state: 2; }
+                KeyboardKey { letter: "S"; state: 2; }
+                KeyboardKey { letter: "D"; state: 0; }
+                KeyboardKey { letter: "F"; state: 0; }
+                KeyboardKey { letter: "G"; state: 4; }
+                KeyboardKey { letter: "H"; state: 0; }
+                KeyboardKey { letter: "J"; state: 0; }
+                KeyboardKey { letter: "K"; state: 0; }
+                KeyboardKey { letter: "L"; state: 4; }
+            }
+            HorizontalLayout {
+                alignment: center;
+                spacing: 4px;
+                KeyboardKey { letter: "ENT"; state: 0; w: 48px; }
+                KeyboardKey { letter: "Z"; state: 0; }
+                KeyboardKey { letter: "X"; state: 0; }
+                KeyboardKey { letter: "C"; state: 2; }
+                KeyboardKey { letter: "V"; state: 0; }
+                KeyboardKey { letter: "B"; state: 0; }
+                KeyboardKey { letter: "N"; state: 4; }
+                KeyboardKey { letter: "M"; state: 0; }
+                KeyboardKey { letter: "⌫"; state: 0; w: 48px; }
+            }
+        }
+    }
+}

@@ -1,0 +1,441 @@
+// LiveSportsScorePage
+// =====================================================================
+//
+// Live game scoreboard — ESPN / theScore / Apple Sports-style. Distinct
+// from `LeaderboardPage` (rankings) and `TrendingTopicsPage` (general
+// trends). Demonstrates a live-event surface:
+//
+//   - Two-team scoreboard hero: team crest discs + names + big scores,
+//     with a centred LIVE pill + period/clock.
+//   - Per-quarter line score row.
+//   - Key-events timeline: alternating left/right entries by team with
+//     a tone-tinted dot, the play description and the game clock.
+//   - Team-stats comparison: paired horizontal bars per stat (FG %,
+//     rebounds, turnovers …) growing inward from each side.
+
+import { Theme, Tone } from "@mobile-theme/theme.slint";
+import { AppBar } from "@mobile-components/app-bar.slint";
+import { SectionHeader } from "@mobile-components/section-header.slint";
+import { Divider } from "@mobile-components/divider.slint";
+
+// One stat-comparison row — two inward-growing bars + centred label.
+component StatCompareRow inherits Rectangle {
+    in property <string> label;
+    in property <string> home-value;
+    in property <string> away-value;
+    in property <float> home-share: 0.5;     // 0..1 of the row width
+    in property <float> away-share: 0.5;
+    in property <color> home-tint;
+    in property <color> away-tint;
+
+    horizontal-stretch: 1;
+    height: 44px;
+
+    VerticalLayout {
+        spacing: 2px;
+        // Label + values row.
+        HorizontalLayout {
+            Text {
+                text: root.home-value;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-caption;
+                font-weight: 800;
+                width: 44px;
+            }
+            Text {
+                text: root.label;
+                color: Theme.muted;
+                font-size: 10px;
+                font-weight: 800;
+                letter-spacing: 0.5px;
+                horizontal-stretch: 1;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+            Text {
+                text: root.away-value;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-caption;
+                font-weight: 800;
+                width: 44px;
+                horizontal-alignment: right;
+            }
+        }
+        // Paired bars.
+        HorizontalLayout {
+            spacing: 4px;
+            // Home bar (grows right-to-left).
+            Rectangle {
+                horizontal-stretch: 1;
+                height: 6px;
+                background: Theme.surface-variant;
+                border-radius: 3px;
+                Rectangle {
+                    x: parent.width - self.width;
+                    y: 0;
+                    width: parent.width * root.home-share;
+                    height: parent.height;
+                    background: root.home-tint;
+                    border-radius: 3px;
+                }
+            }
+            // Away bar (grows left-to-right).
+            Rectangle {
+                horizontal-stretch: 1;
+                height: 6px;
+                background: Theme.surface-variant;
+                border-radius: 3px;
+                Rectangle {
+                    x: 0;
+                    y: 0;
+                    width: parent.width * root.away-share;
+                    height: parent.height;
+                    background: root.away-tint;
+                    border-radius: 3px;
+                }
+            }
+        }
+    }
+}
+
+// One timeline event row. `side`: 0 home (left), 1 away (right).
+component EventRow inherits Rectangle {
+    in property <int> side;
+    in property <string> clock;
+    in property <string> play;
+    in property <Tone> tone: Tone.default;
+
+    horizontal-stretch: 1;
+    min-height: 52px;
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        spacing: Theme.spacing-sm;
+        alignment: stretch;
+
+        // Left content (home).
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            if root.side == 0: Text {
+                text: root.play;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-caption;
+                font-weight: 600;
+                horizontal-alignment: right;
+                wrap: word-wrap;
+            }
+        }
+
+        // Centre rail: clock + tone dot.
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            width: 56px;
+            HorizontalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 10px;
+                    height: 10px;
+                    border-radius: 5px;
+                    background:
+                          root.tone == Tone.success ? Theme.accent-success
+                        : root.tone == Tone.warning ? Theme.accent-warning
+                        : root.tone == Tone.danger  ? Theme.accent-danger
+                        : root.tone == Tone.info    ? Theme.accent-info
+                        : Theme.muted;
+                }
+            }
+            HorizontalLayout {
+                alignment: center;
+                Text {
+                    text: root.clock;
+                    color: Theme.muted;
+                    font-size: 10px;
+                    font-weight: 800;
+                }
+            }
+        }
+
+        // Right content (away).
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            if root.side == 1: Text {
+                text: root.play;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-caption;
+                font-weight: 600;
+                horizontal-alignment: left;
+                wrap: word-wrap;
+            }
+        }
+    }
+}
+
+export component LiveSportsScorePage inherits Rectangle {
+    in property <string> home-team: "Warriors";
+    in property <string> away-team: "Lakers";
+    in property <string> home-score: "78";
+    in property <string> away-score: "74";
+    in property <string> period: "Q3 · 04:18";
+    callback back-pressed();
+    callback share-pressed();
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "Live game";
+            leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
+            trailing-icon: @image-url("@mobile-components/icons/send.svg");
+            leading-pressed => { root.back-pressed(); }
+            trailing-pressed => { root.share-pressed(); }
+        }
+
+        // Scoreboard hero.
+        Rectangle {
+            background: @linear-gradient(135deg, #1d3a8e 0%, #4c1d95 100%);
+            VerticalLayout {
+                padding: Theme.spacing-md;
+                spacing: Theme.spacing-sm;
+                HorizontalLayout {
+                    alignment: stretch;
+                    spacing: Theme.spacing-md;
+
+                    // Home.
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        spacing: 4px;
+                        HorizontalLayout {
+                            alignment: start;
+                            Rectangle {
+                                width: 40px;
+                                height: 40px;
+                                border-radius: 10px;
+                                background: #f5c518;
+                                Text {
+                                    text: "GS";
+                                    color: #1d3a8e;
+                                    font-size: 14px;
+                                    font-weight: 800;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                            }
+                        }
+                        Text {
+                            text: root.home-team;
+                            color: #ffffff;
+                            font-size: Theme.font-size-body;
+                            font-weight: 700;
+                        }
+                        Text {
+                            text: root.home-score;
+                            color: #ffffff;
+                            font-size: 48px;
+                            font-weight: 800;
+                        }
+                    }
+
+                    // Centre — LIVE + period.
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 4px;
+                        HorizontalLayout {
+                            alignment: center;
+                            Rectangle {
+                                width: live-text.preferred-width + 14px;
+                                height: 20px;
+                                border-radius: 10px;
+                                background: Theme.accent-danger;
+                                live-text := Text {
+                                    text: "● LIVE";
+                                    color: #ffffff;
+                                    font-size: 9px;
+                                    font-weight: 800;
+                                    letter-spacing: 0.5px;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                            }
+                        }
+                        Text {
+                            text: root.period;
+                            color: #ffffffcc;
+                            font-size: Theme.font-size-caption;
+                            font-weight: 800;
+                        }
+                    }
+
+                    // Away.
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        spacing: 4px;
+                        HorizontalLayout {
+                            alignment: end;
+                            Rectangle {
+                                width: 40px;
+                                height: 40px;
+                                border-radius: 10px;
+                                background: #552583;
+                                Text {
+                                    text: "LA";
+                                    color: #f5c518;
+                                    font-size: 14px;
+                                    font-weight: 800;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                            }
+                        }
+                        Text {
+                            text: root.away-team;
+                            color: #ffffff;
+                            font-size: Theme.font-size-body;
+                            font-weight: 700;
+                            horizontal-alignment: right;
+                        }
+                        Text {
+                            text: root.away-score;
+                            color: #ffffff;
+                            font-size: 48px;
+                            font-weight: 800;
+                            horizontal-alignment: right;
+                        }
+                    }
+                }
+
+                // Line score.
+                HorizontalLayout {
+                    spacing: 0;
+                    for cell in ["", "Q1", "Q2", "Q3", "Q4", "T"] : VerticalLayout {
+                        horizontal-stretch: 1;
+                        Text {
+                            text: cell;
+                            color: #ffffff88;
+                            font-size: 10px;
+                            font-weight: 800;
+                            horizontal-alignment: center;
+                        }
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 0;
+                    for cell in ["GS", "24", "29", "25", "—", "78"] : VerticalLayout {
+                        horizontal-stretch: 1;
+                        Text {
+                            text: cell;
+                            color: #ffffff;
+                            font-size: 11px;
+                            font-weight: 700;
+                            horizontal-alignment: center;
+                        }
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 0;
+                    for cell in ["LA", "28", "21", "25", "—", "74"] : VerticalLayout {
+                        horizontal-stretch: 1;
+                        Text {
+                            text: cell;
+                            color: #ffffff;
+                            font-size: 11px;
+                            font-weight: 700;
+                            horizontal-alignment: center;
+                        }
+                    }
+                }
+            }
+        }
+
+        SectionHeader { text: "KEY PLAYS"; }
+        EventRow {
+            side: 0;
+            clock: "04:18";
+            play: "Curry 3PT — pulls GS ahead by 4";
+            tone: Tone.success;
+        }
+        Divider { }
+        EventRow {
+            side: 1;
+            clock: "04:52";
+            play: "James driving layup + foul";
+            tone: Tone.warning;
+        }
+        Divider { }
+        EventRow {
+            side: 0;
+            clock: "05:30";
+            play: "Green defensive board, outlet to Curry";
+            tone: Tone.default;
+        }
+        Divider { }
+        EventRow {
+            side: 1;
+            clock: "06:01";
+            play: "Davis blocks Wiggins at the rim";
+            tone: Tone.info;
+        }
+        Divider { }
+        EventRow {
+            side: 0;
+            clock: "06:44";
+            play: "Timeout — Golden State";
+            tone: Tone.default;
+        }
+
+        SectionHeader { text: "TEAM STATS"; }
+        VerticalLayout {
+            padding: Theme.spacing-md;
+            spacing: Theme.spacing-sm;
+            StatCompareRow {
+                label: "FIELD GOAL %";
+                home-value: "48%";
+                away-value: "44%";
+                home-share: 0.52;
+                away-share: 0.48;
+                home-tint: #f5c518;
+                away-tint: #552583;
+            }
+            StatCompareRow {
+                label: "REBOUNDS";
+                home-value: "31";
+                away-value: "38";
+                home-share: 0.45;
+                away-share: 0.55;
+                home-tint: #f5c518;
+                away-tint: #552583;
+            }
+            StatCompareRow {
+                label: "ASSISTS";
+                home-value: "22";
+                away-value: "17";
+                home-share: 0.56;
+                away-share: 0.44;
+                home-tint: #f5c518;
+                away-tint: #552583;
+            }
+            StatCompareRow {
+                label: "TURNOVERS";
+                home-value: "9";
+                away-value: "13";
+                home-share: 0.41;
+                away-share: 0.59;
+                home-tint: #f5c518;
+                away-tint: #552583;
+            }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+    }
+}

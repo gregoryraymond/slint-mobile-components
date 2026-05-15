@@ -1,0 +1,311 @@
+// TimerPage
+// =====================================================================
+//
+// Pomodoro / workout timer hero — huge circular progress ring with
+// remaining-time digits at the centre, transport row underneath, and
+// a recent-sessions list. Demonstrates:
+//
+//   - "Big-ring-on-canvas" composition. Same ring-band primitive used
+//     on ActivityRingsPage, here at a single-band scale of 240 px so
+//     the surface reads as a focused timer.
+//   - Inside-ring layout: mode chip ("Focus" / "Break"), MM:SS, label.
+//   - Three transport buttons (Reset / Start / Skip) sized so the
+//     centre button (Start, primary) is visually dominant.
+
+import { Theme, Tone } from "@mobile-theme/theme.slint";
+import { AppBar } from "@mobile-components/app-bar.slint";
+import { SectionHeader } from "@mobile-components/section-header.slint";
+import { SegmentedControl } from "@mobile-components/segmented-control.slint";
+import { Divider } from "@mobile-components/divider.slint";
+
+// Reusable ring-band primitive — mirrors the one in activity-rings.slint
+// but scoped to this page so the two screens can evolve independently.
+component RingBand inherits Rectangle {
+    in property <length> radius;
+    in property <length> stroke: 12px;
+    in property <color> track-color: #ffffff14;
+    in property <color> fill-color: Theme.primary;
+    in property <float> progress: 1.0;
+
+    width: 2 * root.radius;
+    height: 2 * root.radius;
+
+    Rectangle {
+        width: parent.width;
+        height: parent.height;
+        border-radius: self.width / 2;
+        border-width: root.stroke;
+        border-color: root.track-color;
+        background: transparent;
+    }
+    Rectangle {
+        width: parent.width;
+        height: parent.height;
+        border-radius: self.width / 2;
+        border-width: root.stroke;
+        border-color: root.fill-color;
+        opacity: root.progress;
+        background: transparent;
+    }
+}
+
+// One past-session row.
+component SessionRow inherits Rectangle {
+    in property <string> task;
+    in property <string> duration;
+    in property <string> when;
+    in property <Tone> tone: Tone.default;
+
+    min-height: 48px;
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+        // Tone dot.
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 10px;
+                height: 10px;
+                border-radius: 5px;
+                background:
+                      root.tone == Tone.success ? Theme.accent-success
+                    : root.tone == Tone.warning ? Theme.accent-warning
+                    : root.tone == Tone.danger  ? Theme.accent-danger
+                    : root.tone == Tone.info    ? Theme.accent-info
+                    : Theme.muted;
+            }
+        }
+        Text {
+            text: root.task;
+            color: Theme.on-surface;
+            font-size: Theme.font-size-body;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+            overflow: elide;
+        }
+        Text {
+            text: root.duration;
+            color: Theme.on-surface;
+            font-size: Theme.font-size-body;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+        Text {
+            text: root.when;
+            color: Theme.muted;
+            font-size: Theme.font-size-caption;
+            vertical-alignment: center;
+            width: 60px;
+            horizontal-alignment: right;
+        }
+    }
+}
+
+export component TimerPage inherits Rectangle {
+    in property <string> mode: "FOCUS";
+    in property <string> time-remaining: "18:42";
+    in property <string> task: "Slint mobile components — iteration 14";
+    in-out property <int> mode-index: 0;
+    in-out property <bool> running: true;
+    in property <float> progress: 0.62;
+    callback back-pressed();
+    callback start-pressed();
+    callback reset-pressed();
+    callback skip-pressed();
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "Timer";
+            leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
+            trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
+            leading-pressed => { root.back-pressed(); }
+        }
+
+        VerticalLayout {
+            padding: Theme.spacing-md;
+            spacing: Theme.spacing-md;
+
+            // ----- Mode segmented control -----
+            SegmentedControl {
+                options: ["Focus", "Short break", "Long break"];
+                selected-index <=> root.mode-index;
+            }
+
+            // ----- Big ring + centred timer -----
+            Rectangle {
+                height: 280px;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 240px;
+                        height: 240px;
+                        // Ring.
+                        RingBand {
+                            x: 0;
+                            y: 0;
+                            radius: 120px;
+                            stroke: 14px;
+                            fill-color:
+                                  root.mode-index == 0 ? Theme.primary
+                                : root.mode-index == 1 ? Theme.accent-success
+                                : Theme.accent-info;
+                            progress: root.progress;
+                        }
+                        // Inner content.
+                        VerticalLayout {
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                            width: parent.width - 60px;
+                            height: parent.height - 60px;
+                            alignment: center;
+                            spacing: 4px;
+
+                            HorizontalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: mode-text.preferred-width + 16px;
+                                    height: 20px;
+                                    border-radius: 10px;
+                                    background: Theme.surface-2;
+                                    mode-text := Text {
+                                        text: root.mode;
+                                        color: Theme.muted;
+                                        font-size: 10px;
+                                        font-weight: 700;
+                                        letter-spacing: 0.5px;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                        width: parent.width;
+                                        height: parent.height;
+                                    }
+                                }
+                            }
+                            HorizontalLayout {
+                                alignment: center;
+                                Text {
+                                    text: root.time-remaining;
+                                    color: Theme.on-background;
+                                    font-size: 56px;
+                                    font-weight: 200;
+                                    horizontal-alignment: center;
+                                }
+                            }
+                            HorizontalLayout {
+                                alignment: center;
+                                Text {
+                                    text: root.task;
+                                    color: Theme.muted;
+                                    font-size: Theme.font-size-caption;
+                                    horizontal-alignment: center;
+                                    wrap: word-wrap;
+                                    width: parent.width - 16px;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ----- Transport row -----
+            HorizontalLayout {
+                alignment: center;
+                spacing: Theme.spacing-md;
+                // Reset (left, secondary).
+                Rectangle {
+                    width: 56px;
+                    height: 56px;
+                    border-radius: self.width / 2;
+                    background: reset-touch.pressed ? Theme.surface-pressed : Theme.surface-1;
+                    Image {
+                        width: 24px;
+                        height: 24px;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        source: @image-url("@mobile-components/icons/skip-back.svg");
+                        colorize: Theme.on-surface;
+                        image-fit: contain;
+                    }
+                    reset-touch := TouchArea {
+                        clicked => { root.reset-pressed(); }
+                    }
+                }
+                // Start / Pause (centre, primary).
+                Rectangle {
+                    width: 80px;
+                    height: 80px;
+                    border-radius: self.width / 2;
+                    background: start-touch.pressed ? Theme.primary-pressed : Theme.primary;
+                    drop-shadow-blur: Theme.elevation-2-blur;
+                    drop-shadow-color: Theme.elevation-2-color;
+                    drop-shadow-offset-y: Theme.elevation-2-y;
+                    Image {
+                        width: 36px;
+                        height: 36px;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        source: root.running
+                            ? @image-url("@mobile-components/icons/pause.svg")
+                            : @image-url("@mobile-components/icons/play.svg");
+                        colorize: Theme.on-primary;
+                        image-fit: contain;
+                    }
+                    start-touch := TouchArea {
+                        clicked => {
+                            root.running = !root.running;
+                            root.start-pressed();
+                        }
+                    }
+                }
+                // Skip (right, secondary).
+                Rectangle {
+                    width: 56px;
+                    height: 56px;
+                    border-radius: self.width / 2;
+                    background: skip-touch.pressed ? Theme.surface-pressed : Theme.surface-1;
+                    Image {
+                        width: 24px;
+                        height: 24px;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        source: @image-url("@mobile-components/icons/skip-forward.svg");
+                        colorize: Theme.on-surface;
+                        image-fit: contain;
+                    }
+                    skip-touch := TouchArea {
+                        clicked => { root.skip-pressed(); }
+                    }
+                }
+            }
+        }
+
+        SectionHeader { text: "TODAY · 3 SESSIONS"; }
+        SessionRow {
+            task: "Slint mobile components — iteration 13";
+            duration: "25:00";
+            when: "10:32";
+            tone: Tone.success;
+        }
+        Divider { }
+        SessionRow {
+            task: "Email triage";
+            duration: "15:00";
+            when: "09:45";
+            tone: Tone.info;
+        }
+        Divider { }
+        SessionRow {
+            task: "Tone enum docs review";
+            duration: "25:00";
+            when: "08:50";
+            tone: Tone.success;
+        }
+
+        Rectangle { vertical-stretch: 1; }
+    }
+}

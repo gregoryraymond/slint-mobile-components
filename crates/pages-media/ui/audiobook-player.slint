@@ -1,0 +1,421 @@
+// AudiobookPlayerPage
+// =====================================================================
+//
+// Audiobook now-playing screen — Audible / Libby style. Distinct from
+// `PodcastPage` (episode-oriented now-playing) and `MusicLibraryPage`
+// (browse grid). Demonstrates a long-form-audio surface:
+//
+//   - Large cover art with a soft gradient frame.
+//   - Title + author + the current chapter line.
+//   - A chapter scrubber: elapsed / remaining + a progress track.
+//   - Transport row: back-15s / skip-chapter / big play-pause /
+//     skip-chapter / forward-30s.
+//   - A pill row: playback speed + sleep timer.
+//   - A scrollable chapter list with the active chapter highlighted.
+
+import { Theme, Tone } from "@mobile-theme/theme.slint";
+import { AppBar } from "@mobile-components/app-bar.slint";
+import { Divider } from "@mobile-components/divider.slint";
+
+// One chapter row.
+component ChapterRow inherits Rectangle {
+    in property <string> index;
+    in property <string> title;
+    in property <string> duration;
+    in property <bool> active: false;
+    in property <bool> finished: false;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: root.title;
+    accessible-action-default => { root.clicked(); }
+
+    horizontal-stretch: 1;
+    min-height: 56px;
+    background: root.active ? Theme.primary.with-alpha(0.12)
+        : touch.pressed ? Theme.surface-pressed : transparent;
+    animate background { duration: Theme.motion-fast; }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 28px;
+                height: 28px;
+                border-radius: self.width / 2;
+                background: root.active ? Theme.primary
+                    : root.finished ? Theme.accent-success
+                    : Theme.surface-variant;
+                if root.finished && !root.active: Image {
+                    width: 14px;
+                    height: 14px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: @image-url("@mobile-components/icons/check.svg");
+                    colorize: Theme.on-primary;
+                    image-fit: contain;
+                }
+                if !(root.finished && !root.active): Text {
+                    text: root.index;
+                    color: root.active ? Theme.on-primary : Theme.muted;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            Text {
+                text: root.title;
+                color: root.active ? Theme.primary : Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: root.active ? 800 : 600;
+                overflow: elide;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            HorizontalLayout {
+                spacing: 6px;
+                if root.active: Image {
+                    width: 12px;
+                    height: 12px;
+                    source: @image-url("@mobile-components/icons/play.svg");
+                    colorize: Theme.primary;
+                    image-fit: contain;
+                    vertical-alignment: center;
+                }
+                Text {
+                    text: root.duration;
+                    color: Theme.muted;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+// A round transport button. `kind`: 0 ghost / 1 filled-primary.
+component TransportButton inherits Rectangle {
+    in property <image> icon;
+    in property <length> diameter: 48px;
+    in property <int> kind: 0;
+    callback clicked();
+
+    width: root.diameter;
+    height: root.diameter;
+    border-radius: self.width / 2;
+    background: root.kind == 1 ? Theme.primary
+        : touch.pressed ? Theme.surface-pressed : transparent;
+    drop-shadow-blur: root.kind == 1 ? Theme.elevation-2-blur : 0px;
+    drop-shadow-color: Theme.elevation-2-color;
+    drop-shadow-offset-y: root.kind == 1 ? Theme.elevation-2-y : 0px;
+    animate background { duration: Theme.motion-fast; }
+
+    Image {
+        width: root.kind == 1 ? root.diameter * 0.42 : root.diameter * 0.5;
+        height: self.width;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        source: root.icon;
+        colorize: root.kind == 1 ? Theme.on-primary : Theme.on-surface;
+        image-fit: contain;
+    }
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+// A small rounded info pill (speed / sleep timer).
+component InfoPill inherits Rectangle {
+    in property <image> icon;
+    in property <string> label;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-action-default => { root.clicked(); }
+
+    horizontal-stretch: 1;
+    height: 44px;
+    border-radius: Theme.radius-md;
+    background: touch.pressed ? Theme.surface-pressed : Theme.surface-2;
+    animate background { duration: Theme.motion-fast; }
+
+    HorizontalLayout {
+        alignment: center;
+        spacing: 6px;
+        Image {
+            width: 16px;
+            height: 16px;
+            source: root.icon;
+            colorize: Theme.on-surface;
+            image-fit: contain;
+            vertical-alignment: center;
+        }
+        Text {
+            text: root.label;
+            color: Theme.on-surface;
+            font-size: Theme.font-size-caption;
+            font-weight: 700;
+            vertical-alignment: center;
+        }
+    }
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+export component AudiobookPlayerPage inherits Rectangle {
+    in property <string> title: "The Light Between Tides";
+    in property <string> author: "Marisol Vega";
+    in property <string> chapter: "Chapter 7 · The Long Crossing";
+    in property <string> elapsed: "12:48";
+    in property <string> remaining: "-18:32";
+    in property <float> progress: 0.41;
+    in-out property <bool> playing: true;
+    in property <string> speed: "1.25×";
+    in property <string> sleep-timer: "20 min";
+    callback back-pressed();
+    callback queue-pressed();
+    callback toggle-play();
+    callback prev-chapter();
+    callback next-chapter();
+    callback back-15();
+    callback forward-30();
+    callback speed-pressed();
+    callback sleep-pressed();
+    callback chapter-pressed(string);
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "Now playing";
+            leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
+            trailing-icon: @image-url("@mobile-components/icons/queue.svg");
+            leading-pressed => { root.back-pressed(); }
+            trailing-pressed => { root.queue-pressed(); }
+        }
+
+        VerticalLayout {
+            padding: Theme.spacing-md;
+            spacing: Theme.spacing-md;
+            alignment: start;
+
+            // Cover art.
+            HorizontalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 200px;
+                    height: 200px;
+                    border-radius: Theme.radius-lg;
+                    background: @linear-gradient(135deg, #1e3a5f 0%, #0c1a2e 100%);
+                    drop-shadow-blur: Theme.elevation-3-blur;
+                    drop-shadow-color: Theme.elevation-3-color;
+                    drop-shadow-offset-y: Theme.elevation-3-y;
+                    clip: true;
+                    Image {
+                        width: 96px;
+                        height: 96px;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        source: @image-url("@mobile-components/icons/podcast-cover.svg");
+                        colorize: #ffffff;
+                        opacity: 0.85;
+                        image-fit: contain;
+                    }
+                }
+            }
+
+            // Title block.
+            VerticalLayout {
+                spacing: 4px;
+                Text {
+                    text: root.title;
+                    color: Theme.on-background;
+                    font-size: Theme.font-size-headline;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                }
+                Text {
+                    text: root.author;
+                    color: Theme.muted;
+                    font-size: Theme.font-size-body;
+                    horizontal-alignment: center;
+                }
+                Text {
+                    text: root.chapter;
+                    color: Theme.primary;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                    horizontal-alignment: center;
+                }
+            }
+
+            // Scrubber.
+            VerticalLayout {
+                spacing: 6px;
+                Rectangle {
+                    height: 6px;
+                    border-radius: 3px;
+                    background: Theme.surface-variant;
+                    Rectangle {
+                        x: 0;
+                        width: parent.width * root.progress;
+                        height: parent.height;
+                        border-radius: 3px;
+                        background: Theme.primary;
+                    }
+                    // Thumb.
+                    Rectangle {
+                        x: parent.width * root.progress - self.width / 2;
+                        y: (parent.height - self.height) / 2;
+                        width: 14px;
+                        height: 14px;
+                        border-radius: self.width / 2;
+                        background: Theme.primary;
+                        border-width: 3px;
+                        border-color: Theme.background;
+                    }
+                }
+                HorizontalLayout {
+                    Text {
+                        text: root.elapsed;
+                        color: Theme.muted;
+                        font-size: Theme.font-size-caption;
+                        font-weight: 600;
+                        horizontal-stretch: 1;
+                    }
+                    Text {
+                        text: root.remaining;
+                        color: Theme.muted;
+                        font-size: Theme.font-size-caption;
+                        font-weight: 600;
+                    }
+                }
+            }
+
+            // Transport row.
+            HorizontalLayout {
+                alignment: space-around;
+                TransportButton {
+                    icon: @image-url("@mobile-components/icons/skip-back.svg");
+                    diameter: 44px;
+                    clicked => { root.back-15(); }
+                }
+                TransportButton {
+                    icon: @image-url("@mobile-components/icons/skip-back.svg");
+                    diameter: 52px;
+                    clicked => { root.prev-chapter(); }
+                }
+                TransportButton {
+                    icon: root.playing
+                        ? @image-url("@mobile-components/icons/pause.svg")
+                        : @image-url("@mobile-components/icons/play.svg");
+                    diameter: 72px;
+                    kind: 1;
+                    clicked => {
+                        root.playing = !root.playing;
+                        root.toggle-play();
+                    }
+                }
+                TransportButton {
+                    icon: @image-url("@mobile-components/icons/skip-forward.svg");
+                    diameter: 52px;
+                    clicked => { root.next-chapter(); }
+                }
+                TransportButton {
+                    icon: @image-url("@mobile-components/icons/skip-forward.svg");
+                    diameter: 44px;
+                    clicked => { root.forward-30(); }
+                }
+            }
+
+            // Pill row.
+            HorizontalLayout {
+                spacing: Theme.spacing-sm;
+                InfoPill {
+                    icon: @image-url("@mobile-components/icons/play.svg");
+                    label: "Speed " + root.speed;
+                    clicked => { root.speed-pressed(); }
+                }
+                InfoPill {
+                    icon: @image-url("@mobile-components/icons/bell.svg");
+                    label: "Sleep " + root.sleep-timer;
+                    clicked => { root.sleep-pressed(); }
+                }
+            }
+        }
+
+        Rectangle {
+            height: 1px;
+            background: Theme.surface-variant;
+        }
+        Rectangle {
+            min-height: 36px;
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: "CHAPTERS";
+                        color: Theme.muted;
+                        font-size: 10px;
+                        font-weight: 800;
+                        letter-spacing: 0.5px;
+                    }
+                }
+            }
+        }
+
+        ChapterRow {
+            index: "6";
+            title: "The Harbour Master";
+            duration: "24:10";
+            finished: true;
+            clicked => { root.chapter-pressed("6"); }
+        }
+        Divider { }
+        ChapterRow {
+            index: "7";
+            title: "The Long Crossing";
+            duration: "31:20";
+            active: true;
+            clicked => { root.chapter-pressed("7"); }
+        }
+        Divider { }
+        ChapterRow {
+            index: "8";
+            title: "Salt and Iron";
+            duration: "27:45";
+            clicked => { root.chapter-pressed("8"); }
+        }
+        Divider { }
+        ChapterRow {
+            index: "9";
+            title: "What the Lighthouse Knew";
+            duration: "29:02";
+            clicked => { root.chapter-pressed("9"); }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+    }
+}

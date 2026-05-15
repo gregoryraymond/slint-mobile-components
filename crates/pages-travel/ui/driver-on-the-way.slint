@@ -1,0 +1,388 @@
+// DriverOnTheWayPage
+// =====================================================================
+//
+// Driver-coming surface — Uber / Lyft / DoorDash "your driver is X min
+// away" screen. Distinct from `RideShareBookingPage` (pick a tier,
+// before request) and `OrderTrackingPage` (delivered goods). The map
+// fills the upper half; the bottom card shows the live driver, the
+// vehicle, and the ETA.
+//
+// Demonstrates:
+//
+//   - Full-bleed faded map with origin pin (blue) + destination pin
+//     (red) + driver-position pin (warning-tinted car badge).
+//   - Translucent back / share buttons.
+//   - ETA hero "Arriving in 4 min".
+//   - Driver card: avatar + name + ★ rating + vehicle plate, Call/
+//     Message icon discs, Share trip TextButton.
+//   - "Trip" route summary card with pickup + drop-off pills.
+//   - Sticky Cancel danger CTA.
+
+import { Theme, Tone } from "@mobile-theme/theme.slint";
+import { Avatar } from "@mobile-components/avatar.slint";
+import { Divider } from "@mobile-components/divider.slint";
+import { MobileButton, TextButton } from "@mobile-components/button.slint";
+
+export component DriverOnTheWayPage inherits Rectangle {
+    in property <string> eta-headline: "Arriving in 4 min";
+    in property <string> eta-meta: "Marco D. · Honda Civic · 7XYZ123";
+    in property <string> driver-name: "Marco D.";
+    in property <string> rating: "★ 4.94 · 1,180 trips";
+    in property <string> vehicle: "Silver Honda Civic · 7XYZ123";
+    in property <string> pickup: "Hayes Valley · 437 Linden St";
+    in property <string> dropoff: "SFO Airport · Terminal 2 departures";
+    callback back-pressed();
+    callback share-pressed();
+    callback call-pressed();
+    callback message-pressed();
+    callback cancel-pressed();
+
+    background: Theme.background;
+
+    // ----- Map area (upper ~half) -----
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height * 0.45;
+        background: Theme.surface-variant;
+        clip: true;
+        Image {
+            width: parent.width * 1.5;
+            height: parent.height * 1.4;
+            x: -parent.width * 0.25;
+            y: -parent.height * 0.1;
+            source: @image-url("@mobile-components/icons/map-bg.svg");
+            colorize: Theme.muted;
+            image-fit: cover;
+            opacity: 0.4;
+        }
+        // Origin pin (blue).
+        Rectangle {
+            x: parent.width * 0.32;
+            y: parent.height * 0.62;
+            width: 24px;
+            height: 24px;
+            border-radius: 12px;
+            background: Theme.primary;
+            border-width: 3px;
+            border-color: #ffffff;
+            drop-shadow-blur: Theme.elevation-2-blur;
+            drop-shadow-color: Theme.elevation-2-color;
+            drop-shadow-offset-y: Theme.elevation-2-y;
+        }
+        // Destination pin (red).
+        Rectangle {
+            x: parent.width * 0.74;
+            y: parent.height * 0.24;
+            width: 30px;
+            height: 30px;
+            border-radius: 15px;
+            background: Theme.accent-danger;
+            border-width: 4px;
+            border-color: #ffffff;
+            drop-shadow-blur: Theme.elevation-2-blur;
+            drop-shadow-color: Theme.elevation-2-color;
+            drop-shadow-offset-y: Theme.elevation-2-y;
+            Image {
+                width: 14px;
+                height: 14px;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                source: @image-url("@mobile-components/icons/pin.svg");
+                colorize: #ffffff;
+                image-fit: contain;
+            }
+        }
+        // Driver car badge (warning amber).
+        Rectangle {
+            x: parent.width * 0.46;
+            y: parent.height * 0.44;
+            width: 44px;
+            height: 32px;
+            border-radius: 8px;
+            background: Theme.accent-warning;
+            border-width: 3px;
+            border-color: #ffffff;
+            drop-shadow-blur: Theme.elevation-2-blur;
+            drop-shadow-color: Theme.elevation-2-color;
+            drop-shadow-offset-y: Theme.elevation-2-y;
+            Text {
+                text: "MD";
+                color: Theme.on-primary;
+                font-size: 11px;
+                font-weight: 800;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                width: parent.width;
+                height: parent.height;
+            }
+        }
+
+        // Translucent back / share row.
+        HorizontalLayout {
+            x: 0;
+            y: 0;
+            width: parent.width;
+            height: 56px;
+            padding: Theme.spacing-md;
+            alignment: stretch;
+            Rectangle {
+                width: 40px;
+                height: 40px;
+                border-radius: self.width / 2;
+                background: Theme.surface-1;
+                drop-shadow-blur: Theme.elevation-1-blur;
+                drop-shadow-color: Theme.elevation-1-color;
+                drop-shadow-offset-y: Theme.elevation-1-y;
+                Image {
+                    width: 18px;
+                    height: 18px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: @image-url("@mobile-components/icons/arrow-left.svg");
+                    colorize: Theme.on-surface;
+                    image-fit: contain;
+                }
+                TouchArea {
+                    clicked => { root.back-pressed(); }
+                }
+            }
+            Rectangle { horizontal-stretch: 1; }
+            Rectangle {
+                width: 40px;
+                height: 40px;
+                border-radius: self.width / 2;
+                background: Theme.surface-1;
+                drop-shadow-blur: Theme.elevation-1-blur;
+                drop-shadow-color: Theme.elevation-1-color;
+                drop-shadow-offset-y: Theme.elevation-1-y;
+                Image {
+                    width: 18px;
+                    height: 18px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: @image-url("@mobile-components/icons/send.svg");
+                    colorize: Theme.on-surface;
+                    image-fit: contain;
+                }
+                TouchArea {
+                    clicked => { root.share-pressed(); }
+                }
+            }
+        }
+    }
+
+    // ----- Bottom info panel -----
+    Rectangle {
+        x: 0;
+        y: parent.height * 0.45 - 16px;
+        width: parent.width;
+        height: parent.height * 0.55 + 16px;
+        background: Theme.surface-2;
+        border-top-left-radius: Theme.radius-lg;
+        border-top-right-radius: Theme.radius-lg;
+        drop-shadow-blur: Theme.elevation-2-blur;
+        drop-shadow-color: Theme.elevation-2-color;
+        drop-shadow-offset-y: -4px;
+
+        VerticalLayout {
+            padding: Theme.spacing-md;
+            spacing: Theme.spacing-md;
+
+            // Drag handle.
+            HorizontalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 36px;
+                    height: 4px;
+                    border-radius: 2px;
+                    background: Theme.muted;
+                    opacity: 0.5;
+                }
+            }
+
+            // ETA hero.
+            VerticalLayout {
+                spacing: 2px;
+                Text {
+                    text: root.eta-headline;
+                    color: Theme.accent-success;
+                    font-size: Theme.font-size-headline;
+                    font-weight: 800;
+                }
+                Text {
+                    text: root.eta-meta;
+                    color: Theme.muted;
+                    font-size: Theme.font-size-caption;
+                }
+            }
+
+            // Driver card.
+            Rectangle {
+                background: Theme.surface-1;
+                border-radius: Theme.radius-md;
+                drop-shadow-blur: Theme.elevation-1-blur;
+                drop-shadow-color: Theme.elevation-1-color;
+                drop-shadow-offset-y: Theme.elevation-1-y;
+                HorizontalLayout {
+                    padding: Theme.spacing-md;
+                    spacing: Theme.spacing-md;
+                    alignment: stretch;
+                    VerticalLayout {
+                        alignment: center;
+                        Avatar {
+                            fallback: "MD";
+                            size: 48px;
+                        }
+                    }
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        alignment: center;
+                        spacing: 2px;
+                        Text {
+                            text: root.driver-name;
+                            color: Theme.on-surface;
+                            font-size: Theme.font-size-body-large;
+                            font-weight: 700;
+                        }
+                        Text {
+                            text: root.rating;
+                            color: Theme.accent-warning;
+                            font-size: Theme.font-size-caption;
+                            font-weight: 700;
+                        }
+                        Text {
+                            text: root.vehicle;
+                            color: Theme.muted;
+                            font-size: Theme.font-size-caption;
+                        }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: Theme.spacing-xs;
+                        HorizontalLayout {
+                            spacing: Theme.spacing-xs;
+                            Rectangle {
+                                width: 44px;
+                                height: 44px;
+                                border-radius: self.width / 2;
+                                background: Theme.accent-success;
+                                Image {
+                                    width: 18px;
+                                    height: 18px;
+                                    x: (parent.width - self.width) / 2;
+                                    y: (parent.height - self.height) / 2;
+                                    source: @image-url("@mobile-components/icons/play.svg");
+                                    colorize: Theme.on-primary;
+                                    image-fit: contain;
+                                }
+                                TouchArea {
+                                    clicked => { root.call-pressed(); }
+                                }
+                            }
+                            Rectangle {
+                                width: 44px;
+                                height: 44px;
+                                border-radius: self.width / 2;
+                                background: Theme.surface-variant;
+                                Image {
+                                    width: 18px;
+                                    height: 18px;
+                                    x: (parent.width - self.width) / 2;
+                                    y: (parent.height - self.height) / 2;
+                                    source: @image-url("@mobile-components/icons/inbox.svg");
+                                    colorize: Theme.on-surface;
+                                    image-fit: contain;
+                                }
+                                TouchArea {
+                                    clicked => { root.message-pressed(); }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Trip route summary.
+            Rectangle {
+                background: Theme.surface-1;
+                border-radius: Theme.radius-md;
+                drop-shadow-blur: Theme.elevation-1-blur;
+                drop-shadow-color: Theme.elevation-1-color;
+                drop-shadow-offset-y: Theme.elevation-1-y;
+                VerticalLayout {
+                    padding: Theme.spacing-md;
+                    spacing: Theme.spacing-sm;
+                    HorizontalLayout {
+                        spacing: Theme.spacing-md;
+                        alignment: stretch;
+                        VerticalLayout {
+                            alignment: center;
+                            Rectangle {
+                                width: 10px;
+                                height: 10px;
+                                border-radius: 5px;
+                                background: Theme.primary;
+                            }
+                        }
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            alignment: center;
+                            Text {
+                                text: root.pickup;
+                                color: Theme.on-surface;
+                                font-size: Theme.font-size-body;
+                                font-weight: 600;
+                                overflow: elide;
+                            }
+                        }
+                    }
+                    Divider { }
+                    HorizontalLayout {
+                        spacing: Theme.spacing-md;
+                        alignment: stretch;
+                        VerticalLayout {
+                            alignment: center;
+                            Rectangle {
+                                width: 10px;
+                                height: 10px;
+                                border-radius: 2px;
+                                background: Theme.accent-danger;
+                            }
+                        }
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            alignment: center;
+                            Text {
+                                text: root.dropoff;
+                                color: Theme.on-surface;
+                                font-size: Theme.font-size-body;
+                                font-weight: 600;
+                                overflow: elide;
+                            }
+                        }
+                    }
+                }
+            }
+
+            Rectangle { vertical-stretch: 1; }
+
+            // Share trip + Cancel.
+            HorizontalLayout {
+                alignment: center;
+                TextButton {
+                    text: "Share my trip status";
+                    clicked => { root.share-pressed(); }
+                }
+            }
+            MobileButton {
+                text: "Cancel ride · may charge fee";
+                tone: Tone.danger;
+                primary: false;
+                max-height: 44px;
+                clicked => { root.cancel-pressed(); }
+            }
+        }
+    }
+}

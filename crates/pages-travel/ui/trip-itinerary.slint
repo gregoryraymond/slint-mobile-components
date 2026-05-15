@@ -1,0 +1,335 @@
+// TripItineraryPage
+// =====================================================================
+//
+// Multi-day trip plan — TripAdvisor / Wanderlog / Google Travel style.
+// Demonstrates:
+//
+//   - Hero header card with cover gradient + city + dates + traveller
+//     count.
+//   - Day-picker chip row (Day 1 / 2 / 3 / 4) — horizontally scrollable
+//     so longer trips don't break the layout.
+//   - Activity timeline for the selected day: each activity is a row
+//     with a tone-tinted "category disc" (food / sightseeing / hotel /
+//     transit), a time block, and a name + sub-text. A faint connector
+//     line links sequential activities so the day reads as a flow.
+//   - Footer summary row: distance covered + budget today.
+
+import { Theme, Tone } from "@mobile-theme/theme.slint";
+import { AppBar } from "@mobile-components/app-bar.slint";
+import { SectionHeader } from "@mobile-components/section-header.slint";
+import { Chip } from "@mobile-components/chip.slint";
+import { Divider } from "@mobile-components/divider.slint";
+import { ScrollView } from "std-widgets.slint";
+
+// One activity row inside a day. The leading column is a circular
+// category icon + a 2-px connector below it (omitted on `last`).
+component ActivityRow inherits Rectangle {
+    in property <string> when;
+    in property <image> icon;
+    in property <string> name;
+    in property <string> location;
+    in property <string> duration;
+    in property <Tone> tone: Tone.default;
+    in property <bool> last: false;
+
+    horizontal-stretch: 1;
+    min-height: 72px;
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        padding-top: Theme.spacing-xs;
+        padding-bottom: Theme.spacing-xs;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+
+        // Time column.
+        VerticalLayout {
+            alignment: start;
+            padding-top: 4px;
+            width: 48px;
+            Text {
+                text: root.when;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+                font-weight: 700;
+            }
+        }
+
+        // Category disc + connector.
+        Rectangle {
+            width: 32px;
+            VerticalLayout {
+                spacing: 0;
+                alignment: start;
+                Rectangle {
+                    width: 32px;
+                    height: 32px;
+                    border-radius: self.width / 2;
+                    background:
+                          root.tone == Tone.success ? Theme.accent-success
+                        : root.tone == Tone.warning ? Theme.accent-warning
+                        : root.tone == Tone.danger  ? Theme.accent-danger
+                        : root.tone == Tone.info    ? Theme.accent-info
+                        : Theme.primary;
+                    Image {
+                        width: 16px;
+                        height: 16px;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        source: root.icon;
+                        colorize: Theme.on-primary;
+                        image-fit: contain;
+                    }
+                }
+                if !root.last: Rectangle {
+                    horizontal-stretch: 1;
+                    HorizontalLayout {
+                        alignment: center;
+                        Rectangle {
+                            width: 2px;
+                            background: Theme.outline;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Activity meta.
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: start;
+            padding-top: 4px;
+            spacing: 2px;
+            Text {
+                text: root.name;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+            Text {
+                text: root.location;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+            }
+            Text {
+                text: root.duration;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+            }
+        }
+    }
+}
+
+export component TripItineraryPage inherits Rectangle {
+    in property <string> destination: "Lisbon · Portugal";
+    in property <string> dates: "May 14 – May 19, 2026";
+    in property <string> travellers: "2 travellers · 5 nights";
+    in-out property <int> active-day: 1;
+    callback back-pressed();
+    callback share-pressed();
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: root.destination;
+            leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
+            trailing-icon: @image-url("@mobile-components/icons/send.svg");
+            leading-pressed => { root.back-pressed(); }
+            trailing-pressed => { root.share-pressed(); }
+        }
+
+        // Page content fits within 892 px so we don't need a ScrollView
+        // wrapper; the activity-timeline stack is sized to natural
+        // height and the footer summary anchors to the bottom.
+        VerticalLayout {
+            padding-left: Theme.spacing-md;
+            padding-right: Theme.spacing-md;
+            padding-top: Theme.spacing-md;
+            spacing: Theme.spacing-sm;
+            alignment: start;
+
+            // ----- Hero card -----
+                Rectangle {
+                    horizontal-stretch: 1;
+                    height: 160px;
+                    border-radius: Theme.radius-lg;
+                    background: @linear-gradient(135deg, #d97706 0%, #92400e 100%);
+                    drop-shadow-blur: Theme.elevation-2-blur;
+                    drop-shadow-color: Theme.elevation-2-color;
+                    drop-shadow-offset-y: Theme.elevation-2-y;
+                    clip: true;
+
+                    VerticalLayout {
+                        padding: Theme.spacing-md;
+                        spacing: Theme.spacing-xs;
+                        alignment: end;
+                        Text {
+                            text: root.destination;
+                            color: #ffffff;
+                            font-size: Theme.font-size-headline;
+                            font-weight: 800;
+                        }
+                        Text {
+                            text: root.dates;
+                            color: #ffffffcc;
+                            font-size: Theme.font-size-body;
+                            font-weight: 500;
+                        }
+                        Text {
+                            text: root.travellers;
+                            color: #ffffffcc;
+                            font-size: Theme.font-size-caption;
+                        }
+                    }
+                }
+
+                // ----- Day picker -----
+                HorizontalLayout {
+                    spacing: Theme.spacing-sm;
+                    Chip { label: "Day 1"; }
+                    Chip { label: "Day 2"; selected: true; }
+                    Chip { label: "Day 3"; }
+                    Chip { label: "Day 4"; }
+                    Chip { label: "Day 5"; }
+                }
+
+                // ----- Day summary -----
+                Text {
+                    text: "Friday · Alfama & Castelo";
+                    color: Theme.on-background;
+                    font-size: Theme.font-size-title;
+                    font-weight: 700;
+                }
+                Text {
+                    text: "Walking-heavy day. Castle in the morning, fado dinner. ~6.4 km on foot.";
+                    color: Theme.muted;
+                    font-size: Theme.font-size-body;
+                    wrap: word-wrap;
+                }
+        }
+
+        // ----- Activity timeline -----
+        SectionHeader { text: "TODAY"; }
+
+        ActivityRow {
+            when: "08:30";
+            icon: @image-url("@mobile-components/icons/heart.svg");
+            name: "Breakfast at Manteigaria";
+            location: "Largo do Chiado · pastéis + galão";
+            duration: "45 min · €8 / pax";
+            tone: Tone.warning;
+        }
+        ActivityRow {
+            when: "10:00";
+            icon: @image-url("@mobile-components/icons/pin.svg");
+            name: "Tram 28 to Castelo de São Jorge";
+            location: "Praça Martim Moniz → Castelo";
+            duration: "20 min ride · €3.10";
+            tone: Tone.info;
+        }
+        ActivityRow {
+            when: "10:30";
+            icon: @image-url("@mobile-components/icons/star.svg");
+            name: "Castelo de São Jorge tour";
+            location: "Rua de Santa Cruz do Castelo";
+            duration: "2 hr · €15 / pax";
+        }
+        ActivityRow {
+            when: "13:00";
+            icon: @image-url("@mobile-components/icons/heart.svg");
+            name: "Lunch — Taberna Sal Grosso";
+            location: "Caldas, Alfama · seafood mains";
+            duration: "1h 30 · €25 / pax";
+            tone: Tone.warning;
+        }
+        ActivityRow {
+            when: "15:00";
+            icon: @image-url("@mobile-components/icons/star.svg");
+            name: "Miradouro de Santa Luzia";
+            location: "Viewpoint over Alfama tiles";
+            duration: "30 min · free";
+        }
+        ActivityRow {
+            when: "19:30";
+            icon: @image-url("@mobile-components/icons/play.svg");
+            name: "Fado dinner — Mesa de Frades";
+            location: "Rua dos Remédios · reservation confirmed";
+            duration: "2h 30 · €45 / pax";
+            tone: Tone.success;
+            last: true;
+        }
+
+        Rectangle { vertical-stretch: 1; }
+
+        // ----- Footer summary -----
+        Rectangle {
+            background: Theme.surface-1;
+            drop-shadow-blur: Theme.elevation-2-blur;
+            drop-shadow-color: Theme.elevation-2-color;
+            drop-shadow-offset-y: -4px;
+            height: 64px;
+            HorizontalLayout {
+                padding: Theme.spacing-md;
+                spacing: Theme.spacing-md;
+                alignment: stretch;
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    Text {
+                        text: "DISTANCE";
+                        color: Theme.muted;
+                        font-size: 10px;
+                        font-weight: 700;
+                        letter-spacing: 0.5px;
+                    }
+                    Text {
+                        text: "6.4 km";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-body;
+                        font-weight: 700;
+                    }
+                }
+                Rectangle { width: 1px; background: Theme.outline; }
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    Text {
+                        text: "BUDGET TODAY";
+                        color: Theme.muted;
+                        font-size: 10px;
+                        font-weight: 700;
+                        letter-spacing: 0.5px;
+                    }
+                    Text {
+                        text: "€194";
+                        color: Theme.accent-warning;
+                        font-size: Theme.font-size-body;
+                        font-weight: 700;
+                    }
+                }
+                Rectangle { width: 1px; background: Theme.outline; }
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    Text {
+                        text: "ACTIVITIES";
+                        color: Theme.muted;
+                        font-size: 10px;
+                        font-weight: 700;
+                        letter-spacing: 0.5px;
+                    }
+                    Text {
+                        text: "6";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-body;
+                        font-weight: 700;
+                    }
+                }
+            }
+        }
+    }
+}

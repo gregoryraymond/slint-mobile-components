@@ -1,0 +1,342 @@
+// BudgetOverviewPage
+// =====================================================================
+//
+// Monthly budget overview — the forward-looking "how much is left to
+// spend" screen. Distinct from `ExpenseReportPage` (historical spend
+// breakdown) and `SavingsGoalPage` (a single savings target).
+// Demonstrates a budget-allocation surface:
+//
+//   - Hero: month label + total spent / total budget + a thick
+//     progress bar + a "left to spend" / "days left" line.
+//   - Per-category rows: an icon disc + name + spent-of-allocated,
+//     each with its own slim progress bar. Categories over budget
+//     flip to a danger tone.
+//   - An "Add category" CTA row.
+
+import { Theme, Tone } from "@mobile-theme/theme.slint";
+import { AppBar } from "@mobile-components/app-bar.slint";
+import { SectionHeader } from "@mobile-components/section-header.slint";
+import { Divider } from "@mobile-components/divider.slint";
+
+// One budget category row. `over` flips the bar + amount to danger.
+component CategoryRow inherits Rectangle {
+    in property <image> icon;
+    in property <Tone> tone: Tone.default;
+    in property <string> name;
+    in property <string> spent;
+    in property <string> allocated;
+    in property <string> remaining;
+    in property <float> fraction;
+    in property <bool> over: false;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: root.name;
+    accessible-action-default => { root.clicked(); }
+
+    horizontal-stretch: 1;
+    min-height: 76px;
+    background: touch.pressed ? Theme.surface-pressed : transparent;
+    animate background { duration: Theme.motion-fast; }
+
+    HorizontalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 40px;
+                height: 40px;
+                border-radius: Theme.radius-sm;
+                background:
+                      root.tone == Tone.success ? Theme.accent-success.with-alpha(0.18)
+                    : root.tone == Tone.warning ? Theme.accent-warning.with-alpha(0.18)
+                    : root.tone == Tone.danger  ? Theme.accent-danger.with-alpha(0.18)
+                    : root.tone == Tone.info    ? Theme.accent-info.with-alpha(0.18)
+                    : Theme.primary.with-alpha(0.18);
+                Image {
+                    width: 20px;
+                    height: 20px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: root.icon;
+                    colorize:
+                          root.tone == Tone.success ? Theme.accent-success
+                        : root.tone == Tone.warning ? Theme.accent-warning
+                        : root.tone == Tone.danger  ? Theme.accent-danger
+                        : root.tone == Tone.info    ? Theme.accent-info
+                        : Theme.primary;
+                    image-fit: contain;
+                }
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 5px;
+            HorizontalLayout {
+                Text {
+                    text: root.name;
+                    color: Theme.on-surface;
+                    font-size: Theme.font-size-body;
+                    font-weight: 700;
+                    horizontal-stretch: 1;
+                }
+                Text {
+                    text: root.spent + " / " + root.allocated;
+                    color: Theme.muted;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                }
+            }
+            Rectangle {
+                height: 6px;
+                border-radius: 3px;
+                background: Theme.surface-variant;
+                Rectangle {
+                    x: 0;
+                    width: parent.width * min(root.fraction, 1.0);
+                    height: parent.height;
+                    border-radius: 3px;
+                    background: root.over ? Theme.accent-danger
+                        : root.fraction > 0.85 ? Theme.accent-warning
+                        : Theme.accent-success;
+                }
+            }
+            Text {
+                text: root.remaining;
+                color: root.over ? Theme.accent-danger : Theme.muted;
+                font-size: Theme.font-size-caption;
+                font-weight: 600;
+            }
+        }
+    }
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+export component BudgetOverviewPage inherits Rectangle {
+    in property <string> month: "May 2026";
+    in property <string> spent: "$2,418";
+    in property <string> budget: "$3,200";
+    in property <float> spent-fraction: 0.755;
+    in property <string> footer: "$782 left to spend · 17 days remaining";
+    callback back-pressed();
+    callback edit-pressed();
+    callback category-pressed(string);
+    callback add-category-pressed();
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "Budget";
+            leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
+            trailing-icon: @image-url("@mobile-components/icons/pencil.svg");
+            leading-pressed => { root.back-pressed(); }
+            trailing-pressed => { root.edit-pressed(); }
+        }
+
+        VerticalLayout {
+            padding: Theme.spacing-md;
+            spacing: Theme.spacing-md;
+            alignment: start;
+
+            // Hero.
+            Rectangle {
+                border-radius: Theme.radius-lg;
+                background: Theme.surface-1;
+                drop-shadow-blur: Theme.elevation-2-blur;
+                drop-shadow-color: Theme.elevation-2-color;
+                drop-shadow-offset-y: Theme.elevation-2-y;
+                VerticalLayout {
+                    padding: Theme.spacing-md;
+                    spacing: Theme.spacing-sm;
+                    HorizontalLayout {
+                        Text {
+                            text: root.month;
+                            color: Theme.muted;
+                            font-size: Theme.font-size-caption;
+                            font-weight: 800;
+                            letter-spacing: 0.3px;
+                            horizontal-stretch: 1;
+                        }
+                        Text {
+                            text: "MONTHLY BUDGET";
+                            color: Theme.muted;
+                            font-size: 10px;
+                            font-weight: 800;
+                            letter-spacing: 0.5px;
+                        }
+                    }
+                    HorizontalLayout {
+                        spacing: 6px;
+                        alignment: start;
+                        Text {
+                            text: root.spent;
+                            color: Theme.on-surface;
+                            font-size: Theme.font-size-headline;
+                            font-weight: 800;
+                        }
+                        VerticalLayout {
+                            alignment: end;
+                            Text {
+                                text: "of " + root.budget;
+                                color: Theme.muted;
+                                font-size: Theme.font-size-body;
+                                font-weight: 600;
+                            }
+                        }
+                    }
+                    Rectangle {
+                        height: 12px;
+                        border-radius: 6px;
+                        background: Theme.surface-variant;
+                        Rectangle {
+                            x: 0;
+                            width: parent.width * root.spent-fraction;
+                            height: parent.height;
+                            border-radius: 6px;
+                            background: @linear-gradient(90deg, #34d399 0%, #f59e0b 100%);
+                        }
+                    }
+                    HorizontalLayout {
+                        spacing: 6px;
+                        alignment: start;
+                        Image {
+                            width: 14px;
+                            height: 14px;
+                            source: @image-url("@mobile-components/icons/check.svg");
+                            colorize: Theme.accent-success;
+                            image-fit: contain;
+                            vertical-alignment: center;
+                        }
+                        Text {
+                            text: root.footer;
+                            color: Theme.muted;
+                            font-size: Theme.font-size-caption;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+            }
+        }
+
+        SectionHeader { text: "CATEGORIES"; }
+        CategoryRow {
+            icon: @image-url("@mobile-components/icons/home.svg");
+            tone: Tone.info;
+            name: "Housing";
+            spent: "$1,200";
+            allocated: "$1,200";
+            remaining: "Fully allocated";
+            fraction: 1.0;
+            clicked => { root.category-pressed("Housing"); }
+        }
+        Divider { }
+        CategoryRow {
+            icon: @image-url("@mobile-components/icons/inbox.svg");
+            tone: Tone.success;
+            name: "Groceries";
+            spent: "$430";
+            allocated: "$600";
+            remaining: "$170 left";
+            fraction: 0.716;
+            clicked => { root.category-pressed("Groceries"); }
+        }
+        Divider { }
+        CategoryRow {
+            icon: @image-url("@mobile-components/icons/heart.svg");
+            tone: Tone.warning;
+            name: "Dining out";
+            spent: "$285";
+            allocated: "$300";
+            remaining: "$15 left — almost there";
+            fraction: 0.95;
+            clicked => { root.category-pressed("Dining out"); }
+        }
+        Divider { }
+        CategoryRow {
+            icon: @image-url("@mobile-components/icons/play.svg");
+            tone: Tone.danger;
+            name: "Entertainment";
+            spent: "$218";
+            allocated: "$150";
+            remaining: "$68 over budget";
+            fraction: 1.45;
+            over: true;
+            clicked => { root.category-pressed("Entertainment"); }
+        }
+        Divider { }
+        CategoryRow {
+            icon: @image-url("@mobile-components/icons/pin.svg");
+            tone: Tone.default;
+            name: "Transport";
+            spent: "$85";
+            allocated: "$250";
+            remaining: "$165 left";
+            fraction: 0.34;
+            clicked => { root.category-pressed("Transport"); }
+        }
+        Divider { }
+        CategoryRow {
+            icon: @image-url("@mobile-components/icons/queue.svg");
+            tone: Tone.default;
+            name: "Subscriptions";
+            spent: "$0";
+            allocated: "$700";
+            remaining: "$700 left";
+            fraction: 0.0;
+            clicked => { root.category-pressed("Subscriptions"); }
+        }
+
+        // Add category.
+        Rectangle {
+            min-height: 56px;
+            background: touch.pressed ? Theme.surface-pressed : transparent;
+            animate background { duration: Theme.motion-fast; }
+            HorizontalLayout {
+                padding: Theme.spacing-md;
+                spacing: Theme.spacing-md;
+                alignment: start;
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 40px;
+                        height: 40px;
+                        border-radius: Theme.radius-sm;
+                        background: Theme.surface-2;
+                        Image {
+                            width: 18px;
+                            height: 18px;
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                            source: @image-url("@mobile-components/icons/plus.svg");
+                            colorize: Theme.primary;
+                            image-fit: contain;
+                        }
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: "Add a category";
+                        color: Theme.primary;
+                        font-size: Theme.font-size-body;
+                        font-weight: 700;
+                    }
+                }
+            }
+            touch := TouchArea {
+                clicked => { root.add-category-pressed(); }
+            }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+    }
+}

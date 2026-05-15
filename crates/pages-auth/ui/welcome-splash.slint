@@ -1,0 +1,151 @@
+// WelcomeSplashPage
+// =====================================================================
+//
+// App-launch splash — the first 1–2 s after a user taps your icon and
+// before the home page is ready. Distinct from `OnboardingPage`
+// (multi-slide tour) and `AppLockScreen` (PIN entry). Demonstrates a
+// no-chrome, single-purpose screen:
+//
+//   - Centred brand mark (a large rounded gradient disc with the
+//     monogram inside) + product name + tagline beneath.
+//   - 3-dot loading row underneath using a tone-tinted disc and
+//     decaying opacity for the "currently active" dot in the cycle.
+//   - Bottom footer with a tiny "Powered by Slint" mark and version.
+//
+// Layout uses a single VerticalLayout with three groups — top spacer,
+// brand block, bottom footer — so the brand sits a touch above
+// vertical centre, matching what most apps do.
+
+import { Theme, Tone } from "@mobile-theme/theme.slint";
+
+// One dot in the 3-dot loading row.
+component LoadDot inherits Rectangle {
+    in property <float> intensity: 1.0;
+    in property <color> tint: Theme.accent-info;
+
+    width: 12px;
+    height: 12px;
+    border-radius: 6px;
+    background: root.tint;
+    opacity: root.intensity;
+}
+
+export component WelcomeSplashPage inherits Rectangle {
+    in property <string> brand: "Slint Mobile";
+    in property <string> tagline: "Native UIs in pure Rust. No WebView. No compromises.";
+    in property <string> version: "v1.13.4 · build 2026.05.14";
+    callback ready();
+
+    background: @radial-gradient(circle, #0f1428 0%, #050610 80%);
+
+    VerticalLayout {
+        spacing: 0;
+
+        // Top spacer pushes the brand block a touch above centre.
+        Rectangle { vertical-stretch: 5; }
+
+        // Brand block.
+        VerticalLayout {
+            spacing: Theme.spacing-md;
+            // Logo disc with shadow.
+            HorizontalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 128px;
+                    height: 128px;
+                    border-radius: 32px;
+                    background: @linear-gradient(135deg, #4f8cff 0%, #1f4eaa 100%);
+                    drop-shadow-blur: 40px;
+                    drop-shadow-color: #4f8cff77;
+                    drop-shadow-offset-y: 0px;
+                    Text {
+                        text: "SM";
+                        color: #ffffff;
+                        font-size: 56px;
+                        font-weight: 800;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                }
+            }
+
+            // Product name.
+            HorizontalLayout {
+                alignment: center;
+                Text {
+                    text: root.brand;
+                    color: #ffffff;
+                    font-size: 32px;
+                    font-weight: 800;
+                    letter-spacing: 1px;
+                    horizontal-alignment: center;
+                }
+            }
+
+            // Tagline.
+            HorizontalLayout {
+                padding-left: Theme.spacing-lg;
+                padding-right: Theme.spacing-lg;
+                Text {
+                    text: root.tagline;
+                    color: #ffffffaa;
+                    font-size: Theme.font-size-body;
+                    horizontal-alignment: center;
+                    wrap: word-wrap;
+                    horizontal-stretch: 1;
+                }
+            }
+
+            // Load dots.
+            HorizontalLayout {
+                alignment: center;
+                spacing: Theme.spacing-sm;
+                padding-top: Theme.spacing-md;
+                LoadDot { intensity: 1.0; }
+                LoadDot { intensity: 0.5; }
+                LoadDot { intensity: 0.25; }
+            }
+        }
+
+        Rectangle { vertical-stretch: 4; }
+
+        // Footer.
+        VerticalLayout {
+            spacing: 4px;
+            padding-bottom: Theme.spacing-lg;
+            HorizontalLayout {
+                alignment: center;
+                spacing: Theme.spacing-xs;
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 14px;
+                        height: 14px;
+                        border-radius: 4px;
+                        background: @linear-gradient(135deg, #4f8cff 0%, #1f4eaa 100%);
+                    }
+                }
+                Text {
+                    text: "Powered by Slint";
+                    color: #ffffff88;
+                    font-size: 11px;
+                    font-weight: 700;
+                    letter-spacing: 0.3px;
+                    vertical-alignment: center;
+                }
+            }
+            HorizontalLayout {
+                alignment: center;
+                Text {
+                    text: root.version;
+                    color: #ffffff44;
+                    font-size: 10px;
+                    font-weight: 700;
+                    letter-spacing: 0.3px;
+                }
+            }
+        }
+    }
+}

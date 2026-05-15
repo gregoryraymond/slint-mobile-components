@@ -1,0 +1,300 @@
+// StockWatchlistPage
+// =====================================================================
+//
+// A stock / ETF watchlist — the "things I'm tracking" list view.
+// Distinct from `InvestmentDetailPage` (one instrument in depth) and
+// `CryptoPortfolioPage` (assets you actually hold). Demonstrates a
+// dense data-list surface:
+//
+//   - Market-summary header: two index chips with tone-tinted moves.
+//   - Filter tabs (Watchlist / Gainers / Losers / Most active).
+//   - Ticker rows: symbol + company name on the left, a mini bar
+//     "sparkline" in the middle, and price + tone-tinted change on
+//     the right.
+
+import { Theme, Tone } from "@mobile-theme/theme.slint";
+import { AppBar } from "@mobile-components/app-bar.slint";
+import { TabBar, Tab } from "@mobile-components/tab-bar.slint";
+import { Divider } from "@mobile-components/divider.slint";
+
+// A tiny bar-strip "sparkline". `bars` is a fixed 12-slot set of
+// 0..1 heights; `up` tints the strip.
+component Sparkline inherits Rectangle {
+    in property <[float]> bars;
+    in property <bool> up: true;
+
+    width: 64px;
+    height: 36px;
+    HorizontalLayout {
+        spacing: 2px;
+        alignment: space-between;
+        for h in root.bars: Rectangle {
+            width: 3px;
+            vertical-stretch: 1;
+            Rectangle {
+                width: parent.width;
+                height: parent.height * h;
+                y: parent.height - self.height;
+                border-radius: 1.5px;
+                background: root.up ? Theme.accent-success : Theme.accent-danger;
+                opacity: 0.85;
+            }
+        }
+    }
+}
+
+// One market-index summary cell.
+component IndexCell inherits Rectangle {
+    in property <string> name;
+    in property <string> value;
+    in property <string> change;
+    in property <bool> up: true;
+
+    horizontal-stretch: 1;
+    height: 56px;
+    border-radius: Theme.radius-md;
+    background: Theme.surface-2;
+
+    VerticalLayout {
+        padding-left: Theme.spacing-md;
+        alignment: center;
+        spacing: 2px;
+        Text {
+            text: root.name;
+            color: Theme.muted;
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: 0.3px;
+        }
+        HorizontalLayout {
+            spacing: 6px;
+            alignment: start;
+            Text {
+                text: root.value;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 800;
+            }
+            Text {
+                text: root.change;
+                color: root.up ? Theme.accent-success : Theme.accent-danger;
+                font-size: Theme.font-size-caption;
+                font-weight: 800;
+                vertical-alignment: center;
+            }
+        }
+    }
+}
+
+// One ticker row.
+component TickerRow inherits Rectangle {
+    in property <string> symbol;
+    in property <string> name;
+    in property <string> price;
+    in property <string> change;
+    in property <bool> up: true;
+    in property <[float]> spark;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: root.symbol;
+    accessible-action-default => { root.clicked(); }
+
+    horizontal-stretch: 1;
+    min-height: 68px;
+    background: touch.pressed ? Theme.surface-pressed : transparent;
+    animate background { duration: Theme.motion-fast; }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: root.symbol;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 800;
+            }
+            Text {
+                text: root.name;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+                overflow: elide;
+            }
+        }
+
+        VerticalLayout {
+            alignment: center;
+            Sparkline {
+                bars: root.spark;
+                up: root.up;
+            }
+        }
+
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: root.price;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 800;
+                horizontal-alignment: right;
+            }
+            Rectangle {
+                width: chg.preferred-width + 12px;
+                height: 18px;
+                border-radius: 4px;
+                background: root.up
+                    ? Theme.accent-success.with-alpha(0.16)
+                    : Theme.accent-danger.with-alpha(0.16);
+                chg := Text {
+                    text: root.change;
+                    color: root.up ? Theme.accent-success : Theme.accent-danger;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+            }
+        }
+    }
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+export component StockWatchlistPage inherits Rectangle {
+    callback back-pressed();
+    callback search-pressed();
+    callback ticker-pressed(string);
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "Watchlist";
+            leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
+            trailing-icon: @image-url("@mobile-components/icons/search.svg");
+            leading-pressed => { root.back-pressed(); }
+            trailing-pressed => { root.search-pressed(); }
+        }
+
+        // Market summary.
+        Rectangle {
+            background: Theme.surface-1;
+            drop-shadow-blur: Theme.elevation-1-blur;
+            drop-shadow-color: Theme.elevation-1-color;
+            drop-shadow-offset-y: Theme.elevation-1-y;
+            HorizontalLayout {
+                padding: Theme.spacing-md;
+                spacing: Theme.spacing-sm;
+                alignment: stretch;
+                IndexCell {
+                    name: "S&P 500";
+                    value: "5,318.42";
+                    change: "+0.74%";
+                    up: true;
+                }
+                IndexCell {
+                    name: "NASDAQ";
+                    value: "16,742.39";
+                    change: "-0.31%";
+                    up: false;
+                }
+            }
+        }
+
+        // Filter tabs.
+        TabBar {
+            Tab { label: "Watchlist"; active: true; }
+            Tab { label: "Gainers"; }
+            Tab { label: "Losers"; }
+            Tab { label: "Active"; }
+        }
+
+        Divider { }
+
+        TickerRow {
+            symbol: "NVDA";
+            name: "NVIDIA Corp";
+            price: "$1,204.88";
+            change: "+3.42%";
+            up: true;
+            spark: [0.3, 0.35, 0.4, 0.38, 0.5, 0.55, 0.5, 0.62, 0.7, 0.78, 0.85, 1.0];
+            clicked => { root.ticker-pressed("NVDA"); }
+        }
+        Divider { }
+        TickerRow {
+            symbol: "AAPL";
+            name: "Apple Inc";
+            price: "$214.29";
+            change: "+0.88%";
+            up: true;
+            spark: [0.5, 0.48, 0.52, 0.55, 0.5, 0.46, 0.52, 0.58, 0.6, 0.57, 0.64, 0.68];
+            clicked => { root.ticker-pressed("AAPL"); }
+        }
+        Divider { }
+        TickerRow {
+            symbol: "TSLA";
+            name: "Tesla Inc";
+            price: "$176.04";
+            change: "-2.17%";
+            up: false;
+            spark: [0.9, 0.85, 0.8, 0.82, 0.7, 0.65, 0.6, 0.55, 0.5, 0.46, 0.4, 0.34];
+            clicked => { root.ticker-pressed("TSLA"); }
+        }
+        Divider { }
+        TickerRow {
+            symbol: "MSFT";
+            name: "Microsoft Corp";
+            price: "$429.17";
+            change: "+1.05%";
+            up: true;
+            spark: [0.4, 0.42, 0.45, 0.5, 0.48, 0.55, 0.6, 0.58, 0.66, 0.7, 0.72, 0.8];
+            clicked => { root.ticker-pressed("MSFT"); }
+        }
+        Divider { }
+        TickerRow {
+            symbol: "AMZN";
+            name: "Amazon.com Inc";
+            price: "$183.61";
+            change: "-0.42%";
+            up: false;
+            spark: [0.6, 0.62, 0.58, 0.55, 0.57, 0.52, 0.5, 0.53, 0.48, 0.5, 0.46, 0.44];
+            clicked => { root.ticker-pressed("AMZN"); }
+        }
+        Divider { }
+        TickerRow {
+            symbol: "VOO";
+            name: "Vanguard S&P 500 ETF";
+            price: "$489.02";
+            change: "+0.71%";
+            up: true;
+            spark: [0.45, 0.47, 0.5, 0.49, 0.53, 0.55, 0.54, 0.6, 0.62, 0.64, 0.68, 0.72];
+            clicked => { root.ticker-pressed("VOO"); }
+        }
+        Divider { }
+        TickerRow {
+            symbol: "AMD";
+            name: "Advanced Micro Devices";
+            price: "$162.33";
+            change: "+2.94%";
+            up: true;
+            spark: [0.35, 0.4, 0.38, 0.46, 0.5, 0.48, 0.56, 0.6, 0.68, 0.72, 0.8, 0.92];
+            clicked => { root.ticker-pressed("AMD"); }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+    }
+}

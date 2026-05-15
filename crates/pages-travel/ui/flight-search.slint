@@ -1,0 +1,363 @@
+// FlightSearchPage
+// =====================================================================
+//
+// Google Flights / Skyscanner / Hopper-style search-results screen.
+// Distinct from `BoardingPassPage` (post-purchase) and `RideShareBooking-
+// Page` (in-app ride). Demonstrates:
+//
+//   - "Origin → destination" trip header card with dates and traveller
+//     count as tappable pills.
+//   - Sort / filter chips (Best / Cheapest / Fastest / Direct only).
+//   - Per-flight card: airline logo disc + flight time + duration +
+//     stops + price right-aligned + small emissions caption tone-
+//     tinted (success for low, warning for mid, danger for high).
+//   - Bookmarked-fare CTA strip + footer caption with result count.
+
+import { Theme, Tone } from "@mobile-theme/theme.slint";
+import { AppBar } from "@mobile-components/app-bar.slint";
+import { SectionHeader } from "@mobile-components/section-header.slint";
+import { Chip } from "@mobile-components/chip.slint";
+import { Divider } from "@mobile-components/divider.slint";
+
+// Pill that the user taps to edit a trip criterion (date / passengers).
+component TripPill inherits Rectangle {
+    in property <string> caption;
+    in property <string> value;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: root.caption;
+    accessible-action-default => { root.clicked(); }
+
+    horizontal-stretch: 1;
+    height: 56px;
+    background: Theme.surface-1;
+    border-radius: Theme.radius-md;
+    drop-shadow-blur: Theme.elevation-1-blur;
+    drop-shadow-color: Theme.elevation-1-color;
+    drop-shadow-offset-y: Theme.elevation-1-y;
+
+    VerticalLayout {
+        padding: Theme.spacing-sm;
+        spacing: 2px;
+        alignment: center;
+        Text {
+            text: root.caption;
+            color: Theme.muted;
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: 0.5px;
+        }
+        Text {
+            text: root.value;
+            color: Theme.on-surface;
+            font-size: Theme.font-size-body;
+            font-weight: 700;
+        }
+    }
+    TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+// One flight result card.
+component FlightCard inherits Rectangle {
+    in property <string> airline;
+    in property <string> airline-badge;
+    in property <color> airline-color;
+    in property <string> depart;
+    in property <string> origin;
+    in property <string> arrive;
+    in property <string> destination;
+    in property <string> duration;
+    in property <string> stops;
+    in property <string> price;
+    in property <string> emissions;
+    in property <Tone> emissions-tone: Tone.success;
+    in property <bool> recommended: false;
+
+    horizontal-stretch: 1;
+    background: Theme.surface-1;
+    border-radius: Theme.radius-md;
+    drop-shadow-blur: Theme.elevation-1-blur;
+    drop-shadow-color: Theme.elevation-1-color;
+    drop-shadow-offset-y: Theme.elevation-1-y;
+    border-width: root.recommended ? 1px : 0px;
+    border-color: Theme.accent-success;
+
+    VerticalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-sm;
+
+        // Airline + recommended pill.
+        HorizontalLayout {
+            spacing: Theme.spacing-sm;
+            alignment: stretch;
+            VerticalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 28px;
+                    height: 28px;
+                    border-radius: 6px;
+                    background: root.airline-color;
+                    Text {
+                        text: root.airline-badge;
+                        color: Theme.on-primary;
+                        font-size: 11px;
+                        font-weight: 800;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                }
+            }
+            VerticalLayout {
+                horizontal-stretch: 1;
+                alignment: center;
+                Text {
+                    text: root.airline;
+                    color: Theme.on-surface;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                }
+            }
+            if root.recommended: Rectangle {
+                width: rec-text.preferred-width + 12px;
+                height: 18px;
+                border-radius: 4px;
+                background: Theme.accent-success;
+                rec-text := Text {
+                    text: "BEST VALUE";
+                    color: Theme.on-primary;
+                    font-size: 9px;
+                    font-weight: 800;
+                    letter-spacing: 0.5px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+            }
+        }
+
+        // Times row.
+        HorizontalLayout {
+            spacing: Theme.spacing-md;
+            alignment: stretch;
+
+            // Depart column.
+            VerticalLayout {
+                horizontal-stretch: 1;
+                spacing: 2px;
+                Text {
+                    text: root.depart;
+                    color: Theme.on-surface;
+                    font-size: 22px;
+                    font-weight: 700;
+                }
+                Text {
+                    text: root.origin;
+                    color: Theme.muted;
+                    font-size: 10px;
+                    font-weight: 700;
+                    letter-spacing: 0.5px;
+                }
+            }
+
+            // Duration column.
+            VerticalLayout {
+                horizontal-stretch: 1;
+                alignment: center;
+                spacing: 2px;
+                HorizontalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.duration;
+                        color: Theme.muted;
+                        font-size: 11px;
+                        font-weight: 700;
+                    }
+                }
+                Rectangle {
+                    height: 1px;
+                    background: Theme.outline;
+                }
+                HorizontalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.stops;
+                        color:
+                              root.stops == "Direct"
+                            ? Theme.accent-success
+                            : Theme.muted;
+                        font-size: 10px;
+                        font-weight: 700;
+                        letter-spacing: 0.3px;
+                    }
+                }
+            }
+
+            // Arrive + price column.
+            VerticalLayout {
+                horizontal-stretch: 1;
+                spacing: 2px;
+                Text {
+                    text: root.arrive;
+                    color: Theme.on-surface;
+                    font-size: 22px;
+                    font-weight: 700;
+                    horizontal-alignment: right;
+                }
+                Text {
+                    text: root.destination;
+                    color: Theme.muted;
+                    font-size: 10px;
+                    font-weight: 700;
+                    letter-spacing: 0.5px;
+                    horizontal-alignment: right;
+                }
+            }
+        }
+
+        // Footer row: emissions + price.
+        Divider { }
+        HorizontalLayout {
+            spacing: Theme.spacing-sm;
+            Text {
+                text: root.emissions;
+                color:
+                      root.emissions-tone == Tone.success ? Theme.accent-success
+                    : root.emissions-tone == Tone.warning ? Theme.accent-warning
+                    : root.emissions-tone == Tone.danger  ? Theme.accent-danger
+                    : Theme.muted;
+                font-size: Theme.font-size-caption;
+                font-weight: 700;
+                horizontal-stretch: 1;
+                vertical-alignment: center;
+            }
+            Text {
+                text: root.price;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body-large;
+                font-weight: 800;
+                horizontal-alignment: right;
+                vertical-alignment: center;
+            }
+        }
+    }
+}
+
+export component FlightSearchPage inherits Rectangle {
+    in property <string> origin: "SFO · San Francisco";
+    in property <string> destination: "LIS · Lisbon";
+    callback back-pressed();
+    callback edit-criteria-pressed(string);
+    callback flight-pressed(string);
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "Flights";
+            leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
+            trailing-icon: @image-url("@mobile-components/icons/queue.svg");
+            leading-pressed => { root.back-pressed(); }
+        }
+
+        // Trip header card.
+        VerticalLayout {
+            padding: Theme.spacing-md;
+            spacing: Theme.spacing-sm;
+            Text {
+                text: root.origin + "  →  " + root.destination;
+                color: Theme.on-background;
+                font-size: Theme.font-size-body-large;
+                font-weight: 700;
+                wrap: word-wrap;
+            }
+            HorizontalLayout {
+                spacing: Theme.spacing-sm;
+                TripPill {
+                    caption: "DEPART";
+                    value: "Thu, May 22";
+                    clicked => { root.edit-criteria-pressed("depart"); }
+                }
+                TripPill {
+                    caption: "RETURN";
+                    value: "Thu, May 29";
+                    clicked => { root.edit-criteria-pressed("return"); }
+                }
+                TripPill {
+                    caption: "PAX";
+                    value: "2 adults";
+                    clicked => { root.edit-criteria-pressed("passengers"); }
+                }
+            }
+            HorizontalLayout {
+                spacing: Theme.spacing-sm;
+                Chip { label: "Best"; selected: true; }
+                Chip { label: "Cheapest"; }
+                Chip { label: "Fastest"; }
+                Chip { label: "Direct only"; }
+            }
+        }
+
+        SectionHeader { text: "8 RESULTS · ECONOMY"; }
+
+        VerticalLayout {
+            padding-left: Theme.spacing-md;
+            padding-right: Theme.spacing-md;
+            padding-bottom: Theme.spacing-md;
+            spacing: Theme.spacing-sm;
+
+            FlightCard {
+                airline: "TAP Air Portugal · TP216";
+                airline-badge: "TP";
+                airline-color: #c8102e;
+                depart: "16:40";
+                origin: "SFO";
+                arrive: "12:30+1";
+                destination: "LIS";
+                duration: "11 h 50";
+                stops: "Direct";
+                price: "$612";
+                emissions: "−18% emissions vs avg";
+                emissions-tone: Tone.success;
+                recommended: true;
+            }
+            FlightCard {
+                airline: "Lufthansa · LH456 + LH4530";
+                airline-badge: "LH";
+                airline-color: #05164d;
+                depart: "13:25";
+                origin: "SFO";
+                arrive: "18:55+1";
+                destination: "LIS";
+                duration: "20 h 30";
+                stops: "1 stop · FRA 4 h 10";
+                price: "$548";
+                emissions: "+4% emissions vs avg";
+                emissions-tone: Tone.warning;
+            }
+            FlightCard {
+                airline: "United · UA38 + UA982";
+                airline-badge: "UA";
+                airline-color: #0033a0;
+                depart: "21:50";
+                origin: "SFO";
+                arrive: "17:25+1";
+                destination: "LIS";
+                duration: "13 h 35";
+                stops: "1 stop · EWR 2 h 05";
+                price: "$674";
+                emissions: "+12% emissions vs avg";
+                emissions-tone: Tone.danger;
+            }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+    }
+}

@@ -1,0 +1,125 @@
+// Stepper
+// =====================================================================
+//
+// Inline numeric +/- input. Use for small bounded integer adjustments
+// (quantity in a cart, repetition count, font size), where typing a
+// number into a `TextField` would be more friction than tapping.
+//
+// Specification
+// -------------
+//
+// Geometry
+//   - Outer width: natural (3 cells: minus button | value | plus
+//     button). Height: 40 px (slightly under touch-target — the
+//     individual buttons hit the 40 px floor and that's enough for an
+//     inline secondary control).
+//   - Pill outline: border-radius = height / 2, 1 px `Theme.outline`
+//     border, no fill.
+//   - The minus / plus buttons are 40 × 40 squares clipped to circles
+//     by the outer border-radius.
+//   - The value display is 56 px wide so a 3-digit number fits without
+//     the buttons jumping.
+//
+// State
+//   - `value` (in-out int, default 0): the current value. Clamped to
+//     `[minimum, maximum]` on every change.
+//   - `minimum` (int, default 0) and `maximum` (int, default 100):
+//     bounds. The minus button is disabled at `minimum`; the plus
+//     button is disabled at `maximum`.
+//   - `step` (int, default 1): increment / decrement amount.
+//
+// Callbacks
+//   - `changed(int)` fires on every successful change.
+
+import { Theme } from "@mobile-theme/theme.slint";
+
+component StepButton inherits Rectangle {
+    in property <image> icon;
+    in property <bool> enabled: true;
+    in property <string> action-label;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: root.action-label;
+    accessible-enabled: root.enabled;
+    accessible-action-default => {
+        if root.enabled { root.clicked(); }
+    }
+
+    width: 40px;
+    height: 40px;
+    background: touch.pressed && root.enabled ? Theme.surface-pressed : transparent;
+    opacity: root.enabled ? 1.0 : 0.4;
+
+    animate background { duration: Theme.motion-fast; }
+
+    Image {
+        width: 20px;
+        height: 20px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        source: root.icon;
+        colorize: Theme.on-surface;
+        image-fit: contain;
+    }
+
+    touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+export component Stepper inherits Rectangle {
+    in-out property <int> value: 0;
+    in property <int> minimum: 0;
+    in property <int> maximum: 100;
+    in property <int> step: 1;
+    callback changed(int);
+
+    height: 40px;
+    border-radius: self.height / 2;
+    // No border — the `surface-variant` fill is the pill's visual edge
+    // against the page background.
+    background: Theme.surface-variant;
+    clip: true;
+
+    HorizontalLayout {
+        alignment: stretch;
+        spacing: 0;
+
+        StepButton {
+            icon: @image-url("icons/minus.svg");
+            action-label: "Decrement";
+            enabled: root.value > root.minimum;
+            clicked => {
+                root.value = max(root.minimum, root.value - root.step);
+                root.changed(root.value);
+            }
+        }
+
+        Rectangle {
+            width: 56px;
+            Text {
+                width: parent.width;
+                height: parent.height;
+                text: root.value;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body-large;
+                font-weight: 600;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+
+        StepButton {
+            icon: @image-url("icons/plus.svg");
+            action-label: "Increment";
+            enabled: root.value < root.maximum;
+            clicked => {
+                root.value = min(root.maximum, root.value + root.step);
+                root.changed(root.value);
+            }
+        }
+    }
+}

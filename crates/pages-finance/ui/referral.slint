@@ -1,0 +1,408 @@
+// ReferralPage
+// =====================================================================
+//
+// Invite-friends / referral screen — the "give $10, get $10" growth
+// loop. Distinct from `TipJarPage` (gratuity) and `PaywallPage`
+// (subscribe). Demonstrates a share-and-track surface:
+//
+//   - Reward hero: a gradient banner stating the offer.
+//   - Referral-code card: the code in a dashed-feel box + a Copy
+//     pill, plus a share-channel row.
+//   - Progress-toward-bonus: "3 of 5 friends — unlock a $50 bonus"
+//     with a segmented progress bar.
+//   - Invited-friends list: each row an avatar + name + a tone-tinted
+//     status pill (Joined / Pending) + the reward earned.
+
+import { Theme, Tone } from "@mobile-theme/theme.slint";
+import { AppBar } from "@mobile-components/app-bar.slint";
+import { SectionHeader } from "@mobile-components/section-header.slint";
+import { Avatar } from "@mobile-components/avatar.slint";
+import { Divider } from "@mobile-components/divider.slint";
+import { MobileButton } from "@mobile-components/button.slint";
+
+// One share-channel disc + label.
+component ShareChannel inherits Rectangle {
+    in property <image> icon;
+    in property <string> label;
+    in property <Tone> tone: Tone.default;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-action-default => { root.clicked(); }
+
+    horizontal-stretch: 1;
+    height: 72px;
+
+    VerticalLayout {
+        alignment: center;
+        spacing: 6px;
+        HorizontalLayout {
+            alignment: center;
+            Rectangle {
+                width: 44px;
+                height: 44px;
+                border-radius: 22px;
+                background:
+                      root.tone == Tone.success ? Theme.accent-success
+                    : root.tone == Tone.info    ? Theme.accent-info
+                    : root.tone == Tone.warning ? Theme.accent-warning
+                    : Theme.surface-2;
+                Image {
+                    width: 20px;
+                    height: 20px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: root.icon;
+                    colorize: root.tone == Tone.default ? Theme.on-surface : Theme.on-primary;
+                    image-fit: contain;
+                }
+                TouchArea {
+                    clicked => { root.clicked(); }
+                }
+            }
+        }
+        Text {
+            text: root.label;
+            color: Theme.muted;
+            font-size: 10px;
+            font-weight: 700;
+            horizontal-alignment: center;
+        }
+    }
+}
+
+// One invited-friend row. `status`: 0 joined / 1 pending.
+component FriendRow inherits Rectangle {
+    in property <string> fallback;
+    in property <string> name;
+    in property <string> detail;
+    in property <int> status: 0;
+    in property <string> reward;
+
+    horizontal-stretch: 1;
+    min-height: 60px;
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+        VerticalLayout {
+            alignment: center;
+            Avatar {
+                fallback: root.fallback;
+                size: 40px;
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: root.name;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+            Text {
+                text: root.detail;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 4px;
+            Rectangle {
+                width: status-text.preferred-width + 14px;
+                height: 18px;
+                border-radius: 4px;
+                background: root.status == 0
+                    ? Theme.accent-success.with-alpha(0.16)
+                    : Theme.accent-warning.with-alpha(0.16);
+                status-text := Text {
+                    text: root.status == 0 ? "Joined" : "Pending";
+                    color: root.status == 0 ? Theme.accent-success : Theme.accent-warning;
+                    font-size: 9px;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+            }
+            Text {
+                text: root.reward;
+                color: root.status == 0 ? Theme.accent-success : Theme.muted;
+                font-size: Theme.font-size-caption;
+                font-weight: 800;
+                horizontal-alignment: right;
+            }
+        }
+    }
+}
+
+export component ReferralPage inherits Rectangle {
+    in property <string> code: "GREG-2026";
+    in property <int> joined: 3;
+    in property <int> target: 5;
+    callback back-pressed();
+    callback copy-pressed();
+    callback share-pressed(string);
+    callback invite-pressed();
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "Invite friends";
+            leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
+            leading-pressed => { root.back-pressed(); }
+        }
+
+        VerticalLayout {
+            padding: Theme.spacing-md;
+            spacing: Theme.spacing-md;
+            alignment: start;
+
+            // Reward hero.
+            Rectangle {
+                height: 132px;
+                border-radius: Theme.radius-lg;
+                background: @linear-gradient(135deg, #7c3aed 0%, #4c1d95 100%);
+                drop-shadow-blur: Theme.elevation-2-blur;
+                drop-shadow-color: Theme.elevation-2-color;
+                drop-shadow-offset-y: Theme.elevation-2-y;
+                clip: true;
+                Image {
+                    width: 130px;
+                    height: 130px;
+                    x: parent.width - 70px;
+                    y: -24px;
+                    source: @image-url("@mobile-components/icons/heart.svg");
+                    colorize: #ffffff;
+                    opacity: 0.1;
+                    image-fit: contain;
+                }
+                VerticalLayout {
+                    padding: Theme.spacing-md;
+                    alignment: center;
+                    spacing: 6px;
+                    Text {
+                        text: "Give $10, get $10";
+                        color: #ffffff;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 800;
+                    }
+                    Text {
+                        text: "Your friend gets $10 off their first order — you get $10 when they spend it.";
+                        color: #ffffffcc;
+                        font-size: Theme.font-size-caption;
+                        font-weight: 600;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+
+            // Referral code card.
+            Rectangle {
+                border-radius: Theme.radius-md;
+                background: Theme.surface-1;
+                drop-shadow-blur: Theme.elevation-1-blur;
+                drop-shadow-color: Theme.elevation-1-color;
+                drop-shadow-offset-y: Theme.elevation-1-y;
+                VerticalLayout {
+                    padding: Theme.spacing-md;
+                    spacing: Theme.spacing-sm;
+                    Text {
+                        text: "YOUR REFERRAL CODE";
+                        color: Theme.muted;
+                        font-size: 10px;
+                        font-weight: 800;
+                        letter-spacing: 0.5px;
+                    }
+                    HorizontalLayout {
+                        spacing: Theme.spacing-sm;
+                        alignment: stretch;
+                        Rectangle {
+                            horizontal-stretch: 1;
+                            height: 48px;
+                            border-radius: Theme.radius-sm;
+                            background: Theme.surface-2;
+                            border-width: 1px;
+                            border-color: Theme.surface-variant;
+                            Text {
+                                text: root.code;
+                                color: Theme.on-surface;
+                                font-size: Theme.font-size-title;
+                                font-weight: 800;
+                                letter-spacing: 1px;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                width: parent.width;
+                                height: parent.height;
+                            }
+                        }
+                        Rectangle {
+                            width: 96px;
+                            height: 48px;
+                            border-radius: Theme.radius-sm;
+                            background: touch.pressed ? Theme.primary.darker(0.15) : Theme.primary;
+                            animate background { duration: Theme.motion-fast; }
+                            Text {
+                                text: "Copy";
+                                color: Theme.on-primary;
+                                font-size: Theme.font-size-body;
+                                font-weight: 800;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                width: parent.width;
+                                height: parent.height;
+                            }
+                            touch := TouchArea {
+                                clicked => { root.copy-pressed(); }
+                            }
+                        }
+                    }
+                    // Share channels.
+                    HorizontalLayout {
+                        ShareChannel {
+                            icon: @image-url("@mobile-components/icons/send.svg");
+                            label: "Message";
+                            tone: Tone.info;
+                            clicked => { root.share-pressed("message"); }
+                        }
+                        ShareChannel {
+                            icon: @image-url("@mobile-components/icons/inbox.svg");
+                            label: "Email";
+                            tone: Tone.default;
+                            clicked => { root.share-pressed("email"); }
+                        }
+                        ShareChannel {
+                            icon: @image-url("@mobile-components/icons/heart.svg");
+                            label: "Social";
+                            tone: Tone.warning;
+                            clicked => { root.share-pressed("social"); }
+                        }
+                        ShareChannel {
+                            icon: @image-url("@mobile-components/icons/more-vertical.svg");
+                            label: "More";
+                            tone: Tone.default;
+                            clicked => { root.share-pressed("more"); }
+                        }
+                    }
+                }
+            }
+
+            // Progress toward bonus.
+            Rectangle {
+                border-radius: Theme.radius-md;
+                background: Theme.surface-1;
+                drop-shadow-blur: Theme.elevation-1-blur;
+                drop-shadow-color: Theme.elevation-1-color;
+                drop-shadow-offset-y: Theme.elevation-1-y;
+                VerticalLayout {
+                    padding: Theme.spacing-md;
+                    spacing: Theme.spacing-sm;
+                    HorizontalLayout {
+                        Text {
+                            text: root.joined + " of " + root.target + " friends joined";
+                            color: Theme.on-surface;
+                            font-size: Theme.font-size-body;
+                            font-weight: 700;
+                            horizontal-stretch: 1;
+                        }
+                        Text {
+                            text: "+$50 bonus";
+                            color: Theme.accent-warning;
+                            font-size: Theme.font-size-caption;
+                            font-weight: 800;
+                        }
+                    }
+                    // Segmented progress.
+                    HorizontalLayout {
+                        spacing: 4px;
+                        for seg in 5: Rectangle {
+                            horizontal-stretch: 1;
+                            height: 8px;
+                            border-radius: 4px;
+                            background: seg < root.joined
+                                ? Theme.accent-warning
+                                : Theme.surface-variant;
+                        }
+                    }
+                    Text {
+                        text: "Invite " + (root.target - root.joined)
+                            + " more to unlock your bonus.";
+                        color: Theme.muted;
+                        font-size: Theme.font-size-caption;
+                    }
+                }
+            }
+        }
+
+        SectionHeader { text: "INVITED FRIENDS"; }
+        FriendRow {
+            fallback: "MK";
+            name: "Marco Kessler";
+            detail: "Joined 2 days ago";
+            status: 0;
+            reward: "+$10";
+        }
+        Divider { }
+        FriendRow {
+            fallback: "AL";
+            name: "Aïsha Laurent";
+            detail: "Joined 5 days ago";
+            status: 0;
+            reward: "+$10";
+        }
+        Divider { }
+        FriendRow {
+            fallback: "DV";
+            name: "Devika Sharma";
+            detail: "Joined last week";
+            status: 0;
+            reward: "+$10";
+        }
+        Divider { }
+        FriendRow {
+            fallback: "TN";
+            name: "Theo Nguyen";
+            detail: "Invited — not signed up yet";
+            status: 1;
+            reward: "$0";
+        }
+        Divider { }
+        FriendRow {
+            fallback: "RP";
+            name: "Rosa Pérez";
+            detail: "Invited yesterday";
+            status: 1;
+            reward: "$0";
+        }
+
+        Rectangle { vertical-stretch: 1; }
+
+        // Sticky CTA.
+        Rectangle {
+            background: Theme.surface-1;
+            drop-shadow-blur: Theme.elevation-2-blur;
+            drop-shadow-color: Theme.elevation-2-color;
+            drop-shadow-offset-y: -4px;
+            height: 80px;
+            HorizontalLayout {
+                padding: Theme.spacing-md;
+                MobileButton {
+                    text: "Share your invite link";
+                    primary: true;
+                    max-height: 48px;
+                    clicked => { root.invite-pressed(); }
+                }
+            }
+        }
+    }
+}

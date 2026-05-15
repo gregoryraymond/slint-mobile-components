@@ -1,0 +1,114 @@
+// Slider
+// =====================================================================
+//
+// Horizontal scalar input — drag the thumb (or tap on the track) to set
+// a value between 0 and 1. The 0..1 normalised range keeps the API
+// trivial; callers map it to a domain (volume %, brightness, slider for
+// font size, etc.) at the call site.
+//
+// Specification
+// -------------
+//
+// Geometry
+//   - Full layout-cell width (`horizontal-stretch: 1`), min-height = 48
+//     px so the thumb is comfortable to grab on a touchscreen even
+//     though the visible track is only 4 px tall.
+//   - Track: 4 px tall, centred vertically. Filled portion uses
+//     `Theme.primary`; remaining portion uses `Theme.outline`.
+//   - Thumb: 20 × 20 px circle, `Theme.primary` fill, soft drop shadow
+//     for tactile lift. Grows to 24 × 24 while pressed (Material-y).
+//
+// Value
+//   - `value` (in-out float, default 0.5): the current normalised
+//     position. Clamped to 0..1 on input.
+//   - Setting `value` programmatically updates the visuals smoothly
+//     thanks to an `animate` on the thumb / filled-portion bindings.
+//
+// Interaction
+//   - Tap on the track → `value` snaps to the tap x and `changed(v)`
+//     fires.
+//   - Drag the thumb (or any point on the row) → `value` follows the
+//     pointer; `changed(v)` fires on every move.
+//   - `enabled: false` greys out and disables both gestures.
+//
+// Accessibility
+//   - `accessible-role: slider`, with `accessible-value` carrying the
+//     value as a 0–100 integer string (screen readers announce
+//     percentages, not 0..1 floats).
+
+import { Theme } from "@mobile-theme/theme.slint";
+
+export component Slider inherits Rectangle {
+    in-out property <float> value: 0.5;
+    in property <bool> enabled: true;
+    callback changed(float);
+
+    accessible-role: slider;
+    accessible-label: "Slider";
+    accessible-value: round(root.value * 100) + "";
+    accessible-value-minimum: 0;
+    accessible-value-maximum: 100;
+    accessible-value-step: 1;
+    accessible-enabled: root.enabled;
+
+    min-height: Theme.touch-target;
+    horizontal-stretch: 1;
+    opacity: root.enabled ? 1.0 : 0.5;
+
+    // Track (full width, dim).
+    Rectangle {
+        x: 0;
+        y: (parent.height - self.height) / 2;
+        width: parent.width;
+        height: 4px;
+        background: Theme.outline;
+        border-radius: self.height / 2;
+
+        // Filled portion (left of thumb).
+        Rectangle {
+            x: 0;
+            y: 0;
+            width: parent.width * max(0.0, min(1.0, root.value));
+            height: parent.height;
+            background: Theme.primary;
+            border-radius: parent.border-radius;
+            animate width { duration: Theme.motion-fast; easing: ease-out; }
+        }
+    }
+
+    // Thumb.
+    thumb := Rectangle {
+        property <length> resting-size: 20px;
+        property <length> pressed-size: 24px;
+        width: touch.pressed ? self.pressed-size : self.resting-size;
+        height: self.width;
+        x: parent.width * max(0.0, min(1.0, root.value)) - self.width / 2;
+        y: (parent.height - self.height) / 2;
+        border-radius: self.width / 2;
+        background: Theme.primary;
+        drop-shadow-blur: 4px;
+        drop-shadow-color: #00000060;
+        drop-shadow-offset-y: 1px;
+
+        animate width { duration: Theme.motion-fast; }
+        animate x { duration: Theme.motion-fast; easing: ease-out; }
+    }
+
+    touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+
+        // Compute the value from the pointer x both on click and during
+        // drag — `pressed` distinguishes a drag from a passive hover.
+        clicked => {
+            root.value = max(0.0, min(1.0, self.mouse-x / parent.width));
+            root.changed(root.value);
+        }
+        moved => {
+            if self.pressed {
+                root.value = max(0.0, min(1.0, self.mouse-x / parent.width));
+                root.changed(root.value);
+            }
+        }
+    }
+}

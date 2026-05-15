@@ -1,0 +1,115 @@
+// TextField
+// =====================================================================
+//
+// Single-line text input styled for mobile forms. Wraps Slint's
+// `TextInput` primitive with a labelled, focus-aware shell.
+//
+// Specification
+// -------------
+//
+// Geometry
+//   - Inner field: min-height = `Theme.touch-target` (48px) so the field
+//     accepts a fingertip tap directly.
+//   - Optional label above the field adds ~22px height (caption text +
+//     4px spacing).
+//   - Full width (`horizontal-stretch: 1`).
+//   - Border-radius: `Theme.radius-md` (12px); background `Theme.surface-1`.
+//
+// Border / focus
+//   - Resting: 1px `Theme.outline`.
+//   - Focused: 2px `Theme.primary`, animated over `motion-fast`.
+//
+// Slots
+//   - `label` (string, optional): caption above the field, muted.
+//   - `placeholder` (string, optional): shown inside the field while
+//     `text` is empty. Disappears as soon as a character is typed.
+//   - `text` (in-out string): the current value. Use a two-way binding
+//     (`text <=> some-prop`) when the page owns the model.
+//
+// Behaviour
+//   - `input-type` (InputType, default `text`): switch to `password` to
+//     mask characters, `number` / `decimal` for numeric pads.
+//   - `enabled` (bool, default true): when false, the field is dimmed
+//     and accepts no input.
+//
+// Callbacks
+//   - `edited(string)` fires after every keystroke with the new text.
+//   - `accepted(string)` fires when the soft-keyboard's enter key is
+//     pressed (useful for "next field" navigation or form submit).
+import { Theme } from "@mobile-theme/theme.slint";
+
+export component TextField inherits Rectangle {
+    in property <string> label;
+    in property <string> placeholder;
+    in-out property <string> text;
+    in property <InputType> input-type: InputType.text;
+    in property <bool> enabled: true;
+    callback edited(string);
+    callback accepted(string);
+
+    accessible-role: text-input;
+    accessible-label: root.label;
+    accessible-value: root.text;
+    accessible-enabled: root.enabled;
+    accessible-action-set-value(v) => {
+        root.text = v;
+        root.edited(v);
+    }
+
+    min-height: Theme.touch-target + (root.label != "" ? 22px : 0px);
+    horizontal-stretch: 1;
+    background: transparent;
+
+    VerticalLayout {
+        spacing: 4px;
+
+        if root.label != "": Text {
+            text: root.label;
+            color: Theme.muted;
+            font-size: Theme.font-size-caption;
+            font-weight: 500;
+        }
+
+        field := Rectangle {
+            min-height: Theme.touch-target;
+            background: Theme.surface-1;
+            border-radius: Theme.radius-md;
+            // No border at rest — surface-1 fill is the edge. The focus
+            // ring is the only intentional border in the library
+            // (DESIGN.md exception).
+            border-width: input.has-focus ? 2px : 0px;
+            border-color: Theme.primary;
+            opacity: root.enabled ? 1.0 : 0.5;
+
+            animate border-width { duration: Theme.motion-fast; }
+
+            if input.text == "" && root.placeholder != "": Text {
+                x: Theme.spacing-md;
+                y: 0;
+                width: parent.width - 2 * Theme.spacing-md;
+                height: parent.height;
+                text: root.placeholder;
+                color: Theme.muted;
+                font-size: Theme.font-size-body-large;
+                vertical-alignment: center;
+            }
+
+            input := TextInput {
+                x: Theme.spacing-md;
+                y: 0;
+                width: parent.width - 2 * Theme.spacing-md;
+                height: parent.height;
+                text <=> root.text;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body-large;
+                single-line: true;
+                input-type: root.input-type;
+                enabled: root.enabled;
+                vertical-alignment: center;
+
+                edited => { root.edited(self.text); }
+                accepted => { root.accepted(self.text); }
+            }
+        }
+    }
+}

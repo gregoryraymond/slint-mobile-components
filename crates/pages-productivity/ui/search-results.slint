@@ -1,0 +1,356 @@
+// SearchResultsPage
+// =====================================================================
+//
+// Search / filter / sectioned-results template. Exercises three
+// catalogue primitives in one screen:
+//
+//   - TextField inside the AppBar's title slot (search query input).
+//   - A horizontal-scrollable row of filter `Chip`s with `selected`
+//     state.
+//   - Three result sections, each headed by a `SectionHeader`, mixing
+//     `Avatar` (People), `Image` icon (Files) and a denser preview
+//     row (Threads). Demonstrates that the same `ContactRow`-ish
+//     pattern adapts to different content types with light tuning.
+
+import { Theme } from "@mobile-theme/theme.slint";
+import { Chip } from "@mobile-components/chip.slint";
+import { ContactRow } from "@mobile-components/contact-row.slint";
+import { SectionHeader } from "@mobile-components/section-header.slint";
+import { ScrollView } from "std-widgets.slint";
+
+export struct PersonResult {
+    name: string,
+    initials: string,
+    role: string,
+}
+
+export struct FileResult {
+    name: string,
+    meta: string,
+    kind: string,   // "doc" | "image" | "code"
+}
+
+export struct ThreadResult {
+    subject: string,
+    snippet: string,
+    when: string,
+}
+
+component FileRow inherits Rectangle {
+    in property <FileResult> file;
+    callback clicked();
+
+    accessible-role: list-item;
+    accessible-label: file.name;
+    accessible-description: file.meta;
+    accessible-action-default => { root.clicked(); }
+
+    min-height: 56px;
+    horizontal-stretch: 1;
+    background: touch.pressed ? Theme.surface-pressed : transparent;
+
+    animate background { duration: Theme.motion-fast; }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        padding-top: Theme.spacing-sm;
+        padding-bottom: Theme.spacing-sm;
+        spacing: Theme.spacing-md;
+
+        // Coloured "kind" chip — quick visual classifier.
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 36px;
+                height: 36px;
+                border-radius: Theme.radius-sm;
+                background: root.file.kind == "doc" ? Theme.accent-info
+                    : root.file.kind == "image" ? Theme.accent-success
+                    : root.file.kind == "code" ? Theme.accent-warning
+                    : Theme.surface-variant;
+                Text {
+                    width: parent.width;
+                    height: parent.height;
+                    text: root.file.kind == "doc" ? "D"
+                        : root.file.kind == "image" ? "I"
+                        : root.file.kind == "code" ? "</>"
+                        : "·";
+                    color: Theme.on-primary;
+                    font-size: Theme.font-size-body;
+                    font-weight: 600;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        VerticalLayout {
+            horizontal-stretch: 1;
+            spacing: 2px;
+            alignment: center;
+            Text {
+                text: root.file.name;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body-large;
+                font-weight: 500;
+                overflow: elide;
+            }
+            Text {
+                text: root.file.meta;
+                color: Theme.muted;
+                font-size: Theme.font-size-body;
+            }
+        }
+    }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+component ThreadRow inherits Rectangle {
+    in property <ThreadResult> thread;
+    callback clicked();
+
+    accessible-role: list-item;
+    accessible-label: thread.subject;
+    accessible-description: thread.snippet;
+    accessible-action-default => { root.clicked(); }
+
+    min-height: 72px;
+    horizontal-stretch: 1;
+    background: touch.pressed ? Theme.surface-pressed : transparent;
+
+    animate background { duration: Theme.motion-fast; }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        padding-top: Theme.spacing-sm;
+        padding-bottom: Theme.spacing-sm;
+        spacing: Theme.spacing-md;
+
+        VerticalLayout {
+            horizontal-stretch: 1;
+            spacing: 4px;
+            alignment: center;
+            HorizontalLayout {
+                Text {
+                    text: root.thread.subject;
+                    color: Theme.on-surface;
+                    font-size: Theme.font-size-body-large;
+                    font-weight: 600;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+                Text {
+                    text: root.thread.when;
+                    color: Theme.muted;
+                    font-size: Theme.font-size-caption;
+                }
+            }
+            Text {
+                text: root.thread.snippet;
+                color: Theme.muted;
+                font-size: Theme.font-size-body;
+                overflow: elide;
+            }
+        }
+    }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+export component SearchResultsPage inherits Rectangle {
+    in-out property <string> query: "design tokens";
+    in-out property <int> filter-index: 0;
+    in property <[PersonResult]> people: [
+        { name: "Petra Lindquist", initials: "PL", role: "Design Engineer" },
+        { name: "Marco · ops",    initials: "MO", role: "Site Reliability" },
+    ];
+    in property <[FileResult]> files: [
+        { name: "DESIGN.md",                 meta: "Updated 2h ago · 14 KB", kind: "doc" },
+        { name: "podcast-cover.svg",         meta: "Updated yesterday · 4 KB", kind: "image" },
+        { name: "theme.slint",               meta: "Updated 3d ago · 6 KB", kind: "code" },
+    ];
+    in property <[ThreadResult]> threads: [
+        { subject: "Re: surface tier naming", snippet: "Locked it in DESIGN.md — surface-1 / -2 / -3.", when: "10:41" },
+        { subject: "Maestro flow flakes",     snippet: "Bumped threshold to 0.5 %; CI is green again.", when: "Mon" },
+    ];
+    callback back-pressed();
+    callback search-edited(string);
+    callback filter-changed(int);
+    callback person-pressed(PersonResult);
+    callback file-pressed(FileResult);
+    callback thread-pressed(ThreadResult);
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        // AppBar replaced with a custom search bar — back arrow on the
+        // left, the query field as the title slot, no trailing action.
+        Rectangle {
+            height: 56px;
+            background: Theme.background;
+            HorizontalLayout {
+                padding-left: Theme.spacing-sm;
+                padding-right: Theme.spacing-sm;
+                spacing: Theme.spacing-xs;
+                alignment: stretch;
+
+                Rectangle {
+                    width: 48px;
+                    height: 48px;
+                    border-radius: self.width / 2;
+                    background: back-touch.pressed ? Theme.surface-pressed : transparent;
+
+                    accessible-role: button;
+                    accessible-label: "Back";
+                    accessible-action-default => { root.back-pressed(); }
+
+                    animate background { duration: Theme.motion-fast; }
+
+                    Image {
+                        width: 24px;
+                        height: 24px;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        source: @image-url("@mobile-components/icons/arrow-left.svg");
+                        colorize: Theme.on-background;
+                        image-fit: contain;
+                    }
+
+                    back-touch := TouchArea {
+                        clicked => { root.back-pressed(); }
+                    }
+                }
+
+                Rectangle {
+                    horizontal-stretch: 1;
+                    Text {
+                        x: 0;
+                        y: 0;
+                        width: parent.width;
+                        height: parent.height;
+                        text: root.query;
+                        color: Theme.on-background;
+                        font-size: Theme.font-size-body-large;
+                        font-weight: 500;
+                        vertical-alignment: center;
+                        horizontal-alignment: left;
+                        overflow: elide;
+                    }
+                }
+
+                Rectangle {
+                    width: 48px;
+                    height: 48px;
+                    Image {
+                        width: 22px;
+                        height: 22px;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        source: @image-url("@mobile-components/icons/search.svg");
+                        colorize: Theme.muted;
+                        image-fit: contain;
+                    }
+                }
+            }
+        }
+
+        // Filter chip row (hardcoded items; horizontally scrollable
+        // viewport on a small viewport-width so a couple chips trail
+        // off-screen, hinting they're scrollable).
+        ScrollView {
+            height: 56px;
+            horizontal-scrollbar-policy: ScrollBarPolicy.always-off;
+            vertical-scrollbar-policy: ScrollBarPolicy.always-off;
+            viewport-width: 560px;
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-sm;
+                spacing: Theme.spacing-sm;
+                alignment: start;
+
+                Chip {
+                    label: "All";
+                    selected: root.filter-index == 0;
+                    clicked => {
+                        root.filter-index = 0;
+                        root.filter-changed(0);
+                    }
+                }
+                Chip {
+                    label: "People";
+                    selected: root.filter-index == 1;
+                    clicked => {
+                        root.filter-index = 1;
+                        root.filter-changed(1);
+                    }
+                }
+                Chip {
+                    label: "Files";
+                    selected: root.filter-index == 2;
+                    clicked => {
+                        root.filter-index = 2;
+                        root.filter-changed(2);
+                    }
+                }
+                Chip {
+                    label: "Threads";
+                    selected: root.filter-index == 3;
+                    clicked => {
+                        root.filter-index = 3;
+                        root.filter-changed(3);
+                    }
+                }
+                Chip {
+                    label: "This week";
+                    selected: root.filter-index == 4;
+                    clicked => {
+                        root.filter-index = 4;
+                        root.filter-changed(4);
+                    }
+                }
+            }
+        }
+
+        ScrollView {
+            vertical-stretch: 1;
+
+            VerticalLayout {
+                alignment: start;
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-lg;
+
+                SectionHeader { text: "PEOPLE"; }
+                for p in root.people: ContactRow {
+                    initials: p.initials;
+                    title: p.name;
+                    subtitle: p.role;
+                    emphasized: true;
+                    clicked => { root.person-pressed(p); }
+                }
+
+                SectionHeader { text: "FILES"; }
+                for f in root.files: FileRow {
+                    file: f;
+                    clicked => { root.file-pressed(f); }
+                }
+
+                SectionHeader { text: "THREADS"; }
+                for t in root.threads: ThreadRow {
+                    thread: t;
+                    clicked => { root.thread-pressed(t); }
+                }
+            }
+        }
+    }
+}

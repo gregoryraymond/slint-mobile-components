@@ -1,0 +1,268 @@
+// AddressBookPage
+// =====================================================================
+//
+// Contacts list grouped by letter — iOS Contacts / Android People style.
+// Demonstrates:
+//
+//   - Alphabetically grouped rows: a section header letter (A / B / C)
+//     above each cluster, contact rows underneath with avatar + name +
+//     subline (preferred contact method or company).
+//   - Right-edge A-Z index strip — a tall column of single-letter
+//     touch targets running the full height of the list area. Tapping
+//     a letter scrolls to that section (jump-list pattern). Active
+//     letter is rendered in the primary colour.
+//   - Search field anchored at the top.
+
+import { Theme, Tone } from "@mobile-theme/theme.slint";
+import { AppBar } from "@mobile-components/app-bar.slint";
+import { Avatar } from "@mobile-components/avatar.slint";
+import { TextField } from "@mobile-components/text-field.slint";
+import { Divider } from "@mobile-components/divider.slint";
+import { Fab } from "@mobile-components/button.slint";
+
+// Section letter header — distinct from `SectionHeader` because the
+// letter sits in a tinted disc on the left.
+component LetterHeader inherits Rectangle {
+    in property <string> letter;
+
+    horizontal-stretch: 1;
+    height: 36px;
+    background: Theme.surface-2;
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: stretch;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.letter;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+                font-weight: 800;
+                letter-spacing: 0.5px;
+            }
+        }
+    }
+}
+
+// One contact row.
+component ContactRow inherits Rectangle {
+    in property <string> initials;
+    in property <string> name;
+    in property <string> sub;
+    in property <Tone> avatar-tone: Tone.default;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: root.name;
+    accessible-action-default => { root.clicked(); }
+
+    horizontal-stretch: 1;
+    min-height: 56px;
+    background: touch.pressed ? Theme.surface-pressed : transparent;
+    animate background { duration: Theme.motion-fast; }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+        VerticalLayout {
+            alignment: center;
+            Avatar {
+                fallback: root.initials;
+                size: 36px;
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: root.name;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 500;
+                overflow: elide;
+            }
+            Text {
+                text: root.sub;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+                overflow: elide;
+            }
+        }
+    }
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+// One A-Z index cell — a single uppercase letter touch target.
+component IndexLetter inherits Rectangle {
+    in property <string> letter;
+    in property <bool> active: false;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: root.letter;
+    accessible-action-default => { root.clicked(); }
+
+    width: 16px;
+    height: 14px;
+    Text {
+        text: root.letter;
+        color: root.active ? Theme.primary : Theme.muted;
+        font-size: 10px;
+        font-weight: root.active ? 800 : 600;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: parent.width;
+        height: parent.height;
+    }
+    TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+export component AddressBookPage inherits Rectangle {
+    in property <string> active-letter: "A";
+    callback back-pressed();
+    callback new-contact-pressed();
+    callback contact-pressed(string);
+    callback index-jump(string);
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: "Contacts · 218";
+            leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
+            trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
+            leading-pressed => { root.back-pressed(); }
+        }
+
+        VerticalLayout {
+            padding-left: Theme.spacing-md;
+            padding-right: Theme.spacing-md;
+            padding-top: Theme.spacing-sm;
+            padding-bottom: Theme.spacing-sm;
+            TextField {
+                label: "";
+                placeholder: "Search contacts…";
+            }
+        }
+
+        // Index strip overlays the list as a sibling element so the
+        // list rows still extend full-width beneath it. We render the
+        // overlay only over the list area, not above the search field.
+        Rectangle {
+            horizontal-stretch: 1;
+            vertical-stretch: 1;
+
+            // List content.
+            VerticalLayout {
+                spacing: 0;
+                LetterHeader { letter: "A"; }
+                ContactRow {
+                    initials: "AR";
+                    name: "Anika Ravi";
+                    sub: "mobile · +1 415 555 0102";
+                    avatar-tone: Tone.info;
+                    clicked => { root.contact-pressed(self.name); }
+                }
+                Divider { }
+                ContactRow {
+                    initials: "AT";
+                    name: "Anders Thorvaldsen";
+                    sub: "work · anders@oslo.dev";
+                    clicked => { root.contact-pressed(self.name); }
+                }
+                Divider { }
+                LetterHeader { letter: "B"; }
+                ContactRow {
+                    initials: "BD";
+                    name: "Bao Duong";
+                    sub: "Patagonia · design";
+                    clicked => { root.contact-pressed(self.name); }
+                }
+                Divider { }
+                ContactRow {
+                    initials: "BL";
+                    name: "Béatrice Lefèvre";
+                    sub: "mobile · +33 6 22 88 30 14";
+                    clicked => { root.contact-pressed(self.name); }
+                }
+                Divider { }
+                LetterHeader { letter: "C"; }
+                ContactRow {
+                    initials: "CR";
+                    name: "Camila Rojas";
+                    sub: "mobile · +56 9 5544 2210";
+                    clicked => { root.contact-pressed(self.name); }
+                }
+                Divider { }
+                LetterHeader { letter: "D"; }
+                ContactRow {
+                    initials: "DV";
+                    name: "Devika Sharma";
+                    sub: "work · devika@slint.dev";
+                    clicked => { root.contact-pressed(self.name); }
+                }
+                Divider { }
+                LetterHeader { letter: "E"; }
+                ContactRow {
+                    initials: "EK";
+                    name: "Elena Kowalska";
+                    sub: "Patagonia · ops";
+                    clicked => { root.contact-pressed(self.name); }
+                }
+                Divider { }
+                LetterHeader { letter: "G"; }
+                ContactRow {
+                    initials: "GR";
+                    name: "Greg Raymond (me)";
+                    sub: "greg@slint.dev";
+                    avatar-tone: Tone.info;
+                    clicked => { root.contact-pressed(self.name); }
+                }
+                Divider { }
+                LetterHeader { letter: "L"; }
+                ContactRow {
+                    initials: "LE";
+                    name: "Léa Bernard";
+                    sub: "mobile · +33 6 90 12 47 81";
+                    clicked => { root.contact-pressed(self.name); }
+                }
+            }
+
+            // A-Z index strip — right edge.
+            Rectangle {
+                x: parent.width - 24px;
+                y: 0;
+                width: 24px;
+                height: parent.height;
+                VerticalLayout {
+                    spacing: 2px;
+                    padding-top: Theme.spacing-md;
+                    padding-bottom: Theme.spacing-md;
+                    alignment: stretch;
+                    for letter in ["A","B","C","D","E","F","G","H","I","J","K","L","M","N","O","P","Q","R","S","T","U","V","W","X","Y","Z","#"] : IndexLetter {
+                        letter: letter;
+                        active: letter == root.active-letter;
+                        clicked => { root.index-jump(letter); }
+                    }
+                }
+            }
+        }
+    }
+
+    Fab {
+        x: root.width - self.width - Theme.spacing-md;
+        y: root.height - self.height - Theme.spacing-md;
+        accessible-label: "New contact";
+        clicked => { root.new-contact-pressed(); }
+    }
+}

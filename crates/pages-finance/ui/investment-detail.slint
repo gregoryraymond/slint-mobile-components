@@ -1,0 +1,376 @@
+// InvestmentDetailPage
+// =====================================================================
+//
+// Single stock / instrument detail — Robinhood / Trading 212 / Public
+// "tap a holding to see the chart" screen. Sister to `CryptoPortfolio-
+// Page` (portfolio summary). Demonstrates:
+//
+//   - Ticker + company hero with brand logo disc, big share price, and
+//     tone-tinted day delta beneath.
+//   - Range-picker chip strip (1D / 1W / 1M / 3M / 1Y / 5Y / All).
+//   - Reused bar-strip sparkline (same approximation pattern as the
+//     crypto page), tone-coloured by the delta direction.
+//   - Holdings strip — "You own 14 shares · $4,318" tone-tinted by
+//     gain/loss against cost basis.
+//   - 2 × 2 fundamentals grid (Open / High / Market cap / P/E).
+//   - Analyst ratings horizontal bar (Buy / Hold / Sell tally).
+//   - Sticky Buy / Sell pair at the bottom.
+
+import { Theme, Tone } from "@mobile-theme/theme.slint";
+import { AppBar } from "@mobile-components/app-bar.slint";
+import { SectionHeader } from "@mobile-components/section-header.slint";
+import { Chip } from "@mobile-components/chip.slint";
+import { Divider } from "@mobile-components/divider.slint";
+import { MobileButton } from "@mobile-components/button.slint";
+
+// Stylised sparkline.
+component Sparkline inherits Rectangle {
+    in property <[int]> bars;
+    in property <color> stroke: Theme.accent-success;
+
+    HorizontalLayout {
+        spacing: 1px;
+        alignment: stretch;
+        for value in root.bars : VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: end;
+            Rectangle {
+                width: 3px;
+                height: parent.height * value / 100;
+                background: root.stroke;
+                border-top-left-radius: 2px;
+                border-top-right-radius: 2px;
+            }
+        }
+    }
+}
+
+// One fundamental tile in the 2×2 grid.
+component FundamentalTile inherits Rectangle {
+    in property <string> label;
+    in property <string> value;
+    in property <Tone> tone: Tone.default;
+
+    horizontal-stretch: 1;
+    height: 72px;
+    background: Theme.surface-1;
+    border-radius: Theme.radius-md;
+    drop-shadow-blur: Theme.elevation-1-blur;
+    drop-shadow-color: Theme.elevation-1-color;
+    drop-shadow-offset-y: Theme.elevation-1-y;
+
+    VerticalLayout {
+        padding: Theme.spacing-sm;
+        spacing: 2px;
+        alignment: center;
+        Text {
+            text: root.label;
+            color: Theme.muted;
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: 0.5px;
+        }
+        Text {
+            text: root.value;
+            color:
+                  root.tone == Tone.success ? Theme.accent-success
+                : root.tone == Tone.warning ? Theme.accent-warning
+                : root.tone == Tone.danger  ? Theme.accent-danger
+                : root.tone == Tone.info    ? Theme.accent-info
+                : Theme.on-surface;
+            font-size: Theme.font-size-body-large;
+            font-weight: 700;
+        }
+    }
+}
+
+// Analyst ratings bar — three bands (Buy success / Hold warning / Sell
+// danger) sized by the count fraction.
+component AnalystBar inherits Rectangle {
+    in property <int> buy: 12;
+    in property <int> hold: 7;
+    in property <int> sell: 2;
+
+    height: 16px;
+    border-radius: 8px;
+    clip: true;
+    background: Theme.surface-variant;
+
+    property <int> total: root.buy + root.hold + root.sell;
+
+    HorizontalLayout {
+        spacing: 0;
+        Rectangle {
+            horizontal-stretch: root.buy;
+            background: Theme.accent-success;
+        }
+        Rectangle {
+            horizontal-stretch: root.hold;
+            background: Theme.accent-warning;
+        }
+        Rectangle {
+            horizontal-stretch: root.sell;
+            background: Theme.accent-danger;
+        }
+    }
+}
+
+export component InvestmentDetailPage inherits Rectangle {
+    in property <string> ticker: "PTGN";
+    in property <string> company: "Patagonia Inc.";
+    in property <string> price: "$308.42";
+    in property <string> day-delta: "+$5.24 · +1.73% today";
+    in property <int> day-direction: 1;
+    in property <string> holdings: "14 shares · $4,318";
+    in property <string> holdings-delta: "+$214 · +5.2%";
+    callback back-pressed();
+    callback star-pressed();
+    callback buy-pressed();
+    callback sell-pressed();
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0;
+
+        AppBar {
+            title: root.ticker;
+            leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
+            trailing-icon: @image-url("@mobile-components/icons/star.svg");
+            leading-pressed => { root.back-pressed(); }
+            trailing-pressed => { root.star-pressed(); }
+        }
+
+        // ----- Hero -----
+        VerticalLayout {
+            padding: Theme.spacing-md;
+            spacing: Theme.spacing-sm;
+            HorizontalLayout {
+                spacing: Theme.spacing-md;
+                alignment: stretch;
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 44px;
+                        height: 44px;
+                        border-radius: 8px;
+                        background: @linear-gradient(135deg, #b91c1c 0%, #7f1d1d 100%);
+                        Text {
+                            text: "P";
+                            color: Theme.on-primary;
+                            font-size: 22px;
+                            font-weight: 800;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
+                        }
+                    }
+                }
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    alignment: center;
+                    spacing: 2px;
+                    Text {
+                        text: root.company;
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-body;
+                        font-weight: 700;
+                    }
+                    Text {
+                        text: root.ticker + " · NYSE";
+                        color: Theme.muted;
+                        font-size: Theme.font-size-caption;
+                        font-weight: 600;
+                    }
+                }
+            }
+
+            HorizontalLayout {
+                Text {
+                    text: root.price;
+                    color: Theme.on-background;
+                    font-size: 36px;
+                    font-weight: 200;
+                    horizontal-stretch: 1;
+                }
+            }
+            HorizontalLayout {
+                Text {
+                    text: root.day-delta;
+                    color:
+                          root.day-direction > 0 ? Theme.accent-success
+                        : root.day-direction < 0 ? Theme.accent-danger
+                        : Theme.muted;
+                    font-size: Theme.font-size-body;
+                    font-weight: 700;
+                }
+            }
+        }
+
+        // ----- Range chips + sparkline -----
+        VerticalLayout {
+            padding-left: Theme.spacing-md;
+            padding-right: Theme.spacing-md;
+            spacing: Theme.spacing-sm;
+            HorizontalLayout {
+                spacing: Theme.spacing-sm;
+                Chip { label: "1D"; }
+                Chip { label: "1W"; }
+                Chip { label: "1M"; selected: true; }
+                Chip { label: "3M"; }
+                Chip { label: "1Y"; }
+                Chip { label: "5Y"; }
+                Chip { label: "All"; }
+            }
+            Rectangle {
+                background: Theme.surface-1;
+                border-radius: Theme.radius-md;
+                drop-shadow-blur: Theme.elevation-1-blur;
+                drop-shadow-color: Theme.elevation-1-color;
+                drop-shadow-offset-y: Theme.elevation-1-y;
+                height: 140px;
+                VerticalLayout {
+                    padding: Theme.spacing-md;
+                    Sparkline {
+                        horizontal-stretch: 1;
+                        height: 108px;
+                        stroke:
+                              root.day-direction >= 0
+                            ? Theme.accent-success
+                            : Theme.accent-danger;
+                        bars: [
+                            38, 42, 39, 47, 45, 50, 54, 51, 58, 62,
+                            59, 64, 68, 65, 70, 73, 78, 75, 80, 84,
+                            81, 86, 90, 87, 92, 88, 93, 95, 91, 97
+                        ];
+                    }
+                }
+            }
+        }
+
+        // ----- Holdings strip -----
+        VerticalLayout {
+            padding: Theme.spacing-md;
+            spacing: Theme.spacing-sm;
+            Rectangle {
+                background: Theme.surface-1;
+                border-radius: Theme.radius-md;
+                drop-shadow-blur: Theme.elevation-1-blur;
+                drop-shadow-color: Theme.elevation-1-color;
+                drop-shadow-offset-y: Theme.elevation-1-y;
+                height: 72px;
+                HorizontalLayout {
+                    padding: Theme.spacing-md;
+                    spacing: Theme.spacing-md;
+                    alignment: stretch;
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        alignment: center;
+                        spacing: 2px;
+                        Text {
+                            text: "YOUR POSITION";
+                            color: Theme.muted;
+                            font-size: 10px;
+                            font-weight: 800;
+                            letter-spacing: 0.5px;
+                        }
+                        Text {
+                            text: root.holdings;
+                            color: Theme.on-surface;
+                            font-size: Theme.font-size-body-large;
+                            font-weight: 700;
+                        }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        Text {
+                            text: root.holdings-delta;
+                            color: Theme.accent-success;
+                            font-size: Theme.font-size-body;
+                            font-weight: 700;
+                            horizontal-alignment: right;
+                        }
+                    }
+                }
+            }
+        }
+
+        SectionHeader { text: "FUNDAMENTALS"; }
+        VerticalLayout {
+            padding: Theme.spacing-md;
+            spacing: Theme.spacing-sm;
+            HorizontalLayout {
+                spacing: Theme.spacing-sm;
+                FundamentalTile { label: "OPEN"; value: "$303.18"; }
+                FundamentalTile { label: "DAY HIGH"; value: "$310.42"; tone: Tone.success; }
+            }
+            HorizontalLayout {
+                spacing: Theme.spacing-sm;
+                FundamentalTile { label: "MARKET CAP"; value: "$48.2B"; }
+                FundamentalTile { label: "P/E"; value: "21.4"; tone: Tone.info; }
+            }
+        }
+
+        SectionHeader { text: "ANALYST RATINGS · 21 ANALYSTS"; }
+        VerticalLayout {
+            padding: Theme.spacing-md;
+            spacing: Theme.spacing-sm;
+            AnalystBar { buy: 12; hold: 7; sell: 2; }
+            HorizontalLayout {
+                Text {
+                    text: "12 Buy";
+                    color: Theme.accent-success;
+                    font-size: 11px;
+                    font-weight: 800;
+                    horizontal-stretch: 1;
+                }
+                Text {
+                    text: "7 Hold";
+                    color: Theme.accent-warning;
+                    font-size: 11px;
+                    font-weight: 800;
+                    horizontal-stretch: 1;
+                    horizontal-alignment: center;
+                }
+                Text {
+                    text: "2 Sell";
+                    color: Theme.accent-danger;
+                    font-size: 11px;
+                    font-weight: 800;
+                    horizontal-stretch: 1;
+                    horizontal-alignment: right;
+                }
+            }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+
+        // Sticky Buy / Sell.
+        Rectangle {
+            background: Theme.surface-1;
+            drop-shadow-blur: Theme.elevation-2-blur;
+            drop-shadow-color: Theme.elevation-2-color;
+            drop-shadow-offset-y: -4px;
+            height: 80px;
+            HorizontalLayout {
+                padding: Theme.spacing-md;
+                spacing: Theme.spacing-md;
+                MobileButton {
+                    text: "Sell";
+                    primary: false;
+                    horizontal-stretch: 1;
+                    max-height: 48px;
+                    clicked => { root.sell-pressed(); }
+                }
+                MobileButton {
+                    text: "Buy";
+                    tone: Tone.success;
+                    horizontal-stretch: 2;
+                    max-height: 48px;
+                    clicked => { root.buy-pressed(); }
+                }
+            }
+        }
+    }
+}
