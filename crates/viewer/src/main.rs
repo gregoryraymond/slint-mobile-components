@@ -217,11 +217,13 @@ const MAP_VIEWPORT_H: f64 = 892.0;
 /// `map-zoom-by`). Goes through slint-interpreter's dynamic property /
 /// callback API so we don't need a Rust handle to the page type.
 fn attach_map_handler(instance: &ComponentInstance, source: Rc<dyn TileSource>) {
-    // Start on the world at zoom 2 — the bundled sample bundle covers
-    // 0–3, so a low zoom shows something interesting in every cell.
-    let _ = instance.set_property("map-latitude", Value::Number(20.0));
-    let _ = instance.set_property("map-longitude", Value::Number(0.0));
-    let _ = instance.set_property("map-zoom", Value::Number(2.0));
+    // Start centred on London at zoom 10 — the bundled sample bundle
+    // includes Greater London at zoom 4-12, so this opens with real
+    // street-level detail (scroll-wheel zooms to 12; below z=4 falls
+    // back to the world tiles).
+    let _ = instance.set_property("map-latitude", Value::Number(51.5074));
+    let _ = instance.set_property("map-longitude", Value::Number(-0.1276));
+    let _ = instance.set_property("map-zoom", Value::Number(10.0));
 
     refresh_map(instance, &source);
 

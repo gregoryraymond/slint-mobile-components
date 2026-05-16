@@ -58,11 +58,13 @@ fn main() -> Result<(), slint::PlatformError> {
 macro_rules! wire_and_run {
     ($PageType:ident, $source:expr) => {{
         let page = $PageType::new()?;
-        // Default centre — the OSM sample only covers zoom 0–3, so
-        // pick a low zoom that's actually visible.
-        page.set_map_latitude(20.0);
-        page.set_map_longitude(0.0);
-        page.set_map_zoom(2.0);
+        // Default centre — Greater London at zoom 10. The OSM sample
+        // bundle covers London tiles at zoom 4-12 (plus the whole
+        // world at 0-3), so the demo opens with real street-level
+        // detail and can zoom in two more levels before running out.
+        page.set_map_latitude(51.5074);
+        page.set_map_longitude(-0.1276);
+        page.set_map_zoom(10.0);
 
         let state = Rc::new(MapState {
             source: Box::new($source),
