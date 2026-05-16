@@ -14,16 +14,53 @@
 import { ScrollView } from "std-widgets.slint";
 import { Theme } from "@mobile-theme/theme.slint";
 
+// Verdict toggle. 0 = unrated, 1 = keep, 2 = redo — matches the file
+// format that `showcase-verdicts.json` is written in. A second click on
+// the already-set verdict clears back to 0. Uses the existing Material
+// Design icons from `@mobile-components/icons/` (recoloured via Image's
+// `colorize` property) so the buttons render on any font.
+component VerdictButton inherits Rectangle {
+    in property <image> icon;
+    in property <bool> active;
+    in property <color> active-color;
+    callback clicked();
+
+    width: 32px;
+    height: 28px;
+    border-radius: 6px;
+    background: root.active ? root.active-color : (touch.has-hover ? Theme.surface-3 : transparent);
+    border-width: 1px;
+    border-color: root.active ? root.active-color : Theme.outline;
+    animate background { duration: 80ms; }
+
+    Image {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: 18px;
+        height: 18px;
+        source: root.icon;
+        colorize: root.active ? white : Theme.on-surface;
+    }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
 component PageCell inherits Rectangle {
     in property <string> title;
+    in property <int> verdict;
     in property <component-factory> page-factory;
+    callback verdict-set(int);
 
     width: 412px;
     height: 892px + 44px;  // 44 = header
     background: Theme.surface-1;
     border-radius: Theme.radius-md;
     border-width: 1px;
-    border-color: Theme.outline;
+    border-color: root.verdict == 1 ? #2e7d32
+        : root.verdict == 2 ? #c62828
+        : Theme.outline;
     clip: true;
 
     VerticalLayout {
@@ -33,7 +70,10 @@ component PageCell inherits Rectangle {
             background: Theme.surface-2;
             HorizontalLayout {
                 padding-left: 12px;
-                padding-right: 12px;
+                padding-right: 8px;
+                padding-top: 8px;
+                padding-bottom: 8px;
+                spacing: 6px;
                 Text {
                     text: root.title;
                     color: Theme.on-surface;
@@ -42,6 +82,18 @@ component PageCell inherits Rectangle {
                     vertical-alignment: center;
                     overflow: elide;
                     horizontal-stretch: 1;
+                }
+                VerdictButton {
+                    icon: @image-url("@mobile-components/icons/check.svg");
+                    active: root.verdict == 1;
+                    active-color: #2e7d32;
+                    clicked => { root.verdict-set(root.verdict == 1 ? 0 : 1); }
+                }
+                VerdictButton {
+                    icon: @image-url("@mobile-components/icons/close.svg");
+                    active: root.verdict == 2;
+                    active-color: #c62828;
+                    clicked => { root.verdict-set(root.verdict == 2 ? 0 : 2); }
                 }
             }
         }
@@ -59,11 +111,17 @@ export component Viewer inherits Window {
     preferred-height: 1080px;
     background: Theme.background;
 
-    // Two parallel models, index-aligned. Same length always.
+    // Three parallel models, index-aligned. Same length always.
     in property <[string]> titles;
     in property <[component-factory]> cells;
+    in property <[int]> verdicts;
     in property <int> loaded: 0;
     in property <int> total: 0;
+    in property <string> summary;
+
+    // Fired when a user clicks ✓ or ✗ in a cell header. The Rust side
+    // updates the model and rewrites `showcase-verdicts.json` live.
+    callback verdict-changed(int /* index */, int /* verdict 0/1/2 */);
 
     // Cell + grid geometry. Kept in slint so we can position cells via
     // absolute x/y based on their index (slint has no flow/wrap layout).
@@ -87,6 +145,7 @@ export component Viewer inherits Window {
             HorizontalLayout {
                 padding-left: 20px;
                 padding-right: 20px;
+                spacing: 24px;
                 Text {
                     text: "Viewer — " + root.loaded + " / " + root.total + " pages"
                         + (root.still-loading ? "   ·   loading…" : "   ·   ready");
@@ -94,6 +153,14 @@ export component Viewer inherits Window {
                     font-size: 16px;
                     font-weight: 800;
                     vertical-alignment: center;
+                }
+                Text {
+                    text: root.summary;
+                    color: Theme.muted;
+                    font-size: 14px;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
                 }
             }
         }
@@ -115,7 +182,9 @@ export component Viewer inherits Window {
                         x: mod(i, root.cols) * (root.cell-w + root.gap);
                         y: floor(i / root.cols) * (root.cell-h + root.gap);
                         title: root.titles[i];
+                        verdict: root.verdicts[i];
                         page-factory: cell;
+                        verdict-set(v) => { root.verdict-changed(i, v); }
                     }
 
                     // Loading indicator pinned to the bottom of the grid.

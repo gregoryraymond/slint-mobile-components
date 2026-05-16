@@ -33,7 +33,7 @@ import { ScrollView } from "std-widgets.slint";
 // Map widget — consumers wire `map-tiles` from a `slint_mapping::TileSource`
 // and forward `map-pan` / `map-zoom-by` callbacks to a controller, or
 // drive the camera directly via `map-latitude` / `map-longitude` / `map-zoom`.
-import { MapEmbed, Tile } from "@mapping/map.slint";
+import { MapEmbed, Tile, Layer } from "@mapping/map.slint";
 
 export struct PointOfInterest {
     name: string,
@@ -61,13 +61,21 @@ export component MapPage inherits Window {
     in-out property <float> map-longitude: -0.1276;
     in-out property <float> map-zoom: 13.0;
     in property <[Tile]> map-tiles;
+    in property <[Layer]> map-layers;
     callback map-pan(length, length);
     callback map-zoom-by(float, length, length);
+    // Measured MapEmbed size — the controller reads these each refresh
+    // to project tiles + markers against the page's *actual* viewport
+    // (full-bleed here = the page size, but other pages put the map
+    // inside a strip / mini-card). Without this surface the controller
+    // would have to guess.
+    out property <length> map-viewport-width: map.width;
+    out property <length> map-viewport-height: map.height;
 
     background: Theme.background;
 
     // ----- Map canvas -----
-    MapEmbed {
+    map := MapEmbed {
         x: 0;
         y: 0;
         width: parent.width;
@@ -76,6 +84,7 @@ export component MapPage inherits Window {
         longitude <=> root.map-longitude;
         zoom <=> root.map-zoom;
         tiles: root.map-tiles;
+        layers: root.map-layers;
         pan(dx, dy) => { root.map-pan(dx, dy); }
         zoom-by(d, ax, ay) => { root.map-zoom-by(d, ax, ay); }
     }

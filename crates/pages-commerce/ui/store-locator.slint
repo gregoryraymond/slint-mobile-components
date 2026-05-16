@@ -13,7 +13,7 @@
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { Divider } from "@mobile-components/divider.slint";
-import { MapEmbed, Tile } from "@mapping/map.slint";
+import { MapEmbed, Tile, Layer } from "@mapping/map.slint";
 
 // One store row.
 component StoreRow inherits Rectangle {
@@ -127,31 +127,6 @@ component StoreRow inherits Rectangle {
     }
 }
 
-// A map pin marker placed on the map strip.
-component MapPin inherits Rectangle {
-    in property <string> label;
-
-    width: 26px;
-    height: 26px;
-    border-radius: 13px;
-    background: Theme.primary;
-    border-width: 3px;
-    border-color: #ffffff;
-    drop-shadow-blur: Theme.elevation-1-blur;
-    drop-shadow-color: Theme.elevation-1-color;
-    drop-shadow-offset-y: Theme.elevation-1-y;
-    Text {
-        text: root.label;
-        color: Theme.on-primary;
-        font-size: 11px;
-        font-weight: 800;
-        horizontal-alignment: center;
-        vertical-alignment: center;
-        width: parent.width;
-        height: parent.height;
-    }
-}
-
 export component StoreLocatorPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
@@ -163,8 +138,11 @@ export component StoreLocatorPage inherits Window {
     in-out property <float> map-longitude: -0.1276;
     in-out property <float> map-zoom: 13.0;
     in property <[Tile]> map-tiles;
+    in property <[Layer]> map-layers;
     callback map-pan(length, length);
     callback map-zoom-by(float, length, length);
+    out property <length> map-viewport-width: map.width;
+    out property <length> map-viewport-height: map.height;
     callback back-pressed();
     callback search-pressed();
     callback store-pressed(string);
@@ -225,7 +203,7 @@ export component StoreLocatorPage inherits Window {
             height: 200px;
             background: Theme.surface-variant;
             clip: true;
-            MapEmbed {
+            map := MapEmbed {
                 x: 0;
                 y: 0;
                 width: parent.width;
@@ -234,40 +212,12 @@ export component StoreLocatorPage inherits Window {
                 longitude <=> root.map-longitude;
                 zoom <=> root.map-zoom;
                 tiles: root.map-tiles;
+                layers: root.map-layers;
                 pan(dx, dy) => { root.map-pan(dx, dy); }
                 zoom-by(d, ax, ay) => { root.map-zoom-by(d, ax, ay); }
             }
-            MapPin {
-                x: parent.width * 0.26;
-                y: parent.height * 0.34;
-                label: "1";
-            }
-            MapPin {
-                x: parent.width * 0.58;
-                y: parent.height * 0.25;
-                label: "2";
-            }
-            MapPin {
-                x: parent.width * 0.7;
-                y: parent.height * 0.6;
-                label: "3";
-            }
-            MapPin {
-                x: parent.width * 0.4;
-                y: parent.height * 0.72;
-                label: "4";
-            }
-            // User location dot.
-            Rectangle {
-                x: parent.width * 0.48;
-                y: parent.height * 0.5;
-                width: 18px;
-                height: 18px;
-                border-radius: 9px;
-                background: Theme.accent-info;
-                border-width: 3px;
-                border-color: #ffffff;
-            }
+            // Store pins + user-location dot come from the controller
+            // via `map-layers` — see the viewer's per-page demo wiring.
         }
 
         // Results header.

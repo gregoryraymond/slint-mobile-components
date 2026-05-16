@@ -22,7 +22,7 @@ import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { Avatar } from "@mobile-components/avatar.slint";
 import { Divider } from "@mobile-components/divider.slint";
 import { MobileButton, TextButton } from "@mobile-components/button.slint";
-import { MapEmbed, Tile } from "@mapping/map.slint";
+import { MapEmbed, Tile, Layer } from "@mapping/map.slint";
 
 export component DriverOnTheWayPage inherits Window {
     preferred-width: 412px;
@@ -35,8 +35,11 @@ export component DriverOnTheWayPage inherits Window {
     in-out property <float> map-longitude: -0.1276;
     in-out property <float> map-zoom: 13.0;
     in property <[Tile]> map-tiles;
+    in property <[Layer]> map-layers;
     callback map-pan(length, length);
     callback map-zoom-by(float, length, length);
+    out property <length> map-viewport-width: map.width;
+    out property <length> map-viewport-height: map.height;
     in property <string> eta-headline: "Arriving in 4 min";
     in property <string> eta-meta: "Marco D. · Honda Civic · 7XYZ123";
     in property <string> driver-name: "Marco D.";
@@ -60,7 +63,7 @@ export component DriverOnTheWayPage inherits Window {
         height: parent.height * 0.45;
         background: Theme.surface-variant;
         clip: true;
-        MapEmbed {
+        map := MapEmbed {
             x: 0;
             y: 0;
             width: parent.width;
@@ -69,70 +72,13 @@ export component DriverOnTheWayPage inherits Window {
             longitude <=> root.map-longitude;
             zoom <=> root.map-zoom;
             tiles: root.map-tiles;
+            layers: root.map-layers;
             pan(dx, dy) => { root.map-pan(dx, dy); }
             zoom-by(d, ax, ay) => { root.map-zoom-by(d, ax, ay); }
         }
-        // Origin pin (blue).
-        Rectangle {
-            x: parent.width * 0.32;
-            y: parent.height * 0.62;
-            width: 24px;
-            height: 24px;
-            border-radius: 12px;
-            background: Theme.primary;
-            border-width: 3px;
-            border-color: #ffffff;
-            drop-shadow-blur: Theme.elevation-2-blur;
-            drop-shadow-color: Theme.elevation-2-color;
-            drop-shadow-offset-y: Theme.elevation-2-y;
-        }
-        // Destination pin (red).
-        Rectangle {
-            x: parent.width * 0.74;
-            y: parent.height * 0.24;
-            width: 30px;
-            height: 30px;
-            border-radius: 15px;
-            background: Theme.accent-danger;
-            border-width: 4px;
-            border-color: #ffffff;
-            drop-shadow-blur: Theme.elevation-2-blur;
-            drop-shadow-color: Theme.elevation-2-color;
-            drop-shadow-offset-y: Theme.elevation-2-y;
-            Image {
-                width: 14px;
-                height: 14px;
-                x: (parent.width - self.width) / 2;
-                y: (parent.height - self.height) / 2;
-                source: @image-url("@mobile-components/icons/pin.svg");
-                colorize: #ffffff;
-                image-fit: contain;
-            }
-        }
-        // Driver car badge (warning amber).
-        Rectangle {
-            x: parent.width * 0.46;
-            y: parent.height * 0.44;
-            width: 44px;
-            height: 32px;
-            border-radius: 8px;
-            background: Theme.accent-warning;
-            border-width: 3px;
-            border-color: #ffffff;
-            drop-shadow-blur: Theme.elevation-2-blur;
-            drop-shadow-color: Theme.elevation-2-color;
-            drop-shadow-offset-y: Theme.elevation-2-y;
-            Text {
-                text: "MD";
-                color: Theme.on-primary;
-                font-size: 11px;
-                font-weight: 800;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-                width: parent.width;
-                height: parent.height;
-            }
-        }
+        // Origin / destination / driver-car markers come from the
+        // controller via `map-layers` — see the viewer's per-page demo
+        // wiring for example geographic placements.
 
         // Translucent back / share row.
         HorizontalLayout {

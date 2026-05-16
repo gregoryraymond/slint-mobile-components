@@ -17,7 +17,7 @@ import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { Divider } from "@mobile-components/divider.slint";
 import { MobileButton } from "@mobile-components/button.slint";
 import { Avatar } from "@mobile-components/avatar.slint";
-import { MapEmbed, Tile } from "@mapping/map.slint";
+import { MapEmbed, Tile, Layer } from "@mapping/map.slint";
 
 // One ride-tier row.
 component TierRow inherits Rectangle {
@@ -153,8 +153,11 @@ export component RideShareBookingPage inherits Window {
     in-out property <float> map-longitude: -0.1276;
     in-out property <float> map-zoom: 13.0;
     in property <[Tile]> map-tiles;
+    in property <[Layer]> map-layers;
     callback map-pan(length, length);
     callback map-zoom-by(float, length, length);
+    out property <length> map-viewport-width: map.width;
+    out property <length> map-viewport-height: map.height;
     in property <string> pickup: "Pickup · Home";
     in property <string> destination: "Patagonia · Hayes Valley";
     in-out property <int> selected-tier: 1;
@@ -172,7 +175,7 @@ export component RideShareBookingPage inherits Window {
         height: parent.height;
         background: Theme.surface-variant;
         clip: true;
-        MapEmbed {
+        map := MapEmbed {
             x: 0;
             y: 0;
             width: parent.width;
@@ -181,47 +184,13 @@ export component RideShareBookingPage inherits Window {
             longitude <=> root.map-longitude;
             zoom <=> root.map-zoom;
             tiles: root.map-tiles;
+            layers: root.map-layers;
             pan(dx, dy) => { root.map-pan(dx, dy); }
             zoom-by(d, ax, ay) => { root.map-zoom-by(d, ax, ay); }
         }
 
-        // Origin pin (top-left quadrant).
-        Rectangle {
-            x: parent.width * 0.32;
-            y: parent.height * 0.28;
-            width: 28px;
-            height: 28px;
-            border-radius: self.width / 2;
-            background: Theme.primary;
-            border-width: 4px;
-            border-color: #ffffff;
-            drop-shadow-blur: Theme.elevation-2-blur;
-            drop-shadow-color: Theme.elevation-2-color;
-            drop-shadow-offset-y: Theme.elevation-2-y;
-        }
-        // Destination pin (bottom-right quadrant).
-        Rectangle {
-            x: parent.width * 0.62;
-            y: parent.height * 0.42;
-            width: 36px;
-            height: 36px;
-            border-radius: self.width / 2;
-            background: Theme.accent-danger;
-            border-width: 4px;
-            border-color: #ffffff;
-            drop-shadow-blur: Theme.elevation-2-blur;
-            drop-shadow-color: Theme.elevation-2-color;
-            drop-shadow-offset-y: Theme.elevation-2-y;
-            Image {
-                width: 16px;
-                height: 16px;
-                x: (parent.width - self.width) / 2;
-                y: (parent.height - self.height) / 2;
-                source: @image-url("@mobile-components/icons/pin.svg");
-                colorize: #ffffff;
-                image-fit: contain;
-            }
-        }
+        // Origin / destination pins come from the controller via
+        // `map-layers` — see the viewer's per-page demo wiring.
     }
 
     // Translucent back button.

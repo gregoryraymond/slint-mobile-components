@@ -16,7 +16,7 @@
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { MobileButton } from "@mobile-components/button.slint";
-import { MapEmbed, Tile } from "@mapping/map.slint";
+import { MapEmbed, Tile, Layer } from "@mapping/map.slint";
 
 // One labelled stat in the info card.
 component InfoStat inherits VerticalLayout {
@@ -58,8 +58,11 @@ export component ParkingSessionPage inherits Window {
     in-out property <float> map-longitude: -0.1276;
     in-out property <float> map-zoom: 13.0;
     in property <[Tile]> map-tiles;
+    in property <[Layer]> map-layers;
     callback map-pan(length, length);
     callback map-zoom-by(float, length, length);
+    out property <length> map-viewport-width: map.width;
+    out property <length> map-viewport-height: map.height;
     in property <string> elapsed: "1:24:06";
     in property <string> cost: "$5.60";
     in property <string> zone: "Zone A-14";
@@ -190,7 +193,7 @@ export component ParkingSessionPage inherits Window {
                         width: 96px;
                         background: Theme.surface-variant;
                         clip: true;
-                        MapEmbed {
+                        map := MapEmbed {
                             x: 0;
                             y: 0;
                             width: parent.width;
@@ -199,6 +202,7 @@ export component ParkingSessionPage inherits Window {
                             longitude <=> root.map-longitude;
                             zoom <=> root.map-zoom;
                             tiles: root.map-tiles;
+                            layers: root.map-layers;
                             pan(dx, dy) => { root.map-pan(dx, dy); }
                             zoom-by(d, ax, ay) => { root.map-zoom-by(d, ax, ay); }
                         }

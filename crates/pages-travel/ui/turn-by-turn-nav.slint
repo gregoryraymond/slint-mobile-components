@@ -16,7 +16,7 @@
 //     with mute + overview + exit controls.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
-import { MapEmbed, Tile } from "@mapping/map.slint";
+import { MapEmbed, Tile, Layer } from "@mapping/map.slint";
 
 export component TurnByTurnNavPage inherits Window {
     preferred-width: 412px;
@@ -29,8 +29,11 @@ export component TurnByTurnNavPage inherits Window {
     in-out property <float> map-longitude: -0.1276;
     in-out property <float> map-zoom: 13.0;
     in property <[Tile]> map-tiles;
+    in property <[Layer]> map-layers;
     callback map-pan(length, length);
     callback map-zoom-by(float, length, length);
+    out property <length> map-viewport-width: map.width;
+    out property <length> map-viewport-height: map.height;
     in property <string> primary-distance: "400 m";
     in property <string> primary-road: "Turn right onto Valencia St";
     in property <string> then-instruction: "Then continue 1.2 km on Valencia St";
@@ -131,7 +134,7 @@ export component TurnByTurnNavPage inherits Window {
             vertical-stretch: 1;
             background: Theme.surface-variant;
             clip: true;
-            MapEmbed {
+            map := MapEmbed {
                 x: 0;
                 y: 0;
                 width: parent.width;
@@ -140,6 +143,7 @@ export component TurnByTurnNavPage inherits Window {
                 longitude <=> root.map-longitude;
                 zoom <=> root.map-zoom;
                 tiles: root.map-tiles;
+                layers: root.map-layers;
                 pan(dx, dy) => { root.map-pan(dx, dy); }
                 zoom-by(d, ax, ay) => { root.map-zoom-by(d, ax, ay); }
             }
