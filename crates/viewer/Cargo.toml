@@ -1,0 +1,32 @@
+[package]
+name = "slint-mobile-components-viewer"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Paginated UI viewer — loads page templates via slint-interpreter so the compile cost is paid once for the chrome, not once per page."
+publish = false
+
+[[bin]]
+name = "viewer"
+path = "src/main.rs"
+
+[dependencies]
+slint = { version = "1", default-features = false, features = [
+    "compat-1-2",
+    "std",
+    "backend-default",
+    "renderer-skia",
+] }
+# `features = ["internal"]` exposes `ComponentDefinition::create_embedded`,
+# the only way to plug an interpreted component into a compiled
+# `ComponentContainer` slot. The slint team marks this as internal but
+# it's the documented integration path.
+slint-interpreter = { version = "1", features = ["internal"] }
+pollster = "0.3"
+slint-mobile-theme = { path = "../theme" }
+slint-mobile-components-widgets = { path = "../components" }
+
+[build-dependencies]
+slint-build = "1"
+slint-mobile-theme = { path = "../theme" }
+slint-mobile-components-widgets = { path = "../components" }

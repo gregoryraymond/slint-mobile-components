@@ -1,110 +1,73 @@
 # slint-mobile-components
 
-A [Slint](https://slint.dev) UI component library and design system for
+A [Slint](https://slint.dev) UI screen library and design system for
 **mobile (Android) apps** built in Rust. Sister project to the
 [`slint-mobile`](../slint-mobile) `cargo-generate` template — slint-mobile
 generates the app skeleton; this crate supplies the visual language.
 
-The primary surface is the `ui/` directory of `.slint` files, consumed
-from a sibling project via Slint's `library_paths`. A thin Rust crate
-wraps it so `cargo check` validates every component in CI.
+The primary surface is **~145 page templates** plus ~31 reusable widgets,
+all shipped as `.slint` source. Consumers import individual screens into
+their own apps via Slint's `library_paths`; this crate's Rust side is
+thin and exists to (a) hand consumers the full alias map in one call and
+(b) validate every screen compiles cleanly in CI.
 
-## See it: the Gallery preview
+## Browse the screens
 
 ```sh
-cargo run --example gallery --features gallery
+cargo run     # or `cargo view` for the release build
 ```
 
-A desktop window opens at the mobile aspect ratio (412 × 892). A tab
-strip at the top switches between:
+Opens an infinite-scroll viewer that tiles every page template at native
+phone resolution (412 × 892). The viewer is interpreter-backed — page
+templates are parsed at runtime by `slint-interpreter`, so the binary
+itself stays cheap to build (~10 s clean, sub-second incremental) and
+adding new pages costs nothing.
 
-- **Home / Settings / Login** — the three example pages
-- **Toolbox** — every component in the library, captioned and scrollable
-
-Use this during development to iterate on components without spinning up
-an Android emulator. The `gallery` Cargo feature pulls in Slint's winit
-backend + femtovg renderer; it's off by default so Android consumers
-aren't forced to drag those crates in.
-
-> On Linux, the renderer needs a few system packages — see
-> `just install-host-deps` (pkg-config, fontconfig, freetype, clang, cmake,
-> ninja). The slint-mobile devcontainer already has them.
+> Cold builds pull `slint-interpreter` for the first time (~1 minute,
+> high memory). Subsequent builds are incremental. On Linux, the
+> renderer also needs `pkg-config`, `fontconfig`, `freetype`, `clang`,
+> `cmake`, `ninja` — see `just install-host-deps`.
 
 ## What's inside
 
 ```
 slint-mobile-components/
-├── Cargo.toml
-├── build.rs                # slint-build → ui/lib.slint
+├── Cargo.toml                # workspace root + thin re-export crate
+├── build.rs                  # tests/snapshot_scenes + behavior_scenes
 ├── rust-toolchain.toml
-├── justfile                # fmt / clippy / check / test / ci
+├── justfile                  # fmt / clippy / check / test / ci
 ├── .github/workflows/ci.yml
-├── src/
-│   └── lib.rs              # slint::include_modules!() + UI_LIBRARY_DIR
-├── examples/
-│   └── gallery.rs          # Desktop preview (--features gallery)
-├── android-demo/           # cargo-apk demo APK that runs the Gallery
-├── maestro/                # On-device E2E (`just maestro`)
-│   ├── config.yaml
-│   └── flows/
-│       ├── gallery-tabs.yaml
-│       └── baselines/      # Committed E2E baseline PNGs
+├── .cargo/config.toml        # `cargo view`, `cargo xtask` aliases
+├── src/lib.rs                # library_paths() helper + test-scene re-exports
+├── crates/
+│   ├── theme/                # design tokens (`@mobile-theme/theme.slint`)
+│   ├── components/           # 31 widgets + icons (`@mobile-components/…`)
+│   ├── pages-{auth,commerce,finance,health,media,misc,
+│   │          productivity,social,system,travel}/
+│   │                         # ~145 page templates (`@mobile-pages-<cat>/…`)
+│   │                         # each crate compiles its own snapshot scenes
+│   └── viewer/               # `cargo run` — interpreter-backed UI browser
+├── xtask/                    # `cargo xtask wire-pages|split-snapshots`
+├── android-demo/             # minimal APK proving Android target builds
 ├── tests/
-│   ├── snapshot_scenes.slint
-│   ├── snapshots.rs        # Visual regression (--features snapshots)
-│   ├── snapshot_baselines/ # Committed golden PNGs
+│   ├── snapshot_scenes.slint # widget-level snap scenes only
+│   ├── snapshots.rs          # visual regression (--features snapshots)
+│   ├── snapshot_baselines/   # committed golden PNGs
 │   ├── behavior_scenes.slint
-│   └── behavior.rs         # Behavior tests (--features behaviors)
-└── ui/
-    ├── gallery.slint       # Desktop preview Window + CI validation entry
-    ├── theme.slint         # Theme global (colors, spacing, type, motion)
-    ├── button.slint        # MobileButton, TextButton, Fab
-    ├── card.slint          # Card
-    ├── app-bar.slint       # AppBar (top)
-    ├── bottom-nav.slint    # BottomNav, BottomNavItem
-    ├── list-item.slint     # ListItem
-    ├── text-field.slint    # TextField
-    ├── switch.slint        # MobileSwitch
-    ├── chip.slint          # Chip (toggleable, dismissible)
-    ├── avatar.slint        # Avatar (image + initials fallback)
-    ├── badge.slint         # Badge (dot / count overlay)
-    ├── progress-bar.slint  # ProgressBar (determinate + indeterminate)
-    ├── spinner.slint       # Spinner (continuous-rotate loader)
-    ├── checkbox.slint      # Checkbox (square multi-select toggle)
-    ├── slider.slint        # Slider (0..1 value picker, drag + tap)
-    ├── tab-bar.slint       # TabBar + Tab (top tab strip, sibling to BottomNav)
-    ├── divider.slint       # Divider (hairline separator)
-    ├── banner.slint        # Banner (inline info strip with optional action)
-    ├── radio.slint         # Radio (single-choice button; parent manages group)
-    ├── segmented-control.slint  # SegmentedControl (iOS-style 2–4 choice strip)
-    ├── stepper.slint       # Stepper (numeric +/- with bounds)
-    ├── skeleton.slint      # Skeleton (animated loading placeholder)
-    ├── empty-state.slint   # EmptyState (illustration + title + description + CTA)
-    ├── bottom-bar.slint    # BottomBar (pinned bottom chrome with upward shadow)
-    ├── bottom-sheet.slint  # BottomSheet (partial-height surface with drag handle, surface-2)
-    ├── dialog.slint        # Dialog (centered modal: title + body + actions; danger flag)
-    ├── snackbar.slint      # Snackbar (transient toast: tone dot + message + optional action)
-    ├── contact-row.slint   # ContactRow (Avatar + 2-line text + trailing meta; recurring list row)
-    ├── dot-indicator.slint # DotIndicator (paginated content active-dot strip)
-    ├── section-header.slint # SectionHeader (caption-muted-bold list / section label)
-    └── pages/              # 122 composite screen templates (see below)
-        ├── home.slint           # HomePage (feed + cards + bottom nav + FAB)
-        ├── settings.slint       # SettingsPage (sections of toggles and nav rows)
-        ├── login.slint          # LoginPage (form + primary CTA)
-        ├── podcast.slint        # PodcastPage (now-playing media)
-        ├── inbox.slint          # InboxPage (list view + unread badges + compose FAB)
-        ├── profile.slint        # ProfilePage (hero avatar + stats + sub-tabs)
-        ├── chat.slint           # ChatPage (alternating bubbles + pinned input)
-        ├── dashboard.slint      # DashboardPage (stat tiles + activity feed)
-        └── ...                  # + 114 more — see "Screen catalogue" below
+│   └── behavior.rs           # behavior tests (--features behaviors)
 ```
+
+See the per-crate `ui/` directories for the actual `.slint` sources —
+e.g. `crates/components/ui/button.slint`,
+`crates/pages-media/ui/podcast.slint`,
+`crates/theme/ui/theme.slint`.
 
 ## Screen catalogue
 
-The `ui/pages/` directory holds **122 composite screen templates** — full
-mobile screens assembled from the component library, each one a starting
-point you can copy and adapt. Every page is locked down by a committed
-snapshot baseline. Broad groupings:
+The 10 `crates/pages-<cat>/` crates hold **~145 composite screen
+templates** — full mobile screens assembled from the component library,
+each one a starting point you can copy and adapt. Most pages are locked
+down by a committed snapshot baseline. Broad groupings:
 
 - **Lists & feeds** — inbox, news feed, comments, group chat list,
   notification centre, order history, reading list, transit departures,
@@ -140,8 +103,9 @@ snapshot baseline. Broad groupings:
 ## Design tokens
 
 All visual decisions go through the `Theme` global in
-[`ui/theme.slint`](ui/theme.slint). It exposes `in-out` properties so a
-consuming app can override the palette at runtime:
+[`crates/theme/ui/theme.slint`](crates/theme/ui/theme.slint). It
+exposes `in-out` properties so a consuming app can override the
+palette at runtime:
 
 ```rust
 let ui = MainWindow::new()?;
@@ -181,106 +145,57 @@ slint-mobile-components = { path = "../slint-mobile-components" }
 slint-mobile-components = { path = "../slint-mobile-components" }
 ```
 
-**2. In `my-app/app/build.rs`**, point Slint at the components library:
+**2. In `my-app/app/build.rs`**, point Slint at every alias this
+workspace publishes (`@mobile-theme`, `@mobile-components`, every
+`@mobile-pages-*`):
 
 ```rust
-use std::collections::HashMap;
-use std::path::PathBuf;
-
 fn main() {
     let config = slint_build::CompilerConfiguration::new()
-        .with_library_paths(HashMap::from([(
-            "mobile-components".into(),
-            PathBuf::from(slint_mobile_components::UI_LIBRARY_DIR),
-        )]));
+        .with_library_paths(slint_mobile_components::library_paths());
     slint_build::compile_with_config("ui/main.slint", config)
         .expect("Slint build failed");
 }
 ```
 
-**3. In `my-app/app/ui/main.slint`**, import each component by path
-through the `@mobile-components` alias:
+**3. In `my-app/app/ui/main.slint`**, import each screen / widget by
+path through the matching alias:
 
 ```slint
-import { Theme } from "@mobile-components/theme.slint";
-import { HomePage } from "@mobile-components/pages/home.slint";
+import { Theme } from "@mobile-theme/theme.slint";
+import { MobileButton } from "@mobile-components/button.slint";
+import { HomePage } from "@mobile-pages-misc/home.slint";
 
-export component MainWindow inherits Window {
-    background: Theme.background;
-    preferred-width: 412px;
-    preferred-height: 892px;
-
-    HomePage {
-        width: 100%;
-        height: 100%;
-    }
-}
+export component MainWindow inherits HomePage {}
 ```
 
-The Slint compiler resolves `@mobile-components/...` against the directory
-returned by `slint_mobile_components::UI_LIBRARY_DIR`, so consumers don't
-hard-code relative paths in their `.slint` sources.
+Or — if you'd rather lazy-load pages at runtime — copy the pattern
+from `crates/viewer/`: it parses `.slint` sources via
+`slint-interpreter` and embeds them via `ComponentContainer`, so
+your APK doesn't statically link every screen it might one day show.
 
-## On-device E2E — Maestro against the Android demo APK
+## Android demo APK
 
-A third layer covers the actual device: a tiny Android app crate
-(`android-demo/`) consumes this library and runs the `Gallery` as a
-real APK; [Maestro](https://docs.maestro.dev) YAML flows drive it on
-the connected emulator and assert against baseline screenshots.
-
-### Prerequisites
-
-- Android SDK + NDK + JDK 17 (the `justfile` defaults assume the same
-  paths the `slint-mobile` devcontainer ships)
-- `cargo-apk` (`cargo install cargo-apk`)
-- A running emulator or device on `adb devices`
-- Maestro: `curl -fsSL "https://get.maestro.mobile.dev" | bash`
-
-### Workflow
+`android-demo/` is a minimal `cargo-apk` crate that proves the workspace
+compiles end-to-end for an Android target. It instantiates `HomePage` as
+its `MainWindow` — nothing more — and exists so a `cargo apk build` from
+that directory verifies the screen library is buildable for the device.
 
 ```sh
-just demo-build       # Build the demo APK (debug, multi-arch)
-just demo-run         # Build, install, launch on the connected device
-just maestro          # Run all flows under maestro/flows
-just maestro-refresh  # Update baselines after an intended UI change
+just demo-build       # cargo-apk build (debug, multi-arch)
+just demo-run         # build + install + launch on the connected device
 ```
 
-### How it works
+Prerequisites: Android SDK + NDK + JDK 17 (the `justfile` assumes the
+paths the `slint-mobile` devcontainer ships); `cargo install cargo-apk`;
+a running emulator or device on `adb devices`.
 
-```
-slint-mobile-components/
-├── android-demo/                 # cargo-apk crate
-│   ├── Cargo.toml                # cdylib + [package.metadata.android]
-│   ├── build.rs                  # library_paths → ../ui
-│   ├── ui/main.slint             # imports `@mobile-components/gallery.slint`
-│   └── src/lib.rs                # android_main → MainWindow::new().run()
-└── maestro/
-    ├── config.yaml
-    └── flows/
-        ├── gallery-tabs.yaml     # The flow
-        └── baselines/            # Committed baseline PNGs
-            ├── home.png
-            ├── settings.png
-            ├── login.png
-            └── toolbox.png
-```
+### The two test layers at a glance
 
-Because Slint renders the entire UI to a single SurfaceView and exposes
-nothing to Android's `AccessibilityService`, Maestro can't address
-individual widgets by id or label. Every interaction is a percentage
-coordinate tap, and every visual assertion is `assertScreenshot:
-baselines/<name>.png` against a committed full-screen PNG with the
-default 95 % match threshold (loose enough to absorb the status-bar
-clock changing). Recapture baselines via `just maestro-refresh` after
-an intended visual change.
-
-### The three test layers at a glance
-
-| Layer | What it covers | Where it runs | When to add a test |
-|---|---|---|---|
-| Snapshots (`--features snapshots`) | Pixel-level component appearance | Desktop / CI (software renderer) | A new visual state of a component |
-| Behavior tests (`--features behaviors`) | Click / toggle / value-change logic via the accessibility tree | Desktop / CI (no rendering) | A new interaction or callback |
-| Maestro flows | End-to-end UI on real Android | Emulator / device | A user-visible workflow that spans multiple screens |
+| Layer | What it covers | When to add a test |
+|---|---|---|
+| Snapshots (`--features snapshots`) | Pixel-level component + page appearance | A new visual state of a component, or a new page template |
+| Behavior tests (`--features behaviors`) | Click / toggle / value-change logic via the accessibility tree | A new interaction or callback |
 
 ## Behavior tests — accessibility-driven
 

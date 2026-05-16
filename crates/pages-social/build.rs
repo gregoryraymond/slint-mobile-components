@@ -14,6 +14,10 @@ fn main() {
             "mobile-components".into(),
             PathBuf::from(slint_mobile_components_widgets::UI_LIBRARY_DIR),
         ),
+        (
+            "mapping".into(),
+            PathBuf::from(slint_mapping::UI_LIBRARY_DIR),
+        ),
     ]));
     slint_build::compile_with_config("ui/_snapshot_scenes.slint", config)
         .expect("Slint build failed");

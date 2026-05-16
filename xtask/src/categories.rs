@@ -205,17 +205,3 @@ pub const CATEGORIES: &[(&str, &[&str])] = &[
     ),
 ];
 
-/// Returns the category each page stem belongs to, panicking if absent.
-/// Use `category_of_opt` when the page might not be known.
-pub fn category_of(stem: &str) -> &'static str {
-    category_of_opt(stem).unwrap_or_else(|| panic!("stem not categorised: {stem}"))
-}
-
-pub fn category_of_opt(stem: &str) -> Option<&'static str> {
-    for (cat, pages) in CATEGORIES {
-        if pages.contains(&stem) {
-            return Some(cat);
-        }
-    }
-    None
-}

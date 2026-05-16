@@ -16,6 +16,7 @@
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { MobileButton } from "@mobile-components/button.slint";
+import { MapEmbed, Tile } from "@mapping/map.slint";
 
 // One labelled stat in the info card.
 component InfoStat inherits VerticalLayout {
@@ -46,7 +47,19 @@ component InfoStat inherits VerticalLayout {
     }
 }
 
-export component ParkingSessionPage inherits Rectangle {
+export component ParkingSessionPage inherits Window {
+    preferred-width: 412px;
+    preferred-height: 892px;
+
+    // Map state — bind from Rust via a slint_mapping::MapController, or
+    // (for a static demo) leave at defaults and pass a one-off map-tiles
+    // model. See crates/pages-travel/ui/map.slint for the canonical wiring.
+    in-out property <float> map-latitude: 51.5074;
+    in-out property <float> map-longitude: -0.1276;
+    in-out property <float> map-zoom: 13.0;
+    in property <[Tile]> map-tiles;
+    callback map-pan(length, length);
+    callback map-zoom-by(float, length, length);
     in property <string> elapsed: "1:24:06";
     in property <string> cost: "$5.60";
     in property <string> zone: "Zone A-14";
@@ -177,15 +190,17 @@ export component ParkingSessionPage inherits Rectangle {
                         width: 96px;
                         background: Theme.surface-variant;
                         clip: true;
-                        Image {
-                            width: parent.width * 1.8;
-                            height: parent.height * 1.8;
-                            x: -parent.width * 0.4;
-                            y: -parent.height * 0.4;
-                            source: @image-url("@mobile-components/icons/map-bg.svg");
-                            colorize: Theme.muted;
-                            image-fit: cover;
-                            opacity: 0.5;
+                        MapEmbed {
+                            x: 0;
+                            y: 0;
+                            width: parent.width;
+                            height: parent.height;
+                            latitude <=> root.map-latitude;
+                            longitude <=> root.map-longitude;
+                            zoom <=> root.map-zoom;
+                            tiles: root.map-tiles;
+                            pan(dx, dy) => { root.map-pan(dx, dy); }
+                            zoom-by(d, ax, ay) => { root.map-zoom-by(d, ax, ay); }
                         }
                         Rectangle {
                             width: 24px;

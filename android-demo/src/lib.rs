@@ -1,9 +1,12 @@
-//! Demo APK that runs the slint-mobile-components Gallery on Android.
+//! Minimal Android demo APK. Exists so the workspace compiles end-to-end
+//! for an Android target — the real "browse the screen library"
+//! experience is the desktop viewer (`cargo run` at workspace root).
 //!
-//! The Gallery is defined in the components crate's `ui/gallery.slint`;
-//! this app's own `ui/main.slint` just re-exports it as `MainWindow`
-//! and the build script wires `library_paths` so the
-//! `@mobile-components/...` alias resolves correctly.
+//! `ui/main.slint` re-exports `HomePage` from
+//! `crates/pages-misc/ui/home.slint` as `MainWindow`. Replace it with
+//! your own scene if you want to build an actual app on top of this
+//! library — see `android-demo/build.rs` for how to wire the
+//! `library_paths` so `@mobile-*/` imports resolve.
 
 slint::include_modules!();
 

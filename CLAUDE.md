@@ -11,20 +11,24 @@ The repo is a Cargo workspace, split for compile-time scope:
 - `crates/pages-{auth,commerce,finance,health,media,misc,productivity,social,system,travel}/`
   — full-screen page templates (~145 total), one crate per category.
   Imported as `@mobile-pages-<cat>/<file>.slint`.
-- Root crate (`./ui/`) — `gallery.slint`, `showcase.slint`, plus
-  `tests/snapshot_scenes.slint` and `tests/behavior_scenes.slint`.
-  These are the aggregators that import from every sub-crate.
-  Available as `@mobile-aggregator/gallery.slint` etc.
+- Root crate (`./tests/`) — `snapshot_scenes.slint` and
+  `behavior_scenes.slint` are widget-level test aggregators only;
+  page-level snap scenes live inside each `crates/pages-<cat>/ui/_snapshot_scenes.slint`.
+- `crates/viewer/` — bin crate (`cargo run` / `cargo view`) — the
+  interpreter-backed paginated browser for the whole screen library.
+- `android-demo/` — `cargo apk` crate, exists so the workspace
+  compiles for an Android target. `ui/main.slint` shows `HomePage` —
+  there's no Gallery anymore.
 
-Downstream consumers (`android-demo/`, external apps) wire the
-`library_paths` by calling `slint_mobile_components::library_paths()`
-from their `build.rs` — see `android-demo/build.rs` as the reference.
+Downstream consumers (external apps) wire the `library_paths` by
+calling `slint_mobile_components::library_paths()` from their
+`build.rs` — see `android-demo/build.rs` as the reference.
 
 When adding a new page: drop it in the relevant `crates/pages-<cat>/ui/`,
-update the aggregator (`ui/gallery.slint`, `ui/showcase.slint`,
-`tests/snapshot_scenes.slint`) with the matching import + `Snap…Page`
-scene. No new crate is needed unless the page genuinely doesn't fit any
-existing category — and `pages-misc/` is the catch-all.
+then run `cargo xtask split-snapshots` to add the matching `Snap*Page`
+re-export to that crate's `_snapshot_scenes.slint`. No new workspace
+crate is needed unless the page genuinely doesn't fit any existing
+category — `pages-misc/` is the catch-all.
 
 ## Iconography
 

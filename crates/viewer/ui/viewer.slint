@@ -1,0 +1,141 @@
+// Viewer — infinite-scroll browser for every page template in the workspace.
+// =====================================================================
+//
+// Architecturally, this is the *only* compiled scene in the binary.
+// Page templates are loaded at runtime via `slint-interpreter` and
+// embedded into the `ComponentContainer` slots below — so the binary's
+// rustc compile stays small no matter how many pages exist.
+//
+// The Rust side maintains two parallel models (`titles` + `cells`),
+// appending one entry per interpreter parse. A background slint::Timer
+// drives those parses ~16 ms apart, so the grid grows live under the
+// user's scroll position. When `loaded == total`, the Timer stops.
+
+import { ScrollView } from "std-widgets.slint";
+import { Theme } from "@mobile-theme/theme.slint";
+
+component PageCell inherits Rectangle {
+    in property <string> title;
+    in property <component-factory> page-factory;
+
+    width: 412px;
+    height: 892px + 44px;  // 44 = header
+    background: Theme.surface-1;
+    border-radius: Theme.radius-md;
+    border-width: 1px;
+    border-color: Theme.outline;
+    clip: true;
+
+    VerticalLayout {
+        spacing: 0;
+        Rectangle {
+            height: 44px;
+            background: Theme.surface-2;
+            HorizontalLayout {
+                padding-left: 12px;
+                padding-right: 12px;
+                Text {
+                    text: root.title;
+                    color: Theme.on-surface;
+                    font-size: 13px;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    overflow: elide;
+                    horizontal-stretch: 1;
+                }
+            }
+        }
+        ComponentContainer {
+            component-factory: root.page-factory;
+            width: 412px;
+            height: 892px;
+        }
+    }
+}
+
+export component Viewer inherits Window {
+    title: "slint-mobile-components — viewer";
+    preferred-width: 1740px;
+    preferred-height: 1080px;
+    background: Theme.background;
+
+    // Two parallel models, index-aligned. Same length always.
+    in property <[string]> titles;
+    in property <[component-factory]> cells;
+    in property <int> loaded: 0;
+    in property <int> total: 0;
+
+    // Cell + grid geometry. Kept in slint so we can position cells via
+    // absolute x/y based on their index (slint has no flow/wrap layout).
+    private property <length> cell-w: 412px;
+    private property <length> cell-h: 892px + 44px;
+    private property <length> gap: 16px;
+    private property <int> cols: 4;
+    private property <int> row-count: ceil(root.titles.length / root.cols);
+    private property <bool> still-loading: root.loaded < root.total;
+
+    VerticalLayout {
+        spacing: 0;
+
+        // ----- Status bar -----
+        Rectangle {
+            height: 56px;
+            background: Theme.surface-1;
+            drop-shadow-blur: Theme.elevation-1-blur;
+            drop-shadow-color: Theme.elevation-1-color;
+            drop-shadow-offset-y: Theme.elevation-1-y;
+            HorizontalLayout {
+                padding-left: 20px;
+                padding-right: 20px;
+                Text {
+                    text: "Viewer — " + root.loaded + " / " + root.total + " pages"
+                        + (root.still-loading ? "   ·   loading…" : "   ·   ready");
+                    color: Theme.on-surface;
+                    font-size: 16px;
+                    font-weight: 800;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        // ----- Scrollable grid -----
+        ScrollView {
+            VerticalLayout {
+                padding: root.gap;
+                alignment: start;
+                // The grid surface: 4 cols wide, height grows with the
+                // number of loaded cells. Each cell is positioned by its
+                // index — slint has no flow layout, so we do it manually.
+                Rectangle {
+                    width: root.cols * (root.cell-w + root.gap) - root.gap;
+                    height: root.row-count * (root.cell-h + root.gap)
+                        + (root.still-loading ? 80px : 0px);
+
+                    for cell[i] in root.cells: PageCell {
+                        x: mod(i, root.cols) * (root.cell-w + root.gap);
+                        y: floor(i / root.cols) * (root.cell-h + root.gap);
+                        title: root.titles[i];
+                        page-factory: cell;
+                    }
+
+                    // Loading indicator pinned to the bottom of the grid.
+                    // Shown only while the background loader is still working.
+                    if root.still-loading: Rectangle {
+                        x: 0;
+                        y: root.row-count * (root.cell-h + root.gap);
+                        width: parent.width;
+                        height: 80px;
+                        Text {
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                            text: "loading more pages…";
+                            color: Theme.muted;
+                            font-size: 15px;
+                            font-weight: 700;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

@@ -58,11 +58,15 @@ fn write_cargo_toml(crate_dir: &Path, cat: &str) -> std::io::Result<()> {
          ] }}\n\
          slint-mobile-theme = {{ path = \"../theme\" }}\n\
          slint-mobile-components-widgets = {{ path = \"../components\" }}\n\
+         # Path dep on the sibling `slint-mapping` repo so map-using pages\n\
+         # can `import {{ MapEmbed }} from \"@mapping/map.slint\";`.\n\
+         slint-mapping = {{ path = \"../../../slint-mapping\" }}\n\
          \n\
          [build-dependencies]\n\
          slint-build = \"1\"\n\
          slint-mobile-theme = {{ path = \"../theme\" }}\n\
-         slint-mobile-components-widgets = {{ path = \"../components\" }}\n",
+         slint-mobile-components-widgets = {{ path = \"../components\" }}\n\
+         slint-mapping = {{ path = \"../../../slint-mapping\" }}\n",
     );
     fs::write(crate_dir.join("Cargo.toml"), body)
 }
@@ -84,6 +88,10 @@ fn write_build_rs(crate_dir: &Path, cat: &str) -> std::io::Result<()> {
                  (\n            \
                      \"mobile-components\".into(),\n            \
                      PathBuf::from(slint_mobile_components_widgets::UI_LIBRARY_DIR),\n        \
+                 ),\n        \
+                 (\n            \
+                     \"mapping\".into(),\n            \
+                     PathBuf::from(slint_mapping::UI_LIBRARY_DIR),\n        \
                  ),\n    \
              ]));\n    \
              slint_build::compile_with_config(\"ui/_snapshot_scenes.slint\", config)\n        \
@@ -141,31 +149,50 @@ fn write_lib_rs(crate_dir: &Path, cat: &str) -> Result<usize, Box<dyn std::error
     Ok(snaps.len())
 }
 
-/// Extract `Snap<X>` names from `^export component Snap<X> inherits Window`
-/// lines. The format is regular enough that we don't need a regex engine.
+/// Extract `Snap<X>` names from the per-category `_snapshot_scenes.slint`
+/// file. Two declaration forms are recognised:
+///
+///   1. `export component SnapXxx inherits Window { ... }` — the
+///      original wrapper-Window form.
+///   2. `export { XxxPage as SnapXxxPage }` — the current re-export
+///      form, used since page templates became Windows themselves.
 fn extract_snap_names(slint: &str) -> Vec<String> {
-    let prefix = "export component ";
-    let mut names: Vec<String> = slint
-        .lines()
-        .filter_map(|line| {
-            let rest = line.strip_prefix(prefix)?;
-            // `Snap…` token, then whitespace, then `inherits Window`.
+    let mut names = Vec::new();
+    for line in slint.lines() {
+        let trimmed = line.trim_start();
+        // Form 1: `export component Snap<X> inherits Window`
+        if let Some(rest) = trimmed.strip_prefix("export component ") {
             let mut it = rest.split_whitespace();
-            let name = it.next()?;
-            if !name.starts_with("Snap") {
-                return None;
+            if let Some(name) = it.next() {
+                if name.starts_with("Snap")
+                    && it.next() == Some("inherits")
+                    && it.next().is_some_and(|t| t.starts_with("Window"))
+                {
+                    names.push(name.to_string());
+                    continue;
+                }
             }
-            // Validate the rest matches `inherits Window`.
-            if it.next()? != "inherits" {
-                return None;
+        }
+        // Form 2: `export { Page as SnapPage }` (possibly with trailing
+        // braces / semicolons). Pull each `<src> as <Snap...>` pair.
+        if let Some(inside) = trimmed
+            .strip_prefix("export {")
+            .and_then(|s| s.split('}').next())
+        {
+            for clause in inside.split(',') {
+                let mut parts = clause.split_whitespace();
+                let _src = parts.next();
+                if parts.next() != Some("as") {
+                    continue;
+                }
+                if let Some(alias) = parts.next() {
+                    if alias.starts_with("Snap") {
+                        names.push(alias.to_string());
+                    }
+                }
             }
-            let after = it.next()?;
-            if !after.starts_with("Window") {
-                return None;
-            }
-            Some(name.to_string())
-        })
-        .collect();
+        }
+    }
     names.sort();
     names.dedup();
     names

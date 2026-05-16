@@ -13,13 +13,18 @@ members = [
     "crates/pages-social",
     "crates/pages-system",
     "crates/pages-travel",
+    "crates/viewer",
     "xtask",
 ]
 resolver = "2"
-# Default cargo commands at the root operate on the library, not the
-# demo APK — that's what consumers care about. `cargo apk build` from
-# inside `android-demo/` (or `just demo-run`) handles the APK.
-default-members = ["."]
+# Default cargo commands at the root operate on the library plus the
+# viewer. The library is what consumers depend on (and transitively
+# pulls in every theme/components/pages-* crate so `cargo check` still
+# validates the whole workspace); the viewer is what `cargo run` picks
+# up — there's only one bin in this set, so no ambiguity. The android
+# demo's APK build is `cargo apk build` from inside `android-demo/`
+# (or `just demo-run`).
+default-members = [".", "crates/viewer"]
 
 [package]
 name = "slint-mobile-components"
@@ -70,11 +75,6 @@ slint-mobile-pages-system = { path = "crates/pages-system" }
 slint-mobile-pages-travel = { path = "crates/pages-travel" }
 
 [features]
-# Pull in Slint's default desktop backend + renderer so the `gallery`
-# example can open a window on macOS / Linux / Windows. Off by default
-# so consumers (e.g. an Android app) aren't forced to drag in winit.
-gallery = ["slint/backend-default", "slint/renderer-skia"]
-
 # Component-snapshot harness — pulls in Slint's software renderer so we
 # can render scenes to a pixel buffer without a backend or display.
 # Enabled when running `cargo test --features snapshots`.
@@ -84,24 +84,6 @@ snapshots = ["slint/renderer-software"]
 # by accessibility metadata and invoke their default actions without
 # rendering. Enabled when running `cargo test --features behaviors`.
 behaviors = []
-
-# Desktop review grid — `cargo run --example showcase --features showcase`.
-# Tiles every page template at native phone resolution with a pass/fail
-# verdict toggle. Off by default (and `build.rs` only compiles the heavy
-# `ui/showcase.slint` when this is set) so normal `cargo check` stays fast.
-showcase = ["slint/backend-default", "slint/renderer-skia"]
-
-# Desktop preview app — `cargo run --example gallery --features gallery`.
-# Renders the same `Gallery` Window that `build.rs` already compiles for
-# CI validation; no extra .slint file needed.
-[[example]]
-name = "gallery"
-required-features = ["gallery"]
-
-# Desktop review grid app — `cargo run --example showcase --features showcase`.
-[[example]]
-name = "showcase"
-required-features = ["showcase"]
 
 [[test]]
 name = "snapshots"
@@ -114,8 +96,6 @@ required-features = ["behaviors"]
 [dev-dependencies]
 image = { version = "0.25", default-features = false, features = ["png"] }
 i-slint-backend-testing = "1"
-# Used only by the `showcase` example to read/write showcase-verdicts.json.
-serde_json = "1"
 
 [profile.dev]
 opt-level = 1

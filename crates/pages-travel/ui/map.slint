@@ -14,8 +14,11 @@
 //   - Page root is a plain Rectangle (NOT a VerticalLayout) — children
 //     are positioned absolutely so the map covers the whole area and
 //     the floating chrome overlays on top.
-//   - Map: `Image` filling parent, `image-fit: cover` with the
-//     `map-bg.svg` placeholder (a road grid + park polygon).
+//   - Map: `MapEmbed` from `slint-mapping` fills the parent. Tiles
+//     come from the consumer via `map-tiles`; without them the embed
+//     shows its dark background, useful as a snapshot baseline. See
+//     `slint-mapping/examples/map_page.rs` for end-to-end wiring with
+//     real OpenStreetMap tiles.
 //   - Search card: floating at the top, 16 px from each side, ~60 px
 //     below the top edge so it clears a typical status bar.
 //   - BottomSheet: pinned to the bottom edge, fixed height 360 px,
@@ -27,6 +30,10 @@ import { Card } from "@mobile-components/card.slint";
 import { ListItem } from "@mobile-components/list-item.slint";
 import { SectionHeader } from "@mobile-components/section-header.slint";
 import { ScrollView } from "std-widgets.slint";
+// Map widget — consumers wire `map-tiles` from a `slint_mapping::TileSource`
+// and forward `map-pan` / `map-zoom-by` callbacks to a controller, or
+// drive the camera directly via `map-latitude` / `map-longitude` / `map-zoom`.
+import { MapEmbed, Tile } from "@mapping/map.slint";
 
 export struct PointOfInterest {
     name: string,
@@ -34,7 +41,9 @@ export struct PointOfInterest {
     distance: string,
 }
 
-export component MapPage inherits Rectangle {
+export component MapPage inherits Window {
+    preferred-width: 412px;
+    preferred-height: 892px;
     in property <string> query;
     in property <[PointOfInterest]> nearby: [
         { name: "Slint HQ",            category: "Office",       distance: "0.2 km" },
@@ -45,16 +54,30 @@ export component MapPage inherits Rectangle {
     callback search-edited(string);
     callback poi-pressed(PointOfInterest);
 
+    // Map state — bind from Rust via a slint_mapping::MapController, or
+    // (for a static demo) leave at defaults and pass a one-off
+    // `map-tiles` model.
+    in-out property <float> map-latitude: 51.5074;
+    in-out property <float> map-longitude: -0.1276;
+    in-out property <float> map-zoom: 13.0;
+    in property <[Tile]> map-tiles;
+    callback map-pan(length, length);
+    callback map-zoom-by(float, length, length);
+
     background: Theme.background;
 
     // ----- Map canvas -----
-    Image {
+    MapEmbed {
         x: 0;
         y: 0;
         width: parent.width;
         height: parent.height;
-        source: @image-url("@mobile-components/icons/map-bg.svg");
-        image-fit: ImageFit.cover;
+        latitude <=> root.map-latitude;
+        longitude <=> root.map-longitude;
+        zoom <=> root.map-zoom;
+        tiles: root.map-tiles;
+        pan(dx, dy) => { root.map-pan(dx, dy); }
+        zoom-by(d, ax, ay) => { root.map-zoom-by(d, ax, ay); }
     }
 
     // ----- Floating search bar (top) -----

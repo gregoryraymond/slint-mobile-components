@@ -1,14 +1,8 @@
-// Compile `ui/gallery.slint`, which is Window-rooted and uses every
-// component in the library — this serves two purposes at once:
-//
-//   1. CI validation: every component's `.slint` syntax is type-checked
-//      on each `cargo check` (gallery.slint imports them transitively).
-//   2. Desktop preview: with `--features gallery`, the `gallery` example
-//      runs the resulting `Gallery` Window so you can see the library.
-//
-// Consumers never depend on this build's output — they configure Slint's
-// `library_paths` to point at `ui/` and import individual files via
-// `@mobile-components/<file>.slint`.
+// Root crate's slint build: snapshot scenes (widget-level only — page
+// snaps live in each pages-* crate) and behavior scenes. Consumers
+// never depend on this build's output; they call
+// `slint_mobile_components::library_paths()` and import individual
+// files via the `@mobile-*` aliases.
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -77,25 +71,8 @@ fn main() {
         ]))
     };
 
-    // `ui/gallery.slint` is the desktop-preview entry — it imports every
-    // widget and ~80 pages, so compiling it pulls a massive slint codegen
-    // through one rustc invocation. Each pages-* and crates/components
-    // crate now compiles its own validation, so root only needs gallery
-    // when the `gallery` example is actually being built.
-    if std::env::var_os("CARGO_FEATURE_GALLERY").is_some() {
-        slint_build::compile_with_config("ui/gallery.slint", config())
-            .expect("Slint build failed");
-    }
     slint_build::compile_with_config("tests/snapshot_scenes.slint", config())
         .expect("Snapshot scenes build failed");
     slint_build::compile_with_config("tests/behavior_scenes.slint", config())
         .expect("Behavior scenes build failed");
-
-    // `ui/showcase.slint` tiles all ~145 page templates into one Window —
-    // it's expensive to compile, so only build it for the `showcase`
-    // example. Everyday `cargo check` / `cargo test` stays fast.
-    if std::env::var_os("CARGO_FEATURE_SHOWCASE").is_some() {
-        slint_build::compile_with_config("ui/showcase.slint", config())
-            .expect("Showcase build failed");
-    }
 }

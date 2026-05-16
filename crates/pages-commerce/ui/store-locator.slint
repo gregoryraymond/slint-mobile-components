@@ -13,6 +13,7 @@
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { Divider } from "@mobile-components/divider.slint";
+import { MapEmbed, Tile } from "@mapping/map.slint";
 
 // One store row.
 component StoreRow inherits Rectangle {
@@ -151,7 +152,19 @@ component MapPin inherits Rectangle {
     }
 }
 
-export component StoreLocatorPage inherits Rectangle {
+export component StoreLocatorPage inherits Window {
+    preferred-width: 412px;
+    preferred-height: 892px;
+
+    // Map state — bind from Rust via a slint_mapping::MapController, or
+    // (for a static demo) leave at defaults and pass a one-off map-tiles
+    // model. See crates/pages-travel/ui/map.slint for the canonical wiring.
+    in-out property <float> map-latitude: 51.5074;
+    in-out property <float> map-longitude: -0.1276;
+    in-out property <float> map-zoom: 13.0;
+    in property <[Tile]> map-tiles;
+    callback map-pan(length, length);
+    callback map-zoom-by(float, length, length);
     callback back-pressed();
     callback search-pressed();
     callback store-pressed(string);
@@ -212,15 +225,17 @@ export component StoreLocatorPage inherits Rectangle {
             height: 200px;
             background: Theme.surface-variant;
             clip: true;
-            Image {
-                width: parent.width * 1.4;
-                height: parent.height * 1.6;
-                x: -parent.width * 0.2;
-                y: -parent.height * 0.3;
-                source: @image-url("@mobile-components/icons/map-bg.svg");
-                colorize: Theme.muted;
-                image-fit: cover;
-                opacity: 0.5;
+            MapEmbed {
+                x: 0;
+                y: 0;
+                width: parent.width;
+                height: parent.height;
+                latitude <=> root.map-latitude;
+                longitude <=> root.map-longitude;
+                zoom <=> root.map-zoom;
+                tiles: root.map-tiles;
+                pan(dx, dy) => { root.map-pan(dx, dy); }
+                zoom-by(d, ax, ay) => { root.map-zoom-by(d, ax, ay); }
             }
             MapPin {
                 x: parent.width * 0.26;
