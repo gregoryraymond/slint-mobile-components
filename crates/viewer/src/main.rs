@@ -31,7 +31,9 @@ use std::time::Duration;
 #[allow(deprecated)]
 use slint::ComponentFactory;
 use slint::{ComponentHandle, Model, ModelRc, SharedString, Timer, TimerMode, VecModel};
-use slint_interpreter::{ComponentDefinition, Compiler};
+use slint_interpreter::{ComponentDefinition, ComponentInstance, Compiler, Struct, Value};
+use slint_mapping::source::TileSource;
+use slint_mapping::sources::FileTileSource;
 
 slint::include_modules!();
 
@@ -174,20 +176,148 @@ fn append_page(
     titles: &Rc<VecModel<SharedString>>,
     cells: &Rc<VecModel<ComponentFactory>>,
     compiler: &PageCompiler,
+    map_source: &Rc<dyn TileSource>,
     page: &PageMeta,
 ) {
     let Some(def) = compiler.definition_for(page) else {
         return;
     };
-    // `ComponentFactory::new` is generic over `T: ComponentHandle`. The
-    // interpreter's `ComponentInstance` implements `ComponentHandle`, so
-    // we return it directly — no `.into()`. (Forcing a conversion through
-    // `VRc<ItemTreeVTable, _>` is ambiguous because every compiled
-    // component also satisfies the bound.)
-    let factory = ComponentFactory::new(move |ctx| def.create_embedded(ctx).ok());
+    // Detect map-using pages by looking for the `map-tiles` property in
+    // the component definition. If present, the factory attaches a
+    // dynamic map handler when the cell instantiates the component;
+    // other pages instantiate as-is.
+    let is_map_page = def
+        .properties()
+        .any(|(name, _)| name == "map-tiles");
+    let source_for_factory = if is_map_page {
+        Some(Rc::clone(map_source))
+    } else {
+        None
+    };
+    let factory = ComponentFactory::new(move |ctx| {
+        let instance = def.create_embedded(ctx).ok()?;
+        if let Some(src) = &source_for_factory {
+            attach_map_handler(&instance, Rc::clone(src));
+        }
+        Some(instance)
+    });
     titles.push(SharedString::from(page.display.as_str()));
     cells.push(factory);
     viewer.set_loaded(titles.row_count() as i32);
+}
+
+/// Viewport size that the viewer paints each interpreted page into —
+/// matches the `PageCell.ComponentContainer` size in `ui/viewer.slint`.
+const MAP_VIEWPORT_W: f64 = 412.0;
+const MAP_VIEWPORT_H: f64 = 892.0;
+
+/// Wire a `slint_mapping::TileSource` into a freshly-loaded interpreted
+/// page that exposes the canonical map-* property + callback surface
+/// (`map-latitude`, `map-longitude`, `map-zoom`, `map-tiles`, `map-pan`,
+/// `map-zoom-by`). Goes through slint-interpreter's dynamic property /
+/// callback API so we don't need a Rust handle to the page type.
+fn attach_map_handler(instance: &ComponentInstance, source: Rc<dyn TileSource>) {
+    // Start on the world at zoom 2 — the bundled sample bundle covers
+    // 0–3, so a low zoom shows something interesting in every cell.
+    let _ = instance.set_property("map-latitude", Value::Number(20.0));
+    let _ = instance.set_property("map-longitude", Value::Number(0.0));
+    let _ = instance.set_property("map-zoom", Value::Number(2.0));
+
+    refresh_map(instance, &source);
+
+    // map-pan(dx, dy) — projection-correct camera shift, then refresh.
+    let inst_pan = instance.clone_strong();
+    let source_pan = Rc::clone(&source);
+    let _ = instance.set_callback("map-pan", move |args| {
+        let dx = number_arg(args, 0);
+        let dy = number_arg(args, 1);
+        let (lon, lat, zoom) = read_camera(&inst_pan);
+        let (new_lon, new_lat) =
+            slint_mapping::camera::pan(lon, lat, zoom, dx, dy, source_pan.tile_size());
+        let _ = inst_pan.set_property("map-longitude", Value::Number(new_lon));
+        let _ = inst_pan.set_property("map-latitude", Value::Number(new_lat));
+        refresh_map(&inst_pan, &source_pan);
+        Value::Void
+    });
+
+    // map-zoom-by(delta, anchor-x, anchor-y) — cursor-anchored zoom.
+    let inst_zoom = instance.clone_strong();
+    let source_zoom = Rc::clone(&source);
+    let _ = instance.set_callback("map-zoom-by", move |args| {
+        let delta = number_arg(args, 0);
+        let ax = number_arg(args, 1);
+        let ay = number_arg(args, 2);
+        let (lon, lat, zoom) = read_camera(&inst_zoom);
+        let (new_lon, new_lat, new_zoom) = slint_mapping::camera::zoom_anchored(
+            lon,
+            lat,
+            zoom,
+            delta,
+            ax,
+            ay,
+            MAP_VIEWPORT_W,
+            MAP_VIEWPORT_H,
+            source_zoom.tile_size(),
+            source_zoom.min_zoom(),
+            source_zoom.max_zoom(),
+        );
+        let _ = inst_zoom.set_property("map-longitude", Value::Number(new_lon));
+        let _ = inst_zoom.set_property("map-latitude", Value::Number(new_lat));
+        let _ = inst_zoom.set_property("map-zoom", Value::Number(new_zoom));
+        refresh_map(&inst_zoom, &source_zoom);
+        Value::Void
+    });
+}
+
+fn read_camera(instance: &ComponentInstance) -> (f64, f64, f64) {
+    let lon = match instance.get_property("map-longitude") {
+        Ok(Value::Number(n)) => n,
+        _ => 0.0,
+    };
+    let lat = match instance.get_property("map-latitude") {
+        Ok(Value::Number(n)) => n,
+        _ => 0.0,
+    };
+    let zoom = match instance.get_property("map-zoom") {
+        Ok(Value::Number(n)) => n,
+        _ => 2.0,
+    };
+    (lon, lat, zoom)
+}
+
+fn number_arg(args: &[Value], idx: usize) -> f64 {
+    match args.get(idx) {
+        Some(Value::Number(n)) => *n,
+        _ => 0.0,
+    }
+}
+
+/// Recompute visible tiles and push them as a `Value::Model` to the
+/// page's `map-tiles` property. Each tile is built as an interpreter
+/// `Struct` matching the shape of `Tile { x, y, size, image }` in
+/// `slint-mapping/ui/map.slint`.
+fn refresh_map(instance: &ComponentInstance, source: &Rc<dyn TileSource>) {
+    let (lon, lat, zoom) = read_camera(instance);
+    let placed = slint_mapping::viewport::visible_tiles(
+        lon,
+        lat,
+        zoom,
+        MAP_VIEWPORT_W,
+        MAP_VIEWPORT_H,
+        source.tile_size(),
+    );
+    let mut rows: Vec<Value> = Vec::with_capacity(placed.len());
+    for p in placed {
+        let Some(image) = source.tile(p.key) else { continue };
+        let mut tile = Struct::default();
+        tile.set_field("x".into(), Value::Number(p.x as f64));
+        tile.set_field("y".into(), Value::Number(p.y as f64));
+        tile.set_field("size".into(), Value::Number(p.size as f64));
+        tile.set_field("image".into(), Value::Image(image));
+        rows.push(Value::Struct(tile));
+    }
+    let model = Rc::new(VecModel::from(rows));
+    let _ = instance.set_property("map-tiles", Value::Model(ModelRc::from(model)));
 }
 
 fn main() {
@@ -204,6 +334,12 @@ fn main() {
     eprintln!("discovered {} pages", pages.len());
 
     let compiler = PageCompiler::new(&root);
+    // Tile source for the 6 map-using pages. The viewer detects them
+    // by property name (`map-tiles`) when each page is instantiated;
+    // non-map pages ignore the source. Bundled OSM sample tiles ship
+    // with slint-mapping, no network needed.
+    let map_source: Rc<dyn TileSource> =
+        Rc::new(FileTileSource::new(slint_mapping::SAMPLE_TILES_DIR));
 
     let viewer = Viewer::new().expect("Viewer::new");
     viewer.set_total(pages.len() as i32);
@@ -218,7 +354,7 @@ fn main() {
     // content rather than an empty grid.
     let initial = pages.len().min(INITIAL_BATCH);
     for page in &pages[..initial] {
-        append_page(&viewer, &titles_model, &cells_model, &compiler, page);
+        append_page(&viewer, &titles_model, &cells_model, &compiler, &map_source, page);
     }
 
     // Background loader: one page per ~16 ms tick (≈ frame rate). The
@@ -236,6 +372,7 @@ fn main() {
         let titles_model = titles_model.clone();
         let cells_model = cells_model.clone();
         let cursor = Rc::clone(&cursor);
+        let map_source = Rc::clone(&map_source);
         timer.start(TimerMode::Repeated, Duration::from_millis(16), move || {
             let i = *cursor.borrow();
             if i >= pages.len() {
@@ -250,6 +387,7 @@ fn main() {
                 &titles_model,
                 &cells_model,
                 &compiler,
+                &map_source,
                 &pages[i],
             );
         });
