@@ -140,6 +140,11 @@ impl PageCompiler {
             "mobile-components".into(),
             root.join("crates/components/ui"),
         );
+        // `@mapping` resolves to the sibling slint-mapping repo — the 6
+        // map-using pages import `MapEmbed` from there. Without this
+        // entry, interpreting any of those pages fails with
+        // "Cannot find requested import @mapping/map.slint".
+        paths.insert("mapping".into(), PathBuf::from(slint_mapping::UI_LIBRARY_DIR));
         compiler.set_library_paths(paths);
         Self { compiler }
     }
