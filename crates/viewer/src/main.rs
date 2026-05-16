@@ -30,10 +30,12 @@ use std::time::Duration;
 // integration path; the deprecation is incidental.
 #[allow(deprecated)]
 use slint::ComponentFactory;
-use slint::{ComponentHandle, Model, ModelRc, SharedString, Timer, TimerMode, VecModel};
+use slint::{ComponentHandle, Model, ModelRc, SharedString, Timer, TimerMode, VecModel, Weak};
 use slint_interpreter::{ComponentDefinition, ComponentInstance, Compiler, Struct, Value};
+use slint_mapping::cache::{FileTileCache, LayeredTileCache, TileCache};
 use slint_mapping::source::TileSource;
-use slint_mapping::sources::FileTileSource;
+use slint_mapping::sources::OsmTileSource;
+use std::sync::Arc;
 
 slint::include_modules!();
 
@@ -211,6 +213,27 @@ fn append_page(
 const MAP_VIEWPORT_W: f64 = 412.0;
 const MAP_VIEWPORT_H: f64 = 892.0;
 
+// UI-thread-only registry of live map page cells. `attach_map_handler`
+// stores a refresh closure here so `OsmTileSource::on_tile_ready` can
+// fire a refresh across every cell when a background fetch lands.
+//
+// Stored as `Box<dyn Fn() -> bool>` rather than `Weak<ComponentInstance>
+// + source` so the refresh logic stays encapsulated; the closure
+// returns `false` when its captured weak handle is dead, and the
+// runner prunes those entries.
+thread_local! {
+    static MAP_REFRESHERS: RefCell<Vec<Box<dyn Fn() -> bool>>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Re-refresh every live map page cell. Invoked on the UI thread from
+/// `OsmTileSource::on_tile_ready` (via `slint::invoke_from_event_loop`)
+/// each time a background tile fetch completes.
+fn refresh_all_map_pages() {
+    MAP_REFRESHERS.with(|r| {
+        r.borrow_mut().retain(|f| f());
+    });
+}
+
 /// Wire a `slint_mapping::TileSource` into a freshly-loaded interpreted
 /// page that exposes the canonical map-* property + callback surface
 /// (`map-latitude`, `map-longitude`, `map-zoom`, `map-tiles`, `map-pan`,
@@ -219,13 +242,28 @@ const MAP_VIEWPORT_H: f64 = 892.0;
 fn attach_map_handler(instance: &ComponentInstance, source: Rc<dyn TileSource>) {
     // Start centred on London at zoom 10 — the bundled sample bundle
     // includes Greater London at zoom 4-12, so this opens with real
-    // street-level detail (scroll-wheel zooms to 12; below z=4 falls
-    // back to the world tiles).
+    // street-level detail (scroll-wheel zooms to 12; pan/zoom past
+    // the cache triggers OsmTileSource to fetch in the background).
     let _ = instance.set_property("map-latitude", Value::Number(51.5074));
     let _ = instance.set_property("map-longitude", Value::Number(-0.1276));
     let _ = instance.set_property("map-zoom", Value::Number(10.0));
 
     refresh_map(instance, &source);
+
+    // Register a refresh closure so `OsmTileSource::on_tile_ready`
+    // (called from the fetcher thread → invoke_from_event_loop) can
+    // repaint this cell when a background fetch lands.
+    let inst_weak: Weak<ComponentInstance> = instance.as_weak();
+    let source_for_refresh = Rc::clone(&source);
+    MAP_REFRESHERS.with(|r| {
+        r.borrow_mut().push(Box::new(move || match inst_weak.upgrade() {
+            Some(inst) => {
+                refresh_map(&inst, &source_for_refresh);
+                true
+            }
+            None => false,
+        }));
+    });
 
     // map-pan(dx, dy) — projection-correct camera shift, then refresh.
     let inst_pan = instance.clone_strong();
@@ -336,12 +374,45 @@ fn main() {
     eprintln!("discovered {} pages", pages.len());
 
     let compiler = PageCompiler::new(&root);
-    // Tile source for the 6 map-using pages. The viewer detects them
-    // by property name (`map-tiles`) when each page is instantiated;
-    // non-map pages ignore the source. Bundled OSM sample tiles ship
-    // with slint-mapping, no network needed.
-    let map_source: Rc<dyn TileSource> =
-        Rc::new(FileTileSource::new(slint_mapping::SAMPLE_TILES_DIR));
+    // Tile source for the 6 map-using pages. An OsmTileSource backed
+    // by a FileTileCache rooted under target/tile-cache/: tiles
+    // already on disk serve instantly, misses kick off background
+    // HTTP fetches against the OSM standard tile server. When a fetch
+    // lands, `on_tile_ready` schedules a UI-thread refresh of every
+    // map-using page cell, so panning into uncached areas fills in as
+    // the tiles stream in.
+    let cache_dir = root.join("target/tile-cache");
+    std::fs::create_dir_all(&cache_dir).ok();
+    let cache: Arc<dyn TileCache> = Arc::new(LayeredTileCache::new(
+        Box::new(FileTileCache::new(&cache_dir)),
+        vec![Box::new(FileTileCache::new(slint_mapping::SAMPLE_TILES_DIR))],
+    ));
+    let osm = Arc::new(OsmTileSource::new(cache));
+    osm.on_tile_ready(|_key| {
+        let _ = slint::invoke_from_event_loop(refresh_all_map_pages);
+    });
+    let map_source: Rc<dyn TileSource> = {
+        // OsmTileSource is Send+Sync; we wrap in Rc<dyn TileSource>
+        // only because attach_map_handler takes that. The interior is
+        // an Arc that handles cross-thread state correctly.
+        struct OsmRc(Arc<OsmTileSource>);
+        impl TileSource for OsmRc {
+            fn tile(&self, k: slint_mapping::TileKey) -> Option<slint::Image> {
+                self.0.tile(k)
+            }
+            fn tile_size(&self) -> u32 {
+                self.0.tile_size()
+            }
+            fn min_zoom(&self) -> u8 {
+                self.0.min_zoom()
+            }
+            fn max_zoom(&self) -> u8 {
+                self.0.max_zoom()
+            }
+        }
+        Rc::new(OsmRc(osm))
+    };
+    eprintln!("tile cache: {}", cache_dir.display());
 
     let viewer = Viewer::new().expect("Viewer::new");
     viewer.set_total(pages.len() as i32);
