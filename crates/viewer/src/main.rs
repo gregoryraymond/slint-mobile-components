@@ -388,9 +388,36 @@ fn main() {
         vec![Box::new(FileTileCache::new(slint_mapping::SAMPLE_TILES_DIR))],
     ));
     let osm = Arc::new(OsmTileSource::new(cache));
-    osm.on_tile_ready(|_key| {
-        let _ = slint::invoke_from_event_loop(refresh_all_map_pages);
-    });
+    // Debounce on_tile_ready: a pan that misses 30 tiles otherwise
+    // schedules 30 separate `refresh_all_map_pages` invocations on
+    // the event loop. Coalesce them — at most ONE refresh "in
+    // flight" at a time. New completions while a refresh is pending
+    // just observe the flag is already true and do nothing; the
+    // pending refresh will pick up their results when it runs.
+    {
+        let pending = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        osm.on_tile_ready(move |_key| {
+            // CAS false→true: only the winner schedules a refresh.
+            if pending
+                .compare_exchange(
+                    false,
+                    true,
+                    std::sync::atomic::Ordering::SeqCst,
+                    std::sync::atomic::Ordering::SeqCst,
+                )
+                .is_ok()
+            {
+                let pending = Arc::clone(&pending);
+                let _ = slint::invoke_from_event_loop(move || {
+                    // Clear BEFORE refreshing so any tile that arrives
+                    // mid-refresh schedules a follow-up pass (and
+                    // doesn't get dropped on the floor).
+                    pending.store(false, std::sync::atomic::Ordering::SeqCst);
+                    refresh_all_map_pages();
+                });
+            }
+        });
+    }
     let map_source: Rc<dyn TileSource> = {
         // OsmTileSource is Send+Sync; we wrap in Rc<dyn TileSource>
         // only because attach_map_handler takes that. The interior is
