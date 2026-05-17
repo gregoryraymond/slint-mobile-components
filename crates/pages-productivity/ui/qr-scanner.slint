@@ -1,291 +1,144 @@
 // QRScannerPage
 // =====================================================================
 //
-// QR / barcode scan viewfinder — distinct from `DocumentScannerPage`
-// (full-page document capture) in that the scan window is a small
-// centred square with a sweeping scan line. Demonstrates:
-//
-//   - Full-bleed dark camera canvas with a dimmed scrim that has a
-//     bright "cut-out" square in the middle (approximated by a
-//     transparent-bordered bright square).
-//   - Four L-shaped corner brackets framing the scan window + a
-//     horizontal scan line across its centre.
-//   - Caption strip ("Point at a QR code") + flash / gallery overlay
-//     buttons.
-//   - Mode chip strip (QR / Barcode / Document / Translate) along the
-//     bottom + a peek of the "Recent scans" sheet.
+// Camera viewfinder for scanning QR codes. Dark background, a 280×280
+// transparent square with four primary-tinted corner brackets, and a
+// "RECENT" FormSection near the bottom for previously-scanned codes.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
-import { Chip } from "@mobile-components/chip.slint";
+import { AppBar } from "@mobile-components/app-bar.slint";
+import { HeadingStyle } from "@mobile-components/heading.slint";
+import { FormSection } from "@mobile-components/form-section.slint";
+import { SettingRow } from "@mobile-components/setting-row.slint";
+import { Divider } from "@mobile-components/divider.slint";
 
-// One L-shaped corner bracket. corner: 0 TL, 1 TR, 2 BL, 3 BR.
-component CornerBracket inherits Rectangle {
-    in property <int> corner;
-    in property <color> tint: Theme.accent-info;
-    in property <length> arm: 32px;
-    in property <length> thickness: 4px;
+// One L-shaped corner bracket.
+component Corner inherits Rectangle {
+    in property <bool> top: true;
+    in property <bool> left: true;
 
-    width: root.arm;
-    height: root.arm;
+    width: 28px;
+    height: 28px;
+    background: transparent;
+
+    // Horizontal arm.
     Rectangle {
         x: 0;
-        y: root.corner == 0 || root.corner == 1 ? 0px : root.arm - root.thickness;
-        width: root.arm;
-        height: root.thickness;
-        background: root.tint;
-        border-radius: root.thickness / 2;
+        y: root.top ? 0px : (parent.height - self.height);
+        width: parent.width;
+        height: 4px;
+        background: Theme.primary;
+        border-radius: 2px;
     }
+    // Vertical arm.
     Rectangle {
-        x: root.corner == 0 || root.corner == 2 ? 0px : root.arm - root.thickness;
+        x: root.left ? 0px : (parent.width - self.width);
         y: 0;
-        width: root.thickness;
-        height: root.arm;
-        background: root.tint;
-        border-radius: root.thickness / 2;
-    }
-}
-
-// Translucent overlay button.
-component OverlayButton inherits Rectangle {
-    in property <image> icon;
-    in property <color> tint: #ffffff;
-    callback clicked();
-
-    accessible-role: button;
-    accessible-action-default => { root.clicked(); }
-
-    width: 44px;
-    height: 44px;
-    border-radius: self.width / 2;
-    background: #00000099;
-    Image {
-        width: 20px;
-        height: 20px;
-        x: (parent.width - self.width) / 2;
-        y: (parent.height - self.height) / 2;
-        source: root.icon;
-        colorize: root.tint;
-        image-fit: contain;
-    }
-    TouchArea {
-        clicked => { root.clicked(); }
+        width: 4px;
+        height: parent.height;
+        background: Theme.primary;
+        border-radius: 2px;
     }
 }
 
 export component QRScannerPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
-    in property <string> caption: "Point at a QR code or barcode";
-    in property <bool> flash-on: false;
+
     callback close-pressed();
     callback flash-pressed();
-    callback gallery-pressed();
-    callback mode-pressed(string);
     callback recent-pressed(string);
 
-    background: #0a0d12;
+    background: Theme.background;
 
-    // Camera canvas.
-    Rectangle {
-        x: 0;
-        y: 0;
-        width: parent.width;
-        height: parent.height;
-        background: @radial-gradient(circle, #1a1d24 0%, #0a0d12 85%);
-    }
+    VerticalLayout {
+        spacing: 0;
 
-    // Scan window — bright square with corner brackets + scan line.
-    Rectangle {
-        x: (parent.width - self.width) / 2;
-        y: 220px;
-        width: 260px;
-        height: 260px;
-        background: #ffffff08;
-        border-radius: Theme.radius-md;
-
-        // Corner brackets.
-        CornerBracket {
-            x: -2px;
-            y: -2px;
-            corner: 0;
-            tint: Theme.accent-info;
-        }
-        CornerBracket {
-            x: parent.width - 30px;
-            y: -2px;
-            corner: 1;
-            tint: Theme.accent-info;
-        }
-        CornerBracket {
-            x: -2px;
-            y: parent.height - 30px;
-            corner: 2;
-            tint: Theme.accent-info;
-        }
-        CornerBracket {
-            x: parent.width - 30px;
-            y: parent.height - 30px;
-            corner: 3;
-            tint: Theme.accent-info;
+        AppBar {
+            title: "Scan QR";
+            title-style: HeadingStyle.caps-tight;
+            leading-icon: @image-url("@mobile-components/icons/close.svg");
+            trailing-icon: @image-url("@mobile-components/icons/star.svg");
+            bar-background: transparent;
+            leading-pressed => { root.close-pressed(); }
+            trailing-pressed => { root.flash-pressed(); }
         }
 
-        // Scan line across the centre.
+        // ----- Viewfinder -----------------------------------------------
         Rectangle {
-            x: 8px;
-            y: parent.height / 2 - 1px;
-            width: parent.width - 16px;
-            height: 2px;
-            background: @linear-gradient(90deg, #4f8cff00 0%, #4f8cff 50%, #4f8cff00 100%);
-        }
-    }
+            background: Theme.background;
+            horizontal-stretch: 1;
+            vertical-stretch: 1;
+            min-height: 420px;
 
-    // Top chrome.
-    HorizontalLayout {
-        x: 0;
-        y: 0;
-        width: parent.width;
-        height: 64px;
-        padding: Theme.spacing-md;
-        spacing: Theme.spacing-sm;
-        alignment: stretch;
-        OverlayButton {
-            icon: @image-url("@mobile-components/icons/close.svg");
-            clicked => { root.close-pressed(); }
-        }
-        Rectangle { horizontal-stretch: 1; }
-        OverlayButton {
-            icon: @image-url("@mobile-components/icons/star.svg");
-            tint: root.flash-on ? Theme.accent-warning : #ffffff;
-            clicked => { root.flash-pressed(); }
-        }
-        OverlayButton {
-            icon: @image-url("@mobile-components/icons/photo-ocean.svg");
-            clicked => { root.gallery-pressed(); }
-        }
-    }
+            // 280×280 transparent square centred.
+            Rectangle {
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2 - 24px;
+                width: 280px;
+                height: 280px;
+                background: transparent;
 
-    // Caption pill below the scan window.
-    Rectangle {
-        x: (parent.width - self.width) / 2;
-        y: 500px;
-        width: caption-text.preferred-width + 32px;
-        height: 32px;
-        border-radius: 16px;
-        background: #000000aa;
-        caption-text := Text {
-            text: root.caption;
-            color: #ffffff;
-            font-family: "JetBrains Mono";
-            font-size: Theme.font-size-caption;
-            font-weight: 700;
-            horizontal-alignment: center;
-            vertical-alignment: center;
-            width: parent.width;
-            height: parent.height;
-        }
-    }
-
-    // Bottom controls + recent scans peek.
-    Rectangle {
-        x: 0;
-        y: parent.height - self.height;
-        width: parent.width;
-        height: 240px;
-        background: @linear-gradient(180deg, #00000000 0%, #000000ee 40%);
-
-        VerticalLayout {
-            padding-top: Theme.spacing-lg;
-            padding-bottom: Theme.spacing-md;
-            spacing: Theme.spacing-md;
-            alignment: end;
-
-            // Mode chips.
-            HorizontalLayout {
-                spacing: Theme.spacing-sm;
-                padding-left: Theme.spacing-md;
-                padding-right: Theme.spacing-md;
-                alignment: center;
-                Chip { label: "QR"; selected: true; }
-                Chip { label: "Barcode"; }
-                Chip { label: "Document"; }
-                Chip { label: "Translate"; }
+                Corner { x: 0;                     y: 0;                       top: true;  left: true;  }
+                Corner { x: parent.width - self.width; y: 0;                   top: true;  left: false; }
+                Corner { x: 0;                     y: parent.height - self.height; top: false; left: true; }
+                Corner { x: parent.width - self.width; y: parent.height - self.height; top: false; left: false; }
             }
 
-            // Recent scans peek.
-            Rectangle {
-                background: Theme.surface-1;
-                border-top-left-radius: Theme.radius-lg;
-                border-top-right-radius: Theme.radius-lg;
-                height: 140px;
-                VerticalLayout {
-                    padding: Theme.spacing-md;
-                    spacing: Theme.spacing-sm;
-                    HorizontalLayout {
-                        alignment: center;
-                        Rectangle {
-                            width: 36px;
-                            height: 4px;
-                            border-radius: 2px;
-                            background: Theme.muted;
-                            opacity: 0.5;
-                        }
-                    }
+            // Caption below the viewfinder.
+            VerticalLayout {
+                x: 0;
+                y: parent.height / 2 + 140px;
+                width: parent.width;
+                alignment: start;
+                HorizontalLayout {
+                    alignment: center;
                     Text {
-                        text: "RECENT SCANS";
+                        text: "Point camera at a QR code";
                         color: Theme.muted;
-                        font-family: "Inter";
-                        font-size: 11px;
-                        font-weight: 700;
-                        letter-spacing: 3px;
+                        font-size: Theme.font-size-body;
+                        font-weight: 500;
+                        horizontal-alignment: center;
                     }
-                    HorizontalLayout {
-                        spacing: Theme.spacing-md;
-                        alignment: stretch;
-                        VerticalLayout {
-                            alignment: center;
-                            Rectangle {
-                                width: 32px;
-                                height: 32px;
-                                border-radius: 6px;
-                                background: Theme.accent-info;
-                                Image {
-                                    width: 16px;
-                                    height: 16px;
-                                    x: (parent.width - self.width) / 2;
-                                    y: (parent.height - self.height) / 2;
-                                    source: @image-url("@mobile-components/icons/send.svg");
-                                    colorize: Theme.on-primary;
-                                    image-fit: contain;
-                                }
-                            }
-                        }
-                        VerticalLayout {
-                            horizontal-stretch: 1;
-                            alignment: center;
-                            spacing: 2px;
-                            Text {
-                                text: "wifi:Patagonia-mesh-5g";
-                                color: Theme.on-surface;
-                                font-size: Theme.font-size-body;
-                                font-weight: 600;
-                                overflow: elide;
-                            }
-                            Text {
-                                text: "Wi-Fi network · scanned 2 min ago";
-                                color: Theme.muted;
-                                font-size: Theme.font-size-caption;
-                            }
-                        }
-                        VerticalLayout {
-                            alignment: center;
-                            Image {
-                                width: 16px;
-                                height: 16px;
-                                source: @image-url("@mobile-components/icons/chevron-right.svg");
-                                colorize: Theme.muted;
-                                image-fit: contain;
-                            }
-                        }
+                }
+            }
+        }
+
+        // ----- Recent --------------------------------------------------
+        VerticalLayout {
+            padding-bottom: Theme.spacing-xl;
+            spacing: Theme.spacing-md;
+
+            FormSection {
+                title: "RECENT";
+
+                SettingRow {
+                    icon: @image-url("@mobile-components/icons/queue.svg");
+                    tone: Tone.info;
+                    title: "atlas-coffee.com/menu";
+                    subtitle: "scanned 2 hours ago";
+                    clicked => { root.recent-pressed("atlas"); }
+                    Image {
+                        width: 16px;
+                        height: 16px;
+                        source: @image-url("@mobile-components/icons/chevron-right.svg");
+                        colorize: Theme.muted;
+                        image-fit: contain;
+                    }
+                }
+                Divider { }
+                SettingRow {
+                    icon: @image-url("@mobile-components/icons/queue.svg");
+                    tone: Tone.success;
+                    title: "wifi://atlas-guest";
+                    subtitle: "scanned yesterday";
+                    clicked => { root.recent-pressed("wifi"); }
+                    Image {
+                        width: 16px;
+                        height: 16px;
+                        source: @image-url("@mobile-components/icons/chevron-right.svg");
+                        colorize: Theme.muted;
+                        image-fit: contain;
                     }
                 }
             }

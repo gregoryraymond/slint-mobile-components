@@ -1,51 +1,42 @@
 // VideoCallPage
 // =====================================================================
 //
-// In-call video UI — the FaceTime / Zoom / WhatsApp "you're on a call"
-// screen. Distinct from `LiveStreamPage` (broadcast + chat) and
-// `DriverOnTheWayPage` (map tracking). Demonstrates a full-bleed
-// immersive surface:
-//
-//   - Full-bleed remote video frame (a gradient stand-in) with the
-//     participant's name + call duration floating top-left and a
-//     signal/encryption chip top-right.
-//   - A self-view picture-in-picture tile floating bottom-right above
-//     the control bar.
-//   - A control bar: mute, camera-off, flip-camera, and a red
-//     end-call button — each a round disc, mute/camera reflect state.
+// Active video-call screen. No standard AppBar — a tiny transparent
+// top strip carries the call timer and a close icon. Main body is a
+// large faux remote-video Rectangle filling most of the viewport, with
+// a small picture-in-picture self-video tile floated in the top-right.
+// Bottom controls bar holds five round IconButton-style actions.
 
-import { Theme, Tone } from "@mobile-theme/theme.slint";
+import { Theme } from "@mobile-theme/theme.slint";
 
-// One round call control. `state`: 0 normal / 1 toggled-on (muted etc.)
-// / 2 end-call (danger).
 component CallControl inherits Rectangle {
     in property <image> icon;
-    in property <string> a11y;
-    in property <int> state: 0;
+    in property <bool> danger: false;
+    in property <string> a11y-label;
     callback clicked();
 
     accessible-role: button;
-    accessible-label: root.a11y;
+    accessible-label: root.a11y-label;
     accessible-action-default => { root.clicked(); }
 
-    width: root.state == 2 ? 64px : 56px;
-    height: self.width;
+    width: 56px;
+    height: 56px;
     border-radius: self.width / 2;
-    background:
-          root.state == 2 ? Theme.accent-danger
-        : root.state == 1 ? #ffffff
-        : #ffffff26;
+    background: root.danger
+        ? (touch.pressed ? Theme.accent-danger.darker(0.15) : Theme.accent-danger)
+        : (touch.pressed ? Theme.surface-pressed : Theme.surface-1);
     animate background { duration: Theme.motion-fast; }
 
     Image {
-        width: parent.width * 0.42;
-        height: self.width;
+        width: 22px;
+        height: 22px;
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
         source: root.icon;
-        colorize: root.state == 1 ? #0a0d12 : #ffffff;
+        colorize: root.danger ? Theme.on-primary : Theme.on-surface;
         image-fit: contain;
     }
+
     touch := TouchArea {
         clicked => { root.clicked(); }
     }
@@ -54,221 +45,151 @@ component CallControl inherits Rectangle {
 export component VideoCallPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
-    in property <string> participant: "Priya Anand";
-    in property <string> duration: "08:42";
-    in property <string> connection: "HD · End-to-end encrypted";
-    in-out property <bool> muted: false;
-    in-out property <bool> camera-off: false;
-    callback toggle-mute();
-    callback toggle-camera();
-    callback flip-camera();
-    callback end-call();
 
-    background: #05070b;
+    in property <string> partner-name: "Ada Lovelace";
+    in property <string> timer: "00:12:47";
 
-    // ----- Remote video (full-bleed) -----
+    callback hangup-pressed();
+    callback toggle-mic();
+    callback toggle-video();
+    callback share-pressed();
+    callback more-pressed();
+    callback close-pressed();
+
+    background: Theme.background;
+
+    // ----- Remote video (full-screen background) ---------------------
     Rectangle {
         x: 0;
         y: 0;
         width: parent.width;
         height: parent.height;
-        background: @linear-gradient(160deg, #25344a 0%, #0a0f17 100%);
-        clip: true;
-        // Faux subject — a large centred avatar disc. Wrapped in
-        // centering layouts because an absolutely-positioned Rectangle
-        // does not honour a circular border-radius reliably.
-        VerticalLayout {
-            x: 0;
-            y: -40px;
-            width: parent.width;
-            height: parent.height;
-            alignment: center;
-            HorizontalLayout {
-                alignment: center;
-                Rectangle {
-                    width: 132px;
-                    height: 132px;
-                    border-radius: 66px;
-                    // Solid fill, not a gradient: a circular border-radius
-                    // does not clip a @linear-gradient in the software
-                    // renderer, but it clips a solid colour cleanly.
-                    background: #3563c9;
-                    Text {
-                        text: "PA";
-                        color: #ffffff;
-                        font-size: 44px;
-                        font-weight: 800;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                        width: parent.width;
-                        height: parent.height;
-                    }
-                }
-            }
-        }
-    }
+        background: Theme.surface-3;
 
-    // ----- Top overlay: name + duration -----
-    Rectangle {
-        x: Theme.spacing-md;
-        y: Theme.spacing-lg;
-        width: name-col.preferred-width + 2 * Theme.spacing-md;
-        height: 56px;
-        border-radius: Theme.radius-md;
-        background: #00000066;
-        name-col := VerticalLayout {
-            x: Theme.spacing-md;
-            y: 0;
-            height: parent.height;
-            alignment: center;
-            spacing: 2px;
-            Text {
-                text: root.participant;
-                color: #ffffff;
-                font-family: "Space Grotesk";
-                font-size: Theme.font-size-body-large;
-                font-weight: 700;
-            }
-            Text {
-                text: root.duration;
-                color: #ffffffcc;
-                font-family: "JetBrains Mono";
-                font-size: Theme.font-size-caption;
-                font-weight: 400;
-                letter-spacing: 1px;
-            }
-        }
-    }
-
-    // ----- Top-right: connection chip -----
-    Rectangle {
-        x: parent.width - self.width - Theme.spacing-md;
-        y: Theme.spacing-lg;
-        width: conn-text.preferred-width + 28px;
-        height: 28px;
-        border-radius: 14px;
-        background: #00000066;
-        HorizontalLayout {
-            padding-left: 8px;
-            padding-right: 10px;
-            spacing: 5px;
-            alignment: center;
-            Rectangle {
-                width: 8px;
-                height: 8px;
-                border-radius: 4px;
-                background: Theme.accent-success;
-            }
-            conn-text := Text {
-                text: root.connection;
-                color: #ffffff;
-                font-family: "JetBrains Mono";
-                font-size: 10px;
-                font-weight: 700;
-                vertical-alignment: center;
-            }
-        }
-    }
-
-    // ----- Self-view PiP -----
-    Rectangle {
-        x: parent.width - self.width - Theme.spacing-md;
-        y: parent.height - self.height - 132px;
-        width: 104px;
-        height: 148px;
-        border-radius: Theme.radius-md;
-        background: @linear-gradient(150deg, #3a4a3f 0%, #10160f 100%);
-        border-width: 2px;
-        border-color: #ffffff33;
-        drop-shadow-blur: Theme.elevation-3-blur;
-        drop-shadow-color: Theme.elevation-3-color;
-        drop-shadow-offset-y: Theme.elevation-3-y;
-        clip: true;
-        VerticalLayout {
+        Text {
             x: 0;
             y: 0;
             width: parent.width;
             height: parent.height;
-            alignment: center;
-            HorizontalLayout {
-                alignment: center;
-                Rectangle {
-                    width: 48px;
-                    height: 48px;
-                    border-radius: 24px;
-                    background: #15966a;
-                    Text {
-                        text: "You";
-                        color: #ffffff;
-                        font-size: 13px;
-                        font-weight: 800;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                        width: parent.width;
-                        height: parent.height;
-                    }
-                }
-            }
-        }
-        // Camera-off veil.
-        if root.camera-off: Rectangle {
-            width: parent.width;
-            height: parent.height;
-            background: #000000cc;
-            Text {
-                text: "Camera off";
-                color: #ffffffcc;
-                font-size: 10px;
-                font-weight: 700;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-                width: parent.width;
-                height: parent.height;
-            }
+            text: root.partner-name;
+            color: Theme.on-surface;
+            font-size: Theme.font-size-headline;
+            font-weight: 700;
+            horizontal-alignment: center;
+            vertical-alignment: center;
         }
     }
 
-    // ----- Bottom control bar -----
+    // ----- Top strip: timer + close ----------------------------------
     Rectangle {
         x: 0;
-        y: parent.height - self.height;
+        y: 0;
         width: parent.width;
-        height: 116px;
-        background: @linear-gradient(180deg, #00000000 0%, #000000cc 60%);
+        height: 48px;
+        background: transparent;
+
         HorizontalLayout {
-            x: Theme.spacing-md;
+            padding-left: Theme.spacing-md;
+            padding-right: Theme.spacing-md;
+            spacing: Theme.spacing-sm;
+            alignment: stretch;
+
+            Text {
+                text: root.timer;
+                color: Theme.on-background;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+            }
+
+            Rectangle {
+                width: 32px;
+                height: 32px;
+                border-radius: self.width / 2;
+                background: close-touch.pressed ? Theme.surface-pressed : transparent;
+                animate background { duration: Theme.motion-fast; }
+
+                Image {
+                    width: 18px;
+                    height: 18px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: @image-url("@mobile-components/icons/close.svg");
+                    colorize: Theme.on-background;
+                    image-fit: contain;
+                }
+
+                close-touch := TouchArea {
+                    clicked => { root.close-pressed(); }
+                }
+            }
+        }
+    }
+
+    // ----- PiP self video --------------------------------------------
+    Rectangle {
+        x: parent.width - self.width - Theme.spacing-md;
+        y: Theme.spacing-md + 48px;
+        width: 120px;
+        height: 160px;
+        background: Theme.surface-2;
+        border-radius: Theme.radius-md;
+        clip: true;
+
+        Text {
+            x: 0;
             y: 0;
-            width: parent.width - 2 * Theme.spacing-md;
-            height: 80px;
-            alignment: space-around;
+            width: parent.width;
+            height: parent.height;
+            text: "You";
+            color: Theme.on-surface;
+            font-size: Theme.font-size-body;
+            font-weight: 600;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+
+    // ----- Bottom controls -------------------------------------------
+    Rectangle {
+        x: Theme.spacing-md;
+        y: parent.height - self.height - Theme.spacing-lg;
+        width: parent.width - 2 * Theme.spacing-md;
+        height: 80px;
+        background: Theme.surface-2.with-alpha(0.5);
+        border-radius: Theme.radius-lg;
+
+        HorizontalLayout {
+            padding: Theme.spacing-sm;
+            spacing: Theme.spacing-md;
+            alignment: center;
+
             CallControl {
-                icon: @image-url("@mobile-components/icons/bell.svg");
-                a11y: "Mute";
-                state: root.muted ? 1 : 0;
-                clicked => {
-                    root.muted = !root.muted;
-                    root.toggle-mute();
-                }
+                icon: @image-url("@mobile-components/icons/pause.svg");
+                a11y-label: "Mute microphone";
+                clicked => { root.toggle-mic(); }
+            }
+            CallControl {
+                icon: @image-url("@mobile-components/icons/play.svg");
+                a11y-label: "Toggle video";
+                clicked => { root.toggle-video(); }
+            }
+            CallControl {
+                icon: @image-url("@mobile-components/icons/send.svg");
+                a11y-label: "Share screen";
+                clicked => { root.share-pressed(); }
+            }
+            CallControl {
+                icon: @image-url("@mobile-components/icons/more-vertical.svg");
+                a11y-label: "More options";
+                clicked => { root.more-pressed(); }
             }
             CallControl {
                 icon: @image-url("@mobile-components/icons/close.svg");
-                a11y: "Turn camera off";
-                state: root.camera-off ? 1 : 0;
-                clicked => {
-                    root.camera-off = !root.camera-off;
-                    root.toggle-camera();
-                }
-            }
-            CallControl {
-                icon: @image-url("@mobile-components/icons/queue.svg");
-                a11y: "Flip camera";
-                clicked => { root.flip-camera(); }
-            }
-            CallControl {
-                icon: @image-url("@mobile-components/icons/close.svg");
-                a11y: "End call";
-                state: 2;
-                clicked => { root.end-call(); }
+                danger: true;
+                a11y-label: "End call";
+                clicked => { root.hangup-pressed(); }
             }
         }
     }

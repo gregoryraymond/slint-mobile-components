@@ -1,37 +1,79 @@
 // DriverOnTheWayPage
 // =====================================================================
 //
-// Driver-coming surface — Uber / Lyft / DoorDash "your driver is X min
-// away" screen. Distinct from `RideShareBookingPage` (pick a tier,
-// before request) and `OrderTrackingPage` (delivered goods). The map
-// fills the upper half; the bottom card shows the live driver, the
-// vehicle, and the ETA.
+// Post-booking driver-tracking screen — the user just confirmed a
+// rideshare and now watches the driver approach on a half-page "map",
+// with a hero card showing driver identity + ETA chip + quick actions,
+// followed by the trip recap as KeyValueRows and a destructive "Cancel
+// ride" SettingRow at the bottom.
 //
-// Demonstrates:
-//
-//   - Full-bleed faded map with origin pin (blue) + destination pin
-//     (red) + driver-position pin (warning-tinted car badge).
-//   - Translucent back / share buttons.
-//   - ETA hero "Arriving in 4 min".
-//   - Driver card: avatar + name + ★ rating + vehicle plate, Call/
-//     Message icon discs, Share trip TextButton.
-//   - "Trip" route summary card with pickup + drop-off pills.
-//   - Sticky Cancel danger CTA.
+// What this screen does
+//   - No AppBar — a transparent overlay strip carries a close button
+//     pinned over the map.
+//   - Map hero: half-page Rectangle (surface-2) standing in for the
+//     real map, centred placeholder text.
+//   - Driver hero card: avatar + name + car detail + ETA chip
+//     (Tone.success) + row of three icon buttons (call / message /
+//     share).
+//   - TRIP FormSection: pickup / drop-off / distance / ETA / fare as
+//     KeyValueRows — value column lines up at one right margin.
+//   - Empty-title FormSection holding a destructive Cancel SettingRow.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
-import { Avatar } from "@mobile-components/avatar.slint";
-import { Divider } from "@mobile-components/divider.slint";
-import { MobileButton, TextButton } from "@mobile-components/button.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
+import { Avatar } from "@mobile-components/avatar.slint";
+import { Card } from "@mobile-components/card.slint";
+import { Chip } from "@mobile-components/chip.slint";
+import { FormSection } from "@mobile-components/form-section.slint";
+import { SettingRow } from "@mobile-components/setting-row.slint";
+import { KeyValueRow } from "@mobile-components/key-value-row.slint";
+import { Divider } from "@mobile-components/divider.slint";
+import { ScrollView } from "std-widgets.slint";
+
+// Compact round icon button used in the action row beside the driver
+// hero — circular touch target, glyph centred, surface-1 fill.
+component RoundIconButton inherits Rectangle {
+    in property <image> icon;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-action-default => { root.clicked(); }
+
+    width: 48px;
+    height: 48px;
+    border-radius: self.width / 2;
+    background: touch.pressed ? Theme.surface-pressed : Theme.surface-2;
+    animate background { duration: Theme.motion-fast; }
+
+    Image {
+        width: 20px;
+        height: 20px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        source: root.icon;
+        colorize: Theme.on-surface;
+        image-fit: contain;
+    }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
 import { MapEmbed, Tile, Layer } from "@mapping/map.slint";
 
 export component DriverOnTheWayPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
 
-    // Map state — bind from Rust via a slint_mapping::MapController, or
-    // (for a static demo) leave at defaults and pass a one-off map-tiles
-    // model. See crates/pages-travel/ui/map.slint for the canonical wiring.
+    callback close-pressed();
+    callback call-pressed();
+    callback message-pressed();
+    callback share-pressed();
+    callback cancel-ride-pressed();
+
+    // Map camera — bind from Rust via slint_mapping::MapController, or
+    // leave at defaults for a static demo.
     in-out property <float> map-latitude: 51.5074;
     in-out property <float> map-longitude: -0.1276;
     in-out property <float> map-zoom: 13.0;
@@ -41,55 +83,36 @@ export component DriverOnTheWayPage inherits Window {
     callback map-zoom-by(float, length, length);
     out property <length> map-viewport-width: map.width;
     out property <length> map-viewport-height: map.height;
-    in property <string> eta-headline: "Arriving in 4 min";
-    in property <string> eta-meta: "Marco D. · Honda Civic · 7XYZ123";
-    in property <string> driver-name: "Marco D.";
-    in property <string> rating: "★ 4.94 · 1,180 trips";
-    in property <string> vehicle: "Silver Honda Civic · 7XYZ123";
-    in property <string> pickup: "Hayes Valley · 437 Linden St";
-    in property <string> dropoff: "SFO Airport · Terminal 2 departures";
-    callback back-pressed();
-    callback share-pressed();
-    callback call-pressed();
-    callback message-pressed();
-    callback cancel-pressed();
 
     background: Theme.background;
 
-    // ----- Map area (upper ~half) -----
-    Rectangle {
-        x: 0;
-        y: 0;
-        width: parent.width;
-        height: parent.height * 0.45;
-        background: Theme.surface-variant;
-        clip: true;
-        map := MapEmbed {
-            x: 0;
-            y: 0;
-            width: parent.width;
-            height: parent.height;
-            latitude <=> root.map-latitude;
-            longitude <=> root.map-longitude;
-            zoom <=> root.map-zoom;
-            tiles: root.map-tiles;
-            layers: root.map-layers;
-            pan(dx, dy) => { root.map-pan(dx, dy); }
-            zoom-by(d, ax, ay) => { root.map-zoom-by(d, ax, ay); }
-        }
-        // Origin / destination / driver-car markers come from the
-        // controller via `map-layers` — see the viewer's per-page demo
-        // wiring for example geographic placements.
+    VerticalLayout {
+        spacing: 0;
 
-        // Translucent back / share row.
-        HorizontalLayout {
-            x: 0;
-            y: 0;
-            width: parent.width;
-            height: 56px;
-            padding: Theme.spacing-md;
-            alignment: stretch;
+        // ----- Map hero (with overlay close button) ------------------------
+        Rectangle {
+            height: 420px;
+            background: Theme.surface-2;
+            clip: true;
+
+            map := MapEmbed {
+                x: 0;
+                y: 0;
+                width: parent.width;
+                height: parent.height;
+                latitude <=> root.map-latitude;
+                longitude <=> root.map-longitude;
+                zoom <=> root.map-zoom;
+                tiles: root.map-tiles;
+                layers: root.map-layers;
+                pan(dx, dy) => { root.map-pan(dx, dy); }
+                zoom-by(d, ax, ay) => { root.map-zoom-by(d, ax, ay); }
+            }
+
+            // Translucent top strip — close button only, no title bar.
             Rectangle {
+                x: Theme.spacing-md;
+                y: Theme.spacing-md + 24px;
                 width: 40px;
                 height: 40px;
                 border-radius: self.width / 2;
@@ -97,253 +120,133 @@ export component DriverOnTheWayPage inherits Window {
                 drop-shadow-blur: Theme.elevation-1-blur;
                 drop-shadow-color: Theme.elevation-1-color;
                 drop-shadow-offset-y: Theme.elevation-1-y;
+
                 Image {
                     width: 18px;
                     height: 18px;
                     x: (parent.width - self.width) / 2;
                     y: (parent.height - self.height) / 2;
-                    source: @image-url("@mobile-components/icons/arrow-left.svg");
+                    source: @image-url("@mobile-components/icons/close.svg");
                     colorize: Theme.on-surface;
                     image-fit: contain;
                 }
                 TouchArea {
-                    clicked => { root.back-pressed(); }
-                }
-            }
-            Rectangle { horizontal-stretch: 1; }
-            Rectangle {
-                width: 40px;
-                height: 40px;
-                border-radius: self.width / 2;
-                background: Theme.surface-1;
-                drop-shadow-blur: Theme.elevation-1-blur;
-                drop-shadow-color: Theme.elevation-1-color;
-                drop-shadow-offset-y: Theme.elevation-1-y;
-                Image {
-                    width: 18px;
-                    height: 18px;
-                    x: (parent.width - self.width) / 2;
-                    y: (parent.height - self.height) / 2;
-                    source: @image-url("@mobile-components/icons/send.svg");
-                    colorize: Theme.on-surface;
-                    image-fit: contain;
-                }
-                TouchArea {
-                    clicked => { root.share-pressed(); }
+                    clicked => { root.close-pressed(); }
                 }
             }
         }
-    }
 
-    // ----- Bottom info panel -----
-    Rectangle {
-        x: 0;
-        y: parent.height * 0.45 - 16px;
-        width: parent.width;
-        height: parent.height * 0.55 + 16px;
-        background: Theme.surface-2;
-        border-top-left-radius: Theme.radius-lg;
-        border-top-right-radius: Theme.radius-lg;
-        drop-shadow-blur: Theme.elevation-2-blur;
-        drop-shadow-color: Theme.elevation-2-color;
-        drop-shadow-offset-y: -4px;
+        ScrollView {
+            vertical-stretch: 1;
 
-        VerticalLayout {
-            padding: Theme.spacing-md;
-            spacing: Theme.spacing-md;
-
-            // Drag handle.
-            HorizontalLayout {
-                alignment: center;
-                Rectangle {
-                    width: 36px;
-                    height: 4px;
-                    border-radius: 2px;
-                    background: Theme.muted;
-                    opacity: 0.5;
-                }
-            }
-
-            // ETA hero.
             VerticalLayout {
-                spacing: 2px;
-                Heading {
-                    text: root.eta-headline;
-                    style: HeadingStyle.bold-impact;
-                    color: Theme.accent-success;
-                }
-                Text {
-                    text: root.eta-meta;
-                    color: Theme.muted;
-                    font-size: Theme.font-size-caption;
-                }
-            }
+                padding-top: Theme.spacing-md;
+                padding-bottom: Theme.spacing-xl;
+                spacing: Theme.spacing-md;
+                alignment: stretch;
 
-            // Driver card.
-            Rectangle {
-                background: Theme.surface-1;
-                border-radius: Theme.radius-md;
-                drop-shadow-blur: Theme.elevation-1-blur;
-                drop-shadow-color: Theme.elevation-1-color;
-                drop-shadow-offset-y: Theme.elevation-1-y;
-                HorizontalLayout {
-                    padding: Theme.spacing-md;
-                    spacing: Theme.spacing-md;
-                    alignment: stretch;
-                    VerticalLayout {
-                        alignment: center;
-                        Avatar {
-                            fallback: "MD";
-                            size: 48px;
-                        }
-                    }
-                    VerticalLayout {
-                        horizontal-stretch: 1;
-                        alignment: center;
-                        spacing: 2px;
-                        Text {
-                            text: root.driver-name;
-                            color: Theme.on-surface;
-                            font-family: "IBM Plex Sans";
-                            font-size: Theme.font-size-body-large;
-                            font-weight: 700;
-                        }
-                        Text {
-                            text: root.rating;
-                            color: Theme.accent-warning;
-                            font-size: Theme.font-size-caption;
-                            font-weight: 700;
-                        }
-                        Text {
-                            text: root.vehicle;
-                            color: Theme.muted;
-                            font-size: Theme.font-size-caption;
-                        }
-                    }
-                    VerticalLayout {
-                        alignment: center;
-                        spacing: Theme.spacing-xs;
-                        HorizontalLayout {
-                            spacing: Theme.spacing-xs;
-                            Rectangle {
-                                width: 44px;
-                                height: 44px;
-                                border-radius: self.width / 2;
-                                background: Theme.accent-success;
-                                Image {
-                                    width: 18px;
-                                    height: 18px;
-                                    x: (parent.width - self.width) / 2;
-                                    y: (parent.height - self.height) / 2;
-                                    source: @image-url("@mobile-components/icons/play.svg");
-                                    colorize: Theme.on-primary;
-                                    image-fit: contain;
-                                }
-                                TouchArea {
-                                    clicked => { root.call-pressed(); }
-                                }
-                            }
-                            Rectangle {
-                                width: 44px;
-                                height: 44px;
-                                border-radius: self.width / 2;
-                                background: Theme.surface-variant;
-                                Image {
-                                    width: 18px;
-                                    height: 18px;
-                                    x: (parent.width - self.width) / 2;
-                                    y: (parent.height - self.height) / 2;
-                                    source: @image-url("@mobile-components/icons/inbox.svg");
-                                    colorize: Theme.on-surface;
-                                    image-fit: contain;
-                                }
-                                TouchArea {
-                                    clicked => { root.message-pressed(); }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Trip route summary.
-            Rectangle {
-                background: Theme.surface-1;
-                border-radius: Theme.radius-md;
-                drop-shadow-blur: Theme.elevation-1-blur;
-                drop-shadow-color: Theme.elevation-1-color;
-                drop-shadow-offset-y: Theme.elevation-1-y;
+                // ----- Driver hero card --------------------------------
                 VerticalLayout {
-                    padding: Theme.spacing-md;
-                    spacing: Theme.spacing-sm;
-                    HorizontalLayout {
-                        spacing: Theme.spacing-md;
-                        alignment: stretch;
-                        VerticalLayout {
-                            alignment: center;
-                            Rectangle {
-                                width: 10px;
-                                height: 10px;
-                                border-radius: 5px;
-                                background: Theme.primary;
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+
+                    Card {
+                        HorizontalLayout {
+                            spacing: Theme.spacing-md;
+                            alignment: stretch;
+
+                            Avatar {
+                                fallback: "M";
+                                size: 56px;
+                            }
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                alignment: center;
+                                spacing: 2px;
+                                Heading {
+                                    text: "Mario · 4.9★";
+                                    style: HeadingStyle.plex-medium;
+                                    color: Theme.on-surface;
+                                    font-size: 18px;
+                                }
+                                Text {
+                                    text: "VW Polo · 1-ABC-234";
+                                    color: Theme.muted;
+                                    font-size: Theme.font-size-caption;
+                                }
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                Chip {
+                                    label: "ARRIVING IN 4 MIN";
+                                    selected: true;
+                                }
                             }
                         }
-                        VerticalLayout {
-                            horizontal-stretch: 1;
+
+                        HorizontalLayout {
+                            spacing: Theme.spacing-lg;
                             alignment: center;
-                            Text {
-                                text: root.pickup;
-                                color: Theme.on-surface;
-                                font-size: Theme.font-size-body;
-                                font-weight: 600;
-                                overflow: elide;
+                            padding-top: Theme.spacing-sm;
+
+                            RoundIconButton {
+                                icon: @image-url("@mobile-components/icons/send.svg");
+                                clicked => { root.call-pressed(); }
+                            }
+                            RoundIconButton {
+                                icon: @image-url("@mobile-components/icons/inbox.svg");
+                                clicked => { root.message-pressed(); }
+                            }
+                            RoundIconButton {
+                                icon: @image-url("@mobile-components/icons/more-vertical.svg");
+                                clicked => { root.share-pressed(); }
                             }
                         }
+                    }
+                }
+
+                // ----- TRIP -----------------------------------------------
+                FormSection {
+                    title: "TRIP";
+
+                    KeyValueRow {
+                        label: "Pickup";
+                        value: "Sablon";
                     }
                     Divider { }
-                    HorizontalLayout {
-                        spacing: Theme.spacing-md;
-                        alignment: stretch;
-                        VerticalLayout {
-                            alignment: center;
-                            Rectangle {
-                                width: 10px;
-                                height: 10px;
-                                border-radius: 2px;
-                                background: Theme.accent-danger;
-                            }
-                        }
-                        VerticalLayout {
-                            horizontal-stretch: 1;
-                            alignment: center;
-                            Text {
-                                text: root.dropoff;
-                                color: Theme.on-surface;
-                                font-size: Theme.font-size-body;
-                                font-weight: 600;
-                                overflow: elide;
-                            }
-                        }
+                    KeyValueRow {
+                        label: "Drop-off";
+                        value: "Louvain-la-Neuve";
+                    }
+                    Divider { }
+                    KeyValueRow {
+                        label: "Distance";
+                        value: "32 km";
+                    }
+                    Divider { }
+                    KeyValueRow {
+                        label: "ETA";
+                        value: "10:25";
+                    }
+                    Divider { }
+                    KeyValueRow {
+                        label: "Fare";
+                        value: "€ 8.50";
+                        emphasis: true;
                     }
                 }
-            }
 
-            Rectangle { vertical-stretch: 1; }
-
-            // Share trip + Cancel.
-            HorizontalLayout {
-                alignment: center;
-                TextButton {
-                    text: "Share my trip status";
-                    clicked => { root.share-pressed(); }
+                // ----- Danger zone ----------------------------------------
+                FormSection {
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/close.svg");
+                        tone: Tone.danger;
+                        title: "Cancel ride";
+                        subtitle: "Charges may apply if the driver is already on the way.";
+                        destructive: true;
+                        clicked => { root.cancel-ride-pressed(); }
+                    }
                 }
-            }
-            MobileButton {
-                text: "Cancel ride · may charge fee";
-                tone: Tone.danger;
-                primary: false;
-                max-height: 44px;
-                clicked => { root.cancel-pressed(); }
             }
         }
     }

@@ -1,154 +1,40 @@
 // OrderHistoryPage
 // =====================================================================
 //
-// Past purchases timeline — the "tap an item from your last X months"
-// surface inside Amazon / DoorDash / Apple Store apps. Sister to
-// `OrderTrackingPage` (single live order) and `CartPage` (active cart).
-// Demonstrates:
+// List of past orders, grouped by month. Demonstrates the
+// `SettingRow` + `FormSection` alignment discipline applied to a
+// commerce list: every order row shares the SAME 56 px floor, the
+// SAME 32 px leading tile, the SAME 16 px gutters, so order titles
+// line up no matter what status `Chip` sits on the right.
 //
-//   - Search field anchored at the top.
-//   - Time-bucket chip strip (Last 30 days / 3 months / This year / All).
-//   - Per-order card: merchant logo + name + item count + total + a
-//     tone-tinted status pill (Delivered success / In transit info /
-//     Refunded warning / Cancelled danger). Sub-line shows date + first
-//     item preview.
-//   - Re-order button on the trailing edge of each card.
+// What this screen does
+//   - AppBar "Orders" + back arrow.
+//   - SegmentedControl filter "All / Active / Delivered".
+//   - Two month sections (FormSection title "MAY 2026" /
+//     "APRIL 2026"), each containing a stack of SettingRows with:
+//       - leading icon tile (queue/inbox) tinted by Tone,
+//       - title  = merchant + #order-id,
+//       - subtitle = "N items · €X.XX",
+//       - trailing = status Chip + chevron.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
-import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
-import { SectionHeader } from "@mobile-components/section-header.slint";
+import { FormSection } from "@mobile-components/form-section.slint";
+import { SettingRow } from "@mobile-components/setting-row.slint";
+import { SegmentedControl } from "@mobile-components/segmented-control.slint";
 import { Chip } from "@mobile-components/chip.slint";
-import { TextField } from "@mobile-components/text-field.slint";
 import { Divider } from "@mobile-components/divider.slint";
-
-// One order card.
-component OrderCard inherits Rectangle {
-    in property <string> merchant;
-    in property <string> merchant-badge;
-    in property <color> brand;
-    in property <string> meta;
-    in property <string> preview;
-    in property <string> total;
-    in property <string> status;
-    in property <int> state;     // 0 delivered, 1 in transit, 2 refunded, 3 cancelled
-
-    horizontal-stretch: 1;
-    min-height: 120px;
-
-    HorizontalLayout {
-        padding: Theme.spacing-md;
-        spacing: Theme.spacing-md;
-        alignment: stretch;
-
-        VerticalLayout {
-            alignment: start;
-            padding-top: 2px;
-            Rectangle {
-                width: 44px;
-                height: 44px;
-                border-radius: 10px;
-                background: root.brand;
-                Text {
-                    text: root.merchant-badge;
-                    color: Theme.on-primary;
-                    font-size: Theme.font-size-body;
-                    font-weight: 800;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
-                    width: parent.width;
-                    height: parent.height;
-                }
-            }
-        }
-
-        VerticalLayout {
-            horizontal-stretch: 1;
-            spacing: 2px;
-            HorizontalLayout {
-                spacing: Theme.spacing-xs;
-                Text {
-                    text: root.merchant;
-                    color: Theme.on-surface;
-                    font-size: Theme.font-size-body;
-                    font-weight: 700;
-                    horizontal-stretch: 1;
-                }
-                Rectangle {
-                    width: status-text.preferred-width + 12px;
-                    height: 18px;
-                    border-radius: 4px;
-                    background:
-                          root.state == 0 ? Theme.accent-success
-                        : root.state == 1 ? Theme.accent-info
-                        : root.state == 2 ? Theme.accent-warning
-                        : Theme.accent-danger;
-                    status-text := Text {
-                        text: root.status;
-                        color: Theme.on-primary;
-                        font-size: 9px;
-                        font-weight: 800;
-                        letter-spacing: 0.5px;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                        width: parent.width;
-                        height: parent.height;
-                    }
-                }
-            }
-            Text {
-                text: root.meta;
-                color: Theme.muted;
-                font-size: Theme.font-size-caption;
-            }
-            Text {
-                text: root.preview;
-                color: Theme.on-surface;
-                font-size: Theme.font-size-caption;
-                wrap: word-wrap;
-            }
-            HorizontalLayout {
-                spacing: Theme.spacing-md;
-                padding-top: Theme.spacing-xs;
-                Text {
-                    text: root.total;
-                    color: Theme.on-surface;
-                    font-size: Theme.font-size-body;
-                    font-weight: 700;
-                    horizontal-stretch: 1;
-                    vertical-alignment: center;
-                }
-                Rectangle {
-                    width: reorder-text.preferred-width + 24px;
-                    height: 32px;
-                    border-radius: 16px;
-                    background: Theme.surface-2;
-                    border-width: 1px;
-                    border-color: Theme.outline;
-                    reorder-text := Text {
-                        text:
-                              root.state == 3 ? "View"
-                            : "Re-order";
-                        color: Theme.accent-info;
-                        font-size: Theme.font-size-caption;
-                        font-weight: 700;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                        width: parent.width;
-                        height: parent.height;
-                    }
-                }
-            }
-        }
-    }
-}
+import { ScrollView } from "std-widgets.slint";
 
 export component OrderHistoryPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
+
+    in-out property <int> filter-index: 0;
+
     callback back-pressed();
-    callback filter-pressed();
     callback order-pressed(string);
+    callback filter-changed(int);
 
     background: Theme.background;
 
@@ -156,100 +42,137 @@ export component OrderHistoryPage inherits Window {
         spacing: 0;
 
         AppBar {
-            title: "orders.log";
-            title-style: HeadingStyle.mono;
+            title: "Orders";
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
-            trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
             leading-pressed => { root.back-pressed(); }
         }
 
-        VerticalLayout {
-            padding-left: Theme.spacing-md;
-            padding-right: Theme.spacing-md;
-            padding-top: Theme.spacing-sm;
-            padding-bottom: Theme.spacing-sm;
-            spacing: Theme.spacing-sm;
-            TextField {
-                label: "";
-                placeholder: "Search orders, merchants, items…";
+        ScrollView {
+            vertical-stretch: 1;
+
+            VerticalLayout {
+                padding-top: Theme.spacing-md;
+                padding-bottom: Theme.spacing-xl;
+                spacing: Theme.spacing-md;
+                alignment: stretch;
+
+                // ----- Filter -------------------------------------------
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    SegmentedControl {
+                        options: ["All", "Active", "Delivered"];
+                        selected-index <=> root.filter-index;
+                        changed(i) => { root.filter-changed(i); }
+                    }
+                }
+
+                // ----- MAY 2026 -----------------------------------------
+                FormSection {
+                    title: "MAY 2026";
+
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/queue.svg");
+                        tone: Tone.info;
+                        title: "Atlas Coffee · #2147";
+                        subtitle: "3 items · €42.10";
+                        clicked => { root.order-pressed("2147"); }
+                        Chip { label: "In transit"; selected: true; }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/inbox.svg");
+                        tone: Tone.success;
+                        title: "Patagonia · #2138";
+                        subtitle: "1 item · €129.00";
+                        clicked => { root.order-pressed("2138"); }
+                        Chip { label: "Delivered"; }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/queue.svg");
+                        tone: Tone.warning;
+                        title: "Tartine Manufactory · #2131";
+                        subtitle: "5 items · €34.50";
+                        clicked => { root.order-pressed("2131"); }
+                        Chip { label: "Processing"; }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
+                }
+
+                // ----- APRIL 2026 ---------------------------------------
+                FormSection {
+                    title: "APRIL 2026";
+
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/inbox.svg");
+                        tone: Tone.success;
+                        title: "Atlas Coffee · #2099";
+                        subtitle: "2 items · €28.50";
+                        clicked => { root.order-pressed("2099"); }
+                        Chip { label: "Delivered"; }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/inbox.svg");
+                        tone: Tone.success;
+                        title: "Muji · #2087";
+                        subtitle: "4 items · €76.30";
+                        clicked => { root.order-pressed("2087"); }
+                        Chip { label: "Delivered"; }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/inbox.svg");
+                        tone: Tone.success;
+                        title: "Uniqlo · #2061";
+                        subtitle: "3 items · €54.00";
+                        clicked => { root.order-pressed("2061"); }
+                        Chip { label: "Delivered"; }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
+                }
             }
-            HorizontalLayout {
-                spacing: Theme.spacing-sm;
-                Chip { label: "Last 30 days"; selected: true; }
-                Chip { label: "3 months"; }
-                Chip { label: "This year"; }
-                Chip { label: "All"; }
-            }
         }
-
-        SectionHeader { text: "THIS WEEK"; }
-        OrderCard {
-            merchant: "Tartine Manufactory";
-            merchant-badge: "T";
-            brand: #d4751a;
-            meta: "Wed, May 14 · 4 items · #A1029-4421";
-            preview: "Avocado toast, morning bun, cortado, granola bowl";
-            total: "$36.40";
-            status: "DELIVERED";
-            state: 0;
-        }
-        Divider { }
-        OrderCard {
-            merchant: "Patagonia";
-            merchant-badge: "P";
-            brand: #b91c1c;
-            meta: "Tue, May 13 · 3 items · #US-7782";
-            preview: "Houdini windbreaker, Capilene base, trail crew socks ×2";
-            total: "$216.40";
-            status: "IN TRANSIT";
-            state: 1;
-        }
-
-        SectionHeader { text: "EARLIER"; }
-        OrderCard {
-            merchant: "Whole Foods";
-            merchant-badge: "W";
-            brand: #2e7d32;
-            meta: "Sun, May 11 · 18 items · #WF-3491";
-            preview: "Weekly groceries — produce, dry pantry, household";
-            total: "$184.21";
-            status: "DELIVERED";
-            state: 0;
-        }
-        Divider { }
-        OrderCard {
-            merchant: "Uniqlo";
-            merchant-badge: "U";
-            brand: #e60012;
-            meta: "Thu, May 08 · 1 item · #UN-1009";
-            preview: "Heattech crew · wrong size — refunded automatically";
-            total: "$22.00";
-            status: "REFUNDED";
-            state: 2;
-        }
-        Divider { }
-        OrderCard {
-            merchant: "Blue Bottle";
-            merchant-badge: "B";
-            brand: #1c1c1c;
-            meta: "Mon, May 05 · 2 items";
-            preview: "Espresso + cortado · cancelled before pickup";
-            total: "$8.50";
-            status: "CANCELLED";
-            state: 3;
-        }
-        Divider { }
-        OrderCard {
-            merchant: "Apple Store";
-            merchant-badge: "A";
-            brand: #1c1c1c;
-            meta: "Fri, May 02 · 1 item · #AP-5510";
-            preview: "Magic Keyboard with Touch ID";
-            total: "$129.00";
-            status: "DELIVERED";
-            state: 0;
-        }
-
-        Rectangle { vertical-stretch: 1; }
     }
 }

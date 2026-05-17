@@ -1,141 +1,31 @@
 // FileBrowserPage
 // =====================================================================
 //
-// Cloud-storage file browser — Dropbox / Google Drive / Files app.
-// Distinct from `StorageManagerPage` (category breakdown of what's
-// eating disk) and `PhotoGridPage` (media-only grid). Demonstrates a
-// hierarchical list surface:
-//
-//   - Breadcrumb path strip below the AppBar.
-//   - A storage-used meter card.
-//   - A sort / view-toggle row.
-//   - Folder + file rows: a type-tinted icon tile, name, and a meta
-//     line (item count or size · modified date), chevron for folders.
-//   - An upload Fab.
+// Hierarchical file listing. Breadcrumb + sort segmented control on
+// top, then a FOLDERS section and a FILES section — both built from
+// `SettingRow` so every leading icon, title, subtitle, and trailing
+// glyph aligns to the same grid.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
-import { Divider } from "@mobile-components/divider.slint";
-import { Fab } from "@mobile-components/button.slint";
 import { HeadingStyle } from "@mobile-components/heading.slint";
-
-// One file or folder row. `kind`: 0 folder / 1 doc / 2 image / 3 audio
-// / 4 archive.
-component FileRow inherits Rectangle {
-    in property <int> kind: 0;
-    in property <string> name;
-    in property <string> meta;
-    in property <bool> starred: false;
-    callback clicked();
-
-    accessible-role: button;
-    accessible-label: root.name;
-    accessible-action-default => { root.clicked(); }
-
-    horizontal-stretch: 1;
-    min-height: 64px;
-    background: touch.pressed ? Theme.surface-pressed : transparent;
-    animate background { duration: Theme.motion-fast; }
-
-    HorizontalLayout {
-        padding-left: Theme.spacing-md;
-        padding-right: Theme.spacing-md;
-        spacing: Theme.spacing-md;
-        alignment: stretch;
-
-        VerticalLayout {
-            alignment: center;
-            Rectangle {
-                width: 40px;
-                height: 40px;
-                border-radius: Theme.radius-sm;
-                background:
-                      root.kind == 0 ? Theme.accent-info.with-alpha(0.18)
-                    : root.kind == 1 ? Theme.accent-info.with-alpha(0.18)
-                    : root.kind == 2 ? Theme.accent-success.with-alpha(0.18)
-                    : root.kind == 3 ? Theme.primary.with-alpha(0.18)
-                    : Theme.accent-warning.with-alpha(0.18);
-                Image {
-                    width: 20px;
-                    height: 20px;
-                    x: (parent.width - self.width) / 2;
-                    y: (parent.height - self.height) / 2;
-                    source:
-                          root.kind == 0 ? @image-url("@mobile-components/icons/menu.svg")
-                        : root.kind == 1 ? @image-url("@mobile-components/icons/inbox.svg")
-                        : root.kind == 2 ? @image-url("@mobile-components/icons/photo-ocean.svg")
-                        : root.kind == 3 ? @image-url("@mobile-components/icons/play.svg")
-                        : @image-url("@mobile-components/icons/queue.svg");
-                    colorize:
-                          root.kind == 0 ? Theme.accent-info
-                        : root.kind == 1 ? Theme.accent-info
-                        : root.kind == 2 ? Theme.accent-success
-                        : root.kind == 3 ? Theme.primary
-                        : Theme.accent-warning;
-                    image-fit: contain;
-                }
-            }
-        }
-
-        VerticalLayout {
-            horizontal-stretch: 1;
-            alignment: center;
-            spacing: 2px;
-            HorizontalLayout {
-                spacing: 6px;
-                alignment: start;
-                Text {
-                    text: root.name;
-                    color: Theme.on-surface;
-                    font-size: Theme.font-size-body;
-                    font-weight: 600;
-                    overflow: elide;
-                }
-                if root.starred: Image {
-                    width: 12px;
-                    height: 12px;
-                    source: @image-url("@mobile-components/icons/star.svg");
-                    colorize: Theme.accent-warning;
-                    image-fit: contain;
-                    vertical-alignment: center;
-                }
-            }
-            Text {
-                text: root.meta;
-                color: Theme.muted;
-                font-size: Theme.font-size-caption;
-            }
-        }
-
-        VerticalLayout {
-            alignment: center;
-            Image {
-                width: 16px;
-                height: 16px;
-                source: root.kind == 0
-                    ? @image-url("@mobile-components/icons/chevron-right.svg")
-                    : @image-url("@mobile-components/icons/more-vertical.svg");
-                colorize: Theme.muted;
-                image-fit: contain;
-            }
-        }
-    }
-    touch := TouchArea {
-        clicked => { root.clicked(); }
-    }
-}
+import { SegmentedControl } from "@mobile-components/segmented-control.slint";
+import { FormSection } from "@mobile-components/form-section.slint";
+import { SettingRow } from "@mobile-components/setting-row.slint";
+import { MetaRow, MetaChip } from "@mobile-components/meta-row.slint";
+import { Divider } from "@mobile-components/divider.slint";
+import { ScrollView } from "std-widgets.slint";
 
 export component FileBrowserPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
-    in property <string> folder: "Project Atlas";
-    in property <string> used: "42.6 GB of 100 GB used";
-    in property <float> used-fraction: 0.426;
+
+    in-out property <int> sort-index: 0;
+
     callback back-pressed();
-    callback search-pressed();
-    callback sort-pressed();
-    callback item-pressed(string);
-    callback upload-pressed();
+    callback overflow-pressed();
+    callback folder-pressed(string);
+    callback file-pressed(string);
 
     background: Theme.background;
 
@@ -143,223 +33,186 @@ export component FileBrowserPage inherits Window {
         spacing: 0;
 
         AppBar {
-            title: root.folder;
-            title-style: HeadingStyle.grotesk-bold;
+            title: "Documents";
+            title-style: HeadingStyle.plex-medium;
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
-            trailing-icon: @image-url("@mobile-components/icons/search.svg");
+            trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
             leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.search-pressed(); }
+            trailing-pressed => { root.overflow-pressed(); }
         }
 
-        // Breadcrumb.
-        Rectangle {
-            background: Theme.surface-1;
-            height: 36px;
-            HorizontalLayout {
-                padding-left: Theme.spacing-md;
-                padding-right: Theme.spacing-md;
-                spacing: 4px;
-                alignment: start;
-                VerticalLayout {
-                    alignment: center;
-                    Text {
-                        text: "My Drive";
-                        color: Theme.muted;
-                        font-size: Theme.font-size-caption;
-                        font-weight: 600;
-                    }
-                }
-                VerticalLayout {
-                    alignment: center;
-                    Text {
-                        text: "›";
-                        color: Theme.muted;
-                        font-size: Theme.font-size-caption;
-                    }
-                }
-                VerticalLayout {
-                    alignment: center;
-                    Text {
-                        text: "Work";
-                        color: Theme.muted;
-                        font-size: Theme.font-size-caption;
-                        font-weight: 600;
-                    }
-                }
-                VerticalLayout {
-                    alignment: center;
-                    Text {
-                        text: "›";
-                        color: Theme.muted;
-                        font-size: Theme.font-size-caption;
-                    }
-                }
-                VerticalLayout {
-                    alignment: center;
-                    Text {
-                        text: root.folder;
-                        color: Theme.on-surface;
-                        font-size: Theme.font-size-caption;
-                        font-weight: 800;
-                    }
-                }
-            }
-        }
+        ScrollView {
+            vertical-stretch: 1;
 
-        Divider { }
-
-        VerticalLayout {
-            padding: Theme.spacing-md;
-            spacing: Theme.spacing-sm;
-            alignment: start;
-            vertical-stretch: 0;
-
-            // Storage meter.
-            Rectangle {
-                height: 64px;
-                border-radius: Theme.radius-md;
-                background: Theme.surface-1;
-                drop-shadow-blur: Theme.elevation-1-blur;
-                drop-shadow-color: Theme.elevation-1-color;
-                drop-shadow-offset-y: Theme.elevation-1-y;
-                VerticalLayout {
-                    padding: Theme.spacing-md;
-                    spacing: 8px;
-                    HorizontalLayout {
-                        Text {
-                            text: "Storage";
-                            color: Theme.on-surface;
-                            font-size: Theme.font-size-caption;
-                            font-weight: 800;
-                            horizontal-stretch: 1;
-                        }
-                        Text {
-                            text: root.used;
-                            color: Theme.muted;
-                            font-size: Theme.font-size-caption;
-                            font-weight: 600;
-                        }
-                    }
-                    Rectangle {
-                        height: 6px;
-                        border-radius: 3px;
-                        background: Theme.surface-variant;
-                        Rectangle {
-                            x: 0;
-                            width: parent.width * root.used-fraction;
-                            height: parent.height;
-                            border-radius: 3px;
-                            background: Theme.accent-info;
-                        }
-                    }
-                }
-            }
-
-            // Sort row.
-            HorizontalLayout {
-                spacing: Theme.spacing-sm;
+            VerticalLayout {
+                padding-top: Theme.spacing-md;
+                padding-bottom: Theme.spacing-xl;
+                spacing: Theme.spacing-md;
                 alignment: stretch;
+
+                // ----- Breadcrumb -----------------------------------
+                MetaRow {
+                    items: [
+                        { icon: @image-url("@mobile-components/icons/home.svg"), text: "Home" },
+                        { text: "Documents" },
+                        { text: "Tax 2025" },
+                    ];
+                    separator: "/";
+                }
+
+                // ----- Sort -----------------------------------------
                 VerticalLayout {
-                    alignment: center;
-                    horizontal-stretch: 1;
-                    Text {
-                        text: "12 items";
-                        color: Theme.muted;
-                        font-size: Theme.font-size-caption;
-                        font-weight: 700;
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    SegmentedControl {
+                        options: ["Name", "Date", "Size"];
+                        selected-index <=> root.sort-index;
                     }
                 }
-                Rectangle {
-                    width: sort-row.preferred-width + 20px;
-                    height: 32px;
-                    border-radius: 16px;
-                    background: Theme.surface-2;
-                    sort-row := HorizontalLayout {
-                        x: 10px;
-                        y: 0;
-                        height: parent.height;
-                        spacing: 5px;
-                        VerticalLayout {
-                            alignment: center;
-                            Text {
-                                text: "Name";
-                                color: Theme.on-surface;
-                                font-size: Theme.font-size-caption;
-                                font-weight: 700;
-                            }
-                        }
-                        VerticalLayout {
-                            alignment: center;
-                            Image {
-                                width: 12px;
-                                height: 12px;
-                                source: @image-url("@mobile-components/icons/chevron-right.svg");
-                                colorize: Theme.muted;
-                                image-fit: contain;
-                            }
+
+                // ----- Folders --------------------------------------
+                FormSection {
+                    title: "FOLDERS";
+
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/menu.svg");
+                        tone: Tone.info;
+                        title: "Receipts";
+                        subtitle: "23 items · 4.2 MB";
+                        clicked => { root.folder-pressed("receipts"); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
                         }
                     }
-                    TouchArea {
-                        clicked => { root.sort-pressed(); }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/menu.svg");
+                        tone: Tone.warning;
+                        title: "Invoices";
+                        subtitle: "14 items · 2.1 MB";
+                        clicked => { root.folder-pressed("invoices"); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/menu.svg");
+                        tone: Tone.success;
+                        title: "Statements";
+                        subtitle: "9 items · 1.3 MB";
+                        clicked => { root.folder-pressed("statements"); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
+                }
+
+                // ----- Files ----------------------------------------
+                FormSection {
+                    title: "FILES";
+
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/queue.svg");
+                        tone: Tone.info;
+                        title: "Tax_return_2025.pdf";
+                        subtitle: "PDF · 412 KB · today 14:32";
+                        clicked => { root.file-pressed("tax"); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/more-vertical.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/queue.svg");
+                        title: "P60_employer.pdf";
+                        subtitle: "PDF · 98 KB · today 09:15";
+                        clicked => { root.file-pressed("p60"); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/more-vertical.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/star.svg");
+                        tone: Tone.warning;
+                        title: "Charity_donations.xlsx";
+                        subtitle: "XLSX · 64 KB · yesterday 17:48";
+                        clicked => { root.file-pressed("charity"); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/more-vertical.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/menu.svg");
+                        title: "Investment_summary.csv";
+                        subtitle: "CSV · 22 KB · 12 May 11:02";
+                        clicked => { root.file-pressed("invest"); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/more-vertical.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/queue.svg");
+                        tone: Tone.success;
+                        title: "Receipt_amazon.pdf";
+                        subtitle: "PDF · 38 KB · 09 May 13:21";
+                        clicked => { root.file-pressed("amazon"); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/more-vertical.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/menu.svg");
+                        tone: Tone.danger;
+                        title: "Notes_to_accountant.txt";
+                        subtitle: "TXT · 4 KB · 02 May 08:10";
+                        clicked => { root.file-pressed("notes"); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/more-vertical.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
                     }
                 }
             }
         }
-
-        Divider { }
-
-        FileRow {
-            kind: 0;
-            name: "Design Assets";
-            meta: "28 items · modified Tue";
-            clicked => { root.item-pressed("Design Assets"); }
-        }
-        Divider { }
-        FileRow {
-            kind: 0;
-            name: "Research";
-            meta: "11 items · modified 6 May";
-            starred: true;
-            clicked => { root.item-pressed("Research"); }
-        }
-        Divider { }
-        FileRow {
-            kind: 1;
-            name: "Atlas — Q2 roadmap.pdf";
-            meta: "2.4 MB · modified yesterday";
-            clicked => { root.item-pressed("Atlas — Q2 roadmap.pdf"); }
-        }
-        Divider { }
-        FileRow {
-            kind: 2;
-            name: "hero-mockup-final.png";
-            meta: "5.1 MB · modified yesterday";
-            starred: true;
-            clicked => { root.item-pressed("hero-mockup-final.png"); }
-        }
-        Divider { }
-        FileRow {
-            kind: 3;
-            name: "standup-recording.m4a";
-            meta: "18.2 MB · modified Mon";
-            clicked => { root.item-pressed("standup-recording.m4a"); }
-        }
-        Divider { }
-        FileRow {
-            kind: 4;
-            name: "legacy-export.zip";
-            meta: "204 MB · modified 28 Apr";
-            clicked => { root.item-pressed("legacy-export.zip"); }
-        }
-
-        Rectangle { vertical-stretch: 1; }
-    }
-
-    Fab {
-        x: parent.width - self.width - Theme.spacing-md;
-        y: parent.height - self.height - Theme.spacing-md;
-        icon: @image-url("@mobile-components/icons/plus.svg");
-        accessible-label: "Upload";
-        clicked => { root.upload-pressed(); }
     }
 }

@@ -1,0 +1,81 @@
+// KeyValueRow
+// =====================================================================
+//
+// A single line with a `label` on the left and a `value` on the right.
+// Both are pure Text — no icons, no controls. The label/value horizontal
+// split is what almost every receipt-style screen wants (invoice line
+// items, lab-results values, nutrition-label rows, payment-split shares,
+// order-history line items, etc.).
+//
+// Specification
+// -------------
+//
+// Geometry
+//   - `min-height: Theme.spacing-xl` (32 px) so a stack of these rows
+//     keeps a comfortable receipt rhythm without ballooning to the
+//     full 56 px tap target — these rows are typically NOT
+//     interactive.
+//   - 16 px horizontal padding, 12 px gap between label and value.
+//   - Full width (`horizontal-stretch: 1`).
+//
+// Content
+//   - `label` (string, left): `Theme.muted`, body-size, weight-400.
+//   - `value` (string, right): `Theme.on-surface`, body-size,
+//     weight-600 — the value is the read-this side of the row.
+//   - `value-tone` (Tone, default `default`): tint the value text in
+//     a status colour (e.g. success for "PAID", danger for "OVERDRAWN",
+//     warning for "PENDING").
+//   - `emphasis` (bool, default false): bumps both label and value to
+//     `font-size-body-large` and weight-700 on the value — used for
+//     "Total" lines at the bottom of a receipt block.
+//
+// Layout discipline
+//   - The label and value share the row's vertical centre. The value
+//     hugs the right edge; the label stretches to fill the remaining
+//     space and elides if too long. A stack of these always lines up
+//     the value column at a single shared right margin.
+
+import { Theme, Tone } from "@mobile-theme/theme.slint";
+
+export component KeyValueRow inherits Rectangle {
+    in property <string> label;
+    in property <string> value;
+    in property <Tone> value-tone: Tone.default;
+    in property <bool> emphasis: false;
+
+    min-height: Theme.spacing-xl;
+    horizontal-stretch: 1;
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        padding-top: Theme.spacing-xs;
+        padding-bottom: Theme.spacing-xs;
+        spacing: Theme.spacing-sm;
+        alignment: stretch;
+
+        Text {
+            text: root.label;
+            color: Theme.muted;
+            font-size: root.emphasis ? Theme.font-size-body-large : Theme.font-size-body;
+            font-weight: root.emphasis ? 600 : 400;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+            overflow: elide;
+        }
+
+        Text {
+            text: root.value;
+            color:
+                  root.value-tone == Tone.success ? Theme.accent-success
+                : root.value-tone == Tone.warning ? Theme.accent-warning
+                : root.value-tone == Tone.danger  ? Theme.accent-danger
+                : root.value-tone == Tone.info    ? Theme.accent-info
+                : Theme.on-surface;
+            font-size: root.emphasis ? Theme.font-size-body-large : Theme.font-size-body;
+            font-weight: root.emphasis ? 700 : 600;
+            vertical-alignment: center;
+            horizontal-alignment: right;
+        }
+    }
+}

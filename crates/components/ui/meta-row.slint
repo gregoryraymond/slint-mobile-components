@@ -1,0 +1,91 @@
+// MetaRow
+// =====================================================================
+//
+// A single horizontal row of compact metadata "chips" — small icon +
+// short value tokens — typically rendered immediately under a title
+// in a detail header. Each tuple is rendered identically: same icon
+// size, same gap, same caption colour. Stacks nicely with itself for
+// pages that want two lines of metadata (e.g. "★ 4.8 · 312 reviews"
+// on one line, "20 min · Easy" on the next).
+//
+// Used by: contact-detail, event-detail, post-detail, video-feed,
+// recipe (kept page — already follows this shape inline), live-stream,
+// trending-topics, news-feed.
+//
+// Specification
+// -------------
+//
+// Geometry
+//   - Full width (`horizontal-stretch: 1`).
+//   - 16 px horizontal padding (lines up with body content).
+//   - 12 px gap between adjacent chips.
+//   - `min-height: 20px` so chips have breathing room.
+//
+// Content
+//   - `items` (`[{icon: image, text: string}]`): the chip list.
+//     The icon is optional per item — leave `icon` as a default image
+//     to render just the text. Up to ~4 items typical.
+//   - `separator` (string, default "·"): rendered between items in
+//     muted caption colour. Set to "" to use bare spacing only.
+//
+// Composition
+//   - Layout discipline: each chip is `Image (14×14) + Text` inside a
+//     `HorizontalLayout { spacing: Theme.spacing-xs; alignment: center; }`
+//     so all icons line up on the same baseline and all texts share a
+//     single vertical centre.
+
+import { Theme } from "@mobile-theme/theme.slint";
+
+export struct MetaChip {
+    icon: image,
+    text: string,
+}
+
+export component MetaRow inherits Rectangle {
+    in property <[MetaChip]> items;
+    in property <string> separator: "·";
+
+    horizontal-stretch: 1;
+    min-height: 20px;
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        spacing: Theme.spacing-sm;
+        alignment: start;
+
+        for chip[i] in root.items: HorizontalLayout {
+            spacing: Theme.spacing-sm;
+            alignment: center;
+
+            if i > 0 && root.separator != "": Text {
+                text: root.separator;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+                vertical-alignment: center;
+            }
+
+            HorizontalLayout {
+                spacing: Theme.spacing-xs;
+                alignment: center;
+
+                if chip.icon.width > 0: Image {
+                    width: 14px;
+                    height: 14px;
+                    source: chip.icon;
+                    colorize: Theme.muted;
+                    image-fit: contain;
+                    vertical-alignment: center;
+                }
+
+                Text {
+                    text: chip.text;
+                    color: Theme.muted;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 500;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+}

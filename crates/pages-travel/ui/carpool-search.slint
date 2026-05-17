@@ -1,316 +1,43 @@
 // CarpoolSearchPage
 // =====================================================================
 //
-// Long-distance carpool search — BlaBlaCar / Uber Carshare / Klaxit-
-// style. Distinct from `RideShareBookingPage` (in-city), `FlightSearch-
-// Page` (commercial flights), and `TransitDeparturesPage` (public
-// transit). Demonstrates:
+// Carpool / BlaBlaCar-style rideshare search-and-pick screen. Distinct
+// from `RideShareBookingPage` (full-bleed-map taxi booking) and
+// `FlightSearchPage` (multi-leg air search). Pure showcase of the
+// `FormSection` + `SettingRow` / `KeyValueRow` alignment primitives —
+// every list row on the page (origin / destination, trip parameters,
+// match list) goes through ONE of those components so leading tiles,
+// titles, subtitles and trailing values sit on identical baselines.
 //
-//   - Trip-criteria card: From / To / Date pills + traveller count.
-//   - Sort + filter chip row (Earliest / Cheapest / Highest-rated /
-//     EV only).
-//   - Per-ride card: driver avatar + star rating + verified pill,
-//     departure→arrival times + cities + route duration, seats-left
-//     dot row, optional "instant book" pill, and a tone-tinted price
-//     on the right.
+// What this screen does
+//   - AppBar "Find a ride" with back leading.
+//   - WHERE section: from + to SettingRows (green / red pin tiles), and
+//     a tiny "swap" SettingRow no title between them.
+//   - WHEN section: date / time / passengers KeyValueRows.
+//   - MATCHES section: 5 SettingRows, one per matching driver, each
+//     showing avatar-substitute tile + driver name + trip blurb + fare.
+//   - Bottom: primary "Search again" + text-button "Save search".
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
-import { SectionHeader } from "@mobile-components/section-header.slint";
-import { Avatar } from "@mobile-components/avatar.slint";
-import { Chip } from "@mobile-components/chip.slint";
+import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
+import { FormSection } from "@mobile-components/form-section.slint";
+import { SettingRow } from "@mobile-components/setting-row.slint";
+import { KeyValueRow } from "@mobile-components/key-value-row.slint";
 import { Divider } from "@mobile-components/divider.slint";
-import { HeadingStyle } from "@mobile-components/heading.slint";
-
-// Trip-criteria pill (From / To / Date).
-component CriteriaPill inherits Rectangle {
-    in property <string> label;
-    in property <string> value;
-    callback clicked();
-
-    accessible-role: button;
-    accessible-label: root.label;
-    accessible-action-default => { root.clicked(); }
-
-    horizontal-stretch: 1;
-    height: 56px;
-    background: Theme.surface-1;
-    border-radius: Theme.radius-md;
-    drop-shadow-blur: Theme.elevation-1-blur;
-    drop-shadow-color: Theme.elevation-1-color;
-    drop-shadow-offset-y: Theme.elevation-1-y;
-
-    VerticalLayout {
-        padding: Theme.spacing-sm;
-        spacing: 2px;
-        alignment: center;
-        Text {
-            text: root.label;
-            color: Theme.muted;
-            font-size: 10px;
-            font-weight: 800;
-            letter-spacing: 0.5px;
-        }
-        Text {
-            text: root.value;
-            color: Theme.on-surface;
-            font-size: Theme.font-size-body;
-            font-weight: 700;
-            overflow: elide;
-        }
-    }
-    TouchArea {
-        clicked => { root.clicked(); }
-    }
-}
-
-// Seat-availability dot indicator — 3 dots, `filled` of them success-
-// tinted.
-component SeatDots inherits Rectangle {
-    in property <int> total: 3;
-    in property <int> filled: 2;
-
-    horizontal-stretch: 0;
-    HorizontalLayout {
-        spacing: 4px;
-        for index in root.total : VerticalLayout {
-            alignment: center;
-            Rectangle {
-                width: 6px;
-                height: 6px;
-                border-radius: 3px;
-                background:
-                      index < root.filled
-                    ? Theme.accent-success
-                    : Theme.surface-variant;
-            }
-        }
-    }
-}
-
-// One ride card.
-component RideCard inherits Rectangle {
-    in property <string> initials;
-    in property <string> driver;
-    in property <string> rating;
-    in property <bool> verified: false;
-    in property <bool> instant: false;
-    in property <string> depart-time;
-    in property <string> depart-city;
-    in property <string> arrive-time;
-    in property <string> arrive-city;
-    in property <string> duration;
-    in property <int> seats-total: 3;
-    in property <int> seats-left: 2;
-    in property <string> price;
-    in property <Tone> price-tone: Tone.default;
-
-    horizontal-stretch: 1;
-    background: Theme.surface-1;
-    border-radius: Theme.radius-md;
-    drop-shadow-blur: Theme.elevation-1-blur;
-    drop-shadow-color: Theme.elevation-1-color;
-    drop-shadow-offset-y: Theme.elevation-1-y;
-
-    VerticalLayout {
-        padding: Theme.spacing-md;
-        spacing: Theme.spacing-sm;
-
-        // Driver row.
-        HorizontalLayout {
-            spacing: Theme.spacing-sm;
-            alignment: stretch;
-            VerticalLayout {
-                alignment: center;
-                Avatar {
-                    fallback: root.initials;
-                    size: 36px;
-                }
-            }
-            VerticalLayout {
-                horizontal-stretch: 1;
-                alignment: center;
-                spacing: 2px;
-                HorizontalLayout {
-                    spacing: Theme.spacing-xs;
-                    Text {
-                        text: root.driver;
-                        color: Theme.on-surface;
-                        font-family: "Space Grotesk";
-                        font-size: Theme.font-size-body;
-                        font-weight: 700;
-                        vertical-alignment: center;
-                    }
-                    if root.verified: Rectangle {
-                        width: 14px;
-                        height: 14px;
-                        border-radius: 7px;
-                        background: Theme.accent-info;
-                        Text {
-                            text: "✓";
-                            color: Theme.on-primary;
-                            font-size: 9px;
-                            font-weight: 800;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
-                            width: parent.width;
-                            height: parent.height;
-                        }
-                    }
-                }
-                HorizontalLayout {
-                    spacing: 4px;
-                    Image {
-                        width: 12px;
-                        height: 12px;
-                        source: @image-url("@mobile-components/icons/star.svg");
-                        colorize: Theme.accent-warning;
-                        image-fit: contain;
-                        vertical-alignment: center;
-                    }
-                    Text {
-                        text: root.rating;
-                        color: Theme.muted;
-                        font-size: Theme.font-size-caption;
-                        font-weight: 700;
-                    }
-                }
-            }
-            if root.instant: Rectangle {
-                width: instant-text.preferred-width + 14px;
-                height: 22px;
-                border-radius: 4px;
-                background: Theme.accent-success;
-                instant-text := Text {
-                    text: "INSTANT";
-                    color: Theme.on-primary;
-                    font-size: 10px;
-                    font-weight: 800;
-                    letter-spacing: 0.3px;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
-                    width: parent.width;
-                    height: parent.height;
-                }
-            }
-        }
-
-        Divider { }
-
-        // Route row.
-        HorizontalLayout {
-            spacing: Theme.spacing-md;
-            alignment: stretch;
-
-            VerticalLayout {
-                horizontal-stretch: 1;
-                spacing: 2px;
-                Text {
-                    text: root.depart-time;
-                    color: Theme.on-surface;
-                    font-family: "Space Grotesk";
-                    font-size: 22px;
-                    font-weight: 700;
-                    letter-spacing: -0.5px;
-                }
-                Text {
-                    text: root.depart-city;
-                    color: Theme.muted;
-                    font-size: Theme.font-size-caption;
-                    font-weight: 600;
-                }
-            }
-            VerticalLayout {
-                horizontal-stretch: 1;
-                alignment: center;
-                spacing: 2px;
-                HorizontalLayout {
-                    alignment: center;
-                    Text {
-                        text: root.duration;
-                        color: Theme.muted;
-                        font-size: 10px;
-                        font-weight: 800;
-                        letter-spacing: 0.3px;
-                    }
-                }
-                Rectangle {
-                    height: 1px;
-                    background: Theme.outline;
-                }
-                HorizontalLayout {
-                    alignment: center;
-                    SeatDots {
-                        total: root.seats-total;
-                        filled: root.seats-left;
-                    }
-                }
-            }
-            VerticalLayout {
-                horizontal-stretch: 1;
-                spacing: 2px;
-                Text {
-                    text: root.arrive-time;
-                    color: Theme.on-surface;
-                    font-family: "Space Grotesk";
-                    font-size: 22px;
-                    font-weight: 700;
-                    letter-spacing: -0.5px;
-                    horizontal-alignment: right;
-                }
-                Text {
-                    text: root.arrive-city;
-                    color: Theme.muted;
-                    font-size: Theme.font-size-caption;
-                    font-weight: 600;
-                    horizontal-alignment: right;
-                }
-            }
-        }
-
-        Divider { }
-
-        // Footer.
-        HorizontalLayout {
-            spacing: Theme.spacing-sm;
-            VerticalLayout {
-                alignment: center;
-                horizontal-stretch: 1;
-                Text {
-                    text: root.seats-left + " of " + root.seats-total + " seats left";
-                    color:
-                          root.seats-left == 1 ? Theme.accent-warning
-                        : root.seats-left == 0 ? Theme.accent-danger
-                        : Theme.muted;
-                    font-size: Theme.font-size-caption;
-                    font-weight: 700;
-                }
-            }
-            VerticalLayout {
-                alignment: center;
-                Text {
-                    text: root.price;
-                    color:
-                          root.price-tone == Tone.success ? Theme.accent-success
-                        : Theme.on-surface;
-                    font-size: Theme.font-size-body-large;
-                    font-weight: 800;
-                    horizontal-alignment: right;
-                }
-            }
-        }
-    }
-}
+import { MobileButton, TextButton } from "@mobile-components/button.slint";
+import { ScrollView } from "std-widgets.slint";
 
 export component CarpoolSearchPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
-    in property <string> origin: "San Francisco, CA";
-    in property <string> destination: "Los Angeles, CA";
-    in property <string> when: "Fri, May 23";
+
     callback back-pressed();
-    callback edit-criteria-pressed(string);
-    callback ride-pressed(string);
+    callback swap-pressed();
+    callback edit-when-pressed(string);
+    callback match-pressed(string);
+    callback search-again-pressed();
+    callback save-search-pressed();
 
     background: Theme.background;
 
@@ -318,105 +45,180 @@ export component CarpoolSearchPage inherits Window {
         spacing: 0;
 
         AppBar {
-            title: "Carpool";
-            title-style: HeadingStyle.grotesk-bold;
+            title: "Find a ride";
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
-            trailing-icon: @image-url("@mobile-components/icons/queue.svg");
             leading-pressed => { root.back-pressed(); }
         }
 
-        // Criteria + filters.
-        VerticalLayout {
-            padding: Theme.spacing-md;
-            spacing: Theme.spacing-sm;
-            HorizontalLayout {
-                spacing: Theme.spacing-sm;
-                CriteriaPill {
-                    label: "FROM";
-                    value: root.origin;
-                    clicked => { root.edit-criteria-pressed("from"); }
+        ScrollView {
+            vertical-stretch: 1;
+
+            VerticalLayout {
+                padding-top: Theme.spacing-md;
+                padding-bottom: Theme.spacing-xl;
+                spacing: Theme.spacing-md;
+                alignment: stretch;
+
+                // ----- WHERE ------------------------------------------------
+                FormSection {
+                    title: "WHERE";
+
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/pin.svg");
+                        tone: Tone.success;
+                        title: "From";
+                        Text {
+                            text: "Sablon";
+                            color: Theme.on-surface;
+                            font-size: Theme.font-size-body;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        title: "Swap";
+                        clicked => { root.swap-pressed(); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/pin.svg");
+                        tone: Tone.danger;
+                        title: "To";
+                        Text {
+                            text: "Louvain-la-Neuve";
+                            color: Theme.on-surface;
+                            font-size: Theme.font-size-body;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                        }
+                    }
                 }
-                CriteriaPill {
-                    label: "TO";
-                    value: root.destination;
-                    clicked => { root.edit-criteria-pressed("to"); }
+
+                // ----- WHEN -------------------------------------------------
+                FormSection {
+                    title: "WHEN";
+
+                    KeyValueRow {
+                        label: "Date";
+                        value: "Sat, May 17";
+                    }
+                    Divider { }
+                    KeyValueRow {
+                        label: "Time";
+                        value: "after 09:00";
+                    }
+                    Divider { }
+                    KeyValueRow {
+                        label: "Passengers";
+                        value: "1 adult";
+                    }
                 }
-            }
-            HorizontalLayout {
-                spacing: Theme.spacing-sm;
-                CriteriaPill {
-                    label: "WHEN";
-                    value: root.when;
-                    clicked => { root.edit-criteria-pressed("when"); }
+
+                // ----- MATCHES ----------------------------------------------
+                FormSection {
+                    title: "MATCHES";
+                    caption: "5 drivers leaving within the next two hours.";
+
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        tone: Tone.info;
+                        title: "Marie · BMW i3";
+                        subtitle: "departs 09:30 · arrives 10:25 · 3 seats";
+                        clicked => { root.match-pressed("marie"); }
+                        Text {
+                            text: "€ 8.50";
+                            color: Theme.on-surface;
+                            font-size: Theme.font-size-body;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        tone: Tone.success;
+                        title: "Tom · Tesla Model 3";
+                        subtitle: "departs 09:45 · arrives 10:40 · 2 seats";
+                        clicked => { root.match-pressed("tom"); }
+                        Text {
+                            text: "€ 9.00";
+                            color: Theme.on-surface;
+                            font-size: Theme.font-size-body;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        tone: Tone.warning;
+                        title: "Sofia · VW Golf";
+                        subtitle: "departs 10:00 · arrives 10:55 · 1 seat";
+                        clicked => { root.match-pressed("sofia"); }
+                        Text {
+                            text: "€ 7.50";
+                            color: Theme.on-surface;
+                            font-size: Theme.font-size-body;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        tone: Tone.danger;
+                        title: "Karim · Renault Zoé";
+                        subtitle: "departs 10:15 · arrives 11:10 · 3 seats";
+                        clicked => { root.match-pressed("karim"); }
+                        Text {
+                            text: "€ 8.00";
+                            color: Theme.on-surface;
+                            font-size: Theme.font-size-body;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        title: "Anne · Citroën C3";
+                        subtitle: "departs 10:30 · arrives 11:25 · 2 seats";
+                        clicked => { root.match-pressed("anne"); }
+                        Text {
+                            text: "€ 7.00";
+                            color: Theme.on-surface;
+                            font-size: Theme.font-size-body;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                        }
+                    }
                 }
-                CriteriaPill {
-                    label: "PEOPLE";
-                    value: "1 adult";
-                    clicked => { root.edit-criteria-pressed("people"); }
+
+                // ----- Actions ----------------------------------------------
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    spacing: Theme.spacing-sm;
+                    alignment: stretch;
+
+                    MobileButton {
+                        text: "Search again";
+                        clicked => { root.search-again-pressed(); }
+                    }
+                    TextButton {
+                        text: "Save search";
+                        clicked => { root.save-search-pressed(); }
+                    }
                 }
-            }
-            HorizontalLayout {
-                spacing: Theme.spacing-sm;
-                Chip { label: "Earliest"; selected: true; }
-                Chip { label: "Cheapest"; }
-                Chip { label: "Top-rated"; }
-                Chip { label: "EV only"; }
             }
         }
-
-        SectionHeader { text: "6 RIDES · 380 MI"; }
-
-        VerticalLayout {
-            padding-left: Theme.spacing-md;
-            padding-right: Theme.spacing-md;
-            padding-bottom: Theme.spacing-md;
-            spacing: Theme.spacing-sm;
-
-            RideCard {
-                initials: "AR";
-                driver: "Anika R.";
-                rating: "4.97 · 312 trips";
-                verified: true;
-                instant: true;
-                depart-time: "06:30";
-                depart-city: "SF · Embarcadero";
-                arrive-time: "12:48";
-                arrive-city: "LA · Echo Park";
-                duration: "6 h 18";
-                seats-total: 3;
-                seats-left: 2;
-                price: "$48";
-                price-tone: Tone.success;
-            }
-            RideCard {
-                initials: "MK";
-                driver: "Marco K.";
-                rating: "4.81 · 184 trips";
-                verified: true;
-                depart-time: "08:15";
-                depart-city: "SF · Mission";
-                arrive-time: "14:55";
-                arrive-city: "LA · Silver Lake";
-                duration: "6 h 40";
-                seats-total: 4;
-                seats-left: 1;
-                price: "$42";
-            }
-            RideCard {
-                initials: "LE";
-                driver: "Léa B.";
-                rating: "5.0 · 28 trips";
-                depart-time: "10:00";
-                depart-city: "SF · Hayes Valley";
-                arrive-time: "16:32";
-                arrive-city: "LA · Mar Vista";
-                duration: "6 h 32";
-                seats-total: 3;
-                seats-left: 3;
-                price: "$55";
-            }
-        }
-
-        Rectangle { vertical-stretch: 1; }
     }
 }

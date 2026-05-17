@@ -1,159 +1,32 @@
 // AchievementsPage
 // =====================================================================
 //
-// Achievements / badges screen — the gamification "trophy case".
-// Distinct from `LeaderboardPage` (ranking against others) and
-// `QuizPage` (an in-progress game). Demonstrates a badge-grid surface:
+// Game / app achievements gallery. Top: three StatTiles summarise the
+// totals. Then a "Recent" FormSection with rows for unlocked badges
+// (tone-tinted leading tile + a small success-coloured check Image
+// trailing) and an "In progress" FormSection for partially-completed
+// achievements (percentage Text trailing).
 //
-//   - Level header: a level disc + an XP progress bar to the next
-//     level + a "X of Y unlocked" count.
-//   - A 3-column grid of badge tiles — earned tiles are tone-tinted
-//     and bright, locked tiles are dim with a lock glyph.
-//   - A recently-unlocked list beneath.
+// Pure showcase of SettingRow + StatTile alignment: every row in both
+// sections inherits the same 56 px floor and 16 px leading-tile, so
+// titles, subtitles, and trailing slots line up vertically regardless
+// of which type of trailing widget appears.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
-import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
-import { SectionHeader } from "@mobile-components/section-header.slint";
+import { HeadingStyle } from "@mobile-components/heading.slint";
+import { FormSection } from "@mobile-components/form-section.slint";
+import { SettingRow } from "@mobile-components/setting-row.slint";
+import { StatTile } from "@mobile-components/stat-tile.slint";
 import { Divider } from "@mobile-components/divider.slint";
-
-// One badge tile. `tone` tints an earned badge; `locked` dims it.
-component BadgeTile inherits Rectangle {
-    in property <image> icon;
-    in property <string> label;
-    in property <Tone> tone: Tone.default;
-    in property <bool> locked: false;
-    callback clicked();
-
-    accessible-role: button;
-    accessible-label: root.label;
-    accessible-action-default => { root.clicked(); }
-
-    horizontal-stretch: 1;
-    height: 108px;
-    border-radius: Theme.radius-md;
-    background: touch.pressed ? Theme.surface-pressed : Theme.surface-1;
-    border-width: 1px;
-    border-color: Theme.surface-variant;
-    opacity: root.locked ? 0.55 : 1.0;
-    animate background { duration: Theme.motion-fast; }
-
-    VerticalLayout {
-        alignment: center;
-        spacing: 8px;
-        HorizontalLayout {
-            alignment: center;
-            Rectangle {
-                width: 48px;
-                height: 48px;
-                border-radius: 24px;
-                background: root.locked ? Theme.surface-2
-                    : root.tone == Tone.success ? Theme.accent-success
-                    : root.tone == Tone.warning ? Theme.accent-warning
-                    : root.tone == Tone.info    ? Theme.accent-info
-                    : root.tone == Tone.danger  ? Theme.accent-danger
-                    : Theme.primary;
-                Image {
-                    width: 24px;
-                    height: 24px;
-                    x: (parent.width - self.width) / 2;
-                    y: (parent.height - self.height) / 2;
-                    source: root.locked ? @image-url("@mobile-components/icons/lock.svg") : root.icon;
-                    colorize: root.locked ? Theme.muted : Theme.on-primary;
-                    image-fit: contain;
-                }
-            }
-        }
-        Text {
-            text: root.label;
-            color: root.locked ? Theme.muted : Theme.on-surface;
-            font-size: Theme.font-size-caption;
-            font-weight: 700;
-            horizontal-alignment: center;
-            wrap: word-wrap;
-        }
-    }
-    touch := TouchArea {
-        clicked => { root.clicked(); }
-    }
-}
-
-// One recently-unlocked list row.
-component UnlockRow inherits Rectangle {
-    in property <image> icon;
-    in property <string> title;
-    in property <string> detail;
-    in property <Tone> tone: Tone.default;
-    in property <string> xp;
-
-    horizontal-stretch: 1;
-    min-height: 60px;
-
-    HorizontalLayout {
-        padding-left: Theme.spacing-md;
-        padding-right: Theme.spacing-md;
-        spacing: Theme.spacing-md;
-        alignment: stretch;
-        VerticalLayout {
-            alignment: center;
-            Rectangle {
-                width: 36px;
-                height: 36px;
-                border-radius: 18px;
-                background:
-                      root.tone == Tone.success ? Theme.accent-success
-                    : root.tone == Tone.warning ? Theme.accent-warning
-                    : root.tone == Tone.info    ? Theme.accent-info
-                    : Theme.primary;
-                Image {
-                    width: 18px;
-                    height: 18px;
-                    x: (parent.width - self.width) / 2;
-                    y: (parent.height - self.height) / 2;
-                    source: root.icon;
-                    colorize: Theme.on-primary;
-                    image-fit: contain;
-                }
-            }
-        }
-        VerticalLayout {
-            horizontal-stretch: 1;
-            alignment: center;
-            spacing: 2px;
-            Text {
-                text: root.title;
-                color: Theme.on-surface;
-                font-size: Theme.font-size-body;
-                font-weight: 600;
-            }
-            Text {
-                text: root.detail;
-                color: Theme.muted;
-                font-size: Theme.font-size-caption;
-            }
-        }
-        VerticalLayout {
-            alignment: center;
-            Text {
-                text: root.xp;
-                color: Theme.accent-warning;
-                font-size: Theme.font-size-caption;
-                font-weight: 800;
-            }
-        }
-    }
-}
+import { ScrollView } from "std-widgets.slint";
 
 export component AchievementsPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
-    in property <int> level: 12;
-    in property <string> xp-label: "2,840 / 3,500 XP";
-    in property <float> xp-progress: 0.81;
-    in property <string> unlocked-count: "18 of 30 unlocked";
+
     callback back-pressed();
-    callback share-pressed();
-    callback badge-pressed(string);
+    callback row-pressed(string);
 
     background: Theme.background;
 
@@ -162,179 +35,172 @@ export component AchievementsPage inherits Window {
 
         AppBar {
             title: "Achievements";
-            title-style: HeadingStyle.bold-impact;
+            title-style: HeadingStyle.plex-medium;
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
-            trailing-icon: @image-url("@mobile-components/icons/send.svg");
             leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.share-pressed(); }
         }
 
-        // Level header.
-        Rectangle {
-            background: Theme.surface-1;
-            drop-shadow-blur: Theme.elevation-1-blur;
-            drop-shadow-color: Theme.elevation-1-color;
-            drop-shadow-offset-y: Theme.elevation-1-y;
-            HorizontalLayout {
-                padding: Theme.spacing-md;
+        ScrollView {
+            vertical-stretch: 1;
+
+            VerticalLayout {
+                padding-top: Theme.spacing-md;
+                padding-bottom: Theme.spacing-xl;
                 spacing: Theme.spacing-md;
                 alignment: stretch;
-                VerticalLayout {
-                    alignment: center;
-                    Rectangle {
-                        width: 56px;
-                        height: 56px;
-                        border-radius: 28px;
-                        background: @linear-gradient(135deg, #f59e0b 0%, #b45309 100%);
-                        Text {
-                            text: "" + root.level;
-                            color: #ffffff;
-                            font-family: "Space Grotesk";
-                            font-size: Theme.font-size-headline;
-                            font-weight: 700;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
-                            width: parent.width;
-                            height: parent.height;
+
+                // ----- Totals row ------------------------------------------
+                HorizontalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    spacing: Theme.spacing-md;
+
+                    StatTile { value: "23 / 60"; label: "EARNED"; }
+                    StatTile { value: "4"; label: "RARE"; tone: Tone.info; }
+                    StatTile { value: "1.2K"; label: "POINTS"; tone: Tone.warning; }
+                }
+
+                // ----- Recent ---------------------------------------------
+                FormSection {
+                    title: "RECENT";
+
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/star.svg");
+                        tone: Tone.warning;
+                        title: "First steps";
+                        subtitle: "Earned May 12 · 50 pts";
+                        clicked => { root.row-pressed("first-steps"); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/check.svg");
+                            colorize: Theme.accent-success;
+                            image-fit: contain;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/heart.svg");
+                        tone: Tone.danger;
+                        title: "Heart of gold";
+                        subtitle: "Earned May 11 · 100 pts";
+                        clicked => { root.row-pressed("heart-of-gold"); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/check.svg");
+                            colorize: Theme.accent-success;
+                            image-fit: contain;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/check.svg");
+                        tone: Tone.success;
+                        title: "Streak holder";
+                        subtitle: "Earned May 09 · 75 pts";
+                        clicked => { root.row-pressed("streak"); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/check.svg");
+                            colorize: Theme.accent-success;
+                            image-fit: contain;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/star.svg");
+                        tone: Tone.info;
+                        title: "Explorer";
+                        subtitle: "Earned May 07 · 50 pts";
+                        clicked => { root.row-pressed("explorer"); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/check.svg");
+                            colorize: Theme.accent-success;
+                            image-fit: contain;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/pin.svg");
+                        tone: Tone.warning;
+                        title: "Globe trotter";
+                        subtitle: "Earned May 03 · 200 pts";
+                        clicked => { root.row-pressed("globe"); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/check.svg");
+                            colorize: Theme.accent-success;
+                            image-fit: contain;
                         }
                     }
                 }
-                VerticalLayout {
-                    horizontal-stretch: 1;
-                    alignment: center;
-                    spacing: 6px;
-                    HorizontalLayout {
-                        Heading {
-                            text: "Level " + root.level;
-                            style: HeadingStyle.grotesk-bold;
-                            color: Theme.on-surface;
-                            font-size: Theme.font-size-title;
-                            horizontal-stretch: 1;
-                        }
+
+                // ----- In progress ----------------------------------------
+                FormSection {
+                    title: "IN PROGRESS";
+
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/star.svg");
+                        title: "Power user";
+                        subtitle: "3 / 10 · 30 %";
+                        clicked => { root.row-pressed("power-user"); }
                         Text {
-                            text: root.unlocked-count;
+                            text: "30%";
                             color: Theme.muted;
-                            font-size: Theme.font-size-caption;
+                            font-size: Theme.font-size-body;
                             font-weight: 600;
+                            vertical-alignment: center;
                         }
                     }
-                    Rectangle {
-                        height: 8px;
-                        border-radius: 4px;
-                        background: Theme.surface-variant;
-                        Rectangle {
-                            x: 0;
-                            width: parent.width * root.xp-progress;
-                            height: parent.height;
-                            border-radius: 4px;
-                            background: Theme.accent-warning;
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/check.svg");
+                        title: "Marathoner";
+                        subtitle: "12 / 25 · 48 %";
+                        clicked => { root.row-pressed("marathoner"); }
+                        Text {
+                            text: "48%";
+                            color: Theme.muted;
+                            font-size: Theme.font-size-body;
+                            font-weight: 600;
+                            vertical-alignment: center;
                         }
                     }
-                    Text {
-                        text: root.xp-label;
-                        color: Theme.muted;
-                        font-size: Theme.font-size-caption;
-                        font-weight: 600;
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/heart.svg");
+                        title: "Community pillar";
+                        subtitle: "7 / 20 · 35 %";
+                        clicked => { root.row-pressed("community"); }
+                        Text {
+                            text: "35%";
+                            color: Theme.muted;
+                            font-size: Theme.font-size-body;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/pin.svg");
+                        title: "Cartographer";
+                        subtitle: "4 / 50 · 8 %";
+                        clicked => { root.row-pressed("cartographer"); }
+                        Text {
+                            text: "8%";
+                            color: Theme.muted;
+                            font-size: Theme.font-size-body;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                        }
                     }
                 }
             }
         }
-
-        SectionHeader { text: "BADGES"; }
-        VerticalLayout {
-            padding-left: Theme.spacing-md;
-            padding-right: Theme.spacing-md;
-            spacing: Theme.spacing-sm;
-            HorizontalLayout {
-                spacing: Theme.spacing-sm;
-                BadgeTile {
-                    icon: @image-url("@mobile-components/icons/check.svg");
-                    label: "First Steps";
-                    tone: Tone.success;
-                    clicked => { root.badge-pressed("First Steps"); }
-                }
-                BadgeTile {
-                    icon: @image-url("@mobile-components/icons/star.svg");
-                    label: "7-Day Streak";
-                    tone: Tone.warning;
-                    clicked => { root.badge-pressed("7-Day Streak"); }
-                }
-                BadgeTile {
-                    icon: @image-url("@mobile-components/icons/heart.svg");
-                    label: "Crowd Favourite";
-                    tone: Tone.danger;
-                    clicked => { root.badge-pressed("Crowd Favourite"); }
-                }
-            }
-            HorizontalLayout {
-                spacing: Theme.spacing-sm;
-                BadgeTile {
-                    icon: @image-url("@mobile-components/icons/send.svg");
-                    label: "Sharer";
-                    tone: Tone.info;
-                    clicked => { root.badge-pressed("Sharer"); }
-                }
-                BadgeTile {
-                    icon: @image-url("@mobile-components/icons/queue.svg");
-                    label: "Collector";
-                    tone: Tone.default;
-                    clicked => { root.badge-pressed("Collector"); }
-                }
-                BadgeTile {
-                    icon: @image-url("@mobile-components/icons/star.svg");
-                    label: "Marathon";
-                    locked: true;
-                    clicked => { root.badge-pressed("Marathon"); }
-                }
-            }
-            HorizontalLayout {
-                spacing: Theme.spacing-sm;
-                BadgeTile {
-                    icon: @image-url("@mobile-components/icons/star.svg");
-                    label: "Night Owl";
-                    locked: true;
-                    clicked => { root.badge-pressed("Night Owl"); }
-                }
-                BadgeTile {
-                    icon: @image-url("@mobile-components/icons/star.svg");
-                    label: "Perfectionist";
-                    locked: true;
-                    clicked => { root.badge-pressed("Perfectionist"); }
-                }
-                BadgeTile {
-                    icon: @image-url("@mobile-components/icons/star.svg");
-                    label: "Legend";
-                    locked: true;
-                    clicked => { root.badge-pressed("Legend"); }
-                }
-            }
-        }
-
-        SectionHeader { text: "RECENTLY UNLOCKED"; }
-        UnlockRow {
-            icon: @image-url("@mobile-components/icons/star.svg");
-            title: "7-Day Streak";
-            detail: "Unlocked today";
-            tone: Tone.warning;
-            xp: "+150 XP";
-        }
-        Divider { }
-        UnlockRow {
-            icon: @image-url("@mobile-components/icons/send.svg");
-            title: "Sharer";
-            detail: "Unlocked 3 days ago";
-            tone: Tone.info;
-            xp: "+80 XP";
-        }
-        Divider { }
-        UnlockRow {
-            icon: @image-url("@mobile-components/icons/heart.svg");
-            title: "Crowd Favourite";
-            detail: "Unlocked last week";
-            tone: Tone.danger;
-            xp: "+200 XP";
-        }
-
-        Rectangle { vertical-stretch: 1; }
     }
 }

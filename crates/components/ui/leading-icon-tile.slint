@@ -1,0 +1,57 @@
+// LeadingIconTile
+// =====================================================================
+//
+// Tinted 32 × 32 square holding an 18 × 18 monochrome icon. The
+// standard left-side glyph for every list/setting row. Centralising it
+// here means every row that wants a leading icon gets the same tile
+// size, the same inner glyph size, the same border-radius, and the
+// same tone → colour mapping — no per-page drift.
+//
+// Specification
+// -------------
+//
+// Geometry
+//   - 32 × 32 px outer, 6 px border-radius.
+//   - 18 × 18 px inner image, centred.
+//
+// Content
+//   - `icon` (image, required): solid-fill SVG, tinted via `colorize`.
+//     If `icon.width == 0` the tile renders empty (callers should
+//     wrap the tile in `if` to omit it entirely; SettingRow does this).
+//
+// Tone
+//   - `tone` (Tone, default `default`):
+//       default → surface-variant background + on-surface icon
+//       success / warning / danger / info → matching accent-* fill +
+//                                            on-primary (white) icon
+//
+// Composition
+//   - Sized for SettingRow / ListItem / NavRow patterns. Don't use as
+//     a standalone glyph — bare `Image` is fine for that.
+
+import { Theme, Tone } from "@mobile-theme/theme.slint";
+
+export component LeadingIconTile inherits Rectangle {
+    in property <image> icon;
+    in property <Tone> tone: Tone.default;
+
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    background:
+          root.tone == Tone.success ? Theme.accent-success
+        : root.tone == Tone.warning ? Theme.accent-warning
+        : root.tone == Tone.danger  ? Theme.accent-danger
+        : root.tone == Tone.info    ? Theme.accent-info
+        : Theme.surface-variant;
+
+    Image {
+        width: 18px;
+        height: 18px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        source: root.icon;
+        colorize: root.tone == Tone.default ? Theme.on-surface : Theme.on-primary;
+        image-fit: contain;
+    }
+}

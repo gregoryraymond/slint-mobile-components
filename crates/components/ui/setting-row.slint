@@ -1,0 +1,130 @@
+// SettingRow
+// =====================================================================
+//
+// The canonical settings/menu/preferences row. Replaces the per-page
+// hand-rolled `NavRow` / `ToggleRow` / `ListItem`-clone patterns that
+// otherwise drift in min-height, padding, leading-tile size, and
+// vertical alignment between sibling rows.
+//
+// Use this component for ANY row that wants:
+//   - an optional leading icon tile (square 32 × 32, tone-aware),
+//   - a title + optional subtitle text block,
+//   - any trailing widget (chevron, value text, switch, stepper,
+//     chip, … whatever the caller drops as `@children`).
+//
+// Specification
+// -------------
+//
+// Geometry
+//   - `min-height: Theme.touch-target + Theme.spacing-sm` (56 px). Two-
+//     line rows grow naturally; single-line rows stay at 56 px so the
+//     touch floor is honoured.
+//   - 16 px horizontal padding, 8 px vertical padding, 16 px gap
+//     between the three slots (leading / text / trailing).
+//   - Full width (`horizontal-stretch: 1`).
+//
+// Slots
+//   - `icon` (image, optional): renders inside a `LeadingIconTile`.
+//     Omitted entirely when `icon.width == 0` so a row without a
+//     leading icon still left-aligns its text block at the standard
+//     16 px page inset.
+//   - Title (centre): `title` (16 px / weight-500, on-surface) above
+//     optional `subtitle` (12 px caption, muted, word-wrap). The text
+//     block is `alignment: center` so the title vertically centres
+//     when no subtitle is set.
+//   - Trailing: `@children`. Caller drops one or more elements that
+//     are stacked vertically and centre-aligned with the row's
+//     vertical midline. Typical: a single `MobileSwitch`, a chevron
+//     `Image`, a value `Text`, or a `HorizontalLayout` mixing a value
+//     caption + chevron.
+//
+// Tone
+//   - `tone` (Tone, default `default`): tints the LEADING tile only.
+//     Page-level destructive rows ("Sign out", "Delete account") set
+//     `destructive: true` to colour the TITLE in `accent-danger`.
+//
+// Interaction
+//   - When `clicked` is observed (has a callback wired by the caller),
+//     the row becomes tappable: press feedback (`surface-pressed`
+//     overlay), `accessible-role: button`, default a11y action fires
+//     `clicked()`. Pages that wire a `MobileSwitch` in the trailing
+//     slot typically leave `clicked` unwired — the switch handles its
+//     own taps.
+//
+// Composition
+//   - Stack inside a `VerticalLayout { spacing: 0; }` between
+//     `SectionHeader` markers and `Divider`s. The 56 px floor + 16 px
+//     padding guarantees every row in the stack lines up visually.
+
+import { Theme, Tone } from "@mobile-theme/theme.slint";
+import { LeadingIconTile } from "leading-icon-tile.slint";
+
+export component SettingRow inherits Rectangle {
+    in property <image> icon;
+    in property <Tone> tone: Tone.default;
+    in property <string> title;
+    in property <string> subtitle;
+    // Set true for "Sign out" / "Delete account" style rows — tints
+    // the title (NOT the leading tile, which keeps its own `tone`).
+    in property <bool> destructive: false;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: root.title;
+    accessible-description: root.subtitle;
+    accessible-action-default => { root.clicked(); }
+
+    min-height: Theme.touch-target + Theme.spacing-sm;
+    horizontal-stretch: 1;
+    background: touch.pressed ? Theme.surface-pressed : transparent;
+    animate background { duration: Theme.motion-fast; }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        padding-top: Theme.spacing-sm;
+        padding-bottom: Theme.spacing-sm;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+
+        if root.icon.width > 0: VerticalLayout {
+            alignment: center;
+            LeadingIconTile {
+                icon: root.icon;
+                tone: root.tone;
+            }
+        }
+
+        VerticalLayout {
+            horizontal-stretch: 1;
+            min-width: 0;
+            alignment: center;
+            spacing: 2px;
+
+            Text {
+                text: root.title;
+                color: root.destructive ? Theme.accent-danger : Theme.on-surface;
+                font-size: Theme.font-size-body-large;
+                font-weight: root.destructive ? 600 : 500;
+                overflow: elide;
+            }
+
+            if root.subtitle != "": Text {
+                text: root.subtitle;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+                wrap: word-wrap;
+            }
+        }
+
+        VerticalLayout {
+            alignment: center;
+            spacing: Theme.spacing-xs;
+            @children
+        }
+    }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}

@@ -1,352 +1,202 @@
 // DocumentScannerPage
 // =====================================================================
 //
-// Camera viewfinder for document scanning — Adobe Scan / CamScanner /
-// Apple Notes-style. Distinct from `PhotoViewerPage` (post-capture).
-// Demonstrates:
-//
-//   - Full-bleed near-black "camera" canvas with a faint document
-//     placeholder rectangle in the middle of the frame.
-//   - Edge-detection overlay: a tilted rectangle with four L-shaped
-//     corner brackets (success-toned when the document is locked, info-
-//     toned while searching). The bracket pieces are drawn as
-//     two thin Rectangles per corner.
-//   - Caption strip ("Document detected · hold still") in the centre
-//     above the bottom controls.
-//   - Bottom mode chips (Document / ID card / Whiteboard / Text) +
-//     centred capture button (big primary disc) + flash + flip icons.
+// Camera-style document scanner. Big viewfinder rectangle with a
+// dashed-look inner frame, transport row with a chunky shutter button
+// in the centre, and a "RECENT SCANS" section below.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
-import { Chip } from "@mobile-components/chip.slint";
-
-// One L-shaped corner bracket — `corner` selects which corner so the
-// two stripes hang off the matching edges. The component itself sits
-// at `arm × arm`; the host page anchors it to the corresponding corner
-// of the detected-document rectangle.
-//
-// corner: 0 = top-left, 1 = top-right, 2 = bottom-left, 3 = bottom-right
-component CornerBracket inherits Rectangle {
-    in property <int> corner;
-    in property <color> tint: Theme.accent-info;
-    in property <length> arm: 28px;
-    in property <length> thickness: 4px;
-
-    width: root.arm;
-    height: root.arm;
-
-    // Horizontal stripe — full width, hugs the top or bottom edge.
-    Rectangle {
-        x: 0;
-        y:
-              root.corner == 0 || root.corner == 1
-            ? 0px
-            : root.arm - root.thickness;
-        width: root.arm;
-        height: root.thickness;
-        background: root.tint;
-        border-radius: root.thickness / 2;
-    }
-    // Vertical stripe — full height, hugs the left or right edge.
-    Rectangle {
-        x:
-              root.corner == 0 || root.corner == 2
-            ? 0px
-            : root.arm - root.thickness;
-        y: 0;
-        width: root.thickness;
-        height: root.arm;
-        background: root.tint;
-        border-radius: root.thickness / 2;
-    }
-}
-
-// One translucent overlay button (flash / flip / multi-page).
-component OverlayButton inherits Rectangle {
-    in property <image> icon;
-    in property <color> tint: #ffffff;
-    callback clicked();
-
-    accessible-role: button;
-    accessible-action-default => { root.clicked(); }
-
-    width: 44px;
-    height: 44px;
-    border-radius: self.width / 2;
-    background: #00000099;
-    Image {
-        width: 20px;
-        height: 20px;
-        x: (parent.width - self.width) / 2;
-        y: (parent.height - self.height) / 2;
-        source: root.icon;
-        colorize: root.tint;
-        image-fit: contain;
-    }
-    TouchArea {
-        clicked => { root.clicked(); }
-    }
-}
+import { AppBar } from "@mobile-components/app-bar.slint";
+import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
+import { FormSection } from "@mobile-components/form-section.slint";
+import { SettingRow } from "@mobile-components/setting-row.slint";
+import { Divider } from "@mobile-components/divider.slint";
 
 export component DocumentScannerPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
-    in property <string> mode-label: "Document detected · hold still";
-    in property <int> page-count: 3;
-    in property <bool> flash-on: false;
+
     callback close-pressed();
+    callback gallery-pressed();
+    callback shutter-pressed();
     callback flash-pressed();
-    callback flip-pressed();
-    callback capture-pressed();
-    callback review-pressed();
+    callback recent-pressed(string);
 
-    background: #0a0d12;
+    background: Theme.background;
 
-    // ----- Camera canvas -----
-    Rectangle {
-        x: 0;
-        y: 0;
-        width: parent.width;
-        height: parent.height;
-        background: @radial-gradient(circle, #1a1d24 0%, #0a0d12 80%);
-    }
+    VerticalLayout {
+        spacing: 0;
 
-    // Faint document silhouette inside the frame.
-    Rectangle {
-        x: (parent.width - self.width) / 2;
-        y: 180px;
-        width: 260px;
-        height: 360px;
-        border-radius: 4px;
-        background: @linear-gradient(180deg, #ffffff10 0%, #ffffff04 100%);
-        // A few faint horizontal lines to imply text.
-        VerticalLayout {
-            padding-left: 16px;
-            padding-right: 16px;
-            padding-top: 24px;
-            spacing: 10px;
-            for line-len in [0.9, 0.6, 0.95, 0.45, 0.88, 0.7, 0.92, 0.5, 0.85] : Rectangle {
-                horizontal-stretch: 1;
-                height: 6px;
-                background: #ffffff12;
+        AppBar {
+            title: "Scan document";
+            title-style: HeadingStyle.caps-tight;
+            leading-icon: @image-url("@mobile-components/icons/close.svg");
+            trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
+            bar-background: transparent;
+            leading-pressed => { root.close-pressed(); }
+        }
+
+        // ----- Viewfinder -----------------------------------------------
+        Rectangle {
+            background: Theme.surface-3;
+            horizontal-stretch: 1;
+            vertical-stretch: 1;
+            min-height: 420px;
+
+            // Outer frame container.
+            Rectangle {
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                width: 280px;
+                height: 360px;
+                background: transparent;
+                border-width: 2px;
+                border-color: Theme.primary;
+                border-radius: Theme.radius-sm;
+
+                // Corner brackets — four small filled squares that give
+                // the dashed-frame feel without faking dashes.
+                Rectangle { x: -2px; y: -2px; width: 24px; height: 24px;
+                    background: transparent;
+                    border-color: Theme.primary; border-width: 4px;
+                    border-top-left-radius: Theme.radius-sm;
+                }
+                Rectangle { x: parent.width - 22px; y: -2px; width: 24px; height: 24px;
+                    background: transparent;
+                    border-color: Theme.primary; border-width: 4px;
+                    border-top-right-radius: Theme.radius-sm;
+                }
+                Rectangle { x: -2px; y: parent.height - 22px; width: 24px; height: 24px;
+                    background: transparent;
+                    border-color: Theme.primary; border-width: 4px;
+                    border-bottom-left-radius: Theme.radius-sm;
+                }
+                Rectangle { x: parent.width - 22px; y: parent.height - 22px; width: 24px; height: 24px;
+                    background: transparent;
+                    border-color: Theme.primary; border-width: 4px;
+                    border-bottom-right-radius: Theme.radius-sm;
+                }
+
+                // Centred hint text.
+                Text {
+                    x: Theme.spacing-md;
+                    y: (parent.height - self.height) / 2;
+                    width: parent.width - 2 * Theme.spacing-md;
+                    text: "Align document inside frame";
+                    color: Theme.on-background;
+                    font-size: Theme.font-size-body;
+                    font-weight: 500;
+                    horizontal-alignment: center;
+                    wrap: word-wrap;
+                }
+            }
+        }
+
+        // ----- Transport row --------------------------------------------
+        HorizontalLayout {
+            padding: Theme.spacing-lg;
+            spacing: Theme.spacing-lg;
+            alignment: center;
+
+            // Gallery toggle.
+            Rectangle {
+                width: 56px;
+                height: 56px;
+                border-radius: self.width / 2;
+                background: gallery-touch.pressed ? Theme.surface-pressed : Theme.surface-1;
+                Image {
+                    width: 24px;
+                    height: 24px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: @image-url("@mobile-components/icons/photo-ocean.svg");
+                    image-fit: contain;
+                }
+                gallery-touch := TouchArea {
+                    clicked => { root.gallery-pressed(); }
+                }
+            }
+
+            // Shutter — chunky white circle.
+            Rectangle {
+                width: 72px;
+                height: 72px;
+                border-radius: 36px;
+                background: shutter-touch.pressed ? Theme.muted : Theme.on-surface;
+                drop-shadow-blur: Theme.elevation-2-blur;
+                drop-shadow-color: Theme.elevation-2-color;
+                drop-shadow-offset-y: Theme.elevation-2-y;
+                // Inner ring.
                 Rectangle {
-                    x: 0;
-                    y: 0;
-                    width: parent.width * line-len;
-                    height: parent.height;
-                    background: #ffffff20;
+                    x: 6px; y: 6px;
+                    width: parent.width - 12px;
+                    height: parent.height - 12px;
+                    border-radius: self.width / 2;
+                    background: transparent;
+                    border-width: 3px;
+                    border-color: Theme.background;
+                }
+                shutter-touch := TouchArea {
+                    clicked => { root.shutter-pressed(); }
+                }
+            }
+
+            // Flash toggle.
+            Rectangle {
+                width: 56px;
+                height: 56px;
+                border-radius: self.width / 2;
+                background: flash-touch.pressed ? Theme.surface-pressed : Theme.surface-1;
+                Image {
+                    width: 24px;
+                    height: 24px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: @image-url("@mobile-components/icons/star.svg");
+                    colorize: Theme.accent-warning;
+                    image-fit: contain;
+                }
+                flash-touch := TouchArea {
+                    clicked => { root.flash-pressed(); }
                 }
             }
         }
-    }
 
-    // ----- Edge-detection overlay rectangle + corner brackets -----
-    Rectangle {
-        x: (parent.width - self.width) / 2 - 8px;
-        y: 168px;
-        width: 280px;
-        height: 380px;
-        background: transparent;
-        // Top-left bracket.
-        CornerBracket {
-            x: 0;
-            y: 0;
-            corner: 0;
-            tint: Theme.accent-success;
-        }
-        // Top-right bracket.
-        CornerBracket {
-            x: parent.width - 28px;
-            y: 0;
-            corner: 1;
-            tint: Theme.accent-success;
-        }
-        // Bottom-left bracket.
-        CornerBracket {
-            x: 0;
-            y: parent.height - 28px;
-            corner: 2;
-            tint: Theme.accent-success;
-        }
-        // Bottom-right bracket.
-        CornerBracket {
-            x: parent.width - 28px;
-            y: parent.height - 28px;
-            corner: 3;
-            tint: Theme.accent-success;
-        }
-    }
-
-    // ----- Top chrome -----
-    HorizontalLayout {
-        x: 0;
-        y: 0;
-        width: parent.width;
-        height: 64px;
-        padding: Theme.spacing-md;
-        spacing: Theme.spacing-sm;
-        alignment: stretch;
-        OverlayButton {
-            icon: @image-url("@mobile-components/icons/close.svg");
-            clicked => { root.close-pressed(); }
-        }
-        Rectangle { horizontal-stretch: 1; }
-        OverlayButton {
-            icon: @image-url("@mobile-components/icons/star.svg");
-            tint: root.flash-on ? Theme.accent-warning : #ffffff;
-            clicked => { root.flash-pressed(); }
-        }
-        OverlayButton {
-            icon: @image-url("@mobile-components/icons/skip-forward.svg");
-            clicked => { root.flip-pressed(); }
-        }
-    }
-
-    // ----- Detection caption -----
-    Rectangle {
-        x: (parent.width - self.width) / 2;
-        y: 612px;
-        width: caption.preferred-width + 32px;
-        height: 32px;
-        border-radius: 16px;
-        background: #000000aa;
-        caption := Text {
-            text: root.mode-label;
-            color: Theme.accent-success;
-            font-family: "JetBrains Mono";
-            font-size: Theme.font-size-caption;
-            font-weight: 700;
-            horizontal-alignment: center;
-            vertical-alignment: center;
-            width: parent.width;
-            height: parent.height;
-        }
-    }
-
-    // ----- Bottom controls -----
-    Rectangle {
-        x: 0;
-        y: parent.height - self.height;
-        width: parent.width;
-        height: 180px;
-        background: @linear-gradient(180deg, #00000000 0%, #000000cc 60%);
+        // ----- Recent scans ---------------------------------------------
         VerticalLayout {
-            padding-top: Theme.spacing-md;
-            padding-bottom: Theme.spacing-md;
+            padding-bottom: Theme.spacing-xl;
             spacing: Theme.spacing-md;
-            alignment: end;
 
-            // Mode chips.
-            HorizontalLayout {
-                spacing: Theme.spacing-sm;
-                padding-left: Theme.spacing-md;
-                padding-right: Theme.spacing-md;
-                alignment: center;
-                Chip { label: "Document"; selected: true; }
-                Chip { label: "ID card"; }
-                Chip { label: "Whiteboard"; }
-                Chip { label: "Text"; }
-            }
+            FormSection {
+                title: "RECENT SCANS";
 
-            // Capture + review row.
-            HorizontalLayout {
-                padding-left: Theme.spacing-md;
-                padding-right: Theme.spacing-md;
-                spacing: Theme.spacing-md;
-                alignment: stretch;
-                // Page stack indicator (left).
-                VerticalLayout {
-                    alignment: center;
-                    horizontal-stretch: 1;
-                    Rectangle {
-                        width: 56px;
-                        height: 56px;
-                        border-radius: Theme.radius-sm;
-                        background: #ffffff22;
-                        VerticalLayout {
-                            alignment: center;
-                            spacing: 0;
-                            HorizontalLayout {
-                                alignment: center;
-                                Text {
-                                    text: root.page-count;
-                                    color: #ffffff;
-                                    font-size: 18px;
-                                    font-weight: 800;
-                                }
-                            }
-                            HorizontalLayout {
-                                alignment: center;
-                                Text {
-                                    text: "PAGES";
-                                    color: #ffffffcc;
-                                    font-size: 9px;
-                                    font-weight: 800;
-                                    letter-spacing: 0.3px;
-                                }
-                            }
-                        }
-                        TouchArea {
-                            clicked => { root.review-pressed(); }
-                        }
+                SettingRow {
+                    icon: @image-url("@mobile-components/icons/menu.svg");
+                    tone: Tone.info;
+                    title: "Tax_return_2025.pdf";
+                    subtitle: "scanned today · 3 pages · 412 KB";
+                    clicked => { root.recent-pressed("tax"); }
+                    Image {
+                        width: 16px;
+                        height: 16px;
+                        source: @image-url("@mobile-components/icons/chevron-right.svg");
+                        colorize: Theme.muted;
+                        image-fit: contain;
                     }
                 }
-
-                // Big capture button (centre).
-                VerticalLayout {
-                    alignment: center;
-                    Rectangle {
-                        width: 76px;
-                        height: 76px;
-                        border-radius: self.width / 2;
-                        background: #ffffff;
-                        border-width: 4px;
-                        border-color: #ffffff44;
-                        drop-shadow-blur: Theme.elevation-2-blur;
-                        drop-shadow-color: Theme.elevation-2-color;
-                        drop-shadow-offset-y: Theme.elevation-2-y;
-                        // Inner disc.
-                        Rectangle {
-                            x: (parent.width - self.width) / 2;
-                            y: (parent.height - self.height) / 2;
-                            width: 56px;
-                            height: 56px;
-                            border-radius: self.width / 2;
-                            background: capture-touch.pressed ? #d9d9d9 : #ffffff;
-                            animate background { duration: Theme.motion-fast; }
-                        }
-                        capture-touch := TouchArea {
-                            clicked => { root.capture-pressed(); }
-                        }
-                    }
-                }
-
-                // Done CTA (right).
-                VerticalLayout {
-                    alignment: center;
-                    horizontal-stretch: 1;
-                    HorizontalLayout {
-                        alignment: end;
-                        Rectangle {
-                            width: 56px;
-                            height: 56px;
-                            border-radius: Theme.radius-sm;
-                            background: Theme.accent-success;
-                            Text {
-                                text: "DONE";
-                                color: Theme.on-primary;
-                                font-family: "JetBrains Mono";
-                                font-size: 11px;
-                                font-weight: 700;
-                                letter-spacing: 0.5px;
-                                horizontal-alignment: center;
-                                vertical-alignment: center;
-                                width: parent.width;
-                                height: parent.height;
-                            }
-                            TouchArea {
-                                clicked => { root.review-pressed(); }
-                            }
-                        }
+                Divider { }
+                SettingRow {
+                    icon: @image-url("@mobile-components/icons/menu.svg");
+                    tone: Tone.success;
+                    title: "Receipt_5814.pdf";
+                    subtitle: "scanned yesterday · 1 page · 118 KB";
+                    clicked => { root.recent-pressed("receipt"); }
+                    Image {
+                        width: 16px;
+                        height: 16px;
+                        source: @image-url("@mobile-components/icons/chevron-right.svg");
+                        colorize: Theme.muted;
+                        image-fit: contain;
                     }
                 }
             }

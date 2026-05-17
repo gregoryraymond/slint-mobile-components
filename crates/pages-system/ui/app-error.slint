@@ -1,41 +1,27 @@
 // AppErrorPage
 // =====================================================================
 //
-// Full-page error / offline / "something went wrong" state. The
-// counterpart to `EmptyState` — but a full-screen surface for the
-// canonical scenarios:
-//
-//   - lost connection
-//   - server side-down
-//   - permission missing / access denied
-//   - rate-limited (try again later)
-//
-// Demonstrates:
-//
-//   - A centred hero "illustration" (a large tone-tinted disc with an
-//     iconic glyph), title + supporting prose underneath.
-//   - Primary "Retry" CTA + secondary "Continue offline" TextButton.
-//   - A small system status footer with last-attempt timestamp and a
-//     "View status page" affordance.
+// Friendly error fallback — what the user sees when something has gone
+// catastrophically wrong. Big tinted glyph + apologetic heading + the
+// diagnostics block that engineering actually needs, all laid out with
+// the shared row/section primitives so the alignment stays honest.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
-import { MobileButton, TextButton } from "@mobile-components/button.slint";
+import { FormSection } from "@mobile-components/form-section.slint";
+import { KeyValueRow } from "@mobile-components/key-value-row.slint";
 import { Divider } from "@mobile-components/divider.slint";
+import { MobileButton, TextButton } from "@mobile-components/button.slint";
+import { ScrollView } from "std-widgets.slint";
 
 export component AppErrorPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
-    in property <string> headline: "We can't reach our servers";
-    in property <string> body:
-        "Your internet connection is fine — we're just not getting a response from the backend. Some recent activity has been saved locally and will sync when we reconnect.";
-    in property <string> error-code: "ERR_NET_504 · 2 minutes ago";
-    in property <Tone> tone: Tone.danger;
+
     callback back-pressed();
     callback retry-pressed();
-    callback continue-offline-pressed();
-    callback view-status-pressed();
+    callback report-pressed();
 
     background: Theme.background;
 
@@ -43,160 +29,91 @@ export component AppErrorPage inherits Window {
         spacing: 0;
 
         AppBar {
-            title: "Something went wrong";
-            // AppBar stays plain — the bold-impact `Heading` below is the
-            // hero on this page, the bar title is intentionally quiet.
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             leading-pressed => { root.back-pressed(); }
         }
 
-        // Centred hero block.
-        Rectangle {
+        ScrollView {
             vertical-stretch: 1;
-            horizontal-stretch: 1;
 
             VerticalLayout {
-                x: 0;
-                y: 0;
-                width: parent.width;
-                height: parent.height;
-                alignment: center;
-                spacing: Theme.spacing-md;
+                padding-top: Theme.spacing-lg;
+                padding-bottom: Theme.spacing-xl;
+                spacing: Theme.spacing-lg;
+                alignment: stretch;
 
-                // Illustration disc.
-                HorizontalLayout {
+                // ----- Hero block -------------------------------------
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    spacing: Theme.spacing-md;
                     alignment: center;
-                    Rectangle {
-                        width: 160px;
-                        height: 160px;
-                        border-radius: self.width / 2;
-                        background:
-                              root.tone == Tone.success ? #22c55e22
-                            : root.tone == Tone.warning ? #f59e0b22
-                            : root.tone == Tone.danger  ? #ef444422
-                            : root.tone == Tone.info    ? #4f8cff22
-                            : Theme.surface-2;
 
-                        // Inner accent disc.
-                        Rectangle {
-                            x: (parent.width - self.width) / 2;
-                            y: (parent.height - self.height) / 2;
-                            width: 88px;
-                            height: 88px;
-                            border-radius: self.width / 2;
-                            background:
-                                  root.tone == Tone.success ? Theme.accent-success
-                                : root.tone == Tone.warning ? Theme.accent-warning
-                                : root.tone == Tone.danger  ? Theme.accent-danger
-                                : root.tone == Tone.info    ? Theme.accent-info
-                                : Theme.surface-variant;
-
-                            // Glyph.
-                            Text {
-                                text:
-                                      root.tone == Tone.success ? "✓"
-                                    : root.tone == Tone.warning ? "!"
-                                    : root.tone == Tone.danger  ? "✕"
-                                    : root.tone == Tone.info    ? "i"
-                                    : "?";
-                                color: Theme.on-primary;
-                                font-size: 40px;
-                                font-weight: 800;
-                                horizontal-alignment: center;
-                                vertical-alignment: center;
-                                width: parent.width;
-                                height: parent.height;
-                            }
+                    HorizontalLayout {
+                        alignment: center;
+                        Image {
+                            width: 96px;
+                            height: 96px;
+                            source: @image-url("@mobile-components/icons/close.svg");
+                            colorize: Theme.accent-danger;
+                            image-fit: contain;
                         }
                     }
-                }
-
-                // Headline.
-                HorizontalLayout {
-                    padding-left: Theme.spacing-lg;
-                    padding-right: Theme.spacing-lg;
-                    alignment: center;
                     Heading {
-                        text: root.headline;
-                        style: HeadingStyle.bold-impact;
+                        text: "Something went wrong";
+                        style: HeadingStyle.serif-display;
+                        color: Theme.on-background;
                         horizontal-alignment: center;
-                        wrap: word-wrap;
                     }
-                }
-
-                // Supporting body.
-                HorizontalLayout {
-                    padding-left: Theme.spacing-lg;
-                    padding-right: Theme.spacing-lg;
                     Text {
-                        text: root.body;
+                        text: "We hit an unexpected issue. Try again, or report it so we can fix it.";
                         color: Theme.muted;
                         font-size: Theme.font-size-body;
-                        wrap: word-wrap;
                         horizontal-alignment: center;
+                        wrap: word-wrap;
                     }
                 }
 
-                // Error code chip.
-                HorizontalLayout {
-                    alignment: center;
-                    Rectangle {
-                        width: code-text.preferred-width + 20px;
-                        height: 24px;
-                        border-radius: 12px;
-                        background: Theme.surface-variant;
-                        code-text := Text {
-                            text: root.error-code;
-                            color: Theme.muted;
-                            font-size: 11px;
-                            font-family: "JetBrains Mono";
-                            font-weight: 700;
-                            letter-spacing: 0.4px;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
-                            width: parent.width;
-                            height: parent.height;
-                        }
+                // ----- Error details ----------------------------------
+                FormSection {
+                    title: "ERROR DETAILS";
+
+                    KeyValueRow {
+                        label: "Code";
+                        value: "E_NETWORK_TIMEOUT";
+                    }
+                    Divider { }
+                    KeyValueRow {
+                        label: "Request ID";
+                        value: "req_8c4e2a91";
+                    }
+                    Divider { }
+                    KeyValueRow {
+                        label: "Time";
+                        value: "2026-05-17 14:08 UTC";
+                    }
+                    Divider { }
+                    KeyValueRow {
+                        label: "Build";
+                        value: "1.4.2 · 3187";
                     }
                 }
-            }
-        }
 
-        // Bottom CTA stack.
-        Rectangle {
-            background: Theme.surface-1;
-            drop-shadow-blur: Theme.elevation-2-blur;
-            drop-shadow-color: Theme.elevation-2-color;
-            drop-shadow-offset-y: -4px;
-            height: 168px;
-            VerticalLayout {
-                padding: Theme.spacing-md;
-                spacing: Theme.spacing-sm;
-                MobileButton {
-                    text: "Retry";
-                    tone: Tone.info;
-                    max-height: 48px;
-                    clicked => { root.retry-pressed(); }
-                }
-                MobileButton {
-                    text: "Continue in offline mode";
-                    primary: false;
-                    max-height: 44px;
-                    clicked => { root.continue-offline-pressed(); }
-                }
-                Divider { }
-                HorizontalLayout {
+                // ----- Actions ----------------------------------------
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
                     spacing: Theme.spacing-sm;
-                    alignment: center;
-                    Text {
-                        text: "Last status check: just now ·";
-                        color: Theme.muted;
-                        font-size: Theme.font-size-caption;
-                        vertical-alignment: center;
+                    alignment: stretch;
+
+                    MobileButton {
+                        text: "Try again";
+                        clicked => { root.retry-pressed(); }
                     }
-                    TextButton {
-                        text: "View status page";
-                        clicked => { root.view-status-pressed(); }
+                    MobileButton {
+                        text: "Report a bug";
+                        primary: false;
+                        clicked => { root.report-pressed(); }
                     }
                 }
             }

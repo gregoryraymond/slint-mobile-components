@@ -1,20 +1,45 @@
-import { Theme } from "@mobile-theme/theme.slint";
+// SettingsPage
+// =====================================================================
+//
+// The flagship general-preferences screen. Pure showcase of the
+// `SettingRow` + `FormSection` alignment primitives: every row in the
+// page — toggle row, nav row, value-with-chevron row — is the SAME
+// `SettingRow` widget with a different `@children` trailing slot.
+// Result: identical 56 px min-height, identical 32 px leading-tile
+// size, identical 16 px gutters, identical vertical-centre of the
+// title regardless of whether it has a subtitle or not.
+//
+// What this screen does
+//   - Three grouped sections (NOTIFICATIONS, APPEARANCE, ABOUT) plus
+//     a destructive "Sign out" row at the bottom.
+//   - NOTIFICATIONS: three toggles (push, sounds, haptics).
+//   - APPEARANCE: theme nav-row (value = "System") + text-size stepper
+//     row (value = "Medium") + an "Adaptive accent" toggle.
+//   - ABOUT: app version (read-only value), open-source licences
+//     (chevron nav), privacy policy (chevron nav).
+//   - Destructive row: "Sign out" in danger tone, no trailing.
+
+import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
-import { ListItem } from "@mobile-components/list-item.slint";
-import { MobileSwitch } from "@mobile-components/switch.slint";
-import { SectionHeader } from "@mobile-components/section-header.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
+import { FormSection } from "@mobile-components/form-section.slint";
+import { SettingRow } from "@mobile-components/setting-row.slint";
+import { Divider } from "@mobile-components/divider.slint";
+import { MobileSwitch } from "@mobile-components/switch.slint";
 import { ScrollView } from "std-widgets.slint";
 
-// Example settings page: app bar with back arrow + a vertical list of
-// toggles and navigation rows.
 export component SettingsPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
-    in-out property <bool> notifications-enabled: true;
+
+    in-out property <bool> push-enabled: true;
     in-out property <bool> sounds-enabled: true;
     in-out property <bool> haptics-enabled: false;
+    in-out property <bool> adaptive-accent: true;
+
     callback back-pressed();
+    callback row-pressed(string);
+    callback sign-out-pressed();
 
     background: Theme.background;
 
@@ -32,118 +57,144 @@ export component SettingsPage inherits Window {
             vertical-stretch: 1;
 
             VerticalLayout {
-                spacing: 0;
-                padding-top: Theme.spacing-sm;
+                padding-top: Theme.spacing-md;
+                padding-bottom: Theme.spacing-xl;
+                spacing: Theme.spacing-md;
+                alignment: stretch;
 
-                SectionHeader { text: "NOTIFICATIONS"; }
+                // ----- NOTIFICATIONS -----------------------------------------
+                FormSection {
+                    title: "NOTIFICATIONS";
+                    caption: "Pick what you want this device to notify you about.";
 
-                // Toggle row — ListItem with a MobileSwitch in the trailing slot.
-                // (ListItem's trailing slot is an icon string; for richer
-                // trailing content we compose with a HorizontalLayout below.)
-                Rectangle {
-                    horizontal-stretch: 1;
-                    min-height: Theme.touch-target + Theme.spacing-sm;
-                    HorizontalLayout {
-                        padding-left: Theme.spacing-md;
-                        padding-right: Theme.spacing-md;
-                        spacing: Theme.spacing-md;
-                        alignment: stretch;
-                        VerticalLayout {
-                            horizontal-stretch: 1;
-                            alignment: center;
-                            Text {
-                                text: "Push notifications";
-                                color: Theme.on-surface;
-                                font-size: Theme.font-size-body-large;
-                                font-weight: 500;
-                            }
-                            Text {
-                                text: "Get notified about new activity";
-                                color: Theme.muted;
-                                font-size: Theme.font-size-body;
-                            }
-                        }
-                        MobileSwitch {
-                            checked <=> root.notifications-enabled;
-                        }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/bell.svg");
+                        tone: Tone.info;
+                        title: "Push notifications";
+                        subtitle: "Activity, mentions, security alerts.";
+                        MobileSwitch { checked <=> root.push-enabled; }
                     }
-                    Rectangle {
-                        x: Theme.spacing-md;
-                        y: parent.height - 1px;
-                        width: parent.width - 2 * Theme.spacing-md;
-                        height: 1px;
-                        background: Theme.outline;
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/podcast-cover.svg");
+                        title: "Sounds";
+                        subtitle: "Tap and notification chimes.";
+                        MobileSwitch { checked <=> root.sounds-enabled; }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/pin.svg");
+                        title: "Haptics";
+                        subtitle: "Subtle vibration on key actions.";
+                        MobileSwitch { checked <=> root.haptics-enabled; }
                     }
                 }
 
-                Rectangle {
-                    horizontal-stretch: 1;
-                    min-height: Theme.touch-target + Theme.spacing-sm;
-                    HorizontalLayout {
-                        padding-left: Theme.spacing-md;
-                        padding-right: Theme.spacing-md;
-                        spacing: Theme.spacing-md;
-                        alignment: stretch;
-                        VerticalLayout {
-                            horizontal-stretch: 1;
-                            alignment: center;
-                            Text {
-                                text: "Sounds";
-                                color: Theme.on-surface;
-                                font-size: Theme.font-size-body-large;
-                                font-weight: 500;
-                            }
+                // ----- APPEARANCE --------------------------------------------
+                FormSection {
+                    title: "APPEARANCE";
+
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/star.svg");
+                        title: "Theme";
+                        subtitle: "Follow system or pick manually.";
+                        clicked => { root.row-pressed("theme"); }
+                        Text {
+                            text: "System";
+                            color: Theme.muted;
+                            font-size: Theme.font-size-body;
+                            vertical-alignment: center;
                         }
-                        MobileSwitch {
-                            checked <=> root.sounds-enabled;
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/pencil.svg");
+                        title: "Text size";
+                        subtitle: "Affects all reading surfaces.";
+                        clicked => { root.row-pressed("text-size"); }
+                        Text {
+                            text: "Medium";
+                            color: Theme.muted;
+                            font-size: Theme.font-size-body;
+                            vertical-alignment: center;
+                        }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/heart.svg");
+                        tone: Tone.success;
+                        title: "Adaptive accent";
+                        subtitle: "Tint accent colours to match your wallpaper.";
+                        MobileSwitch { checked <=> root.adaptive-accent; }
+                    }
+                }
+
+                // ----- ABOUT -------------------------------------------------
+                FormSection {
+                    title: "ABOUT";
+
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/menu.svg");
+                        title: "Version";
+                        Text {
+                            text: "1.4.2 · build 3187";
+                            color: Theme.muted;
+                            font-size: Theme.font-size-caption;
+                            vertical-alignment: center;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/queue.svg");
+                        title: "Open-source licences";
+                        clicked => { root.row-pressed("licences"); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/lock.svg");
+                        title: "Privacy policy";
+                        clicked => { root.row-pressed("privacy"); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
                         }
                     }
                 }
 
-                Rectangle {
-                    horizontal-stretch: 1;
-                    min-height: Theme.touch-target + Theme.spacing-sm;
-                    HorizontalLayout {
-                        padding-left: Theme.spacing-md;
-                        padding-right: Theme.spacing-md;
-                        spacing: Theme.spacing-md;
-                        alignment: stretch;
-                        VerticalLayout {
-                            horizontal-stretch: 1;
-                            alignment: center;
-                            Text {
-                                text: "Haptics";
-                                color: Theme.on-surface;
-                                font-size: Theme.font-size-body-large;
-                                font-weight: 500;
-                            }
-                        }
-                        MobileSwitch {
-                            checked <=> root.haptics-enabled;
-                        }
+                // ----- DANGER ZONE -------------------------------------------
+                FormSection {
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/close.svg");
+                        tone: Tone.danger;
+                        title: "Sign out";
+                        subtitle: "You'll need to re-enter your password.";
+                        destructive: true;
+                        clicked => { root.sign-out-pressed(); }
                     }
-                }
-
-                SectionHeader { text: "ACCOUNT"; }
-
-                ListItem {
-                    title: "Profile";
-                    subtitle: "Name, email, avatar";
-                    leading-icon: @image-url("@mobile-components/icons/profile.svg");
-                    trailing-icon: @image-url("@mobile-components/icons/chevron-right.svg");
-                }
-
-                ListItem {
-                    title: "Privacy";
-                    subtitle: "Data, permissions, exports";
-                    leading-icon: @image-url("@mobile-components/icons/lock.svg");
-                    trailing-icon: @image-url("@mobile-components/icons/chevron-right.svg");
-                }
-
-                ListItem {
-                    title: "Sign out";
-                    trailing-icon: @image-url("@mobile-components/icons/chevron-right.svg");
-                    show-divider: false;
                 }
             }
         }

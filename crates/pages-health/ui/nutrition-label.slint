@@ -1,108 +1,32 @@
 // NutritionLabelPage
 // =====================================================================
 //
-// A nutrition-facts panel — the "what's in this food" screen.
-// Distinct from `MealLogPage` (a day's logged meals) and
-// `RecipePage` (cooking steps). Demonstrates a labelled-data surface:
+// Read-only nutrition facts for a single product. Hero card (product
+// title + serving size), CALORIES block (single highlighted row),
+// MACROS block (KeyValueRows with `emphasis` on subtotal rows like
+// "Total fat" and "Carbohydrates" — mirrors the FDA label hierarchy),
+// and MICROS block (KeyValueRows in mg / %).
 //
-//   - A food header card: name + serving size + a big calorie figure.
-//   - A macro split bar (carbs / protein / fat) with a legend.
-//   - Nutrient rows grouped into sections, each with an amount and a
-//     %DV; rows over a threshold flip to a warning tone.
-//   - An "Add to today's log" CTA.
+// Alignment discipline
+// --------------------
+// Every nutrient row is the same `KeyValueRow` so the value column
+// shares one right margin across every section. Subtotals use
+// `emphasis: true` for visual hierarchy.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
-import { SectionHeader } from "@mobile-components/section-header.slint";
+import { Card } from "@mobile-components/card.slint";
+import { FormSection } from "@mobile-components/form-section.slint";
+import { SettingRow } from "@mobile-components/setting-row.slint";
+import { KeyValueRow } from "@mobile-components/key-value-row.slint";
 import { Divider } from "@mobile-components/divider.slint";
-import { MobileButton } from "@mobile-components/button.slint";
-import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
-
-// One macro legend item.
-component MacroLegend inherits HorizontalLayout {
-    in property <string> label;
-    in property <string> grams;
-    in property <brush> swatch;
-
-    spacing: 5px;
-    Rectangle {
-        width: 12px;
-        height: 12px;
-        y: (parent.height - self.height) / 2;
-        border-radius: 3px;
-        background: root.swatch;
-    }
-    Text {
-        text: root.label + " " + root.grams;
-        color: Theme.muted;
-        font-size: Theme.font-size-caption;
-        font-weight: 700;
-        vertical-alignment: center;
-    }
-}
-
-// One nutrient row. `indent` nests sub-nutrients; `high` flips to warning.
-component NutrientRow inherits Rectangle {
-    in property <string> name;
-    in property <string> amount;
-    in property <string> dv;
-    in property <bool> indent: false;
-    in property <bool> bold: false;
-    in property <bool> high: false;
-
-    horizontal-stretch: 1;
-    min-height: 40px;
-
-    HorizontalLayout {
-        padding-left: root.indent ? Theme.spacing-lg : Theme.spacing-md;
-        padding-right: Theme.spacing-md;
-        spacing: Theme.spacing-sm;
-        alignment: stretch;
-        VerticalLayout {
-            horizontal-stretch: 1;
-            alignment: center;
-            HorizontalLayout {
-                spacing: 6px;
-                alignment: start;
-                Text {
-                    text: root.name;
-                    color: root.high ? Theme.accent-warning : Theme.on-surface;
-                    font-size: Theme.font-size-body;
-                    font-weight: root.bold ? 800 : 600;
-                    vertical-alignment: center;
-                }
-                Text {
-                    text: root.amount;
-                    color: Theme.muted;
-                    font-size: Theme.font-size-body;
-                    font-weight: 600;
-                    vertical-alignment: center;
-                }
-            }
-        }
-        VerticalLayout {
-            alignment: center;
-            Text {
-                text: root.dv;
-                color: root.high ? Theme.accent-warning : Theme.on-surface;
-                font-size: Theme.font-size-body;
-                font-weight: 800;
-                horizontal-alignment: right;
-            }
-        }
-    }
-}
+import { ScrollView } from "std-widgets.slint";
 
 export component NutritionLabelPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
-    in property <string> food: "Maple Pecan Granola";
-    in property <string> serving: "Serving size  2/3 cup (55 g)";
-    in property <string> calories: "248";
-    in property <float> carbs-frac: 0.52;
-    in property <float> protein-frac: 0.14;
+
     callback back-pressed();
-    callback log-pressed();
 
     background: Theme.background;
 
@@ -110,205 +34,101 @@ export component NutritionLabelPage inherits Window {
         spacing: 0;
 
         AppBar {
-            title: "nutrition facts";
-            title-style: HeadingStyle.lowercase-soft;
+            title: "Nutrition";
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             leading-pressed => { root.back-pressed(); }
         }
 
-        VerticalLayout {
-            padding: Theme.spacing-md;
-            spacing: Theme.spacing-md;
-            alignment: start;
+        ScrollView {
+            vertical-stretch: 1;
 
-            // Food header.
-            Rectangle {
-                border-radius: Theme.radius-lg;
-                background: Theme.surface-1;
-                drop-shadow-blur: Theme.elevation-1-blur;
-                drop-shadow-color: Theme.elevation-1-color;
-                drop-shadow-offset-y: Theme.elevation-1-y;
+            VerticalLayout {
+                padding-top: Theme.spacing-md;
+                padding-bottom: Theme.spacing-xl;
+                spacing: Theme.spacing-md;
+                alignment: stretch;
+
+                // ----- Hero card --------------------------------------------
                 VerticalLayout {
-                    padding: Theme.spacing-md;
-                    spacing: Theme.spacing-sm;
-                    Heading {
-                        text: root.food;
-                        style: HeadingStyle.serif-display;
-                        color: Theme.on-surface;
-                    }
-                    Text {
-                        text: root.serving;
-                        color: Theme.muted;
-                        font-size: Theme.font-size-caption;
-                    }
-                    Rectangle {
-                        height: 1px;
-                        background: Theme.surface-variant;
-                    }
-                    HorizontalLayout {
-                        VerticalLayout {
-                            horizontal-stretch: 1;
-                            alignment: center;
-                            Heading {
-                                text: "CALORIES";
-                                style: HeadingStyle.uppercase-spaced;
-                                color: Theme.on-surface;
-                            }
-                        }
-                        Heading {
-                            text: root.calories;
-                            style: HeadingStyle.bold-impact;
-                            color: Theme.on-surface;
-                            font-size: 40px;
-                        }
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    Card {
+                        title: "Whole-grain bread, sliced";
+                        subtitle: "Serving size: 2 slices (60 g)";
                     }
                 }
-            }
 
-            // Macro split.
-            Rectangle {
-                border-radius: Theme.radius-md;
-                background: Theme.surface-1;
-                drop-shadow-blur: Theme.elevation-1-blur;
-                drop-shadow-color: Theme.elevation-1-color;
-                drop-shadow-offset-y: Theme.elevation-1-y;
-                VerticalLayout {
-                    padding: Theme.spacing-md;
-                    spacing: Theme.spacing-sm;
-                    // Macro split. Plain clipped track with x-positioned
-                    // segments — `width: parent.width * frac` inside a
-                    // HorizontalLayout would be a binding loop.
-                    Rectangle {
-                        height: 12px;
-                        border-radius: 6px;
-                        clip: true;
-                        Rectangle {
-                            x: 0;
-                            width: parent.width * root.carbs-frac;
-                            height: parent.height;
-                            background: Theme.accent-warning;
-                        }
-                        Rectangle {
-                            x: parent.width * root.carbs-frac;
-                            width: parent.width * root.protein-frac;
-                            height: parent.height;
-                            background: Theme.accent-info;
-                        }
-                        Rectangle {
-                            x: parent.width * (root.carbs-frac + root.protein-frac);
-                            width: parent.width * (1.0 - root.carbs-frac - root.protein-frac);
-                            height: parent.height;
-                            background: Theme.accent-danger;
-                        }
-                    }
-                    HorizontalLayout {
-                        alignment: space-between;
-                        MacroLegend {
-                            label: "Carbs";
-                            grams: "32 g";
-                            swatch: Theme.accent-warning;
-                        }
-                        MacroLegend {
-                            label: "Protein";
-                            grams: "6 g";
-                            swatch: Theme.accent-info;
-                        }
-                        MacroLegend {
-                            label: "Fat";
-                            grams: "11 g";
-                            swatch: Theme.accent-danger;
-                        }
+                // ----- CALORIES ---------------------------------------------
+                FormSection {
+                    title: "CALORIES";
+
+                    SettingRow {
+                        title: "180 kcal";
+                        subtitle: "9 % of 2,000 kcal daily intake";
                     }
                 }
-            }
-        }
 
-        SectionHeader { text: "AMOUNT PER SERVING"; }
-        NutrientRow {
-            name: "Total Fat";
-            amount: "11 g";
-            dv: "14%";
-            bold: true;
-        }
-        Divider { }
-        NutrientRow {
-            name: "Saturated Fat";
-            amount: "1.5 g";
-            dv: "8%";
-            indent: true;
-        }
-        Divider { }
-        NutrientRow {
-            name: "Sodium";
-            amount: "210 mg";
-            dv: "9%";
-            bold: true;
-        }
-        Divider { }
-        NutrientRow {
-            name: "Total Carbohydrate";
-            amount: "32 g";
-            dv: "12%";
-            bold: true;
-        }
-        Divider { }
-        NutrientRow {
-            name: "Dietary Fiber";
-            amount: "4 g";
-            dv: "14%";
-            indent: true;
-        }
-        Divider { }
-        NutrientRow {
-            name: "Total Sugars";
-            amount: "14 g";
-            dv: "28%";
-            indent: true;
-            high: true;
-        }
-        Divider { }
-        NutrientRow {
-            name: "Protein";
-            amount: "6 g";
-            dv: "12%";
-            bold: true;
-        }
+                // ----- MACROS -----------------------------------------------
+                FormSection {
+                    title: "MACROS";
 
-        SectionHeader { text: "VITAMINS & MINERALS"; }
-        NutrientRow {
-            name: "Iron";
-            amount: "2.1 mg";
-            dv: "12%";
-        }
-        Divider { }
-        NutrientRow {
-            name: "Calcium";
-            amount: "40 mg";
-            dv: "3%";
-        }
-        Divider { }
-        NutrientRow {
-            name: "Potassium";
-            amount: "180 mg";
-            dv: "4%";
-        }
+                    KeyValueRow {
+                        label: "Total fat";
+                        value: "3 g";
+                        emphasis: true;
+                    }
+                    Divider { }
+                    KeyValueRow {
+                        label: "    Saturated fat";
+                        value: "0.5 g";
+                    }
+                    Divider { }
+                    KeyValueRow {
+                        label: "Carbohydrates";
+                        value: "32 g";
+                        emphasis: true;
+                    }
+                    Divider { }
+                    KeyValueRow {
+                        label: "    Fibre";
+                        value: "4 g";
+                    }
+                    Divider { }
+                    KeyValueRow {
+                        label: "    Sugars";
+                        value: "3 g";
+                    }
+                    Divider { }
+                    KeyValueRow {
+                        label: "Protein";
+                        value: "7 g";
+                        emphasis: true;
+                    }
+                }
 
-        Rectangle { vertical-stretch: 1; }
+                // ----- MICROS -----------------------------------------------
+                FormSection {
+                    title: "MICROS";
 
-        // Sticky CTA.
-        Rectangle {
-            background: Theme.surface-1;
-            drop-shadow-blur: Theme.elevation-2-blur;
-            drop-shadow-color: Theme.elevation-2-color;
-            drop-shadow-offset-y: -4px;
-            height: 80px;
-            HorizontalLayout {
-                padding: Theme.spacing-md;
-                MobileButton {
-                    text: "Add to today's log";
-                    primary: true;
-                    max-height: 48px;
-                    clicked => { root.log-pressed(); }
+                    KeyValueRow {
+                        label: "Sodium";
+                        value: "260 mg · 11 %";
+                    }
+                    Divider { }
+                    KeyValueRow {
+                        label: "Iron";
+                        value: "1.4 mg · 8 %";
+                    }
+                    Divider { }
+                    KeyValueRow {
+                        label: "Calcium";
+                        value: "60 mg · 5 %";
+                    }
+                    Divider { }
+                    KeyValueRow {
+                        label: "Vitamin D";
+                        value: "0.4 µg · 2 %";
+                    }
                 }
             }
         }

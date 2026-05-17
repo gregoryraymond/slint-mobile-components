@@ -1,152 +1,50 @@
 // TaskListPage
 // =====================================================================
 //
-// To-do app screen with grouped sections (Today / Upcoming / Done) +
-// per-row priority indicator + tag chips + a Fab to add new tasks.
-// Demonstrates how to layer the Tone enum into a pure list — priority
-// gets a tone-tinted leading bar, the "Done" section dims completed
-// tasks via 50 % opacity + strike-through colour, and the FAB anchors
-// to the bottom-right above any bottom safe area.
-//
-// Layout
-// ------
-//
-//   AppBar — "Tasks" with filter trailing
-//   SectionHeader "TODAY"
-//     TaskRow × N (with tone-tinted left bar)
-//   SectionHeader "UPCOMING"
-//     TaskRow × N
-//   SectionHeader "DONE"
-//     TaskRow × N (dimmed + strike-through)
-//   Fab — bottom-right, plus icon
+// A todo list. SegmentedControl across the top, then morning / afternoon
+// FormSections of SettingRows. A small "check square" in each row's
+// trailing slot keeps the checkboxes lined up at a single right margin.
+// FAB-styled "New task" button anchored bottom-right.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
-import { SectionHeader } from "@mobile-components/section-header.slint";
-import { Checkbox } from "@mobile-components/checkbox.slint";
-import { Chip } from "@mobile-components/chip.slint";
+import { HeadingStyle } from "@mobile-components/heading.slint";
+import { SegmentedControl } from "@mobile-components/segmented-control.slint";
+import { FormSection } from "@mobile-components/form-section.slint";
+import { SettingRow } from "@mobile-components/setting-row.slint";
 import { Divider } from "@mobile-components/divider.slint";
 import { Fab } from "@mobile-components/button.slint";
-import { HeadingStyle } from "@mobile-components/heading.slint";
+import { ScrollView } from "std-widgets.slint";
 
-// One task row.
-//
-// Tone-tinted leading bar: `priority` (Tone) drives a 4-px left bar.
-// `done: true` dims the row to 0.5 opacity and reaches across the
-// label with `Theme.muted` colour — the strike-through itself is
-// approximated by an overlay 1-px Rectangle on the label since Slint
-// doesn't expose text-decoration on the Text element.
-component TaskRow inherits Rectangle {
-    in property <string> label;
-    in property <string> due;
-    in property <string> tag;
-    in property <Tone> priority: Tone.default;
-    in-out property <bool> done: false;
-    callback toggled();
+// Standalone check-box square (no row chrome) — sits in SettingRow's
+// trailing slot so the boxes column-align across the whole list.
+component CheckSquare inherits Rectangle {
+    in-out property <bool> checked: false;
+    callback toggled(bool);
 
-    horizontal-stretch: 1;
-    min-height: 64px;
-    opacity: root.done ? 0.55 : 1.0;
+    width: 22px;
+    height: 22px;
+    border-radius: Theme.radius-sm;
+    background: root.checked ? Theme.primary : transparent;
+    border-width: root.checked ? 0px : 2px;
+    border-color: Theme.outline;
 
-    // Leading tone bar.
-    Rectangle {
-        x: 0;
-        y: 0;
-        width: 4px;
-        height: parent.height;
-        background:
-              root.priority == Tone.success ? Theme.accent-success
-            : root.priority == Tone.warning ? Theme.accent-warning
-            : root.priority == Tone.danger  ? Theme.accent-danger
-            : root.priority == Tone.info    ? Theme.accent-info
-            : transparent;
+    animate background { duration: Theme.motion-fast; }
+
+    if root.checked: Image {
+        width: 14px;
+        height: 14px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        source: @image-url("@mobile-components/icons/check.svg");
+        colorize: Theme.on-primary;
+        image-fit: contain;
     }
 
-    HorizontalLayout {
-        padding-left: Theme.spacing-md + 4px;
-        padding-right: Theme.spacing-md;
-        padding-top: Theme.spacing-sm;
-        padding-bottom: Theme.spacing-sm;
-        spacing: Theme.spacing-sm;
-        alignment: stretch;
-
-        // Checkbox.
-        VerticalLayout {
-            alignment: center;
-            Checkbox {
-                checked: root.done;
-                toggled => {
-                    root.done = self.checked;
-                    root.toggled();
-                }
-            }
-        }
-
-        // Label + meta (due + tag).
-        VerticalLayout {
-            horizontal-stretch: 1;
-            alignment: center;
-            spacing: 2px;
-            Rectangle {
-                height: 22px;
-                Text {
-                    text: root.label;
-                    color: root.done ? Theme.muted : Theme.on-surface;
-                    font-size: Theme.font-size-body-large;
-                    font-weight: 500;
-                    overflow: elide;
-                    horizontal-stretch: 1;
-                    width: parent.width;
-                    height: parent.height;
-                    vertical-alignment: center;
-                }
-                // Strike-through line — only on done rows.
-                if root.done: Rectangle {
-                    x: 0;
-                    y: parent.height / 2;
-                    width: parent.width;
-                    height: 1px;
-                    background: Theme.muted;
-                }
-            }
-            HorizontalLayout {
-                spacing: Theme.spacing-sm;
-                Text {
-                    text: root.due;
-                    color: Theme.muted;
-                    font-size: Theme.font-size-caption;
-                    vertical-alignment: center;
-                }
-                if root.tag != "": Rectangle {
-                    width: tag-text.preferred-width + 12px;
-                    height: 18px;
-                    border-radius: 4px;
-                    background: Theme.surface-variant;
-                    tag-text := Text {
-                        text: root.tag;
-                        color: Theme.muted;
-                        font-size: 10px;
-                        font-weight: 700;
-                        letter-spacing: 0.3px;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                        width: parent.width;
-                        height: parent.height;
-                    }
-                }
-            }
-        }
-
-        // Drag handle (decorative; gesture not wired here).
-        VerticalLayout {
-            alignment: center;
-            Image {
-                width: 18px;
-                height: 18px;
-                source: @image-url("@mobile-components/icons/menu.svg");
-                colorize: Theme.muted;
-                image-fit: contain;
-            }
+    touch := TouchArea {
+        clicked => {
+            root.checked = !root.checked;
+            root.toggled(root.checked);
         }
     }
 }
@@ -154,9 +52,12 @@ component TaskRow inherits Rectangle {
 export component TaskListPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
+
+    in-out property <int> view-index: 0;
+
     callback back-pressed();
-    callback filter-pressed();
-    callback add-task-pressed();
+    callback add-pressed();
+    callback new-task-pressed();
 
     background: Theme.background;
 
@@ -164,89 +65,107 @@ export component TaskListPage inherits Window {
         spacing: 0;
 
         AppBar {
-            title: "tasks";
-            title-style: HeadingStyle.lowercase-soft;
+            title: "Today";
+            title-style: HeadingStyle.serif-display;
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
-            trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
+            trailing-icon: @image-url("@mobile-components/icons/plus.svg");
             leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.filter-pressed(); }
+            trailing-pressed => { root.add-pressed(); }
         }
 
-        VerticalLayout {
-            spacing: 0;
+        ScrollView {
+            vertical-stretch: 1;
 
-            SectionHeader { text: "TODAY"; }
-            TaskRow {
-                label: "Land Tone enum refactor";
-                due: "today";
-                tag: "DESIGN";
-                priority: Tone.warning;
-            }
-            Divider { }
-            TaskRow {
-                label: "Review Drawer PR #312";
-                due: "today";
-                tag: "REVIEW";
-                priority: Tone.info;
-            }
-            Divider { }
-            TaskRow {
-                label: "Cut May patch release";
-                due: "today";
-                tag: "RELEASE";
-                priority: Tone.danger;
-            }
-            Divider { }
+            VerticalLayout {
+                padding-top: Theme.spacing-md;
+                padding-bottom: Theme.spacing-xl + 56px;  // leave room for FAB
+                spacing: Theme.spacing-md;
+                alignment: stretch;
 
-            SectionHeader { text: "UPCOMING"; }
-            TaskRow {
-                label: "Refactor MapPage to use new BottomSheet API";
-                due: "Wed, May 15";
-                tag: "TECH-DEBT";
-                priority: Tone.default;
-            }
-            Divider { }
-            TaskRow {
-                label: "Write up cargo-apk on Apple Silicon";
-                due: "Fri, May 17";
-                tag: "DOCS";
-                priority: Tone.success;
-            }
-            Divider { }
-            TaskRow {
-                label: "Schedule Slint Conf dry-run";
-                due: "next week";
-                tag: "EVENT";
-                priority: Tone.info;
-            }
-            Divider { }
+                // ----- View switcher --------------------------------
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    SegmentedControl {
+                        options: ["Today", "Upcoming", "Anytime", "Done"];
+                        selected-index <=> root.view-index;
+                    }
+                }
 
-            SectionHeader { text: "DONE"; }
-            TaskRow {
-                label: "Migrate Snackbar from SnackbarTone to shared Tone";
-                due: "yesterday";
-                tag: "DESIGN";
-                priority: Tone.success;
-                done: true;
-            }
-            Divider { }
-            TaskRow {
-                label: "Build VideoPlayerPage template";
-                due: "today";
-                tag: "DESIGN";
-                priority: Tone.default;
-                done: true;
+                // ----- Morning --------------------------------------
+                FormSection {
+                    title: "MORNING";
+
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/pin.svg");
+                        tone: Tone.info;
+                        title: "Stand-up";
+                        subtitle: "due 09:30 · ~15 min";
+                        CheckSquare { checked: true; }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/pin.svg");
+                        tone: Tone.warning;
+                        title: "Review iteration 14 PRs";
+                        subtitle: "due 10:30 · ~45 min";
+                        CheckSquare { checked: true; }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/pin.svg");
+                        tone: Tone.info;
+                        title: "Draft Slint 2.0 release notes";
+                        subtitle: "due 11:00 · ~30 min";
+                        CheckSquare { }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/pin.svg");
+                        tone: Tone.danger;
+                        title: "Tax document upload";
+                        subtitle: "due noon · ~10 min";
+                        CheckSquare { }
+                    }
+                }
+
+                // ----- Afternoon ------------------------------------
+                FormSection {
+                    title: "AFTERNOON";
+
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/pin.svg");
+                        tone: Tone.info;
+                        title: "Lunch with Sam";
+                        subtitle: "due 13:00 · ~60 min";
+                        CheckSquare { }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/pin.svg");
+                        tone: Tone.warning;
+                        title: "Field-test the document scanner";
+                        subtitle: "due 15:00 · ~45 min";
+                        CheckSquare { }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/pin.svg");
+                        tone: Tone.success;
+                        title: "1:1 with Maya";
+                        subtitle: "due 16:00 · ~30 min";
+                        CheckSquare { }
+                    }
+                }
             }
         }
-
-        Rectangle { vertical-stretch: 1; }
     }
 
-    // FAB anchored bottom-right above safe area.
+    // ----- FAB ----------------------------------------------------------
     Fab {
         x: root.width - self.width - Theme.spacing-md;
         y: root.height - self.height - Theme.spacing-md;
-        accessible-label: "Add task";
-        clicked => { root.add-task-pressed(); }
+        accessible-label: "New task";
+        clicked => { root.new-task-pressed(); }
     }
 }

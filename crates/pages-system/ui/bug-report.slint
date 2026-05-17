@@ -1,157 +1,38 @@
 // BugReportPage
 // =====================================================================
 //
-// Bug-report submission form — the "Help & feedback → report a bug"
-// surface. Distinct from `WriteReviewPage` (product review) and
-// `HelpCenterPage` (browse FAQs). Demonstrates:
-//
-//   - Severity picker rendered as Radio-style tone-tinted pills (Low /
-//     Medium / High / Blocker).
-//   - Summary single-line field.
-//   - Numbered repro-steps card: each step prefilled with the user's
-//     entry + a small × remove and a leading number disc.
-//   - "Attach screenshots" tile row (one filled + 2 empty add tiles).
-//   - "Include diagnostics" chip strip toggling what's auto-attached
-//     (device info / logs / network trace / app state).
-//   - Sticky Submit CTA at the bottom.
+// A "report a bug" form. Mixes the form-field stack used by signup with
+// the grouped-settings stack used by account-settings — so the labels,
+// inputs, attachment rows and toggle rows all share the same gutter
+// inset (16 px) and vertical rhythm regardless of slot type.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
-import { SectionHeader } from "@mobile-components/section-header.slint";
-import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
-import { Chip } from "@mobile-components/chip.slint";
-import { Divider } from "@mobile-components/divider.slint";
+import { FormField } from "@mobile-components/form-field.slint";
+import { FormSection } from "@mobile-components/form-section.slint";
+import { SettingRow } from "@mobile-components/setting-row.slint";
+import { KeyValueRow } from "@mobile-components/key-value-row.slint";
 import { TextField } from "@mobile-components/text-field.slint";
-import { MobileButton } from "@mobile-components/button.slint";
-
-// Severity pill — a sized-up Chip-like control with tone fill when
-// selected.
-component SeverityPill inherits Rectangle {
-    in property <string> label;
-    in property <Tone> tone;
-    in property <bool> selected: false;
-    callback clicked();
-
-    accessible-role: button;
-    accessible-label: root.label;
-    accessible-action-default => { root.clicked(); }
-
-    horizontal-stretch: 1;
-    height: 56px;
-    background:
-          root.selected
-        ? (
-              root.tone == Tone.success ? Theme.accent-success
-            : root.tone == Tone.warning ? Theme.accent-warning
-            : root.tone == Tone.danger  ? Theme.accent-danger
-            : root.tone == Tone.info    ? Theme.accent-info
-            : Theme.primary
-          )
-        : Theme.surface-1;
-    border-radius: Theme.radius-md;
-    border-width: 1px;
-    border-color:
-          root.selected
-        ? (
-              root.tone == Tone.success ? Theme.accent-success
-            : root.tone == Tone.warning ? Theme.accent-warning
-            : root.tone == Tone.danger  ? Theme.accent-danger
-            : root.tone == Tone.info    ? Theme.accent-info
-            : Theme.primary
-          )
-        : Theme.outline;
-    drop-shadow-blur: Theme.elevation-1-blur;
-    drop-shadow-color: Theme.elevation-1-color;
-    drop-shadow-offset-y: Theme.elevation-1-y;
-
-    VerticalLayout {
-        spacing: 0;
-        alignment: center;
-        Text {
-            text: root.label;
-            color:
-                  root.selected
-                ? Theme.on-primary
-                : Theme.on-surface;
-            font-size: Theme.font-size-body;
-            font-weight: 800;
-            horizontal-alignment: center;
-        }
-    }
-    TouchArea {
-        clicked => { root.clicked(); }
-    }
-}
-
-// One repro-step row.
-component StepRow inherits Rectangle {
-    in property <int> index;
-    in property <string> text;
-
-    horizontal-stretch: 1;
-    min-height: 48px;
-    background: Theme.surface-2;
-    border-radius: Theme.radius-sm;
-
-    HorizontalLayout {
-        padding: Theme.spacing-sm;
-        spacing: Theme.spacing-sm;
-        alignment: stretch;
-        VerticalLayout {
-            alignment: start;
-            padding-top: 2px;
-            Rectangle {
-                width: 24px;
-                height: 24px;
-                border-radius: 12px;
-                background: Theme.accent-info;
-                Text {
-                    text: root.index;
-                    color: Theme.on-primary;
-                    font-size: 11px;
-                    font-weight: 800;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
-                    width: parent.width;
-                    height: parent.height;
-                }
-            }
-        }
-        VerticalLayout {
-            horizontal-stretch: 1;
-            alignment: center;
-            Text {
-                text: root.text;
-                color: Theme.on-surface;
-                font-size: Theme.font-size-body;
-                wrap: word-wrap;
-            }
-        }
-        VerticalLayout {
-            alignment: start;
-            padding-top: 2px;
-            Image {
-                width: 14px;
-                height: 14px;
-                source: @image-url("@mobile-components/icons/close.svg");
-                colorize: Theme.muted;
-                image-fit: contain;
-            }
-        }
-    }
-}
+import { TextButton } from "@mobile-components/button.slint";
+import { MobileSwitch } from "@mobile-components/switch.slint";
+import { SegmentedControl } from "@mobile-components/segmented-control.slint";
+import { Divider } from "@mobile-components/divider.slint";
+import { ScrollView } from "std-widgets.slint";
 
 export component BugReportPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
-    in property <int> severity: 2;     // 0..3 (Low/Med/High/Blocker)
-    in property <string> summary:
-        "Theme switch flashes light-mode for one frame on hot start";
+
+    in-out property <string> bug-title;
+    in-out property <string> what-happened;
+    in-out property <string> what-should-have-happened;
+    in-out property <int> severity: 1;
+    in-out property <bool> include-diagnostics: true;
+
     callback back-pressed();
-    callback severity-pressed(int);
-    callback add-step-pressed();
-    callback attach-pressed();
-    callback submit-pressed();
+    callback send-pressed();
+    callback add-screenshot-pressed();
+    callback remove-attachment(string);
 
     background: Theme.background;
 
@@ -159,198 +40,153 @@ export component BugReportPage inherits Window {
         spacing: 0;
 
         AppBar {
-            title: "report_a_bug()";
-            title-style: HeadingStyle.mono;
-            leading-icon: @image-url("@mobile-components/icons/close.svg");
+            title: "Report a bug";
+            leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             leading-pressed => { root.back-pressed(); }
         }
 
-        VerticalLayout {
-            padding: Theme.spacing-md;
-            spacing: Theme.spacing-md;
-            alignment: start;
-
-            // Severity picker.
-            Heading {
-                text: "// severity";
-                style: HeadingStyle.mono;
-                font-size: 14px;
-                color: Theme.muted;
-            }
-            HorizontalLayout {
-                spacing: Theme.spacing-sm;
-                SeverityPill {
-                    label: "Low";
-                    tone: Tone.success;
-                    selected: root.severity == 0;
-                    clicked => { root.severity-pressed(0); }
-                }
-                SeverityPill {
-                    label: "Med";
-                    tone: Tone.warning;
-                    selected: root.severity == 1;
-                    clicked => { root.severity-pressed(1); }
-                }
-                SeverityPill {
-                    label: "High";
-                    tone: Tone.danger;
-                    selected: root.severity == 2;
-                    clicked => { root.severity-pressed(2); }
-                }
-                SeverityPill {
-                    label: "Block";
-                    tone: Tone.info;
-                    selected: root.severity == 3;
-                    clicked => { root.severity-pressed(3); }
-                }
-            }
-
-            // Summary.
-            TextField {
-                label: "Summary";
-                placeholder: "One sentence — what went wrong?";
-                text: root.summary;
-            }
-
-            Divider { }
-
-            // Repro steps.
-            Heading {
-                text: "// steps_to_reproduce";
-                style: HeadingStyle.mono;
-                font-size: 14px;
-                color: Theme.muted;
-            }
-            VerticalLayout {
-                spacing: Theme.spacing-xs;
-                StepRow { index: 1; text: "Open the app on Android cold-boot."; }
-                StepRow { index: 2; text: "Sign in (user is already on dark scheme)."; }
-                StepRow {
-                    index: 3;
-                    text: "Notice the first frame of the home screen rendered in light scheme, then snaps to dark.";
-                }
-                Rectangle {
-                    horizontal-stretch: 1;
-                    height: 40px;
-                    border-radius: Theme.radius-sm;
-                    border-width: 1px;
-                    border-color: Theme.outline;
-                    background: transparent;
-                    HorizontalLayout {
-                        alignment: center;
-                        spacing: Theme.spacing-xs;
-                        Image {
-                            width: 14px;
-                            height: 14px;
-                            source: @image-url("@mobile-components/icons/plus.svg");
-                            colorize: Theme.accent-info;
-                            image-fit: contain;
-                            vertical-alignment: center;
-                        }
-                        Text {
-                            text: "Add step";
-                            color: Theme.accent-info;
-                            font-size: Theme.font-size-caption;
-                            font-weight: 700;
-                            vertical-alignment: center;
-                        }
-                    }
-                    TouchArea {
-                        clicked => { root.add-step-pressed(); }
-                    }
-                }
-            }
-
-            Divider { }
-
-            // Screenshots.
-            Heading {
-                text: "// screenshots ?: optional";
-                style: HeadingStyle.mono;
-                font-size: 14px;
-                color: Theme.muted;
-            }
-            HorizontalLayout {
-                spacing: Theme.spacing-sm;
-                Rectangle {
-                    width: 80px;
-                    height: 80px;
-                    border-radius: Theme.radius-sm;
-                    background: @linear-gradient(135deg, #1e3a8a 0%, #0f1d4d 100%);
-                    clip: true;
-                    Rectangle {
-                        x: parent.width - 18px;
-                        y: 2px;
-                        width: 16px;
-                        height: 16px;
-                        border-radius: 8px;
-                        background: #00000099;
-                        Text {
-                            text: "✕";
-                            color: #ffffff;
-                            font-size: 9px;
-                            font-weight: 800;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
-                            width: parent.width;
-                            height: parent.height;
-                        }
-                    }
-                }
-                for index in 3 : Rectangle {
-                    width: 80px;
-                    height: 80px;
-                    border-radius: Theme.radius-sm;
-                    background: Theme.surface-variant;
-                    Image {
-                        width: 22px;
-                        height: 22px;
-                        x: (parent.width - self.width) / 2;
-                        y: (parent.height - self.height) / 2;
-                        source: @image-url("@mobile-components/icons/plus.svg");
-                        colorize: Theme.muted;
-                        image-fit: contain;
-                    }
-                    TouchArea {
-                        clicked => { root.attach-pressed(); }
-                    }
-                }
-            }
-
-            Divider { }
-
-            // Diagnostics chip strip.
-            Heading {
-                text: "// auto_attach[]";
-                style: HeadingStyle.mono;
-                font-size: 14px;
-                color: Theme.muted;
-            }
-            HorizontalLayout {
-                spacing: Theme.spacing-sm;
-                Chip { label: "Device info"; selected: true; }
-                Chip { label: "Crash logs"; selected: true; }
-                Chip { label: "Network trace"; }
-                Chip { label: "App state"; selected: true; }
+        // Send action lives just under the bar so it stays reachable.
+        HorizontalLayout {
+            padding-left: Theme.spacing-md;
+            padding-right: Theme.spacing-md;
+            alignment: end;
+            TextButton {
+                text: "Send";
+                clicked => { root.send-pressed(); }
             }
         }
 
-        Rectangle { vertical-stretch: 1; }
+        ScrollView {
+            vertical-stretch: 1;
 
-        // Sticky submit.
-        Rectangle {
-            background: Theme.surface-1;
-            drop-shadow-blur: Theme.elevation-2-blur;
-            drop-shadow-color: Theme.elevation-2-color;
-            drop-shadow-offset-y: -4px;
-            height: 80px;
-            HorizontalLayout {
-                padding: Theme.spacing-md;
-                MobileButton {
-                    text: "Submit report";
-                    tone: Tone.info;
-                    max-height: 48px;
-                    clicked => { root.submit-pressed(); }
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-xl;
+                spacing: Theme.spacing-md;
+                alignment: stretch;
+
+                // ----- Free-text fields -------------------------------
+                VerticalLayout {
+                    spacing: Theme.spacing-md;
+                    alignment: stretch;
+
+                    FormField {
+                        label: "Title";
+                        required: true;
+                        TextField {
+                            placeholder: "Brief summary of the issue";
+                            text <=> root.bug-title;
+                        }
+                    }
+
+                    FormField {
+                        label: "What happened?";
+                        TextField {
+                            placeholder: "Tell us what you were doing and what went wrong";
+                            text <=> root.what-happened;
+                        }
+                    }
+
+                    FormField {
+                        label: "What should have happened?";
+                        TextField {
+                            placeholder: "Describe the expected behaviour";
+                            text <=> root.what-should-have-happened;
+                        }
+                    }
+                }
+
+                // ----- SEVERITY ---------------------------------------
+                FormSection {
+                    title: "SEVERITY";
+
+                    SettingRow {
+                        title: "How bad is it?";
+                        subtitle: "Helps us triage and prioritise.";
+                        SegmentedControl {
+                            width: 220px;
+                            options: ["Minor", "Major", "Crash"];
+                            selected-index <=> root.severity;
+                        }
+                    }
+                }
+
+                // ----- ATTACHMENTS ------------------------------------
+                FormSection {
+                    title: "ATTACHMENTS";
+
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/menu.svg");
+                        title: "screenshot-001.png";
+                        subtitle: "412 KB";
+                        Image {
+                            width: 18px;
+                            height: 18px;
+                            source: @image-url("@mobile-components/icons/close.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                            TouchArea {
+                                clicked => { root.remove-attachment("screenshot-001.png"); }
+                            }
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/menu.svg");
+                        title: "screenshot-002.png";
+                        subtitle: "318 KB";
+                        Image {
+                            width: 18px;
+                            height: 18px;
+                            source: @image-url("@mobile-components/icons/close.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                            TouchArea {
+                                clicked => { root.remove-attachment("screenshot-002.png"); }
+                            }
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/plus.svg");
+                        tone: Tone.info;
+                        title: "Add screenshot";
+                        clicked => { root.add-screenshot-pressed(); }
+                    }
+                }
+
+                // ----- DIAGNOSTICS ------------------------------------
+                FormSection {
+                    title: "DIAGNOSTICS";
+                    caption: "Helps engineering find the issue faster.";
+
+                    KeyValueRow {
+                        label: "App version";
+                        value: "1.4.2 · 3187";
+                    }
+                    Divider { }
+                    KeyValueRow {
+                        label: "OS";
+                        value: "Android 14";
+                    }
+                    Divider { }
+                    KeyValueRow {
+                        label: "Device";
+                        value: "Pixel 8 Pro";
+                    }
+                    Divider { }
+                    KeyValueRow {
+                        label: "Locale";
+                        value: "en-GB";
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/lock.svg");
+                        tone: Tone.info;
+                        title: "Include diagnostics in report";
+                        subtitle: "Attaches the table above to the bug.";
+                        MobileSwitch { checked <=> root.include-diagnostics; }
+                    }
                 }
             }
         }

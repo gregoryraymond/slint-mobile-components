@@ -1,186 +1,60 @@
 // NewsArticleFeedPage
 // =====================================================================
 //
-// Mixed-density news / article feed — one hero card up top (full-width
-// thumbnail + headline + byline) and a stack of secondary cards below
-// (thumb-left, headline + byline-right). The composition demonstrates:
-//
-//   - "Hero + rail" — the typographic + visual emphasis ladder common
-//     in news apps (Apple News, BBC News, NYT) where the lead story
-//     out-sizes everything else.
-//   - Category chip row anchored under the AppBar — horizontally
-//     scrollable so all categories are reachable even on a narrow phone.
-//   - Tone-tinted "Breaking" pill on the hero, plus tone-tinted source
-//     glyphs on each secondary row.
-//
-// Layout
-// ------
-//
-//   AppBar — "Today" with profile trailing
-//   Horizontal chip row (Top / Business / Tech / Science / Sports …)
-//   Hero card (full-width thumbnail + meta block)
-//   SectionHeader "MORE STORIES"
-//   Secondary article rows × N
-//   SectionHeader "OPINION"
-//   Secondary article rows × M
+// Headlines feed — six articles below a category SegmentedControl.
+// Articles need more visual space than a SettingRow can offer, so each
+// is rendered as a Card with title, source/timestamp, teaser body, and
+// a MetaRow of small chips. The Cards stack with `spacing-md` so their
+// outer edges align at the standard 16px page inset.
 
-import { Theme, Tone } from "@mobile-theme/theme.slint";
+import { Theme } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
-import { SectionHeader } from "@mobile-components/section-header.slint";
-import { Chip } from "@mobile-components/chip.slint";
-import { Divider } from "@mobile-components/divider.slint";
+import { SegmentedControl } from "@mobile-components/segmented-control.slint";
+import { Card } from "@mobile-components/card.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
+import { MetaRow, MetaChip } from "@mobile-components/meta-row.slint";
 import { ScrollView } from "std-widgets.slint";
 
-// Hero card — full-width 16:9 thumbnail + headline + byline. The
-// "Breaking" pill overlays the bottom-left of the thumbnail.
-component HeroArticle inherits Rectangle {
-    in property <string> kicker: "BREAKING";
+component Article inherits Card {
     in property <string> headline;
-    in property <string> source;
-    in property <string> when;
-    in property <Tone> kicker-tone: Tone.danger;
-    in property <brush> thumb-fill;
+    in property <string> source-line;
+    in property <string> teaser;
+    in property <string> read-time;
+    in property <string> category;
 
-    horizontal-stretch: 1;
-    background: Theme.surface-1;
-    border-radius: Theme.radius-md;
-    drop-shadow-blur: Theme.elevation-1-blur;
-    drop-shadow-color: Theme.elevation-1-color;
-    drop-shadow-offset-y: Theme.elevation-1-y;
-    clip: true;
-
-    VerticalLayout {
-        spacing: 0;
-
-        // Thumb.
-        Rectangle {
-            height: 200px;
-            background: root.thumb-fill;
-            // Kicker pill — bottom-left.
-            Rectangle {
-                x: Theme.spacing-md;
-                y: parent.height - self.height - Theme.spacing-md;
-                width: kicker-text.preferred-width + 16px;
-                height: 22px;
-                border-radius: 4px;
-                background:
-                      root.kicker-tone == Tone.success ? Theme.accent-success
-                    : root.kicker-tone == Tone.warning ? Theme.accent-warning
-                    : root.kicker-tone == Tone.info    ? Theme.accent-info
-                    : Theme.accent-danger;
-                kicker-text := Text {
-                    text: root.kicker;
-                    color: Theme.on-primary;
-                    font-size: 10px;
-                    font-weight: 700;
-                    letter-spacing: 0.5px;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
-                    width: parent.width;
-                    height: parent.height;
-                }
-            }
-        }
-
-        VerticalLayout {
-            padding: Theme.spacing-md;
-            spacing: Theme.spacing-xs;
-            Text {
-                text: root.headline;
-                color: Theme.on-surface;
-                font-family: "Fraunces 9pt";
-                font-size: 22px;
-                font-weight: 700;
-                wrap: word-wrap;
-            }
-            Text {
-                text: root.source + " · " + root.when;
-                color: Theme.muted;
-                font-family: "IBM Plex Sans";
-                font-size: Theme.font-size-caption;
-                font-italic: true;
-            }
-        }
+    Heading {
+        text: root.headline;
+        style: HeadingStyle.plex-medium;
+        color: Theme.on-surface;
+        font-size: 18px;
+        wrap: word-wrap;
     }
-}
-
-// Secondary article row — thumb-left, meta-right.
-component ArticleRow inherits Rectangle {
-    in property <string> headline;
-    in property <string> source;
-    in property <string> when;
-    in property <Tone> tone: Tone.default;
-    in property <brush> thumb-fill: Theme.surface-variant;
-
-    min-height: 96px;
-
-    HorizontalLayout {
-        padding: Theme.spacing-md;
-        spacing: Theme.spacing-md;
-        alignment: stretch;
-
-        // Thumb (square).
-        Rectangle {
-            width: 80px;
-            height: 80px;
-            border-radius: Theme.radius-sm;
-            background: root.thumb-fill;
-            clip: true;
-        }
-
-        // Meta.
-        VerticalLayout {
-            horizontal-stretch: 1;
-            spacing: 4px;
-
-            // Source pill + when.
-            HorizontalLayout {
-                spacing: Theme.spacing-xs;
-                Text {
-                    text: root.source;
-                    color:
-                          root.tone == Tone.success ? Theme.accent-success
-                        : root.tone == Tone.warning ? Theme.accent-warning
-                        : root.tone == Tone.danger  ? Theme.accent-danger
-                        : root.tone == Tone.info    ? Theme.accent-info
-                        : Theme.muted;
-                    font-size: 10px;
-                    font-weight: 700;
-                    letter-spacing: 0.5px;
-                    vertical-alignment: center;
-                }
-                Text {
-                    text: "·";
-                    color: Theme.muted;
-                    font-size: Theme.font-size-caption;
-                    vertical-alignment: center;
-                }
-                Text {
-                    text: root.when;
-                    color: Theme.muted;
-                    font-size: Theme.font-size-caption;
-                    vertical-alignment: center;
-                }
-            }
-            Text {
-                text: root.headline;
-                color: Theme.on-surface;
-                font-family: "Fraunces 9pt";
-                font-size: Theme.font-size-body;
-                font-weight: 600;
-                wrap: word-wrap;
-            }
-        }
+    Text {
+        text: root.source-line;
+        color: Theme.muted;
+        font-size: Theme.font-size-caption;
+    }
+    Text {
+        text: root.teaser;
+        color: Theme.on-surface;
+        font-size: Theme.font-size-body;
+        wrap: word-wrap;
+    }
+    MetaRow {
+        items: [
+            { icon: @image-url("@mobile-components/icons/star.svg"), text: root.read-time },
+            { icon: @image-url("@mobile-components/icons/pin.svg"), text: root.category },
+        ];
     }
 }
 
 export component NewsArticleFeedPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
-    in property <string> greeting: "Today";
+
+    in-out property <int> category-index: 0;
     callback back-pressed();
-    callback profile-pressed();
+    callback search-pressed();
     callback article-pressed(string);
 
     background: Theme.background;
@@ -189,101 +63,72 @@ export component NewsArticleFeedPage inherits Window {
         spacing: 0;
 
         AppBar {
-            title: root.greeting;
-            title-style: HeadingStyle.serif-display;
+            title: "Headlines";
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
-            trailing-icon: @image-url("@mobile-components/icons/profile.svg");
+            trailing-icon: @image-url("@mobile-components/icons/search.svg");
             leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.profile-pressed(); }
+            trailing-pressed => { root.search-pressed(); }
         }
 
-        // ----- Category chip row -----
         ScrollView {
-            height: 56px;
-            horizontal-stretch: 1;
-            viewport-width: 720px;
-            viewport-height: 40px;
-            HorizontalLayout {
-                spacing: Theme.spacing-sm;
-                padding: Theme.spacing-sm;
-                Chip { label:"Top stories";  selected: true; }
-                Chip { label:"Business"; }
-                Chip { label:"Technology"; }
-                Chip { label:"Science"; }
-                Chip { label:"Sports"; }
-                Chip { label:"Health"; }
-                Chip { label:"World"; }
-                Chip { label:"Culture"; }
+            vertical-stretch: 1;
+
+            VerticalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                padding-top: Theme.spacing-md;
+                padding-bottom: Theme.spacing-xl;
+                spacing: Theme.spacing-md;
+                alignment: stretch;
+
+                SegmentedControl {
+                    options: ["Top", "Local", "Tech", "Sport", "World"];
+                    selected-index <=> root.category-index;
+                }
+
+                Article {
+                    headline: "Quiet streets see unexpected return of commuter cyclists";
+                    source-line: "BBC · 2 hours ago";
+                    teaser: "New counters in three boroughs show double-digit growth — planners credit pop-up lanes that survived the winter.";
+                    read-time: "5 min read";
+                    category: "World";
+                }
+                Article {
+                    headline: "Slint releases mobile-components 0.4 — Tone enum lands";
+                    source-line: "The Register · 3 hours ago";
+                    teaser: "Status colours across 31 widgets now flow from a single source. Adopters report cleaner code and tidier design reviews.";
+                    read-time: "4 min read";
+                    category: "Tech";
+                }
+                Article {
+                    headline: "Brussels marathon opens 2026 registration on Monday";
+                    source-line: "RTBF · 5 hours ago";
+                    teaser: "Course tweaks add a kilometre through the Bois de la Cambre. Organisers expect 28 000 runners by closing day.";
+                    read-time: "3 min read";
+                    category: "Sport";
+                }
+                Article {
+                    headline: "Why Android 15's edge-to-edge default broke half the apps you love";
+                    source-line: "The Verge · 8 hours ago";
+                    teaser: "The system-bar overlay rule is now opt-out — many developers haven't noticed yet, and users are starting to see clipped UIs.";
+                    read-time: "6 min read";
+                    category: "Tech";
+                }
+                Article {
+                    headline: "Independent bookshops post fourth straight year of growth";
+                    source-line: "The Guardian · 11 hours ago";
+                    teaser: "Children's titles and translated literary fiction lead the surge. Average shop revenue up 7.4 % on 2024.";
+                    read-time: "5 min read";
+                    category: "Local";
+                }
+                Article {
+                    headline: "Open-source typeface revival: Fraunces gets a numerals refresh";
+                    source-line: "Type Network · 1 day ago";
+                    teaser: "Designer Phaedra Charles has shipped a long-promised tabular numerals pass, making the family viable for data-heavy UIs.";
+                    read-time: "4 min read";
+                    category: "Tech";
+                }
             }
         }
-
-        VerticalLayout {
-            padding-left: Theme.spacing-md;
-            padding-right: Theme.spacing-md;
-            padding-bottom: Theme.spacing-md;
-
-            HeroArticle {
-                kicker: "BREAKING";
-                kicker-tone: Tone.danger;
-                headline: "Slint 2.0 announced — full Android Q1 release, web preview lands in beta";
-                source: "The Slint Newsletter";
-                when: "12 min ago";
-                thumb-fill: @linear-gradient(135deg, #1e3a8a 0%, #4f8cff 100%);
-            }
-        }
-
-        SectionHeader { text: "MORE STORIES"; }
-
-        ArticleRow {
-            headline: "Cargo-apk gains live-reload on Apple Silicon";
-            source: "RUST WEEKLY";
-            when: "1h";
-            tone: Tone.warning;
-            thumb-fill: @linear-gradient(135deg, #f59e0b 0%, #b45309 100%);
-        }
-        Divider { }
-        ArticleRow {
-            headline: "Tailwind drops v5 — JIT mode becomes default";
-            source: "FRONTEND TIMES";
-            when: "2h";
-            tone: Tone.info;
-            thumb-fill: @linear-gradient(135deg, #06b6d4 0%, #0e7490 100%);
-        }
-        Divider { }
-        ArticleRow {
-            headline: "Why pure-Rust GUIs are eating the mobile stack";
-            source: "STRATECHERY (paywall)";
-            when: "4h";
-            tone: Tone.success;
-            thumb-fill: @linear-gradient(135deg, #16a34a 0%, #14532d 100%);
-        }
-        Divider { }
-        ArticleRow {
-            headline: "Anthropic ships Claude 5: API + Code updates land Tuesday";
-            source: "WIRED";
-            when: "6h";
-            tone: Tone.default;
-            thumb-fill: @linear-gradient(135deg, #6b7280 0%, #1f2937 100%);
-        }
-
-        SectionHeader { text: "OPINION"; }
-
-        ArticleRow {
-            headline: "The case against WebViews: a security retrospective";
-            source: "OPINION · LE BERNARD";
-            when: "yesterday";
-            tone: Tone.danger;
-            thumb-fill: @linear-gradient(135deg, #dc2626 0%, #7f1d1d 100%);
-        }
-        Divider { }
-        ArticleRow {
-            headline: "We tried Slint for our internal tools — here's what shipped";
-            source: "OPINION · A. RAVI";
-            when: "yesterday";
-            tone: Tone.info;
-            thumb-fill: @linear-gradient(135deg, #4f8cff 0%, #1e3a8a 100%);
-        }
-
-        Rectangle { vertical-stretch: 1; }
     }
 }

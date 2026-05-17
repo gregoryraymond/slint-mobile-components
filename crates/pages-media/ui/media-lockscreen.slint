@@ -1,332 +1,226 @@
 // MediaPlayerLockscreenPage
 // =====================================================================
 //
-// iOS-style lockscreen music widget — the now-playing card that takes
-// over the lock surface when audio is active. Distinct from
-// `PodcastPage` and `PlaylistDetailPage` (both in-app surfaces).
-// Demonstrates a chrome-light, content-first lock surface:
+// The "now playing" widget you see on a locked phone — no AppBar, no
+// chrome, just a large album-art square, the track text, a progress
+// bar, transport controls, and a small grouped FormSection for AirPlay
+// + Lyrics. Distinct from `AudiobookPlayerPage` (which has a richer
+// chapter list and an AppBar) — this surface is deliberately spare.
 //
-//   - Big time hero at the top (96 px Light) + date underneath.
-//   - "Now playing" media card: 88 px album cover + track + artist +
-//     scrubber with current / remaining times + transport row.
-//   - AirPlay / Lyrics / Queue glyph row beneath the player.
-//   - Pinned bottom-right "Music" source pill that names the app
-//     producing the audio.
+// Alignment discipline
+//   - The two utility rows at the bottom (AirPlay / Lyrics) are
+//     `SettingRow`s inside a `FormSection` — exactly the same alignment
+//     primitive used by SettingsPage. Trailing slot holds either a
+//     value Text or a chevron Image.
+//   - Time elapsed / remaining sit in a HorizontalLayout right under
+//     the determinate `ProgressBar` from the component library — not a
+//     hand-rolled scrubber.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
+import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
+import { ProgressBar } from "@mobile-components/progress-bar.slint";
+import { FormSection } from "@mobile-components/form-section.slint";
+import { SettingRow } from "@mobile-components/setting-row.slint";
+import { Divider } from "@mobile-components/divider.slint";
+
+// Round transport button — page-local since the only consumer is this
+// lockscreen and the size / colour treatment is specific to it.
+component TransportButton inherits Rectangle {
+    in property <image> icon;
+    in property <length> diameter: 56px;
+    in property <bool> primary: false;
+    in property <string> a11y-label;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: root.a11y-label;
+    accessible-action-default => { root.clicked(); }
+
+    width: root.diameter;
+    height: root.diameter;
+    border-radius: self.width / 2;
+    background: root.primary
+        ? (touch.pressed ? Theme.primary-pressed : Theme.primary)
+        : (touch.pressed ? Theme.surface-pressed : transparent);
+
+    animate background { duration: Theme.motion-fast; }
+
+    Image {
+        width: root.primary ? root.diameter * 0.45 : root.diameter * 0.5;
+        height: self.width;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        source: root.icon;
+        colorize: root.primary ? Theme.on-primary : Theme.on-background;
+        image-fit: contain;
+    }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
 
 export component MediaPlayerLockscreenPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
-    in property <string> time-now: "14:32";
-    in property <string> date: "Wednesday, May 14";
-    in property <string> track: "Nightcall";
-    in property <string> artist: "Kavinsky · feat. Lovefoxxx";
-    in property <string> elapsed: "1:42";
-    in property <string> remaining: "−2:36";
-    in property <float> progress: 0.40;
+
+    in property <string> track: "Aero — Vol. III";
+    in property <string> artist: "Hidden Orchestra";
+    in property <string> elapsed: "1:47";
+    in property <string> total: "4:13";
+    in property <string> airplay-target: "Living Room";
     in-out property <bool> playing: true;
-    callback prev-pressed();
+    callback skip-back-pressed();
     callback play-pause-pressed();
-    callback next-pressed();
+    callback skip-forward-pressed();
     callback airplay-pressed();
     callback lyrics-pressed();
-    callback queue-pressed();
-    callback source-pressed();
 
-    background: @radial-gradient(circle, #1a1d35 0%, #050610 80%);
+    background: Theme.background;
 
     VerticalLayout {
-        spacing: 0;
+        padding-top: Theme.spacing-xl;
+        padding-bottom: Theme.spacing-xl;
+        spacing: Theme.spacing-lg;
+        alignment: stretch;
 
-        // ----- Time hero -----
-        VerticalLayout {
-            padding-top: 72px;
-            spacing: 2px;
-            HorizontalLayout {
-                alignment: center;
-                Text {
-                    text: root.time-now;
-                    color: #ffffff;
-                    font-family: "Inter";
-                    font-size: 96px;
-                    font-weight: 200;
-                    letter-spacing: -3px;
-                }
-            }
-            HorizontalLayout {
-                alignment: center;
-                Text {
-                    text: root.date;
-                    color: #ffffffaa;
-                    font-family: "Inter";
-                    font-size: Theme.font-size-body;
-                    font-weight: 400;
-                }
-            }
-        }
-
-        Rectangle { vertical-stretch: 1; }
-
-        // ----- Now-playing card -----
-        Rectangle {
-            x: Theme.spacing-md;
-            background: #ffffff11;
-            border-radius: Theme.radius-lg;
-            border-width: 1px;
-            border-color: #ffffff22;
-            VerticalLayout {
-                padding: Theme.spacing-md;
-                spacing: Theme.spacing-md;
-
-                // Source row.
-                HorizontalLayout {
-                    spacing: Theme.spacing-xs;
-                    alignment: start;
-                    Image {
-                        width: 14px;
-                        height: 14px;
-                        source: @image-url("@mobile-components/icons/play.svg");
-                        colorize: #ffffff88;
-                        image-fit: contain;
-                        vertical-alignment: center;
-                    }
-                    Text {
-                        text: "MUSIC";
-                        color: #ffffff88;
-                        font-size: 10px;
-                        font-weight: 800;
-                        letter-spacing: 1px;
-                        vertical-alignment: center;
-                    }
-                    Rectangle { horizontal-stretch: 1; }
-                    Text {
-                        text: "AirPods Pro · −18 dB";
-                        color: #ffffff88;
-                        font-size: 10px;
-                        font-weight: 700;
-                        vertical-alignment: center;
-                    }
-                }
-
-                // Album art + track meta.
-                HorizontalLayout {
-                    spacing: Theme.spacing-md;
-                    alignment: stretch;
-                    VerticalLayout {
-                        alignment: center;
-                        Rectangle {
-                            width: 88px;
-                            height: 88px;
-                            border-radius: 12px;
-                            background: @linear-gradient(135deg, #f59e0b 0%, #4c1d95 100%);
-                            drop-shadow-blur: Theme.elevation-2-blur;
-                            drop-shadow-color: Theme.elevation-2-color;
-                            drop-shadow-offset-y: Theme.elevation-2-y;
-                            Text {
-                                text: "K";
-                                color: #ffffff;
-                                font-size: 36px;
-                                font-weight: 800;
-                                horizontal-alignment: center;
-                                vertical-alignment: center;
-                                width: parent.width;
-                                height: parent.height;
-                            }
-                        }
-                    }
-                    VerticalLayout {
-                        horizontal-stretch: 1;
-                        alignment: center;
-                        spacing: 2px;
-                        Text {
-                            text: root.track;
-                            color: #ffffff;
-                            font-family: "Inter";
-                            font-size: 20px;
-                            font-weight: 400;
-                            letter-spacing: -0.2px;
-                            overflow: elide;
-                        }
-                        Text {
-                            text: root.artist;
-                            color: #ffffffaa;
-                            font-size: Theme.font-size-caption;
-                            overflow: elide;
-                        }
-                    }
-                }
-
-                // Scrubber.
-                VerticalLayout {
-                    spacing: 4px;
-                    Rectangle {
-                        height: 4px;
-                        background: #ffffff22;
-                        border-radius: 2px;
-                        Rectangle {
-                            x: 0;
-                            y: 0;
-                            width: parent.width * root.progress;
-                            height: parent.height;
-                            background: #ffffff;
-                            border-radius: 2px;
-                        }
-                    }
-                    HorizontalLayout {
-                        Text {
-                            text: root.elapsed;
-                            color: #ffffffaa;
-                            font-size: 10px;
-                            font-weight: 700;
-                            horizontal-stretch: 1;
-                        }
-                        Text {
-                            text: root.remaining;
-                            color: #ffffffaa;
-                            font-size: 10px;
-                            font-weight: 700;
-                        }
-                    }
-                }
-
-                // Transport row.
-                HorizontalLayout {
-                    alignment: center;
-                    spacing: Theme.spacing-lg;
-                    Rectangle {
-                        width: 56px;
-                        height: 56px;
-                        Image {
-                            width: 28px;
-                            height: 28px;
-                            x: (parent.width - self.width) / 2;
-                            y: (parent.height - self.height) / 2;
-                            source: @image-url("@mobile-components/icons/skip-back.svg");
-                            colorize: #ffffff;
-                            image-fit: contain;
-                        }
-                        TouchArea {
-                            clicked => { root.prev-pressed(); }
-                        }
-                    }
-                    Rectangle {
-                        width: 64px;
-                        height: 64px;
-                        border-radius: self.width / 2;
-                        background: #ffffff;
-                        Image {
-                            width: 28px;
-                            height: 28px;
-                            x: (parent.width - self.width) / 2 + (root.playing ? 0px : 2px);
-                            y: (parent.height - self.height) / 2;
-                            source: root.playing
-                                ? @image-url("@mobile-components/icons/pause.svg")
-                                : @image-url("@mobile-components/icons/play.svg");
-                            colorize: #0a0d12;
-                            image-fit: contain;
-                        }
-                        TouchArea {
-                            clicked => {
-                                root.playing = !root.playing;
-                                root.play-pause-pressed();
-                            }
-                        }
-                    }
-                    Rectangle {
-                        width: 56px;
-                        height: 56px;
-                        Image {
-                            width: 28px;
-                            height: 28px;
-                            x: (parent.width - self.width) / 2;
-                            y: (parent.height - self.height) / 2;
-                            source: @image-url("@mobile-components/icons/skip-forward.svg");
-                            colorize: #ffffff;
-                            image-fit: contain;
-                        }
-                        TouchArea {
-                            clicked => { root.next-pressed(); }
-                        }
-                    }
-                }
-            }
-        }
-
-        // ----- Glyph row (AirPlay / Lyrics / Queue) -----
+        // ----- Album art (centred 280×280) -----
         HorizontalLayout {
-            padding-left: Theme.spacing-md + Theme.spacing-md;
-            padding-right: Theme.spacing-md + Theme.spacing-md;
-            padding-top: Theme.spacing-md;
-            padding-bottom: Theme.spacing-md;
-            alignment: stretch;
+            alignment: center;
             Rectangle {
-                width: 40px;
-                height: 40px;
+                width: 280px;
+                height: 280px;
+                border-radius: Theme.radius-lg;
+                background: Theme.surface-2;
+                drop-shadow-blur: Theme.elevation-3-blur;
+                drop-shadow-color: Theme.elevation-3-color;
+                drop-shadow-offset-y: Theme.elevation-3-y;
+                clip: true;
+                // Soft gradient overlay so the art reads as a real
+                // cover rather than a flat tile.
+                Rectangle {
+                    width: parent.width;
+                    height: parent.height;
+                    background: @linear-gradient(135deg, #2c3e50 0%, #1a1d24 100%);
+                    border-radius: parent.border-radius;
+                }
                 Image {
-                    width: 22px;
-                    height: 22px;
+                    width: 96px;
+                    height: 96px;
                     x: (parent.width - self.width) / 2;
                     y: (parent.height - self.height) / 2;
-                    source: @image-url("@mobile-components/icons/send.svg");
-                    colorize: #ffffff;
+                    source: @image-url("@mobile-components/icons/play.svg");
+                    colorize: #ffffff66;
                     image-fit: contain;
-                }
-                TouchArea {
-                    clicked => { root.airplay-pressed(); }
                 }
             }
-            Rectangle { horizontal-stretch: 1; }
-            Rectangle {
-                width: 40px;
-                height: 40px;
-                Image {
-                    width: 22px;
-                    height: 22px;
-                    x: (parent.width - self.width) / 2;
-                    y: (parent.height - self.height) / 2;
-                    source: @image-url("@mobile-components/icons/menu.svg");
-                    colorize: #ffffff;
-                    image-fit: contain;
+        }
+
+        // ----- Title + artist -----
+        VerticalLayout {
+            padding-left: Theme.spacing-md;
+            padding-right: Theme.spacing-md;
+            spacing: Theme.spacing-xs;
+            Heading {
+                text: root.track;
+                font-size: 22px;
+                font-weight: 700;
+                color: Theme.on-background;
+                horizontal-alignment: center;
+                wrap: word-wrap;
+            }
+            Text {
+                text: root.artist;
+                color: Theme.muted;
+                font-size: Theme.font-size-body-large;
+                horizontal-alignment: center;
+            }
+        }
+
+        // ----- Progress bar + time -----
+        VerticalLayout {
+            padding-left: Theme.spacing-md;
+            padding-right: Theme.spacing-md;
+            spacing: Theme.spacing-xs;
+            ProgressBar {
+                value: 0.42;
+            }
+            HorizontalLayout {
+                Text {
+                    text: root.elapsed;
+                    color: Theme.muted;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 600;
+                    horizontal-stretch: 1;
                 }
-                TouchArea {
-                    clicked => { root.lyrics-pressed(); }
+                Text {
+                    text: root.total;
+                    color: Theme.muted;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 600;
                 }
             }
-            Rectangle { horizontal-stretch: 1; }
-            Rectangle {
-                width: 40px;
-                height: 40px;
-                Image {
-                    width: 22px;
-                    height: 22px;
-                    x: (parent.width - self.width) / 2;
-                    y: (parent.height - self.height) / 2;
-                    source: @image-url("@mobile-components/icons/queue.svg");
-                    colorize: #ffffff;
-                    image-fit: contain;
+        }
+
+        // ----- Transport row -----
+        HorizontalLayout {
+            alignment: center;
+            spacing: Theme.spacing-xl;
+            TransportButton {
+                icon: @image-url("@mobile-components/icons/skip-back.svg");
+                diameter: 56px;
+                a11y-label: "Previous";
+                clicked => { root.skip-back-pressed(); }
+            }
+            TransportButton {
+                icon: root.playing
+                    ? @image-url("@mobile-components/icons/pause.svg")
+                    : @image-url("@mobile-components/icons/play.svg");
+                diameter: 72px;
+                primary: true;
+                a11y-label: root.playing ? "Pause" : "Play";
+                clicked => {
+                    root.playing = !root.playing;
+                    root.play-pause-pressed();
                 }
-                TouchArea {
-                    clicked => { root.queue-pressed(); }
+            }
+            TransportButton {
+                icon: @image-url("@mobile-components/icons/skip-forward.svg");
+                diameter: 56px;
+                a11y-label: "Next";
+                clicked => { root.skip-forward-pressed(); }
+            }
+        }
+
+        // ----- AirPlay + Lyrics -----
+        FormSection {
+            SettingRow {
+                icon: @image-url("@mobile-components/icons/send.svg");
+                tone: Tone.info;
+                title: "AirPlay";
+                clicked => { root.airplay-pressed(); }
+                Text {
+                    text: root.airplay-target;
+                    color: Theme.muted;
+                    font-size: Theme.font-size-body;
+                    vertical-alignment: center;
+                }
+            }
+            Divider { }
+            SettingRow {
+                icon: @image-url("@mobile-components/icons/menu.svg");
+                title: "Lyrics";
+                clicked => { root.lyrics-pressed(); }
+                Image {
+                    width: 16px;
+                    height: 16px;
+                    source: @image-url("@mobile-components/icons/chevron-right.svg");
+                    colorize: Theme.muted;
+                    image-fit: contain;
                 }
             }
         }
 
         Rectangle { vertical-stretch: 1; }
-
-        // ----- Bottom slide-to-unlock hint -----
-        VerticalLayout {
-            padding-bottom: Theme.spacing-lg;
-            HorizontalLayout {
-                alignment: center;
-                Text {
-                    text: "Swipe up to open";
-                    color: #ffffff66;
-                    font-size: 11px;
-                    font-weight: 700;
-                    letter-spacing: 0.5px;
-                }
-            }
-        }
     }
 }

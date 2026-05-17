@@ -1,184 +1,53 @@
 // CommentsPage
 // =====================================================================
 //
-// Threaded discussion view — the surface you land on after tapping a
-// post on PostDetailPage or the comment-count CTA on a feed item.
-// Demonstrates:
-//
-//   - Recursion-shaped layout via a `depth` property that drives both
-//     the left indent (`16 * depth + 16 px`) and a 2 px vertical "rail"
-//     to the left of every nested reply.
-//   - Author + body + interaction row (Like · Reply · timestamp) per
-//     comment, with the like state tinting the heart icon.
-//   - A sticky composer at the bottom — text field + Send button — that
-//     stays anchored regardless of the comment list's scroll position.
-//
-// Layout
-// ------
-//
-//   AppBar — "Comments (24)" with sort trailing icon
-//   ScrollView containing CommentRow stack (depth 0/1/2 visible)
-//   Sticky composer footer
+// Comment thread under a single post. Parent-post snippet sits in a
+// small Card at the top, then a SegmentedControl filter, then a
+// FormSection-wrapped list of comments rendered as SettingRows so the
+// avatar tile, username/timestamp, comment body, and like count line
+// up at the same gutters as every other settings-style page. A sticky
+// composer is anchored to the bottom.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
-import { Avatar } from "@mobile-components/avatar.slint";
+import { Card } from "@mobile-components/card.slint";
+import { SegmentedControl } from "@mobile-components/segmented-control.slint";
+import { FormSection } from "@mobile-components/form-section.slint";
+import { SettingRow } from "@mobile-components/setting-row.slint";
 import { TextField } from "@mobile-components/text-field.slint";
-import { MobileButton } from "@mobile-components/button.slint";
-import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
+import { TextButton } from "@mobile-components/button.slint";
+import { BottomBar } from "@mobile-components/bottom-bar.slint";
+import { Divider } from "@mobile-components/divider.slint";
 import { ScrollView } from "std-widgets.slint";
 
-// One comment row. The thread rail on the left only renders when
-// `depth > 0`; depth-0 (top-level) comments don't draw it because the
-// page edge is sufficient.
-component CommentRow inherits Rectangle {
-    in property <string> initials;
-    in property <string> author;
-    in property <string> body;
-    in property <string> when;
-    in property <int> like-count: 0;
-    in-out property <bool> liked: false;
-    in property <int> depth: 0;
-    in property <bool> pinned: false;
-    callback like-pressed();
-    callback reply-pressed();
+component LikeTrailing inherits HorizontalLayout {
+    in property <string> count;
+    spacing: Theme.spacing-xs;
+    alignment: center;
 
-    horizontal-stretch: 1;
-
-    HorizontalLayout {
-        padding-left: 16px + (root.depth * 16px);
-        padding-right: Theme.spacing-md;
-        padding-top: Theme.spacing-sm;
-        padding-bottom: Theme.spacing-sm;
-        spacing: Theme.spacing-sm;
-        alignment: stretch;
-
-        // Thread rail (vertical 2-px bar). Only on nested rows.
-        if root.depth > 0: Rectangle {
-            width: 2px;
-            background: Theme.outline;
-        }
-
-        // Avatar.
-        VerticalLayout {
-            alignment: start;
-            padding-top: 2px;
-            Avatar {
-                fallback: root.initials;
-                size: root.depth == 0 ? 36px : 28px;
-            }
-        }
-
-        // Comment body.
-        VerticalLayout {
-            horizontal-stretch: 1;
-            spacing: 4px;
-            HorizontalLayout {
-                spacing: Theme.spacing-xs;
-                Text {
-                    text: root.author;
-                    color: Theme.on-surface;
-                    font-family: "Space Grotesk";
-                    font-size: Theme.font-size-body;
-                    font-weight: 700;
-                }
-                if root.pinned: Rectangle {
-                    width: pin-text.preferred-width + 10px;
-                    height: 16px;
-                    border-radius: 4px;
-                    background: Theme.surface-variant;
-                    pin-text := Text {
-                        text: "PINNED";
-                        color: Theme.muted;
-                        font-size: 9px;
-                        font-weight: 700;
-                        letter-spacing: 0.5px;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                        width: parent.width;
-                        height: parent.height;
-                    }
-                }
-                Rectangle { horizontal-stretch: 1; }
-                Text {
-                    text: root.when;
-                    color: Theme.muted;
-                    font-size: Theme.font-size-caption;
-                }
-            }
-            Text {
-                text: root.body;
-                color: Theme.on-surface;
-                font-size: Theme.font-size-body;
-                wrap: word-wrap;
-            }
-            HorizontalLayout {
-                spacing: Theme.spacing-md;
-                padding-top: 2px;
-                alignment: start;
-
-                // Like target — Rectangle wrapper so the TouchArea fills
-                // the whole hit zone without fighting the HorizontalLayout
-                // for width.
-                Rectangle {
-                    height: 20px;
-                    width: 48px;
-                    HorizontalLayout {
-                        spacing: 4px;
-                        alignment: start;
-                        Image {
-                            width: 14px;
-                            height: 14px;
-                            source: @image-url("@mobile-components/icons/heart.svg");
-                            colorize: root.liked ? Theme.accent-danger : Theme.muted;
-                            image-fit: contain;
-                            vertical-alignment: center;
-                        }
-                        Text {
-                            text: root.like-count + (root.liked ? 1 : 0);
-                            color: root.liked ? Theme.accent-danger : Theme.muted;
-                            font-size: Theme.font-size-caption;
-                            font-weight: 600;
-                            vertical-alignment: center;
-                        }
-                    }
-                    TouchArea {
-                        clicked => {
-                            root.liked = !root.liked;
-                            root.like-pressed();
-                        }
-                    }
-                }
-
-                // Reply target — same wrapper pattern.
-                Rectangle {
-                    height: 20px;
-                    width: 48px;
-                    Text {
-                        text: "Reply";
-                        color: Theme.muted;
-                        font-size: Theme.font-size-caption;
-                        font-weight: 600;
-                        horizontal-alignment: left;
-                        vertical-alignment: center;
-                        width: parent.width;
-                        height: parent.height;
-                    }
-                    TouchArea {
-                        clicked => { root.reply-pressed(); }
-                    }
-                }
-            }
-        }
+    Image {
+        width: 14px;
+        height: 14px;
+        source: @image-url("@mobile-components/icons/heart.svg");
+        colorize: Theme.muted;
+        image-fit: contain;
+    }
+    Text {
+        text: root.count;
+        color: Theme.muted;
+        font-size: Theme.font-size-caption;
+        vertical-alignment: center;
     }
 }
 
 export component CommentsPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
-    in property <int> comment-count: 24;
+
+    in-out property <int> filter-index: 0;
+    in-out property <string> draft;
     callback back-pressed();
-    callback sort-pressed();
+    callback original-pressed();
     callback send-pressed(string);
 
     background: Theme.background;
@@ -187,116 +56,136 @@ export component CommentsPage inherits Window {
         spacing: 0;
 
         AppBar {
-            title: "Comments · " + root.comment-count;
-            title-style: HeadingStyle.mono;
+            title: "Comments · 47";
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
-            trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
             leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.sort-pressed(); }
         }
 
         ScrollView {
-            horizontal-stretch: 1;
             vertical-stretch: 1;
-            viewport-width: 412px;
-            viewport-height: 1100px;
+
             VerticalLayout {
-                spacing: 0;
-                CommentRow {
-                    initials: "AR";
-                    author: "Anika Ravi";
-                    body: "This is the best deep-dive on the Slint Android backend I've seen. The bit about cdylib event loop integration finally clicked for me.";
-                    when: "2h";
-                    like-count: 18;
-                    pinned: true;
-                    depth: 0;
+                padding-top: Theme.spacing-md;
+                padding-bottom: Theme.spacing-xl;
+                spacing: Theme.spacing-md;
+                alignment: stretch;
+
+                // ----- Parent post snippet ----------------------------------
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    Card {
+                        title: "@petra";
+                        subtitle: "Shipped the Tone enum refactor today — every status colour now flows from one source.";
+                        TextButton {
+                            text: "View original";
+                            clicked => { root.original-pressed(); }
+                        }
+                    }
                 }
-                CommentRow {
-                    initials: "DV";
-                    author: "Devika Sharma";
-                    body: "Strong agree on the cdylib bit — we hit exactly that gotcha in our internal port last quarter.";
-                    when: "1h";
-                    like-count: 6;
-                    depth: 1;
+
+                // ----- Filter -----------------------------------------------
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    SegmentedControl {
+                        options: ["Top", "New", "Oldest"];
+                        selected-index <=> root.filter-index;
+                    }
                 }
-                CommentRow {
-                    initials: "GR";
-                    author: "Greg Raymond";
-                    body: "Did you end up writing it up anywhere? Would love to link the docs from here.";
-                    when: "47m";
-                    like-count: 2;
-                    depth: 2;
-                }
-                CommentRow {
-                    initials: "DV";
-                    author: "Devika Sharma";
-                    body: "Yep — internal Notion for now, will rewrite for the public docs this sprint.";
-                    when: "32m";
-                    like-count: 4;
-                    depth: 2;
-                }
-                CommentRow {
-                    initials: "MK";
-                    author: "Marco Kovač";
-                    body: "Anyone else have the issue where the cargo-apk build pipeline picks up the wrong NDK on Apple Silicon? Workaround?";
-                    when: "1h";
-                    like-count: 9;
-                    depth: 0;
-                }
-                CommentRow {
-                    initials: "LE";
-                    author: "Léa Bernard";
-                    body: "Pin the NDK version explicitly in Cargo.toml — `ndk = \"=26.1.10909125\"`. Caught us out too.";
-                    when: "55m";
-                    like-count: 11;
-                    liked: true;
-                    depth: 1;
-                }
-                CommentRow {
-                    initials: "PR";
-                    author: "Priya Rao";
-                    body: "Re: live theme switching — does this work with the new Tone enum or only ColorScheme?";
-                    when: "23m";
-                    like-count: 3;
-                    depth: 0;
-                }
-                CommentRow {
-                    initials: "GR";
-                    author: "Greg Raymond";
-                    body: "Both — ColorScheme drives the dark/light switch, Tone drives status-coloured components per-instance. They compose.";
-                    when: "18m";
-                    like-count: 1;
-                    depth: 1;
+
+                // ----- Comments ---------------------------------------------
+                FormSection {
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        tone: Tone.info;
+                        title: "@ada · 2h";
+                        subtitle: "Finally — the Snackbar action button picking up tone is the bit I kept tripping over. Beautiful.";
+                        LikeTrailing { count: "24"; }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        tone: Tone.success;
+                        title: "@anika · 4h";
+                        subtitle: "Does this mean the Banner action label respects tone now too? That was the one off-by-one I kept seeing on Wallet.";
+                        LikeTrailing { count: "12"; }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        tone: Tone.warning;
+                        title: "@bao · 6h";
+                        subtitle: "Yes, please follow up with a migration note in DESIGN.md so the next contributor doesn't re-grep for the old patterns.";
+                        LikeTrailing { count: "8"; }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        tone: Tone.danger;
+                        title: "@cyril · 9h";
+                        subtitle: "Question: how do you reconcile this with the older accent-pressed tokens? Don't they need a matching tone-aware variant?";
+                        LikeTrailing { count: "5"; }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        tone: Tone.default;
+                        title: "@chen · 12h";
+                        subtitle: "The MetaRow upgrade is also lovely — chips finally line up on a single baseline across recipe / event / contact pages.";
+                        LikeTrailing { count: "3"; }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        tone: Tone.info;
+                        title: "@cosmin · 1d";
+                        subtitle: "Bookmarking this thread for the next design system review at work.";
+                        LikeTrailing { count: "2"; }
+                    }
                 }
             }
         }
 
-        // ----- Sticky composer footer -----
-        Rectangle {
-            background: Theme.surface-1;
-            drop-shadow-blur: Theme.elevation-2-blur;
-            drop-shadow-color: Theme.elevation-2-color;
-            drop-shadow-offset-y: -4px;
+        // ----- Sticky composer ------------------------------------------
+        BottomBar {
             HorizontalLayout {
                 padding: Theme.spacing-sm;
                 spacing: Theme.spacing-sm;
                 alignment: stretch;
-                Avatar {
-                    fallback: "G";
-                    size: 36px;
-                }
-                TextField {
+
+                VerticalLayout {
+                    alignment: center;
                     horizontal-stretch: 1;
-                    placeholder: "Add a comment…";
+                    TextField {
+                        placeholder: "Add a comment…";
+                        text <=> root.draft;
+                    }
                 }
-                MobileButton {
-                    text: "Send";
-                    tone: Tone.info;
-                    horizontal-stretch: 0;
-                    vertical-stretch: 0;
-                    min-width: 72px;
-                    max-height: 44px;
-                    clicked => { root.send-pressed(""); }
+
+                Rectangle {
+                    width: 48px;
+                    height: 48px;
+                    border-radius: self.width / 2;
+                    background: send-touch.pressed ? Theme.primary-pressed : Theme.primary;
+                    accessible-role: button;
+                    accessible-label: "Send";
+                    accessible-action-default => { root.send-pressed(root.draft); }
+                    animate background { duration: Theme.motion-fast; }
+
+                    Image {
+                        width: 22px;
+                        height: 22px;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        source: @image-url("@mobile-components/icons/send.svg");
+                        colorize: Theme.on-primary;
+                        image-fit: contain;
+                    }
+
+                    send-touch := TouchArea {
+                        clicked => { root.send-pressed(root.draft); }
+                    }
                 }
             }
         }

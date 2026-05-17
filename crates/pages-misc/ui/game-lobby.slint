@@ -1,186 +1,30 @@
 // GameLobbyPage
 // =====================================================================
 //
-// Multiplayer game lobby — Among Us / Codenames / Jackbox-style "you've
-// joined a room, waiting for everyone" screen. Distinct from
-// `LeaderboardPage` (post-game) and `ChatPage` (conversation).
-// Demonstrates:
-//
-//   - Lobby hero: room name + room code in a big tappable pill so
-//     players can read it across the table + small "copy" affordance.
-//   - Game-config chip strip: round count / time per turn / variant.
-//   - Player slot grid (2 × 2 of 4): each slot either:
-//       - filled (avatar + name + READY/NOT READY pill, host crown
-//         glyph on the host),
-//       - or empty (dashed-style placeholder with "Tap to invite").
-//   - Sticky bottom Ready toggle + Start CTA (Start dims until all
-//     filled slots are ready, here rendered enabled).
+// Multiplayer match lobby — countdown hero, two team sections of
+// SettingRows with READY/WAITING Chips in the trailing slot, a row of
+// StatTiles describing the match parameters, and a primary "Ready up"
+// + danger "Leave" pair at the bottom.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
-import { Avatar } from "@mobile-components/avatar.slint";
+import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
+import { Card } from "@mobile-components/card.slint";
 import { Chip } from "@mobile-components/chip.slint";
+import { FormSection } from "@mobile-components/form-section.slint";
+import { SettingRow } from "@mobile-components/setting-row.slint";
+import { StatTile } from "@mobile-components/stat-tile.slint";
 import { Divider } from "@mobile-components/divider.slint";
 import { MobileButton, TextButton } from "@mobile-components/button.slint";
-import { HeadingStyle } from "@mobile-components/heading.slint";
-
-// One filled player slot.
-component PlayerSlot inherits Rectangle {
-    in property <string> initials;
-    in property <string> name;
-    in property <bool> host: false;
-    in property <bool> ready: false;
-    in property <bool> you: false;
-
-    horizontal-stretch: 1;
-    height: 152px;
-    background: Theme.surface-1;
-    border-radius: Theme.radius-md;
-    drop-shadow-blur: Theme.elevation-1-blur;
-    drop-shadow-color: Theme.elevation-1-color;
-    drop-shadow-offset-y: Theme.elevation-1-y;
-    border-width: root.you ? 2px : 0px;
-    border-color: Theme.accent-info;
-
-    VerticalLayout {
-        padding: Theme.spacing-sm;
-        spacing: Theme.spacing-xs;
-        alignment: center;
-
-        HorizontalLayout {
-            alignment: center;
-            Rectangle {
-                width: 56px;
-                height: 56px;
-                Avatar {
-                    x: 0;
-                    y: 0;
-                    width: 56px;
-                    height: 56px;
-                    fallback: root.initials;
-                    size: 56px;
-                }
-                // Crown for host.
-                if root.host: Rectangle {
-                    x: parent.width - 22px;
-                    y: -4px;
-                    width: 26px;
-                    height: 18px;
-                    border-radius: 4px;
-                    background: Theme.accent-warning;
-                    Text {
-                        text: "HOST";
-                        color: Theme.on-primary;
-                        font-size: 8px;
-                        font-weight: 800;
-                        letter-spacing: 0.3px;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                        width: parent.width;
-                        height: parent.height;
-                    }
-                }
-            }
-        }
-        HorizontalLayout {
-            alignment: center;
-            Text {
-                text: root.you ? root.name + " (you)" : root.name;
-                color: Theme.on-surface;
-                font-size: Theme.font-size-caption;
-                font-weight: 700;
-            }
-        }
-        HorizontalLayout {
-            alignment: center;
-            Rectangle {
-                width: ready-text.preferred-width + 12px;
-                height: 18px;
-                border-radius: 4px;
-                background:
-                      root.ready ? Theme.accent-success
-                    : Theme.surface-variant;
-                ready-text := Text {
-                    text: root.ready ? "READY" : "NOT READY";
-                    color: root.ready ? Theme.on-primary : Theme.muted;
-                    font-size: 9px;
-                    font-weight: 800;
-                    letter-spacing: 0.3px;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
-                    width: parent.width;
-                    height: parent.height;
-                }
-            }
-        }
-    }
-}
-
-// One empty slot — invite placeholder.
-component EmptySlot inherits Rectangle {
-    callback clicked();
-
-    accessible-role: button;
-    accessible-label: "Invite player";
-    accessible-action-default => { root.clicked(); }
-
-    horizontal-stretch: 1;
-    height: 152px;
-    background: Theme.surface-1;
-    border-radius: Theme.radius-md;
-    border-width: 2px;
-    border-color: Theme.outline;
-    opacity: 0.6;
-
-    VerticalLayout {
-        spacing: Theme.spacing-sm;
-        alignment: center;
-        HorizontalLayout {
-            alignment: center;
-            Rectangle {
-                width: 56px;
-                height: 56px;
-                border-radius: self.width / 2;
-                background: Theme.surface-variant;
-                Image {
-                    width: 24px;
-                    height: 24px;
-                    x: (parent.width - self.width) / 2;
-                    y: (parent.height - self.height) / 2;
-                    source: @image-url("@mobile-components/icons/plus.svg");
-                    colorize: Theme.muted;
-                    image-fit: contain;
-                }
-            }
-        }
-        HorizontalLayout {
-            alignment: center;
-            Text {
-                text: "Tap to invite";
-                color: Theme.muted;
-                font-size: Theme.font-size-caption;
-                font-weight: 600;
-            }
-        }
-    }
-
-    TouchArea {
-        clicked => { root.clicked(); }
-    }
-}
+import { ScrollView } from "std-widgets.slint";
 
 export component GameLobbyPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
-    in property <string> game-name: "codenames · live";
-    in property <string> room-code: "SLINT-2026";
-    in property <string> waiting-msg: "Waiting on 1 player — Marco joining via link";
-    in-out property <bool> you-ready: true;
+
     callback back-pressed();
-    callback invite-pressed();
-    callback copy-code-pressed();
-    callback toggle-ready();
-    callback start-pressed();
+    callback ready-pressed();
+    callback leave-pressed();
 
     background: Theme.background;
 
@@ -188,204 +32,155 @@ export component GameLobbyPage inherits Window {
         spacing: 0;
 
         AppBar {
-            title: root.game-name;
-            title-style: HeadingStyle.lowercase-soft;
+            title: "Lobby · Storm Quad";
+            title-style: HeadingStyle.grotesk-bold;
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
-            trailing-icon: @image-url("@mobile-components/icons/send.svg");
             leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.invite-pressed(); }
         }
 
-        VerticalLayout {
-            padding: Theme.spacing-md;
-            spacing: Theme.spacing-md;
-            alignment: start;
+        ScrollView {
+            vertical-stretch: 1;
 
-            // ----- Room code hero -----
-            Rectangle {
-                horizontal-stretch: 1;
-                height: 96px;
-                border-radius: Theme.radius-md;
-                background: @linear-gradient(135deg, #4f8cff 0%, #2c1d61 100%);
-                drop-shadow-blur: Theme.elevation-2-blur;
-                drop-shadow-color: Theme.elevation-2-color;
-                drop-shadow-offset-y: Theme.elevation-2-y;
-                HorizontalLayout {
-                    padding: Theme.spacing-md;
-                    spacing: Theme.spacing-md;
-                    alignment: stretch;
-                    VerticalLayout {
-                        horizontal-stretch: 1;
-                        alignment: center;
-                        spacing: 2px;
-                        Text {
-                            text: "ROOM CODE";
-                            color: #ffffffcc;
-                            font-size: 10px;
-                            font-weight: 800;
-                            letter-spacing: 0.5px;
-                        }
-                        Text {
-                            text: root.room-code;
-                            color: #ffffff;
-                            font-family: "JetBrains Mono";
-                            font-size: 30px;
-                            font-weight: 700;
-                            letter-spacing: 3px;
-                        }
-                    }
-                    VerticalLayout {
-                        alignment: center;
-                        Rectangle {
-                            width: 36px;
-                            height: 36px;
-                            border-radius: self.width / 2;
-                            background: #ffffff22;
-                            Image {
-                                width: 18px;
-                                height: 18px;
-                                x: (parent.width - self.width) / 2;
-                                y: (parent.height - self.height) / 2;
-                                source: @image-url("@mobile-components/icons/queue.svg");
-                                colorize: #ffffff;
-                                image-fit: contain;
-                            }
-                            TouchArea {
-                                clicked => { root.copy-code-pressed(); }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // ----- Settings chips -----
-            HorizontalLayout {
-                spacing: Theme.spacing-sm;
-                Chip { label: "Best of 5"; selected: true; }
-                Chip { label: "60s / turn"; }
-                Chip { label: "Voice chat on"; }
-            }
-
-            // ----- Player slots grid -----
-            HorizontalLayout {
-                spacing: Theme.spacing-sm;
-                PlayerSlot {
-                    initials: "GR";
-                    name: "Greg Raymond";
-                    host: true;
-                    ready: root.you-ready;
-                    you: true;
-                }
-                PlayerSlot {
-                    initials: "AR";
-                    name: "Anika Ravi";
-                    ready: true;
-                }
-            }
-            HorizontalLayout {
-                spacing: Theme.spacing-sm;
-                PlayerSlot {
-                    initials: "LE";
-                    name: "Léa Bernard";
-                    ready: false;
-                }
-                EmptySlot {
-                    clicked => { root.invite-pressed(); }
-                }
-            }
-
-            // ----- Status caption -----
-            HorizontalLayout {
-                alignment: center;
-                Text {
-                    text: root.waiting-msg;
-                    color: Theme.accent-warning;
-                    font-size: Theme.font-size-caption;
-                    font-weight: 600;
-                }
-            }
-        }
-
-        Rectangle { vertical-stretch: 1; }
-
-        // ----- Sticky controls -----
-        Rectangle {
-            background: Theme.surface-1;
-            drop-shadow-blur: Theme.elevation-2-blur;
-            drop-shadow-color: Theme.elevation-2-color;
-            drop-shadow-offset-y: -4px;
-            height: 88px;
-            HorizontalLayout {
-                padding: Theme.spacing-md;
+            VerticalLayout {
+                padding-top: Theme.spacing-md;
+                padding-bottom: Theme.spacing-xl;
                 spacing: Theme.spacing-md;
                 alignment: stretch;
-                // Ready toggle pill — small label + Switch.
-                Rectangle {
-                    width: 132px;
-                    height: 48px;
-                    border-radius: Theme.radius-md;
-                    background:
-                          root.you-ready ? Theme.accent-success
-                        : Theme.surface-2;
-                    HorizontalLayout {
-                        padding-left: Theme.spacing-sm;
-                        padding-right: Theme.spacing-sm;
-                        spacing: Theme.spacing-sm;
-                        alignment: stretch;
+
+                // ----- Countdown hero -----------------------------------
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    Card {
                         VerticalLayout {
+                            spacing: 2px;
                             alignment: center;
-                            horizontal-stretch: 1;
-                            Text {
-                                text:
-                                      root.you-ready
-                                    ? "I'M READY"
-                                    : "TAP IF READY";
-                                color:
-                                      root.you-ready
-                                    ? Theme.on-primary
-                                    : Theme.muted;
-                                font-size: 11px;
-                                font-weight: 800;
-                                letter-spacing: 0.5px;
+
+                            HorizontalLayout {
+                                alignment: center;
+                                Text {
+                                    text: "00:42";
+                                    color: Theme.on-surface;
+                                    font-family: "JetBrains Mono";
+                                    font-size: Theme.font-size-headline;
+                                    font-weight: 700;
+                                    horizontal-alignment: center;
+                                }
                             }
-                        }
-                        VerticalLayout {
-                            alignment: center;
-                            Rectangle {
-                                width: 32px;
-                                height: 18px;
-                                border-radius: 9px;
-                                background:
-                                      root.you-ready
-                                    ? #ffffff44
-                                    : Theme.surface-variant;
-                                Rectangle {
-                                    x: root.you-ready
-                                       ? parent.width - self.width - 2px
-                                       : 2px;
-                                    y: 2px;
-                                    width: 14px;
-                                    height: 14px;
-                                    border-radius: 7px;
-                                    background: #ffffff;
-                                    animate x { duration: Theme.motion-fast; }
+                            HorizontalLayout {
+                                alignment: center;
+                                Text {
+                                    text: "Match starts in";
+                                    color: Theme.muted;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 600;
+                                    letter-spacing: 1px;
+                                    horizontal-alignment: center;
                                 }
                             }
                         }
                     }
-                    TouchArea {
-                        clicked => {
-                            root.you-ready = !root.you-ready;
-                            root.toggle-ready();
-                        }
+                }
+
+                // ----- Team Alpha ---------------------------------------
+                FormSection {
+                    title: "TEAM ALPHA";
+
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        tone: Tone.info;
+                        title: "@nightowl";
+                        subtitle: "level 47 · K/D 2.4";
+                        Chip { label: "READY"; selected: true; }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        tone: Tone.success;
+                        title: "@violet_storm";
+                        subtitle: "level 52 · K/D 1.9";
+                        Chip { label: "READY"; selected: true; }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        tone: Tone.warning;
+                        title: "@axolotl_99";
+                        subtitle: "level 31 · K/D 1.3";
+                        Chip { label: "WAITING"; }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        title: "@you";
+                        subtitle: "level 44 · K/D 1.7";
+                        Chip { label: "WAITING"; }
                     }
                 }
-                MobileButton {
-                    text: "Start game";
-                    tone: Tone.info;
-                    horizontal-stretch: 1;
-                    max-height: 48px;
-                    clicked => { root.start-pressed(); }
+
+                // ----- Team Bravo ---------------------------------------
+                FormSection {
+                    title: "TEAM BRAVO";
+
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        tone: Tone.danger;
+                        title: "@blackcat";
+                        subtitle: "level 60 · K/D 3.1";
+                        Chip { label: "READY"; selected: true; }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        tone: Tone.info;
+                        title: "@oslo_runner";
+                        subtitle: "level 48 · K/D 2.0";
+                        Chip { label: "READY"; selected: true; }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        title: "@sparrow.84";
+                        subtitle: "level 39 · K/D 1.5";
+                        Chip { label: "READY"; selected: true; }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        tone: Tone.warning;
+                        title: "@quicksilver";
+                        subtitle: "level 42 · K/D 1.8";
+                        Chip { label: "WAITING"; }
+                    }
+                }
+
+                // ----- Match parameters --------------------------------
+                HorizontalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    spacing: Theme.spacing-md;
+
+                    StatTile { value: "EU-W"; label: "REGION"; }
+                    StatTile { value: "Ranked"; label: "MODE"; tone: Tone.info; }
+                    StatTile { value: "Dust III"; label: "MAP"; }
+                }
+
+                // ----- Actions -----------------------------------------
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    spacing: Theme.spacing-sm;
+                    alignment: stretch;
+
+                    MobileButton {
+                        text: "Ready up";
+                        tone: Tone.success;
+                        clicked => { root.ready-pressed(); }
+                    }
+                    TextButton {
+                        text: "Leave lobby";
+                        clicked => { root.leave-pressed(); }
+                    }
                 }
             }
         }

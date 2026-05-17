@@ -1,140 +1,43 @@
 // StoreLocatorPage
 // =====================================================================
 //
-// A store locator — "find a shop near you". Distinct from `MapPage`
-// (a generic map + POI bottom sheet) and `AddressBookPage` (people).
-// Demonstrates a map-plus-list surface:
+// Find a physical store. Demonstrates the search-bar + `SettingRow`
+// list pattern — each result obeys the SAME 56 px floor, 32 px leading
+// tile, and 16 px gutters, so locations line up no matter how long the
+// address subtitle is.
 //
-//   - A search field pinned below the AppBar.
-//   - A map strip with a few pins + the user's location dot.
-//   - A nearby-stores list: each row a numbered pin, the store name +
-//     address, a distance, and an open/closed tone pill with hours.
+// What this screen does
+//   - AppBar "Stores" + back + search trailing icon.
+//   - Top search field (TextField inside a FormField with no label).
+//   - NEARBY FormSection containing 5 store SettingRows; each one has
+//       - leading icon = home.svg tinted Tone.info,
+//       - title  = "<store name> · <neighbourhood>",
+//       - subtitle = "<address> · <distance> · open until <time>",
+//       - trailing = chevron.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
-import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
+import { FormSection } from "@mobile-components/form-section.slint";
+import { FormField } from "@mobile-components/form-field.slint";
+import { SettingRow } from "@mobile-components/setting-row.slint";
+import { TextField } from "@mobile-components/text-field.slint";
 import { Divider } from "@mobile-components/divider.slint";
 import { MapEmbed, Tile, Layer } from "@mapping/map.slint";
-
-// One store row.
-component StoreRow inherits Rectangle {
-    in property <string> index;
-    in property <string> name;
-    in property <string> address;
-    in property <string> distance;
-    in property <bool> open: true;
-    in property <string> hours;
-    callback clicked();
-
-    accessible-role: button;
-    accessible-label: root.name;
-    accessible-action-default => { root.clicked(); }
-
-    horizontal-stretch: 1;
-    min-height: 76px;
-    background: touch.pressed ? Theme.surface-pressed : transparent;
-    animate background { duration: Theme.motion-fast; }
-
-    HorizontalLayout {
-        padding: Theme.spacing-md;
-        spacing: Theme.spacing-md;
-        alignment: stretch;
-        VerticalLayout {
-            alignment: center;
-            Rectangle {
-                width: 28px;
-                height: 28px;
-                border-radius: 14px;
-                background: Theme.primary;
-                Text {
-                    text: root.index;
-                    color: Theme.on-primary;
-                    font-size: Theme.font-size-caption;
-                    font-weight: 800;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
-                    width: parent.width;
-                    height: parent.height;
-                }
-            }
-        }
-        VerticalLayout {
-            horizontal-stretch: 1;
-            alignment: center;
-            spacing: 3px;
-            Text {
-                text: root.name;
-                color: Theme.on-surface;
-                font-size: Theme.font-size-body;
-                font-weight: 700;
-            }
-            Text {
-                text: root.address;
-                color: Theme.muted;
-                font-size: Theme.font-size-caption;
-                overflow: elide;
-            }
-            HorizontalLayout {
-                spacing: 6px;
-                alignment: start;
-                Rectangle {
-                    width: status-text.preferred-width + 12px;
-                    height: 16px;
-                    border-radius: 4px;
-                    background: root.open
-                        ? Theme.accent-success.with-alpha(0.16)
-                        : Theme.accent-danger.with-alpha(0.16);
-                    status-text := Text {
-                        text: root.open ? "Open" : "Closed";
-                        color: root.open ? Theme.accent-success : Theme.accent-danger;
-                        font-size: 9px;
-                        font-weight: 800;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                        width: parent.width;
-                        height: parent.height;
-                    }
-                }
-                Text {
-                    text: root.hours;
-                    color: Theme.muted;
-                    font-size: 10px;
-                    font-weight: 600;
-                    vertical-alignment: center;
-                }
-            }
-        }
-        VerticalLayout {
-            alignment: center;
-            spacing: 4px;
-            Text {
-                text: root.distance;
-                color: Theme.on-surface;
-                font-size: Theme.font-size-caption;
-                font-weight: 800;
-                horizontal-alignment: right;
-            }
-            Image {
-                width: 16px;
-                height: 16px;
-                source: @image-url("@mobile-components/icons/chevron-right.svg");
-                colorize: Theme.muted;
-                image-fit: contain;
-            }
-        }
-    }
-    touch := TouchArea {
-        clicked => { root.clicked(); }
-    }
-}
+import { ScrollView } from "std-widgets.slint";
 
 export component StoreLocatorPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
 
-    // Map state — bind from Rust via a slint_mapping::MapController, or
-    // (for a static demo) leave at defaults and pass a one-off map-tiles
-    // model. See crates/pages-travel/ui/map.slint for the canonical wiring.
+    in-out property <string> query;
+
+    callback back-pressed();
+    callback search-pressed();
+    callback store-pressed(string);
+
+    // Map camera — bind from Rust via slint_mapping::MapController, or
+    // leave at defaults for a static demo. A small map strip sits between
+    // the AppBar and the search field to show the locations on a map.
     in-out property <float> map-latitude: 51.5074;
     in-out property <float> map-longitude: -0.1276;
     in-out property <float> map-zoom: 13.0;
@@ -144,9 +47,6 @@ export component StoreLocatorPage inherits Window {
     callback map-zoom-by(float, length, length);
     out property <length> map-viewport-width: map.width;
     out property <length> map-viewport-height: map.height;
-    callback back-pressed();
-    callback search-pressed();
-    callback store-pressed(string);
 
     background: Theme.background;
 
@@ -154,57 +54,19 @@ export component StoreLocatorPage inherits Window {
         spacing: 0;
 
         AppBar {
-            title: "Find a store";
-            title-style: HeadingStyle.bold-impact;
+            title: "Stores";
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
+            trailing-icon: @image-url("@mobile-components/icons/search.svg");
             leading-pressed => { root.back-pressed(); }
+            trailing-pressed => { root.search-pressed(); }
         }
 
-        // Search field.
+        // ----- Map strip -----------------------------------------------
         Rectangle {
-            background: Theme.surface-1;
-            height: 64px;
-            HorizontalLayout {
-                padding: Theme.spacing-md;
-                Rectangle {
-                    height: 40px;
-                    border-radius: 20px;
-                    background: Theme.surface-2;
-                    HorizontalLayout {
-                        padding-left: Theme.spacing-md;
-                        spacing: Theme.spacing-sm;
-                        alignment: start;
-                        VerticalLayout {
-                            alignment: center;
-                            Image {
-                                width: 16px;
-                                height: 16px;
-                                source: @image-url("@mobile-components/icons/search.svg");
-                                colorize: Theme.muted;
-                                image-fit: contain;
-                            }
-                        }
-                        VerticalLayout {
-                            alignment: center;
-                            Text {
-                                text: "Search city or postcode";
-                                color: Theme.muted;
-                                font-size: Theme.font-size-body;
-                            }
-                        }
-                    }
-                    TouchArea {
-                        clicked => { root.search-pressed(); }
-                    }
-                }
-            }
-        }
-
-        // Map strip.
-        Rectangle {
-            height: 200px;
-            background: Theme.surface-variant;
+            height: 220px;
+            background: Theme.surface-2;
             clip: true;
+
             map := MapEmbed {
                 x: 0;
                 y: 0;
@@ -218,80 +80,105 @@ export component StoreLocatorPage inherits Window {
                 pan(dx, dy) => { root.map-pan(dx, dy); }
                 zoom-by(d, ax, ay) => { root.map-zoom-by(d, ax, ay); }
             }
-            // Store pins + user-location dot come from the controller
-            // via `map-layers` — see the viewer's per-page demo wiring.
         }
 
-        // Results header.
-        Rectangle {
-            background: Theme.surface-1;
-            height: 40px;
-            HorizontalLayout {
-                padding-left: Theme.spacing-md;
-                padding-right: Theme.spacing-md;
-                VerticalLayout {
-                    alignment: center;
-                    horizontal-stretch: 1;
-                    Text {
-                        text: "4 stores near you";
-                        color: Theme.on-surface;
-                        font-size: Theme.font-size-caption;
-                        font-weight: 800;
+        ScrollView {
+            vertical-stretch: 1;
+
+            VerticalLayout {
+                padding-top: Theme.spacing-md;
+                padding-bottom: Theme.spacing-xl;
+                spacing: Theme.spacing-md;
+                alignment: stretch;
+
+                // ----- Search ------------------------------------------
+                FormField {
+                    TextField {
+                        placeholder: "Search city or postcode";
+                        text <=> root.query;
                     }
                 }
-                VerticalLayout {
-                    alignment: center;
-                    Text {
-                        text: "Sorted by distance";
-                        color: Theme.muted;
-                        font-size: Theme.font-size-caption;
+
+                // ----- NEARBY ------------------------------------------
+                FormSection {
+                    title: "NEARBY";
+
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/home.svg");
+                        tone: Tone.info;
+                        title: "Atlas Coffee · Sablon";
+                        subtitle: "Rue Lebeau 14 · 1.2 km · open until 19:00";
+                        clicked => { root.store-pressed("sablon"); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/home.svg");
+                        tone: Tone.info;
+                        title: "Atlas Coffee · Châtelain";
+                        subtitle: "Place du Châtelain 3 · 1.8 km · open until 20:00";
+                        clicked => { root.store-pressed("chatelain"); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/home.svg");
+                        tone: Tone.info;
+                        title: "Atlas Coffee · Flagey";
+                        subtitle: "Place Eugène Flagey 22 · 2.4 km · open until 18:00";
+                        clicked => { root.store-pressed("flagey"); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/home.svg");
+                        tone: Tone.info;
+                        title: "Atlas Coffee · Saint-Gilles";
+                        subtitle: "Chaussée de Waterloo 88 · 3.1 km · open until 19:30";
+                        clicked => { root.store-pressed("saint-gilles"); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/home.svg");
+                        tone: Tone.info;
+                        title: "Atlas Coffee · Schaerbeek";
+                        subtitle: "Avenue Louis Bertrand 41 · 4.7 km · open until 18:00";
+                        clicked => { root.store-pressed("schaerbeek"); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
                     }
                 }
             }
         }
-
-        Divider { }
-
-        StoreRow {
-            index: "1";
-            name: "Foundry Coffee — Mission";
-            address: "418 Valencia St, San Francisco";
-            distance: "0.3 mi";
-            open: true;
-            hours: "Closes 8 PM";
-            clicked => { root.store-pressed("Mission"); }
-        }
-        Divider { }
-        StoreRow {
-            index: "2";
-            name: "Foundry Coffee — SoMa";
-            address: "650 Townsend St, San Francisco";
-            distance: "0.9 mi";
-            open: true;
-            hours: "Closes 6 PM";
-            clicked => { root.store-pressed("SoMa"); }
-        }
-        Divider { }
-        StoreRow {
-            index: "3";
-            name: "Foundry Coffee — Hayes Valley";
-            address: "552 Hayes St, San Francisco";
-            distance: "1.4 mi";
-            open: false;
-            hours: "Opens 7 AM";
-            clicked => { root.store-pressed("Hayes Valley"); }
-        }
-        Divider { }
-        StoreRow {
-            index: "4";
-            name: "Foundry Coffee — Embarcadero";
-            address: "1 Ferry Building, San Francisco";
-            distance: "2.1 mi";
-            open: true;
-            hours: "Closes 7 PM";
-            clicked => { root.store-pressed("Embarcadero"); }
-        }
-
-        Rectangle { vertical-stretch: 1; }
     }
 }

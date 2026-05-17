@@ -1,423 +1,171 @@
 // EventDetailPage
 // =====================================================================
 //
-// Concert / festival / conference event detail — Eventbrite / Dice /
-// Songkick-style. Distinct from `HotelBookingPage` (room reservation)
-// and `BoardingPassPage` (a single boarding pass). Demonstrates:
-//
-//   - Cover hero with translucent back / share / heart overlays and
-//     a date pill anchored to the lower-left ("MAY 22").
-//   - Event title + venue + date/time meta + price-from caption.
-//   - Lineup avatar cluster (4 stacked) + "+ 6 more" pill.
-//   - Sectioned body: About / Venue / Door policies, each with its
-//     own short prose.
-//   - Sticky Buy-tickets CTA with the cheapest price inline.
+// Single calendar event detail. Hero card with title + a MetaRow of
+// when / where / attendee-count chips. Then KeyValueRows under DETAILS,
+// a SettingRow for the description, attendee SettingRows with a status
+// Chip in the trailing slot, and a primary "Join meeting" + secondary
+// "Decline" pair at the bottom.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
-import { Avatar } from "@mobile-components/avatar.slint";
-import { Divider } from "@mobile-components/divider.slint";
-import { Chip } from "@mobile-components/chip.slint";
-import { MobileButton } from "@mobile-components/button.slint";
+import { AppBar } from "@mobile-components/app-bar.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
-
-// One mini section header for the body (smaller than `SectionHeader`
-// since it sits inside the page body padding). Uses Fraunces editorial
-// italic for an editorial / magazine feel — pairs with the serif-display
-// event title and the cover hero.
-component MiniHeader inherits Rectangle {
-    in property <string> text;
-    height: 32px;
-    VerticalLayout {
-        alignment: center;
-        Text {
-            text: root.text;
-            color: Theme.on-background;
-            font-family: "Fraunces 9pt";
-            font-size: 20px;
-            font-weight: 400;
-        }
-    }
-}
-
-// Stacked lineup avatar cluster — three discs overlapping with 2px
-// background-coloured rings + a trailing "+N" pill.
-component LineupCluster inherits Rectangle {
-    in property <string> a;
-    in property <string> b;
-    in property <string> c;
-    in property <string> more;
-
-    width: 132px;
-    height: 36px;
-
-    Rectangle {
-        x: 36px;
-        y: 0;
-        width: 36px;
-        height: 36px;
-        border-radius: self.width / 2;
-        background: Theme.background;
-        Avatar {
-            x: 2px;
-            y: 2px;
-            width: 32px;
-            height: 32px;
-            fallback: root.b;
-            size: 32px;
-        }
-    }
-    Rectangle {
-        x: 60px;
-        y: 0;
-        width: 36px;
-        height: 36px;
-        border-radius: self.width / 2;
-        background: Theme.background;
-        Avatar {
-            x: 2px;
-            y: 2px;
-            width: 32px;
-            height: 32px;
-            fallback: root.c;
-            size: 32px;
-        }
-    }
-    Rectangle {
-        x: 0;
-        y: 0;
-        width: 36px;
-        height: 36px;
-        border-radius: self.width / 2;
-        background: Theme.background;
-        Avatar {
-            x: 2px;
-            y: 2px;
-            width: 32px;
-            height: 32px;
-            fallback: root.a;
-            size: 32px;
-        }
-    }
-    Rectangle {
-        x: 84px;
-        y: 0;
-        width: 48px;
-        height: 36px;
-        border-radius: 18px;
-        background: Theme.surface-2;
-        border-width: 2px;
-        border-color: Theme.background;
-        Text {
-            text: "+ " + root.more;
-            color: Theme.on-surface;
-            font-size: 11px;
-            font-weight: 700;
-            horizontal-alignment: center;
-            vertical-alignment: center;
-            width: parent.width;
-            height: parent.height;
-        }
-    }
-}
+import { Card } from "@mobile-components/card.slint";
+import { Chip } from "@mobile-components/chip.slint";
+import { FormSection } from "@mobile-components/form-section.slint";
+import { SettingRow } from "@mobile-components/setting-row.slint";
+import { KeyValueRow } from "@mobile-components/key-value-row.slint";
+import { MetaRow, MetaChip } from "@mobile-components/meta-row.slint";
+import { Divider } from "@mobile-components/divider.slint";
+import { MobileButton, TextButton } from "@mobile-components/button.slint";
+import { ScrollView } from "std-widgets.slint";
 
 export component EventDetailPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
-    in property <string> event-name: "Slint Conf 2026";
-    in property <string> venue: "Fort Mason Center · San Francisco";
-    in property <string> when: "Thu, May 22 · 09:00–18:00 PT";
-    in property <string> price-from: "From $129";
-    in property <string> date-day: "MAY 22";
-    in property <string> about:
-        "Two days, three tracks, one design system. Talks from the people building Slint, Patagonia, Memmo, and friends — plus the live keynote demoing the new Tone-enum migration. Coffee + lunch covered.";
-    in property <string> venue-blurb:
-        "Fort Mason Center · Festival Pavilion, 1 km from the Marina BART stop. Wheelchair accessible. Service dogs welcome.";
-    in property <string> policies-blurb:
-        "Ticket includes admission for both days, lunch, and an after-party at Casements. Refundable until 14 days before the event.";
+
     callback back-pressed();
-    callback share-pressed();
-    callback heart-pressed();
-    callback buy-pressed();
+    callback more-pressed();
+    callback join-pressed();
+    callback decline-pressed();
 
     background: Theme.background;
 
     VerticalLayout {
         spacing: 0;
 
-        // ----- Hero -----
-        Rectangle {
-            height: 240px;
-            background: @linear-gradient(135deg, #4f8cff 0%, #2c1d61 100%);
-            clip: true;
-
-            // Translucent header buttons.
-            HorizontalLayout {
-                x: 0;
-                y: 0;
-                width: parent.width;
-                height: 64px;
-                padding: Theme.spacing-md;
-                spacing: Theme.spacing-sm;
-                alignment: stretch;
-                Rectangle {
-                    width: 36px;
-                    height: 36px;
-                    border-radius: self.width / 2;
-                    background: #00000066;
-                    Image {
-                        width: 18px;
-                        height: 18px;
-                        x: (parent.width - self.width) / 2;
-                        y: (parent.height - self.height) / 2;
-                        source: @image-url("@mobile-components/icons/arrow-left.svg");
-                        colorize: #ffffff;
-                        image-fit: contain;
-                    }
-                    TouchArea {
-                        clicked => { root.back-pressed(); }
-                    }
-                }
-                Rectangle { horizontal-stretch: 1; }
-                Rectangle {
-                    width: 36px;
-                    height: 36px;
-                    border-radius: self.width / 2;
-                    background: #00000066;
-                    Image {
-                        width: 18px;
-                        height: 18px;
-                        x: (parent.width - self.width) / 2;
-                        y: (parent.height - self.height) / 2;
-                        source: @image-url("@mobile-components/icons/send.svg");
-                        colorize: #ffffff;
-                        image-fit: contain;
-                    }
-                    TouchArea {
-                        clicked => { root.share-pressed(); }
-                    }
-                }
-                Rectangle {
-                    width: 36px;
-                    height: 36px;
-                    border-radius: self.width / 2;
-                    background: #00000066;
-                    Image {
-                        width: 18px;
-                        height: 18px;
-                        x: (parent.width - self.width) / 2;
-                        y: (parent.height - self.height) / 2;
-                        source: @image-url("@mobile-components/icons/heart.svg");
-                        colorize: #ffffff;
-                        image-fit: contain;
-                    }
-                    TouchArea {
-                        clicked => { root.heart-pressed(); }
-                    }
-                }
-            }
-
-            // Date pill — lower-left corner of the hero.
-            Rectangle {
-                x: Theme.spacing-md;
-                y: parent.height - self.height - Theme.spacing-md;
-                width: 80px;
-                height: 80px;
-                border-radius: Theme.radius-md;
-                background: Theme.surface-1;
-                drop-shadow-blur: Theme.elevation-2-blur;
-                drop-shadow-color: Theme.elevation-2-color;
-                drop-shadow-offset-y: Theme.elevation-2-y;
-                VerticalLayout {
-                    spacing: 0;
-                    alignment: center;
-                    HorizontalLayout {
-                        alignment: center;
-                        Text {
-                            text: "MAY";
-                            color: Theme.accent-danger;
-                            font-size: 12px;
-                            font-weight: 800;
-                            letter-spacing: 0.5px;
-                        }
-                    }
-                    HorizontalLayout {
-                        alignment: center;
-                        Text {
-                            text: "22";
-                            color: Theme.on-surface;
-                            font-family: "Fraunces 9pt";
-                            font-size: 36px;
-                            font-weight: 700;
-                        }
-                    }
-                    HorizontalLayout {
-                        alignment: center;
-                        Text {
-                            text: "THU";
-                            color: Theme.muted;
-                            font-size: 10px;
-                            font-weight: 800;
-                            letter-spacing: 0.5px;
-                        }
-                    }
-                }
-            }
+        AppBar {
+            title: "Event";
+            title-style: HeadingStyle.plex-medium;
+            leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
+            trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
+            leading-pressed => { root.back-pressed(); }
+            trailing-pressed => { root.more-pressed(); }
         }
 
-        // ----- Title + meta -----
-        VerticalLayout {
-            padding: Theme.spacing-md;
-            spacing: Theme.spacing-xs;
-            alignment: start;
-            Heading {
-                text: root.event-name;
-                style: HeadingStyle.serif-display;
-                color: Theme.on-background;
-            }
-            Text {
-                text: root.venue;
-                color: Theme.muted;
-                font-size: Theme.font-size-body;
-            }
-            Text {
-                text: root.when;
-                color: Theme.accent-warning;
-                font-size: Theme.font-size-caption;
-                font-weight: 600;
-            }
-            HorizontalLayout {
-                spacing: Theme.spacing-sm;
-                padding-top: Theme.spacing-xs;
-                Chip { label: "Tech conf"; selected: true; }
-                Chip { label: "In-person"; }
-                Chip { label: "2 days"; }
-            }
-        }
+        ScrollView {
+            vertical-stretch: 1;
 
-        Divider { }
-
-        // ----- Lineup -----
-        VerticalLayout {
-            padding-left: Theme.spacing-md;
-            padding-right: Theme.spacing-md;
-            padding-top: Theme.spacing-md;
-            padding-bottom: Theme.spacing-md;
-            spacing: Theme.spacing-sm;
-            MiniHeader { text: "Lineup"; }
-            HorizontalLayout {
+            VerticalLayout {
+                padding-top: Theme.spacing-md;
+                padding-bottom: Theme.spacing-xl;
                 spacing: Theme.spacing-md;
                 alignment: stretch;
-                LineupCluster {
-                    a: "OG";
-                    b: "PR";
-                    c: "AR";
-                    more: "6";
-                }
+
+                // ----- Hero card ----------------------------------------
                 VerticalLayout {
-                    alignment: center;
-                    horizontal-stretch: 1;
-                    spacing: 2px;
-                    Text {
-                        text: "Olivia Goh, Priya Rao, Anika Ravi";
-                        color: Theme.on-surface;
-                        font-size: Theme.font-size-caption;
-                        font-weight: 600;
-                        overflow: elide;
-                    }
-                    Text {
-                        text: "+ 6 more speakers";
-                        color: Theme.muted;
-                        font-size: Theme.font-size-caption;
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    Card {
+                        VerticalLayout {
+                            spacing: Theme.spacing-sm;
+                            Heading {
+                                text: "Design review · v0.4";
+                                style: HeadingStyle.plex-medium;
+                                color: Theme.on-surface;
+                            }
+                            MetaRow {
+                                items: [
+                                    { text: "Today, 14:00–15:00" },
+                                    { text: "Conference Room A" },
+                                    { text: "12 attendees" },
+                                ];
+                            }
+                        }
                     }
                 }
-            }
-        }
 
-        Divider { }
+                // ----- Details ------------------------------------------
+                FormSection {
+                    title: "DETAILS";
 
-        // ----- About -----
-        VerticalLayout {
-            padding-left: Theme.spacing-md;
-            padding-right: Theme.spacing-md;
-            padding-top: Theme.spacing-md;
-            spacing: Theme.spacing-sm;
-            MiniHeader { text: "About"; }
-            Text {
-                text: root.about;
-                color: Theme.on-surface;
-                font-size: Theme.font-size-body;
-                wrap: word-wrap;
-            }
-        }
+                    KeyValueRow {
+                        label: "When";
+                        value: "Today · 14:00–15:00";
+                    }
+                    Divider { }
+                    KeyValueRow {
+                        label: "Where";
+                        value: "Conference Room A";
+                    }
+                    Divider { }
+                    KeyValueRow {
+                        label: "Organizer";
+                        value: "Petra Lindquist";
+                    }
+                    Divider { }
+                    KeyValueRow {
+                        label: "Repeats";
+                        value: "Weekly · Mon";
+                    }
+                }
 
-        // ----- Venue -----
-        VerticalLayout {
-            padding-left: Theme.spacing-md;
-            padding-right: Theme.spacing-md;
-            padding-top: Theme.spacing-md;
-            spacing: Theme.spacing-sm;
-            MiniHeader { text: "Venue"; }
-            Text {
-                text: root.venue-blurb;
-                color: Theme.on-surface;
-                font-size: Theme.font-size-body;
-                wrap: word-wrap;
-            }
-        }
+                // ----- Description --------------------------------------
+                FormSection {
+                    title: "DESCRIPTION";
 
-        // ----- Policies -----
-        VerticalLayout {
-            padding-left: Theme.spacing-md;
-            padding-right: Theme.spacing-md;
-            padding-top: Theme.spacing-md;
-            padding-bottom: Theme.spacing-md;
-            spacing: Theme.spacing-sm;
-            MiniHeader { text: "Policies & extras"; }
-            Text {
-                text: root.policies-blurb;
-                color: Theme.on-surface;
-                font-size: Theme.font-size-body;
-                wrap: word-wrap;
-            }
-        }
+                    SettingRow {
+                        title: "About this meeting";
+                        subtitle: "Walkthrough of the v0.4 design tokens, with time for open Q&A. Bring your component snapshots if you have notes on the new spacing scale.";
+                    }
+                }
 
-        Rectangle { vertical-stretch: 1; }
+                // ----- Attendees ----------------------------------------
+                FormSection {
+                    title: "ATTENDEES";
 
-        // ----- Sticky CTA -----
-        Rectangle {
-            background: Theme.surface-1;
-            drop-shadow-blur: Theme.elevation-2-blur;
-            drop-shadow-color: Theme.elevation-2-color;
-            drop-shadow-offset-y: -4px;
-            height: 80px;
-            HorizontalLayout {
-                padding: Theme.spacing-md;
-                spacing: Theme.spacing-md;
-                alignment: stretch;
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        tone: Tone.info;
+                        title: "Petra Lindquist";
+                        subtitle: "Organizer";
+                        Chip { label: "ACCEPTED"; selected: false; }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        title: "Greg Raymond";
+                        subtitle: "Engineering";
+                        Chip { label: "ACCEPTED"; }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        title: "Ada Lovelace";
+                        subtitle: "Design";
+                        Chip { label: "TENTATIVE"; }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        title: "Hedy Lamarr";
+                        subtitle: "Product";
+                        Chip { label: "PENDING"; }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        title: "Grace Hopper";
+                        subtitle: "QA";
+                        Chip { label: "ACCEPTED"; }
+                    }
+                }
+
+                // ----- Actions ------------------------------------------
                 VerticalLayout {
-                    alignment: center;
-                    horizontal-stretch: 1;
-                    spacing: 2px;
-                    Text {
-                        text: root.price-from;
-                        color: Theme.on-surface;
-                        font-size: Theme.font-size-title;
-                        font-weight: 800;
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    spacing: Theme.spacing-sm;
+                    alignment: stretch;
+
+                    MobileButton {
+                        text: "Join meeting";
+                        clicked => { root.join-pressed(); }
                     }
-                    Text {
-                        text: "84 tickets left at this price";
-                        color: Theme.accent-warning;
-                        font-size: Theme.font-size-caption;
-                        font-weight: 600;
+                    TextButton {
+                        text: "Decline";
+                        clicked => { root.decline-pressed(); }
                     }
-                }
-                MobileButton {
-                    text: "Buy tickets";
-                    tone: Tone.info;
-                    horizontal-stretch: 0;
-                    min-width: 160px;
-                    max-height: 48px;
-                    clicked => { root.buy-pressed(); }
                 }
             }
         }

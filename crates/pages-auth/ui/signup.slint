@@ -1,89 +1,49 @@
 // SignupPage
 // =====================================================================
 //
-// Sign-up landing screen — distinct from the existing `LoginPage`
-// (returning user) and `FormWizardPage` (multi-step onboarding form).
-// Demonstrates the canonical "create an account" surface with:
+// Account-creation form. Pure showcase of `FormField` discipline:
+// every input has the SAME label-above + control + helper-below
+// rhythm, so vertically-stacked fields line up at every internal
+// edge (label baseline, control top, control bottom, helper baseline)
+// without any per-field padding fiddling.
 //
-//   - Brand hero block at the top (gradient disc + product name +
-//     value-prop tagline).
-//   - Two TextFields (email + password) with a "Show password" toggle
-//     row beneath them.
-//   - "Or continue with" social-auth row: 3 pill buttons (Apple /
-//     Google / email-only) each branded with its logo glyph.
-//   - Terms + privacy checkbox + Sign-up CTA + "Already have an
-//     account? Log in" footer.
+// What this screen does
+//   - AppBar with back arrow.
+//   - Hero block: large display title + supporting subtitle.
+//   - Form (4 fields):
+//     - Full name (required).
+//     - Email (required, with realtime helper text).
+//     - Password (required, with strength hint).
+//     - Birthday (helper: "We use this to personalise content.").
+//   - "I agree to the terms" toggle row (`SettingRow` style for visual
+//     consistency with the field stack).
+//   - Primary CTA "Create account" — fills the page width.
+//   - "Already have an account? Sign in" footer link.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
-import { TextField } from "@mobile-components/text-field.slint";
-import { Checkbox } from "@mobile-components/checkbox.slint";
-import { Divider } from "@mobile-components/divider.slint";
-import { MobileButton, TextButton } from "@mobile-components/button.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
-
-// One social-auth pill.
-component SocialPill inherits Rectangle {
-    in property <string> label;
-    in property <image> icon;
-    in property <color> bg;
-    in property <color> fg;
-    callback clicked();
-
-    accessible-role: button;
-    accessible-label: root.label;
-    accessible-action-default => { root.clicked(); }
-
-    horizontal-stretch: 1;
-    height: 48px;
-    background: root.bg;
-    border-radius: 24px;
-    border-width: root.bg == #ffffff ? 1px : 0px;
-    border-color: Theme.outline;
-
-    HorizontalLayout {
-        spacing: 8px;
-        padding-left: 12px;
-        padding-right: 12px;
-        alignment: center;
-        VerticalLayout {
-            alignment: center;
-            Image {
-                width: 18px;
-                height: 18px;
-                source: root.icon;
-                colorize: root.fg;
-                image-fit: contain;
-            }
-        }
-        VerticalLayout {
-            alignment: center;
-            Text {
-                text: root.label;
-                color: root.fg;
-                font-size: Theme.font-size-caption;
-                font-weight: 800;
-                letter-spacing: 0.3px;
-            }
-        }
-    }
-    TouchArea {
-        clicked => { root.clicked(); }
-    }
-}
+import { FormField } from "@mobile-components/form-field.slint";
+import { FormSection } from "@mobile-components/form-section.slint";
+import { SettingRow } from "@mobile-components/setting-row.slint";
+import { TextField } from "@mobile-components/text-field.slint";
+import { MobileButton, TextButton } from "@mobile-components/button.slint";
+import { MobileSwitch } from "@mobile-components/switch.slint";
+import { ScrollView } from "std-widgets.slint";
 
 export component SignupPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
-    in property <string> brand: "Slint Mobile";
-    in property <string> tagline: "Build native mobile apps in Rust — no WebView, no compromises.";
-    in-out property <bool> show-password: false;
-    in-out property <bool> agreed: true;
-    callback close-pressed();
-    callback signup-pressed();
-    callback social-pressed(string);
-    callback switch-to-login-pressed();
-    callback terms-pressed();
+
+    in-out property <string> full-name;
+    in-out property <string> email;
+    in-out property <string> password;
+    in-out property <string> birthday;
+    in-out property <bool> agreed: false;
+
+    callback back-pressed();
+    callback submit-pressed();
+    callback sign-in-pressed();
 
     background: Theme.background;
 
@@ -91,191 +51,113 @@ export component SignupPage inherits Window {
         spacing: 0;
 
         AppBar {
-            title: "";
-            leading-icon: @image-url("@mobile-components/icons/close.svg");
-            leading-pressed => { root.close-pressed(); }
+            leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
+            leading-pressed => { root.back-pressed(); }
         }
 
-        VerticalLayout {
-            padding-left: Theme.spacing-md;
-            padding-right: Theme.spacing-md;
-            padding-top: Theme.spacing-md;
-            spacing: Theme.spacing-md;
-            alignment: start;
+        ScrollView {
+            vertical-stretch: 1;
 
-            // Brand hero.
-            HorizontalLayout {
-                alignment: center;
-                Rectangle {
-                    width: 72px;
-                    height: 72px;
-                    border-radius: 18px;
-                    background: @linear-gradient(135deg, #4f8cff 0%, #1f4eaa 100%);
-                    // Brand monogram — Space Grotesk gives the SM mark
-                    // its angular, slightly geometric character.
-                    Text {
-                        text: "SM";
-                        color: Theme.on-primary;
-                        font-family: "Space Grotesk";
-                        font-size: 28px;
-                        font-weight: 700;
-                        letter-spacing: -0.5px;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                        width: parent.width;
-                        height: parent.height;
-                    }
-                }
-            }
             VerticalLayout {
-                spacing: Theme.spacing-xs;
-                HorizontalLayout {
-                    alignment: center;
-                    // Grotesque headline — Space Grotesk 26 px 700 — brand-y.
+                padding-left: 0;
+                padding-right: 0;
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-xl;
+                spacing: Theme.spacing-lg;
+                alignment: stretch;
+
+                // ----- Hero -------------------------------------------------
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    spacing: Theme.spacing-xs;
                     Heading {
-                        text: "Create your " + root.brand + " account";
-                        style: HeadingStyle.grotesk-bold;
-                        horizontal-alignment: center;
-                        wrap: word-wrap;
+                        text: "Create account";
+                        style: HeadingStyle.serif-display;
+                        color: Theme.on-background;
                     }
-                }
-                HorizontalLayout {
-                    alignment: center;
-                    // Tagline in Plex Sans — humanist counterpoint to the
-                    // geometric headline.
                     Text {
-                        text: root.tagline;
+                        text: "It takes about a minute. You can change everything later.";
                         color: Theme.muted;
-                        font-family: "IBM Plex Sans";
                         font-size: Theme.font-size-body;
-                        font-weight: 400;
-                        horizontal-alignment: center;
                         wrap: word-wrap;
                     }
                 }
-            }
 
-            // Form fields.
-            TextField {
-                label: "Email";
-                placeholder: "you@example.com";
-                text: "greg@example.com";
-            }
-            TextField {
-                label: "Password";
-                placeholder: "At least 12 characters";
-                text: "••••••••••••";
-            }
-            HorizontalLayout {
-                spacing: Theme.spacing-sm;
-                Checkbox {
-                    checked <=> root.show-password;
-                }
+                // ----- Field stack ------------------------------------------
                 VerticalLayout {
-                    horizontal-stretch: 1;
-                    alignment: center;
-                    Text {
-                        text: "Show password";
-                        color: Theme.on-surface;
-                        font-size: Theme.font-size-caption;
+                    spacing: Theme.spacing-md;
+                    alignment: stretch;
+
+                    FormField {
+                        label: "Full name";
+                        required: true;
+                        TextField {
+                            placeholder: "Ada Lovelace";
+                            text <=> root.full-name;
+                        }
                     }
-                }
-                TextButton {
-                    text: "Strength · Good";
-                }
-            }
 
-            // Terms.
-            HorizontalLayout {
-                spacing: Theme.spacing-sm;
-                padding-top: Theme.spacing-xs;
-                Checkbox {
-                    checked <=> root.agreed;
-                }
-                VerticalLayout {
-                    horizontal-stretch: 1;
-                    alignment: center;
-                    Text {
-                        text: "I agree to the Terms of Service and Privacy Policy.";
-                        color: Theme.on-surface;
-                        font-size: Theme.font-size-caption;
-                        wrap: word-wrap;
-                        TouchArea {
-                            clicked => { root.terms-pressed(); }
+                    FormField {
+                        label: "Email";
+                        required: true;
+                        helper: "We'll send a confirmation link.";
+                        TextField {
+                            placeholder: "you@example.com";
+                            text <=> root.email;
+                        }
+                    }
+
+                    FormField {
+                        label: "Password";
+                        required: true;
+                        helper: "12+ characters with one number or symbol.";
+                        TextField {
+                            placeholder: "••••••••••••";
+                            text <=> root.password;
+                            input-type: InputType.password;
+                        }
+                    }
+
+                    FormField {
+                        label: "Birthday";
+                        helper: "Used to personalise content. Never shared.";
+                        TextField {
+                            placeholder: "MM / DD / YYYY";
+                            text <=> root.birthday;
                         }
                     }
                 }
-            }
 
-            // Primary CTA.
-            MobileButton {
-                text: "Create account";
-                tone: Tone.info;
-                max-height: 48px;
-                clicked => { root.signup-pressed(); }
-            }
-
-            Divider { }
-
-            // Social auth.
-            HorizontalLayout {
-                alignment: center;
-                Text {
-                    text: "Or continue with";
-                    color: Theme.muted;
-                    font-size: Theme.font-size-caption;
-                    font-weight: 600;
-                }
-            }
-            HorizontalLayout {
-                spacing: Theme.spacing-sm;
-                SocialPill {
-                    label: "Apple";
-                    icon: @image-url("@mobile-components/icons/heart.svg");
-                    bg: #000000;
-                    fg: #ffffff;
-                    clicked => { root.social-pressed("apple"); }
-                }
-                SocialPill {
-                    label: "Google";
-                    icon: @image-url("@mobile-components/icons/check.svg");
-                    bg: #ffffff;
-                    fg: #4285f4;
-                    clicked => { root.social-pressed("google"); }
-                }
-                SocialPill {
-                    label: "GitHub";
-                    icon: @image-url("@mobile-components/icons/menu.svg");
-                    bg: #24292e;
-                    fg: #ffffff;
-                    clicked => { root.social-pressed("github"); }
-                }
-            }
-        }
-
-        Rectangle { vertical-stretch: 1; }
-
-        // Footer switch to log-in.
-        Rectangle {
-            background: Theme.surface-1;
-            drop-shadow-blur: Theme.elevation-2-blur;
-            drop-shadow-color: Theme.elevation-2-color;
-            drop-shadow-offset-y: -4px;
-            height: 64px;
-            HorizontalLayout {
-                spacing: Theme.spacing-sm;
-                alignment: center;
-                VerticalLayout {
-                    alignment: center;
-                    Text {
-                        text: "Already have an account?";
-                        color: Theme.muted;
-                        font-size: Theme.font-size-caption;
+                // ----- Terms toggle (settings-row visual) -------------------
+                FormSection {
+                    SettingRow {
+                        title: "I agree to the terms";
+                        subtitle: "Service agreement and privacy policy.";
+                        MobileSwitch { checked <=> root.agreed; }
                     }
                 }
-                TextButton {
-                    text: "Log in";
-                    clicked => { root.switch-to-login-pressed(); }
+
+                // ----- CTA --------------------------------------------------
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    spacing: Theme.spacing-sm;
+                    alignment: stretch;
+
+                    MobileButton {
+                        text: "Create account";
+                        enabled: root.agreed
+                                 && root.full-name != ""
+                                 && root.email != ""
+                                 && root.password != "";
+                        clicked => { root.submit-pressed(); }
+                    }
+
+                    TextButton {
+                        text: "Already have an account?  Sign in";
+                        clicked => { root.sign-in-pressed(); }
+                    }
                 }
             }
         }

@@ -1,85 +1,53 @@
 // PostDetailPage
 // =====================================================================
 //
-// Long-form article / post-detail template. The first page in the
-// catalogue that exercises **reading-shaped typography** — multi-
-// paragraph body text, generous line-height, a quiet hero image, and
-// an action bar pinned to the bottom for like / comment / share /
-// subscribe.
-//
-// Specification
-// -------------
-//
-// Geometry
-//   - AppBar with back, bookmark, and share trailing icons. Title is
-//     a short kind line ("Article") rather than the post's full title,
-//     which appears below the hero.
-//   - Hero image — full-bleed, 220 px tall, drawn as a `Theme.surface-2`
-//     fallback rectangle with the `cover` image inside.
-//   - Body block — generous 24 px horizontal padding, 12 px between
-//     paragraphs.
-//   - Author row — uses `ContactRow` with a follow `Chip` in the
-//     trailing slot conceptually (here we lay it out as a separate
-//     section since `ContactRow` doesn't currently take a trailing
-//     widget slot).
-//   - Comments — `SectionHeader` plus a list of `ContactRow`s with the
-//     comment text as the subtitle.
-//   - `BottomBar` — Like / Comment / Share counts on the left, a
-//     "Subscribe" `MobileButton` (primary, compact) on the right.
+// Single post with replies. Hero Card carries the author row, post
+// body, MetaRow of stats, then a row of three action IconButtons.
+// Replies live in a FormSection of SettingRows (avatar tile + author
+// timestamp + reply body + heart count trailing). A sticky composer
+// is anchored to the bottom.
 
-import { Theme } from "@mobile-theme/theme.slint";
+import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { Avatar } from "@mobile-components/avatar.slint";
+import { Card } from "@mobile-components/card.slint";
+import { MetaRow, MetaChip } from "@mobile-components/meta-row.slint";
+import { FormSection } from "@mobile-components/form-section.slint";
+import { SettingRow } from "@mobile-components/setting-row.slint";
+import { TextField } from "@mobile-components/text-field.slint";
 import { BottomBar } from "@mobile-components/bottom-bar.slint";
-import { MobileButton } from "@mobile-components/button.slint";
-import { Chip } from "@mobile-components/chip.slint";
-import { ContactRow } from "@mobile-components/contact-row.slint";
-import { SectionHeader } from "@mobile-components/section-header.slint";
-import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
+import { Divider } from "@mobile-components/divider.slint";
 import { ScrollView } from "std-widgets.slint";
 
-export struct CommentEntry {
-    initials: string,
-    name: string,
-    body: string,
-    time: string,
-}
-
-component ActionCount inherits Rectangle {
+component PostAction inherits Rectangle {
     in property <image> icon;
-    in property <string> count;
-    in property <bool> active: false;
-    in property <string> a11y-label;
+    in property <string> label;
     callback clicked();
 
     accessible-role: button;
-    accessible-label: root.a11y-label;
+    accessible-label: root.label;
     accessible-action-default => { root.clicked(); }
 
-    height: 40px;
-    min-width: 64px;
+    horizontal-stretch: 1;
+    min-width: 0;
+    height: 48px;
+    border-radius: Theme.radius-md;
     background: touch.pressed ? Theme.surface-pressed : transparent;
-    border-radius: Theme.radius-sm;
-
     animate background { duration: Theme.motion-fast; }
 
     HorizontalLayout {
-        padding-left: Theme.spacing-sm;
-        padding-right: Theme.spacing-sm;
         spacing: Theme.spacing-xs;
         alignment: center;
-
         Image {
-            width: 20px;
-            height: 20px;
+            width: 18px;
+            height: 18px;
             source: root.icon;
-            colorize: root.active ? Theme.accent-danger : Theme.muted;
+            colorize: Theme.primary;
             image-fit: contain;
-            vertical-alignment: center;
         }
         Text {
-            text: root.count;
-            color: root.active ? Theme.accent-danger : Theme.muted;
+            text: root.label;
+            color: Theme.primary;
             font-size: Theme.font-size-body;
             font-weight: 600;
             vertical-alignment: center;
@@ -91,35 +59,36 @@ component ActionCount inherits Rectangle {
     }
 }
 
+component LikeTrailing inherits HorizontalLayout {
+    in property <string> count;
+    spacing: Theme.spacing-xs;
+    alignment: center;
+
+    Image {
+        width: 14px;
+        height: 14px;
+        source: @image-url("@mobile-components/icons/heart.svg");
+        colorize: Theme.muted;
+        image-fit: contain;
+    }
+    Text {
+        text: root.count;
+        color: Theme.muted;
+        font-size: Theme.font-size-caption;
+        vertical-alignment: center;
+    }
+}
+
 export component PostDetailPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
-    in property <image> hero: @image-url("@mobile-components/icons/album-emerald.svg");
-    in property <string> page-title: "Designing for depth without a backdrop-filter";
-    in property <string> author-name: "Petra Lindquist";
-    in property <string> author-initials: "PL";
-    in property <string> author-meta: "Design Engineer · 8 min read · today";
-    in-out property <bool> following: false;
-    in property <string> body-1: "Mobile design has spent the last five years chasing iOS's frosted-glass aesthetic, but the trick at its heart — real-time backdrop blur — isn't free on most renderers outside the Apple stack.";
-    in property <string> body-2: "On Slint specifically, the renderer doesn't yet expose a `backdrop-filter` equivalent on Android. That changes the calculus: depth has to come from somewhere else.";
-    in property <string> body-3: "The opinionated answer this library lands on is **stacked translucent surfaces**. Card, Drawer, Sheet, and AppBar-when-scrolled all sit at 90-95 % opacity over their parent, and a faint background bleed-through reads as a layer cue without claiming to be glass.";
-    in property <string> body-4: "It's a quieter visual language than iOS Liquid Glass, but it's honest about what the renderer can deliver — and it ships now.";
-    in-out property <int> like-count: 142;
-    in property <int> comment-count: 12;
-    in property <int> share-count: 8;
-    in-out property <bool> liked: false;
-    in property <[CommentEntry]> comments: [
-        { initials: "MO", name: "Marco · ops", body: "The opaque-with-alpha trick reads surprisingly well on the slint AVD.", time: "1h" },
-        { initials: "GH", name: "GitHub", body: "Linked discussion: slint#5710 — there's a draft PR for window-level backdrop on macOS already.", time: "3h" },
-        { initials: "L", name: "Linear", body: "We're considering the same pattern for our mobile shell — the trade-off feels right.", time: "yesterday" },
-    ];
+
+    in-out property <string> draft;
     callback back-pressed();
-    callback bookmark-pressed();
+    callback like-pressed();
+    callback reply-pressed();
     callback share-pressed();
-    callback follow-toggled();
-    callback like-toggled();
-    callback comment-pressed();
-    callback subscribe-pressed();
+    callback send-pressed(string);
 
     background: Theme.background;
 
@@ -127,190 +96,162 @@ export component PostDetailPage inherits Window {
         spacing: 0;
 
         AppBar {
-            title: "ARTICLE";
-            title-style: HeadingStyle.uppercase-spaced;
+            title: "Post";
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
-            trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
             leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.share-pressed(); }
         }
 
         ScrollView {
             vertical-stretch: 1;
 
             VerticalLayout {
-                alignment: start;
+                padding-top: Theme.spacing-md;
+                padding-bottom: Theme.spacing-xl;
+                spacing: Theme.spacing-md;
+                alignment: stretch;
 
-                // ----- Hero -----
-                // Width hardcoded to the mobile target (412 px) to dodge
-                // the Slint binding loop that `parent.width` triggers
-                // through the surrounding ScrollView's viewport.
-                Rectangle {
-                    width: 412px;
-                    height: 220px;
-                    background: Theme.surface-2;
-                    clip: true;
-                    Image {
-                        width: 412px;
-                        height: 220px;
-                        source: root.hero;
-                        image-fit: ImageFit.cover;
-                    }
-                }
-
-                // ----- Title -----
+                // ----- Hero post -------------------------------------------
                 VerticalLayout {
-                    padding-left: Theme.spacing-lg;
-                    padding-right: Theme.spacing-lg;
-                    padding-top: Theme.spacing-lg;
-                    padding-bottom: Theme.spacing-md;
-                    Heading {
-                        style: HeadingStyle.serif-display;
-                        text: root.page-title;
-                        color: Theme.on-background;
-                        font-size: 32px;
-                        wrap: word-wrap;
-                    }
-                }
-
-                // ----- Author row + Follow chip -----
-                HorizontalLayout {
                     padding-left: Theme.spacing-md;
                     padding-right: Theme.spacing-md;
-                    spacing: Theme.spacing-md;
-                    alignment: stretch;
-
-                    VerticalLayout {
-                        alignment: center;
-                        Avatar {
-                            fallback: root.author-initials;
-                            size: 40px;
+                    Card {
+                        HorizontalLayout {
+                            spacing: Theme.spacing-sm;
+                            alignment: stretch;
+                            Avatar { fallback: "PL"; size: 40px; }
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                alignment: center;
+                                spacing: 2px;
+                                Text {
+                                    text: "Petra Lindquist";
+                                    color: Theme.on-surface;
+                                    font-size: Theme.font-size-body;
+                                    font-weight: 600;
+                                }
+                                Text {
+                                    text: "@petra · Design Engineer";
+                                    color: Theme.muted;
+                                    font-size: Theme.font-size-caption;
+                                }
+                            }
                         }
-                    }
 
-                    VerticalLayout {
-                        horizontal-stretch: 1;
-                        spacing: 2px;
-                        alignment: center;
                         Text {
-                            text: root.author-name;
+                            text: "Shipped the Tone enum refactor today. Every status colour in the catalogue now flows from one source — Snackbar, Banner, MobileButton, the leading-icon tile on every SettingRow. Reviewers can finally just point at one symbol. Fewer surprises in the design review meeting tomorrow, hopefully.";
                             color: Theme.on-surface;
-                            font-family: "Fraunces 9pt";
-                            font-size: Theme.font-size-body-large;
-                            font-weight: 700;
-                        }
-                        Text {
-                            text: root.author-meta;
-                            color: Theme.muted;
-                            font-family: "Fraunces 9pt";
                             font-size: Theme.font-size-body;
-                            font-italic: true;
-                            overflow: elide;
+                            wrap: word-wrap;
                         }
-                    }
 
-                    VerticalLayout {
-                        alignment: center;
-                        Chip {
-                            label: root.following ? "Following" : "Follow";
-                            selected: root.following;
-                            clicked => {
-                                root.following = !root.following;
-                                root.follow-toggled();
+                        MetaRow {
+                            items: [
+                                { text: "5 May" },
+                                { icon: @image-url("@mobile-components/icons/heart.svg"), text: "245 likes" },
+                                { icon: @image-url("@mobile-components/icons/inbox.svg"), text: "12 replies" },
+                            ];
+                        }
+
+                        HorizontalLayout {
+                            spacing: Theme.spacing-md;
+                            alignment: stretch;
+                            PostAction {
+                                icon: @image-url("@mobile-components/icons/heart.svg");
+                                label: "Like";
+                                clicked => { root.like-pressed(); }
+                            }
+                            PostAction {
+                                icon: @image-url("@mobile-components/icons/send.svg");
+                                label: "Reply";
+                                clicked => { root.reply-pressed(); }
+                            }
+                            PostAction {
+                                icon: @image-url("@mobile-components/icons/chevron-right.svg");
+                                label: "Share";
+                                clicked => { root.share-pressed(); }
                             }
                         }
                     }
                 }
 
-                // ----- Body paragraphs -----
-                VerticalLayout {
-                    padding-left: Theme.spacing-lg;
-                    padding-right: Theme.spacing-lg;
-                    padding-top: Theme.spacing-lg;
-                    padding-bottom: Theme.spacing-lg;
-                    spacing: Theme.spacing-md;
-                    Text {
-                        text: root.body-1;
-                        color: Theme.on-background;
-                        font-size: Theme.font-size-body-large;
-                        wrap: word-wrap;
-                    }
-                    Text {
-                        text: root.body-2;
-                        color: Theme.on-background;
-                        font-size: Theme.font-size-body-large;
-                        wrap: word-wrap;
-                    }
-                    Text {
-                        text: root.body-3;
-                        color: Theme.on-background;
-                        font-size: Theme.font-size-body-large;
-                        wrap: word-wrap;
-                    }
-                    Text {
-                        text: root.body-4;
-                        color: Theme.on-background;
-                        font-size: Theme.font-size-body-large;
-                        wrap: word-wrap;
-                    }
-                }
+                // ----- Top replies ------------------------------------------
+                FormSection {
+                    title: "TOP REPLIES";
 
-                // ----- Comments -----
-                SectionHeader { text: root.comment-count + " COMMENTS"; }
-
-                for c in root.comments: ContactRow {
-                    initials: c.initials;
-                    title: c.name;
-                    subtitle: c.body;
-                    trailing-text: c.time;
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        tone: Tone.info;
+                        title: "@ada · 4h";
+                        subtitle: "Beautiful — and now the design review checklist is half its old length because we don't enumerate per-component status colours.";
+                        LikeTrailing { count: "32"; }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        tone: Tone.success;
+                        title: "@anika · 5h";
+                        subtitle: "Going to point my team at this on Monday. We have a near-identical refactor lined up for our internal component library.";
+                        LikeTrailing { count: "18"; }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        tone: Tone.warning;
+                        title: "@bao · 9h";
+                        subtitle: "Does the Tone enum also drive the Banner action-label colour now, or is that follow-up work?";
+                        LikeTrailing { count: "7"; }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        tone: Tone.danger;
+                        title: "@cyril · 12h";
+                        subtitle: "Bookmarking — please write up the migration notes when you get a chance.";
+                        LikeTrailing { count: "4"; }
+                    }
                 }
             }
         }
 
+        // ----- Sticky composer ------------------------------------------
         BottomBar {
             HorizontalLayout {
-                padding-left: Theme.spacing-sm;
-                padding-right: Theme.spacing-sm;
-                padding-top: Theme.spacing-sm;
-                padding-bottom: Theme.spacing-sm;
-                spacing: 0;
+                padding: Theme.spacing-sm;
+                spacing: Theme.spacing-sm;
                 alignment: stretch;
 
-                ActionCount {
-                    icon: @image-url("@mobile-components/icons/heart.svg");
-                    count: root.like-count;
-                    active: root.liked;
-                    a11y-label: "Like";
-                    clicked => {
-                        root.liked = !root.liked;
-                        if root.liked { root.like-count += 1; } else { root.like-count -= 1; }
-                        root.like-toggled();
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    TextField {
+                        placeholder: "Reply…";
+                        text <=> root.draft;
                     }
-                }
-                ActionCount {
-                    icon: @image-url("@mobile-components/icons/inbox.svg");
-                    count: root.comment-count;
-                    a11y-label: "Comment";
-                    clicked => { root.comment-pressed(); }
-                }
-                ActionCount {
-                    icon: @image-url("@mobile-components/icons/more-vertical.svg");
-                    count: root.share-count;
-                    a11y-label: "Share";
-                    clicked => { root.share-pressed(); }
                 }
 
                 Rectangle {
-                    horizontal-stretch: 1;
-                }
+                    width: 48px;
+                    height: 48px;
+                    border-radius: self.width / 2;
+                    background: send-touch.pressed ? Theme.primary-pressed : Theme.primary;
+                    accessible-role: button;
+                    accessible-label: "Send reply";
+                    accessible-action-default => { root.send-pressed(root.draft); }
+                    animate background { duration: Theme.motion-fast; }
 
-                MobileButton {
-                    text: "Subscribe";
-                    primary: true;
-                    min-width: 120px;
-                    max-width: 140px;
-                    max-height: 40px;
-                    clicked => { root.subscribe-pressed(); }
+                    Image {
+                        width: 22px;
+                        height: 22px;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        source: @image-url("@mobile-components/icons/send.svg");
+                        colorize: Theme.on-primary;
+                        image-fit: contain;
+                    }
+
+                    send-touch := TouchArea {
+                        clicked => { root.send-pressed(root.draft); }
+                    }
                 }
             }
         }

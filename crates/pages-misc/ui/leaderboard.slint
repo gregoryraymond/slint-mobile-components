@@ -1,237 +1,29 @@
 // LeaderboardPage
 // =====================================================================
 //
-// Gaming-style leaderboard — top-3 podium hero + the long tail of
-// ranks 4+ below as a vertical list. Demonstrates:
-//
-//   - 3-column podium with the centre (rank 1) lifted higher than the
-//     left (rank 2) and right (rank 3), each with its own metal-tinted
-//     pedestal and crown / star glyph.
-//   - Ranked rows where the rank number itself is the leading column
-//     (right-aligned, monospace-ish weight) so columns line up.
-//   - A "you" highlight — a single row in the long tail painted with
-//     `Theme.surface-2` + a tone-tinted leading bar so the player can
-//     find themselves at a glance.
+// Top-N ranked players. Period switcher (SegmentedControl), then a Card
+// showing the current user's row, and a FormSection of SettingRows for
+// the top 10. Top-3 rows use a warning-tinted star leading tile; the
+// rest use a default profile tile. Trailing slot in each row carries
+// the rank number, which keeps the column aligned across every row.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
-import { SectionHeader } from "@mobile-components/section-header.slint";
-import { Avatar } from "@mobile-components/avatar.slint";
+import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
+import { Card } from "@mobile-components/card.slint";
+import { SegmentedControl } from "@mobile-components/segmented-control.slint";
+import { FormSection } from "@mobile-components/form-section.slint";
+import { SettingRow } from "@mobile-components/setting-row.slint";
 import { Divider } from "@mobile-components/divider.slint";
-import { HeadingStyle } from "@mobile-components/heading.slint";
-
-// One podium pedestal — used for the top 3 visual.
-//
-// `medal-tone` drives the pedestal colour: gold (warning) for rank 1,
-// silver (info as a stand-in for neutral metal) for rank 2, bronze
-// (danger for a copper tint) for rank 3.
-component Podium inherits Rectangle {
-    in property <int> rank;
-    in property <string> name;
-    in property <string> score;
-    in property <string> initials;
-    in property <length> pedestal-height: 80px;
-    in property <Tone> medal-tone;
-
-    horizontal-stretch: 1;
-
-    VerticalLayout {
-        spacing: 0;
-        alignment: end;
-
-        // Avatar block.
-        VerticalLayout {
-            spacing: 4px;
-            padding-bottom: 8px;
-            HorizontalLayout {
-                alignment: center;
-                Avatar {
-                    fallback: root.initials;
-                    size: root.rank == 1 ? 64px : 48px;
-                }
-            }
-            HorizontalLayout {
-                alignment: center;
-                Text {
-                    text: root.name;
-                    color: Theme.on-surface;
-                    font-family: "Fraunces 9pt";
-                    font-size: Theme.font-size-body;
-                    font-weight: 400;
-                    horizontal-alignment: center;
-                    overflow: elide;
-                }
-            }
-            HorizontalLayout {
-                alignment: center;
-                Text {
-                    text: root.score;
-                    color: Theme.muted;
-                    font-size: Theme.font-size-caption;
-                    horizontal-alignment: center;
-                }
-            }
-        }
-
-        // Pedestal.
-        Rectangle {
-            height: root.pedestal-height;
-            border-radius: 4px;
-            background:
-                  root.medal-tone == Tone.warning ? @linear-gradient(180deg, #f3c14a 0%, #a07820 100%)
-                : root.medal-tone == Tone.info    ? @linear-gradient(180deg, #c0c5cc 0%, #6e757e 100%)
-                : root.medal-tone == Tone.danger  ? @linear-gradient(180deg, #d18b56 0%, #7d4a25 100%)
-                : @linear-gradient(180deg, Theme.surface-2 0%, Theme.surface-3 100%);
-
-            // Big rank numeral centred on the pedestal — Fraunces gives
-            // each medallist an editorial, classical-podium feel.
-            Text {
-                text: root.rank;
-                color: #ffffff;
-                font-family: "Fraunces 9pt";
-                font-size: 44px;
-                font-weight: 700;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-                width: parent.width;
-                height: parent.height;
-            }
-        }
-    }
-}
-
-// One row in the long tail — rank, avatar, name, score, with optional
-// "you" highlight.
-component RankRow inherits Rectangle {
-    in property <int> rank;
-    in property <string> initials;
-    in property <string> name;
-    in property <string> score;
-    in property <string> meta;
-    in property <bool> is-you: false;
-    in property <int> trend: 0;   // -1 down, 0 flat, +1 up
-
-    horizontal-stretch: 1;
-    min-height: 64px;
-    background: root.is-you ? Theme.surface-2 : transparent;
-    border-radius: Theme.radius-sm;
-
-    // Leading info-tone bar — only on the "you" row.
-    if root.is-you: Rectangle {
-        x: 0;
-        y: 0;
-        width: 4px;
-        height: parent.height;
-        background: Theme.accent-info;
-    }
-
-    HorizontalLayout {
-        padding-left: Theme.spacing-md + 4px;
-        padding-right: Theme.spacing-md;
-        padding-top: Theme.spacing-sm;
-        padding-bottom: Theme.spacing-sm;
-        spacing: Theme.spacing-md;
-        alignment: stretch;
-
-        // Rank number.
-        VerticalLayout {
-            alignment: center;
-            Text {
-                text: root.rank;
-                color: root.is-you ? Theme.accent-info : Theme.muted;
-                font-size: Theme.font-size-body-large;
-                font-weight: 700;
-                horizontal-alignment: right;
-                width: 24px;
-            }
-        }
-
-        // Trend arrow / dash.
-        VerticalLayout {
-            alignment: center;
-            width: 12px;
-            Text {
-                text:
-                      root.trend > 0 ? "▲"
-                    : root.trend < 0 ? "▼"
-                    : "–";
-                color:
-                      root.trend > 0 ? Theme.accent-success
-                    : root.trend < 0 ? Theme.accent-danger
-                    : Theme.muted;
-                font-size: 10px;
-                font-weight: 700;
-                vertical-alignment: center;
-            }
-        }
-
-        // Avatar.
-        VerticalLayout {
-            alignment: center;
-            Avatar {
-                fallback: root.initials;
-                size: 36px;
-            }
-        }
-
-        // Name + meta.
-        VerticalLayout {
-            horizontal-stretch: 1;
-            alignment: center;
-            spacing: 2px;
-            HorizontalLayout {
-                spacing: Theme.spacing-xs;
-                Text {
-                    text: root.name;
-                    color: Theme.on-surface;
-                    font-size: Theme.font-size-body;
-                    font-weight: root.is-you ? 700 : 500;
-                }
-                if root.is-you: Rectangle {
-                    width: you-text.preferred-width + 10px;
-                    height: 16px;
-                    border-radius: 4px;
-                    background: Theme.accent-info;
-                    you-text := Text {
-                        text: "YOU";
-                        color: Theme.on-primary;
-                        font-size: 9px;
-                        font-weight: 700;
-                        letter-spacing: 0.5px;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                        width: parent.width;
-                        height: parent.height;
-                    }
-                }
-            }
-            Text {
-                text: root.meta;
-                color: Theme.muted;
-                font-size: Theme.font-size-caption;
-            }
-        }
-
-        // Score.
-        VerticalLayout {
-            alignment: center;
-            Text {
-                text: root.score;
-                color: Theme.on-surface;
-                font-size: Theme.font-size-body;
-                font-weight: 700;
-                horizontal-alignment: right;
-            }
-        }
-    }
-}
+import { ScrollView } from "std-widgets.slint";
 
 export component LeaderboardPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
-    in property <string> season: "Season 14 · 3 days left";
+
+    in-out property <int> period-index: 1;
     callback back-pressed();
-    callback share-pressed();
+    callback row-pressed(string);
 
     background: Theme.background;
 
@@ -240,122 +32,234 @@ export component LeaderboardPage inherits Window {
 
         AppBar {
             title: "Leaderboard";
-            title-style: HeadingStyle.serif-display;
+            title-style: HeadingStyle.grotesk-bold;
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
-            trailing-icon: @image-url("@mobile-components/icons/send.svg");
             leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.share-pressed(); }
         }
 
-        // Season subhead.
-        HorizontalLayout {
-            padding-left: Theme.spacing-md;
-            padding-right: Theme.spacing-md;
-            padding-bottom: Theme.spacing-sm;
-            Text {
-                text: root.season;
-                color: Theme.muted;
-                font-size: Theme.font-size-caption;
-                font-weight: 600;
-            }
-        }
+        ScrollView {
+            vertical-stretch: 1;
 
-        // ----- Podium -----
-        Rectangle {
-            height: 240px;
-            HorizontalLayout {
-                padding-left: Theme.spacing-md;
-                padding-right: Theme.spacing-md;
-                padding-top: Theme.spacing-sm;
-                spacing: Theme.spacing-sm;
+            VerticalLayout {
+                padding-top: Theme.spacing-md;
+                padding-bottom: Theme.spacing-xl;
+                spacing: Theme.spacing-md;
                 alignment: stretch;
-                // Rank 2 (silver).
-                Podium {
-                    rank: 2;
-                    initials: "LE";
-                    name: "Léa B.";
-                    score: "18,420";
-                    pedestal-height: 80px;
-                    medal-tone: Tone.info;
+
+                // ----- Period switcher ---------------------------------
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    SegmentedControl {
+                        options: ["Today", "Week", "All-time"];
+                        selected-index <=> root.period-index;
+                    }
                 }
-                // Rank 1 (gold).
-                Podium {
-                    rank: 1;
-                    initials: "AR";
-                    name: "Anika R.";
-                    score: "21,108";
-                    pedestal-height: 110px;
-                    medal-tone: Tone.warning;
+
+                // ----- Current user hero -------------------------------
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    Card {
+                        HorizontalLayout {
+                            spacing: Theme.spacing-md;
+                            alignment: stretch;
+
+                            VerticalLayout {
+                                alignment: center;
+                                Text {
+                                    text: "#42";
+                                    color: Theme.primary;
+                                    font-family: "JetBrains Mono";
+                                    font-size: Theme.font-size-headline;
+                                    font-weight: 700;
+                                    horizontal-alignment: center;
+                                }
+                            }
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                alignment: center;
+                                spacing: 2px;
+                                Heading {
+                                    text: "@you";
+                                    style: HeadingStyle.plex-medium;
+                                    color: Theme.on-surface;
+                                    font-size: 18px;
+                                }
+                                Text {
+                                    text: "984 pts · Belgium";
+                                    color: Theme.muted;
+                                    font-size: Theme.font-size-caption;
+                                }
+                                Text {
+                                    text: "+12 this week";
+                                    color: Theme.accent-success;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 600;
+                                }
+                            }
+                        }
+                    }
                 }
-                // Rank 3 (bronze).
-                Podium {
-                    rank: 3;
-                    initials: "DV";
-                    name: "Devika S.";
-                    score: "16,902";
-                    pedestal-height: 60px;
-                    medal-tone: Tone.danger;
+
+                // ----- Top 10 ------------------------------------------
+                FormSection {
+                    title: "TOP 10";
+
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/star.svg");
+                        tone: Tone.warning;
+                        title: "@blackcat";
+                        subtitle: "Norway · 2,481 pts";
+                        clicked => { root.row-pressed("1"); }
+                        Text {
+                            text: "#1";
+                            color: Theme.on-surface;
+                            font-family: "JetBrains Mono";
+                            font-size: Theme.font-size-body-large;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/star.svg");
+                        tone: Tone.warning;
+                        title: "@nightowl";
+                        subtitle: "Belgium · 2,210 pts";
+                        clicked => { root.row-pressed("2"); }
+                        Text {
+                            text: "#2";
+                            color: Theme.on-surface;
+                            font-family: "JetBrains Mono";
+                            font-size: Theme.font-size-body-large;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/star.svg");
+                        tone: Tone.warning;
+                        title: "@oslo_runner";
+                        subtitle: "Norway · 2,047 pts";
+                        clicked => { root.row-pressed("3"); }
+                        Text {
+                            text: "#3";
+                            color: Theme.on-surface;
+                            font-family: "JetBrains Mono";
+                            font-size: Theme.font-size-body-large;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        title: "@violet_storm";
+                        subtitle: "Sweden · 1,894 pts";
+                        clicked => { root.row-pressed("4"); }
+                        Text {
+                            text: "#4";
+                            color: Theme.on-surface;
+                            font-family: "JetBrains Mono";
+                            font-size: Theme.font-size-body-large;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        title: "@sparrow.84";
+                        subtitle: "Germany · 1,712 pts";
+                        clicked => { root.row-pressed("5"); }
+                        Text {
+                            text: "#5";
+                            color: Theme.on-surface;
+                            font-family: "JetBrains Mono";
+                            font-size: Theme.font-size-body-large;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        title: "@axolotl_99";
+                        subtitle: "Mexico · 1,604 pts";
+                        clicked => { root.row-pressed("6"); }
+                        Text {
+                            text: "#6";
+                            color: Theme.on-surface;
+                            font-family: "JetBrains Mono";
+                            font-size: Theme.font-size-body-large;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        title: "@quicksilver";
+                        subtitle: "France · 1,521 pts";
+                        clicked => { root.row-pressed("7"); }
+                        Text {
+                            text: "#7";
+                            color: Theme.on-surface;
+                            font-family: "JetBrains Mono";
+                            font-size: Theme.font-size-body-large;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        title: "@petra.l";
+                        subtitle: "Sweden · 1,447 pts";
+                        clicked => { root.row-pressed("8"); }
+                        Text {
+                            text: "#8";
+                            color: Theme.on-surface;
+                            font-family: "JetBrains Mono";
+                            font-size: Theme.font-size-body-large;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        title: "@hedy.l";
+                        subtitle: "Austria · 1,389 pts";
+                        clicked => { root.row-pressed("9"); }
+                        Text {
+                            text: "#9";
+                            color: Theme.on-surface;
+                            font-family: "JetBrains Mono";
+                            font-size: Theme.font-size-body-large;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        title: "@grace.h";
+                        subtitle: "USA · 1,304 pts";
+                        clicked => { root.row-pressed("10"); }
+                        Text {
+                            text: "#10";
+                            color: Theme.on-surface;
+                            font-family: "JetBrains Mono";
+                            font-size: Theme.font-size-body-large;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                        }
+                    }
                 }
             }
         }
-
-        // ----- Long tail -----
-        SectionHeader { text: "OTHERS"; }
-        RankRow {
-            rank: 4;
-            initials: "MK";
-            name: "Marco Kovač";
-            meta: "Korea";
-            score: "15,440";
-            trend: 1;
-        }
-        Divider { }
-        RankRow {
-            rank: 5;
-            initials: "PR";
-            name: "Priya Rao";
-            meta: "India";
-            score: "14,820";
-            trend: -1;
-        }
-        Divider { }
-        RankRow {
-            rank: 6;
-            initials: "GR";
-            name: "Greg Raymond";
-            meta: "Australia";
-            score: "14,316";
-            is-you: true;
-            trend: 1;
-        }
-        Divider { }
-        RankRow {
-            rank: 7;
-            initials: "TM";
-            name: "Tomás Mendes";
-            meta: "Portugal";
-            score: "13,902";
-            trend: 0;
-        }
-        Divider { }
-        RankRow {
-            rank: 8;
-            initials: "SY";
-            name: "Sarah Yuen";
-            meta: "Singapore";
-            score: "13,710";
-            trend: 1;
-        }
-        Divider { }
-        RankRow {
-            rank: 9;
-            initials: "JK";
-            name: "Jonas Kaufmann";
-            meta: "Germany";
-            score: "12,901";
-            trend: -1;
-        }
-
-        Rectangle { vertical-stretch: 1; }
     }
 }

@@ -1,262 +1,36 @@
 // OrderTrackingPage
 // =====================================================================
 //
-// Vertical step timeline (Ordered → Packed → Shipped → Out for delivery
-// → Delivered) showing the current state of a delivery + the courier
-// card + a collapsed items list. Demonstrates two patterns:
+// Live shipping progress for one order. Demonstrates that a "timeline"
+// is just a `FormSection` full of `SettingRow`s — each milestone row
+// shares the SAME 56 px floor, the SAME 32 px tinted leading tile, and
+// the SAME title/subtitle rhythm. No bespoke timeline widget.
 //
-//   - Vertical-timeline rendering: a per-step row with a connector
-//     line on the left, a filled / outlined dot for the current step,
-//     and step-title + timestamp on the right. Connector colour shifts
-//     across the "complete" portion to give the bar a sense of progress.
-//   - Item-quantity row: an itemised list condensed to one line each
-//     ("Qty 2 · Slint hoodie") suitable for an order-confirmation
-//     summary or a receipt rollup.
-//
-// Layout
-// ------
-//
-//   AppBar — "Order #A1029" with help trailing
-//   Banner — ETA "Arriving Wednesday, May 14"
-//   Step timeline (5 steps; current = "Out for delivery")
-//   Courier card — avatar + name + plate + call action
-//   Section header: "3 ITEMS"
-//   Item rows
-//   Total card
+// What this screen does
+//   - AppBar "Order #2147" + back.
+//   - Hero "map" Card — surface-2 background with centred "EN ROUTE"
+//     placeholder text (no real map renderer).
+//   - PROGRESS FormSection with 4 SettingRows (one per milestone).
+//   - TOTALS FormSection with KeyValueRows (subtotal / shipping /
+//     total).
+//   - Two stacked action buttons at the bottom.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
-import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
-import { SectionHeader } from "@mobile-components/section-header.slint";
-import { Card } from "@mobile-components/card.slint";
-import { Avatar } from "@mobile-components/avatar.slint";
+import { FormSection } from "@mobile-components/form-section.slint";
+import { SettingRow } from "@mobile-components/setting-row.slint";
+import { KeyValueRow } from "@mobile-components/key-value-row.slint";
 import { Divider } from "@mobile-components/divider.slint";
-import { Banner } from "@mobile-components/banner.slint";
-import { MobileButton } from "@mobile-components/button.slint";
-
-// One step in the vertical timeline. `state` controls the dot fill,
-// connector colour, and label weight.
-//
-// states:
-//   - completed   — green-filled dot, solid green connector above + below
-//   - current     — accent-primary filled dot with halo, solid above,
-//                   dashed below (visually, we approximate dashed via a
-//                   muted colour for the lower segment)
-//   - pending     — outlined muted dot, muted connector
-component TimelineStep inherits Rectangle {
-    in property <string> label;
-    in property <string> when;
-    in property <int> state: 0;   // 0=pending, 1=current, 2=completed
-    in property <bool> first: false;
-    in property <bool> last: false;
-
-    horizontal-stretch: 1;
-    min-height: 72px;
-
-    HorizontalLayout {
-        spacing: Theme.spacing-md;
-        padding-left: Theme.spacing-md;
-        padding-right: Theme.spacing-md;
-        alignment: stretch;
-
-        // Connector + dot rail.
-        Rectangle {
-            width: 32px;
-
-            // Upper connector (omitted for first step).
-            if !root.first: Rectangle {
-                x: (parent.width - self.width) / 2;
-                y: 0;
-                width: 2px;
-                height: parent.height / 2 - 9px;
-                background: root.state == 0 ? Theme.outline : Theme.accent-success;
-            }
-            // Lower connector (omitted for last step).
-            if !root.last: Rectangle {
-                x: (parent.width - self.width) / 2;
-                y: parent.height / 2 + 9px;
-                width: 2px;
-                height: parent.height / 2 - 9px;
-                background:
-                      root.state == 2 ? Theme.accent-success
-                    : root.state == 1 ? Theme.outline
-                    : Theme.outline;
-            }
-            // Dot.
-            Rectangle {
-                x: (parent.width - self.width) / 2;
-                y: parent.height / 2 - self.height / 2;
-                width: 18px;
-                height: 18px;
-                border-radius: self.width / 2;
-                background:
-                      root.state == 2 ? Theme.accent-success
-                    : root.state == 1 ? Theme.primary
-                    : Theme.surface-1;
-                border-width: root.state == 0 ? 2px : 0px;
-                border-color: Theme.outline;
-                // Halo for the current step.
-                if root.state == 1: Rectangle {
-                    width: 28px;
-                    height: 28px;
-                    x: (parent.width - self.width) / 2;
-                    y: (parent.height - self.height) / 2;
-                    border-radius: self.width / 2;
-                    background: Theme.primary;
-                    opacity: 0.25;
-                }
-            }
-        }
-
-        // Label + timestamp.
-        VerticalLayout {
-            alignment: center;
-            horizontal-stretch: 1;
-            spacing: 2px;
-            Text {
-                text: root.label;
-                color: root.state == 0 ? Theme.muted : Theme.on-surface;
-                font-size: Theme.font-size-body-large;
-                font-weight: root.state == 1 ? 700 : (root.state == 2 ? 600 : 500);
-            }
-            Text {
-                text: root.when;
-                color: Theme.muted;
-                font-size: Theme.font-size-caption;
-            }
-        }
-    }
-}
-
-// Courier card — avatar + name + plate + call CTA.
-component CourierCard inherits Rectangle {
-    in property <string> name: "Marco D.";
-    in property <string> plate: "Honda Civic · 7XYZ123";
-    in property <string> rating: "★ 4.92";
-    callback call-pressed();
-    callback message-pressed();
-
-    height: 88px;
-    background: Theme.surface-1;
-    border-radius: Theme.radius-md;
-    drop-shadow-blur: Theme.elevation-1-blur;
-    drop-shadow-color: Theme.elevation-1-color;
-    drop-shadow-offset-y: Theme.elevation-1-y;
-
-    HorizontalLayout {
-        padding: Theme.spacing-md;
-        spacing: Theme.spacing-md;
-        alignment: stretch;
-
-        VerticalLayout {
-            alignment: center;
-            Avatar {
-                fallback: "MD";
-                size: 48px;
-            }
-        }
-
-        VerticalLayout {
-            horizontal-stretch: 1;
-            alignment: center;
-            spacing: 2px;
-            Text {
-                text: root.name;
-                color: Theme.on-surface;
-                font-size: Theme.font-size-body-large;
-                font-weight: 600;
-            }
-            Text {
-                text: root.plate;
-                color: Theme.muted;
-                font-size: Theme.font-size-caption;
-            }
-            Text {
-                text: root.rating;
-                color: Theme.accent-warning;
-                font-size: Theme.font-size-caption;
-                font-weight: 600;
-            }
-        }
-
-        VerticalLayout {
-            alignment: center;
-            spacing: Theme.spacing-xs;
-            HorizontalLayout {
-                spacing: Theme.spacing-xs;
-                MobileButton {
-                    text: "Call";
-                    primary: false;
-                    min-width: 72px;
-                    max-height: 40px;
-                    horizontal-stretch: 0;
-                    clicked => { root.call-pressed(); }
-                }
-            }
-        }
-    }
-}
-
-// One item row in the order summary.
-component ItemRow inherits Rectangle {
-    in property <string> name;
-    in property <int> qty: 1;
-    in property <string> price;
-
-    min-height: 56px;
-
-    HorizontalLayout {
-        padding: Theme.spacing-md;
-        spacing: Theme.spacing-md;
-        alignment: stretch;
-
-        Rectangle {
-            width: 40px;
-            height: 40px;
-            border-radius: Theme.radius-sm;
-            background: Theme.surface-variant;
-            Text {
-                text: "×" + root.qty;
-                color: Theme.on-surface;
-                font-size: Theme.font-size-body;
-                font-weight: 700;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-                width: parent.width;
-                height: parent.height;
-            }
-        }
-        VerticalLayout {
-            horizontal-stretch: 1;
-            alignment: center;
-            Text {
-                text: root.name;
-                color: Theme.on-surface;
-                font-size: Theme.font-size-body;
-                overflow: elide;
-            }
-        }
-        VerticalLayout {
-            alignment: center;
-            Text {
-                text: root.price;
-                color: Theme.on-surface;
-                font-size: Theme.font-size-body;
-                font-weight: 600;
-                horizontal-alignment: right;
-            }
-        }
-    }
-}
+import { MobileButton, TextButton } from "@mobile-components/button.slint";
+import { ScrollView } from "std-widgets.slint";
 
 export component OrderTrackingPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
-    in property <string> order-number: "Order #A1029-4421";
+
     callback back-pressed();
-    callback help-pressed();
-    callback call-courier-pressed();
-    callback message-courier-pressed();
+    callback contact-pressed();
+    callback invoice-pressed();
 
     background: Theme.background;
 
@@ -264,118 +38,125 @@ export component OrderTrackingPage inherits Window {
         spacing: 0;
 
         AppBar {
-            title: root.order-number;
-            title-style: HeadingStyle.plex-medium;
+            title: "Order #2147";
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
-            trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
             leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.help-pressed(); }
         }
 
-        VerticalLayout {
-            padding: Theme.spacing-md;
-            spacing: Theme.spacing-md;
+        ScrollView {
+            vertical-stretch: 1;
 
-            // ETA banner.
-            Banner {
-                icon: @image-url("@mobile-components/icons/pin.svg");
-                message: "Arriving today by 18:30 — out for delivery.";
-                tone: Tone.success;
-            }
-
-            // Timeline.
             VerticalLayout {
-                spacing: 0;
-                TimelineStep {
-                    label: "Order placed";
-                    when: "Mon, May 11 · 09:42";
-                    state: 2;
-                    first: true;
-                }
-                TimelineStep {
-                    label: "Packed";
-                    when: "Mon, May 11 · 14:18";
-                    state: 2;
-                }
-                TimelineStep {
-                    label: "Shipped";
-                    when: "Tue, May 12 · 06:30";
-                    state: 2;
-                }
-                TimelineStep {
-                    label: "Out for delivery";
-                    when: "Wed, May 14 · 07:55";
-                    state: 1;
-                }
-                TimelineStep {
-                    label: "Delivered";
-                    when: "—";
-                    state: 0;
-                    last: true;
-                }
-            }
-
-            // Courier.
-            CourierCard {
-                call-pressed => { root.call-courier-pressed(); }
-                message-pressed => { root.message-courier-pressed(); }
-            }
-        }
-
-        // Items section.
-        SectionHeader { text: "3 ITEMS"; }
-        ItemRow {
-            name: "Slint hoodie — graphite, M";
-            qty: 1;
-            price: "$48.00";
-        }
-        Divider { }
-        ItemRow {
-            name: "Sticker pack — Liquid Glass";
-            qty: 2;
-            price: "$12.00";
-        }
-        Divider { }
-        ItemRow {
-            name: "Coffee mug — Greg's favourite";
-            qty: 1;
-            price: "$18.00";
-        }
-
-        Rectangle { vertical-stretch: 1; }
-
-        // Total bar at the bottom.
-        Rectangle {
-            background: Theme.surface-1;
-            drop-shadow-blur: Theme.elevation-2-blur;
-            drop-shadow-color: Theme.elevation-2-color;
-            drop-shadow-offset-y: -4px;
-            HorizontalLayout {
-                padding: Theme.spacing-md;
+                padding-top: Theme.spacing-md;
+                padding-bottom: Theme.spacing-xl;
                 spacing: Theme.spacing-md;
                 alignment: stretch;
+
+                // ----- Hero map card -----------------------------------
                 VerticalLayout {
-                    alignment: center;
-                    horizontal-stretch: 1;
-                    spacing: 2px;
-                    Text {
-                        text: "Total";
-                        color: Theme.muted;
-                        font-size: Theme.font-size-caption;
-                    }
-                    Text {
-                        text: "$90.00";
-                        color: Theme.on-surface;
-                        font-size: Theme.font-size-title;
-                        font-weight: 700;
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+
+                    Rectangle {
+                        height: 168px;
+                        background: Theme.surface-2;
+                        border-radius: Theme.radius-md;
+                        drop-shadow-blur: Theme.elevation-1-blur;
+                        drop-shadow-color: Theme.elevation-1-color;
+                        drop-shadow-offset-y: Theme.elevation-1-y;
+                        clip: true;
+
+                        VerticalLayout {
+                            alignment: center;
+                            spacing: Theme.spacing-xs;
+
+                            Text {
+                                text: "EN ROUTE";
+                                color: Theme.on-surface;
+                                font-size: Theme.font-size-headline;
+                                font-weight: 700;
+                                letter-spacing: 1px;
+                                horizontal-alignment: center;
+                            }
+                            Text {
+                                text: "Arriving today, 16:00–18:00";
+                                color: Theme.muted;
+                                font-size: Theme.font-size-body;
+                                horizontal-alignment: center;
+                            }
+                        }
                     }
                 }
-                MobileButton {
-                    text: "Track on map";
-                    horizontal-stretch: 0;
-                    min-width: 160px;
-                    max-height: 48px;
-                    clicked => { /* opens map */ }
+
+                // ----- Progress timeline -------------------------------
+                FormSection {
+                    title: "PROGRESS";
+
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/check.svg");
+                        tone: Tone.success;
+                        title: "Order placed";
+                        subtitle: "May 12 · 09:11";
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/check.svg");
+                        tone: Tone.success;
+                        title: "Picked, packed";
+                        subtitle: "May 12 · 14:02";
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/send.svg");
+                        tone: Tone.info;
+                        title: "Out for delivery";
+                        subtitle: "May 13 · 08:45";
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/pin.svg");
+                        tone: Tone.warning;
+                        title: "Estimated arrival";
+                        subtitle: "Today, 16:00–18:00";
+                    }
+                }
+
+                // ----- Totals -----------------------------------------
+                FormSection {
+                    title: "TOTALS";
+
+                    KeyValueRow {
+                        label: "Subtotal";
+                        value: "€ 38.15";
+                    }
+                    Divider { }
+                    KeyValueRow {
+                        label: "Shipping";
+                        value: "€  3.95";
+                    }
+                    Divider { }
+                    KeyValueRow {
+                        label: "Total";
+                        value: "€ 42.10";
+                        emphasis: true;
+                    }
+                }
+
+                // ----- Actions -----------------------------------------
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    spacing: Theme.spacing-sm;
+                    alignment: stretch;
+
+                    MobileButton {
+                        text: "Contact courier";
+                        clicked => { root.contact-pressed(); }
+                    }
+                    TextButton {
+                        text: "View invoice";
+                        clicked => { root.invoice-pressed(); }
+                    }
                 }
             }
         }

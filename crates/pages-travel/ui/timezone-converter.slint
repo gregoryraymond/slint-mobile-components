@@ -1,138 +1,42 @@
 // TimezoneConverterPage
 // =====================================================================
 //
-// Multi-timezone meeting planner — Every Time Zone / World Time Buddy
-// style. Distinct from `WorldClockPage` (favourites list with day-strip)
-// and `CalendarPage` (single-day events). Demonstrates a horizontal
-// hour-grid for picking an overlapping meeting slot:
+// World-clock / timezone-converter screen. Pure showcase of the
+// `FormSection` + `SettingRow` discipline — the reference time and the
+// six world cities all use the SAME SettingRow shape, so leading icon
+// tiles, title baselines, subtitle captions, and trailing value text
+// line up in tight columns regardless of city name length.
 //
-//   - "Home" city + giant time hero at the top with day-of-week chip.
-//   - Working-hours-window summary banner.
-//   - Per-city row: name + offset chip + current time + a 12-cell
-//     hour strip running 06:00 → 18:00 local-to-home. Cells inside
-//     each city's working hours are tone-tinted; the active "now"
-//     hour gets the info-tone solid fill.
+// What this screen does
+//   - AppBar "Time zones" with back leading and a + trailing.
+//   - REFERENCE TIME section: a single SettingRow showing "Now in
+//     Brussels" / "Saturday, May 17" / "15:42 CEST" as trailing big text.
+//   - A library `Slider` below the section that lets the user drag a
+//     reference time across all zones; reading the slider's value would
+//     ordinarily shift the values below.
+//   - WORLD section: six SettingRows, one per city, identical leading
+//     tile + title + subtitle + trailing value. Cities span tones
+//     (info / success / warning / danger / default) so the leading-tile
+//     colours read as a visual key.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
-import { SectionHeader } from "@mobile-components/section-header.slint";
-import { Banner } from "@mobile-components/banner.slint";
+import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
+import { FormSection } from "@mobile-components/form-section.slint";
+import { SettingRow } from "@mobile-components/setting-row.slint";
 import { Divider } from "@mobile-components/divider.slint";
-import { HeadingStyle } from "@mobile-components/heading.slint";
-
-// One hour cell.
-//
-// state:
-//   0 = night (outside work hours)
-//   1 = working
-//   2 = current "now" column for the home timezone
-//   3 = sleeping / red zone
-component HourCell inherits Rectangle {
-    in property <int> state: 0;
-    in property <string> label;
-
-    horizontal-stretch: 1;
-    height: 32px;
-    background:
-          root.state == 2 ? Theme.accent-info
-        : root.state == 1 ? #22c55e33
-        : root.state == 3 ? #ef444444
-        : Theme.surface-variant;
-    border-radius: 4px;
-
-    Text {
-        text: root.label;
-        color:
-              root.state == 2 ? Theme.on-primary
-            : root.state == 1 ? Theme.accent-success
-            : root.state == 3 ? Theme.accent-danger
-            : Theme.muted;
-        font-size: 10px;
-        font-weight: 800;
-        horizontal-alignment: center;
-        vertical-alignment: center;
-        width: parent.width;
-        height: parent.height;
-    }
-}
-
-// One timezone row.
-component TimezoneRow inherits Rectangle {
-    in property <string> city;
-    in property <string> offset;
-    in property <string> when;
-    in property <[int]> hours;
-    in property <[string]> labels;
-
-    horizontal-stretch: 1;
-    min-height: 64px;
-
-    HorizontalLayout {
-        padding: Theme.spacing-sm;
-        spacing: Theme.spacing-sm;
-        alignment: stretch;
-
-        // City + offset.
-        VerticalLayout {
-            alignment: center;
-            width: 84px;
-            spacing: 2px;
-            Text {
-                text: root.city;
-                color: Theme.on-surface;
-                font-size: Theme.font-size-caption;
-                font-weight: 700;
-                overflow: elide;
-            }
-            Rectangle {
-                width: off-text.preferred-width + 10px;
-                height: 16px;
-                border-radius: 4px;
-                background: Theme.surface-variant;
-                off-text := Text {
-                    text: root.offset;
-                    color: Theme.muted;
-                    font-size: 9px;
-                    font-weight: 800;
-                    letter-spacing: 0.3px;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
-                    width: parent.width;
-                    height: parent.height;
-                }
-            }
-            Text {
-                text: root.when;
-                color: Theme.muted;
-                font-size: 9px;
-                font-weight: 600;
-            }
-        }
-
-        // Hour strip.
-        VerticalLayout {
-            horizontal-stretch: 1;
-            alignment: center;
-            HorizontalLayout {
-                spacing: 2px;
-                alignment: stretch;
-                for hour-state[index] in root.hours : HourCell {
-                    state: hour-state;
-                    label: root.labels[index];
-                }
-            }
-        }
-    }
-}
+import { Slider } from "@mobile-components/slider.slint";
+import { ScrollView } from "std-widgets.slint";
 
 export component TimezoneConverterPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
-    in property <string> home-city: "San Francisco";
-    in property <string> home-time: "14:00";
-    in property <string> home-date: "Wed · May 14";
+
+    in-out property <float> reference-position: 0.64;
+
     callback back-pressed();
-    callback add-city-pressed();
+    callback add-zone-pressed();
+    callback city-pressed(string);
 
     background: Theme.background;
 
@@ -140,113 +44,148 @@ export component TimezoneConverterPage inherits Window {
         spacing: 0;
 
         AppBar {
-            title: "plan a meeting";
-            title-style: HeadingStyle.lowercase-soft;
+            title: "Time zones";
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             trailing-icon: @image-url("@mobile-components/icons/plus.svg");
             leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.add-city-pressed(); }
+            trailing-pressed => { root.add-zone-pressed(); }
         }
 
-        // Home hero.
-        VerticalLayout {
-            padding-top: Theme.spacing-md;
-            padding-bottom: Theme.spacing-sm;
-            spacing: 2px;
-            HorizontalLayout {
-                alignment: center;
-                Text {
-                    text: "HOME · " + root.home-city;
-                    color: Theme.muted;
-                    font-size: 10px;
-                    font-weight: 800;
-                    letter-spacing: 0.5px;
+        ScrollView {
+            vertical-stretch: 1;
+
+            VerticalLayout {
+                padding-top: Theme.spacing-md;
+                padding-bottom: Theme.spacing-xl;
+                spacing: Theme.spacing-md;
+                alignment: stretch;
+
+                // ----- REFERENCE TIME -------------------------------------
+                FormSection {
+                    title: "REFERENCE TIME";
+
+                    SettingRow {
+                        title: "Now in Brussels";
+                        subtitle: "Saturday, May 17";
+                        Text {
+                            text: "15:42 CEST";
+                            color: Theme.on-surface;
+                            font-size: Theme.font-size-body-large;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+
+                // Slider for shifting the reference time across all zones.
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    spacing: Theme.spacing-xs;
+                    Slider {
+                        value <=> root.reference-position;
+                    }
+                    Text {
+                        text: "Drag to preview across all zones.";
+                        color: Theme.muted;
+                        font-size: Theme.font-size-caption;
+                    }
+                }
+
+                // ----- WORLD ----------------------------------------------
+                FormSection {
+                    title: "WORLD";
+
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/home.svg");
+                        tone: Tone.info;
+                        title: "Tokyo";
+                        subtitle: "tomorrow · JST";
+                        clicked => { root.city-pressed("tokyo"); }
+                        Text {
+                            text: "22:42";
+                            color: Theme.on-surface;
+                            font-size: Theme.font-size-body-large;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/home.svg");
+                        tone: Tone.success;
+                        title: "Sydney";
+                        subtitle: "tomorrow · AEST";
+                        clicked => { root.city-pressed("sydney"); }
+                        Text {
+                            text: "23:42";
+                            color: Theme.on-surface;
+                            font-size: Theme.font-size-body-large;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/home.svg");
+                        tone: Tone.warning;
+                        title: "San Francisco";
+                        subtitle: "today · PDT";
+                        clicked => { root.city-pressed("sf"); }
+                        Text {
+                            text: "06:42";
+                            color: Theme.on-surface;
+                            font-size: Theme.font-size-body-large;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/home.svg");
+                        tone: Tone.danger;
+                        title: "New York";
+                        subtitle: "today · EDT";
+                        clicked => { root.city-pressed("nyc"); }
+                        Text {
+                            text: "09:42";
+                            color: Theme.on-surface;
+                            font-size: Theme.font-size-body-large;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/home.svg");
+                        title: "London";
+                        subtitle: "today · BST";
+                        clicked => { root.city-pressed("london"); }
+                        Text {
+                            text: "14:42";
+                            color: Theme.on-surface;
+                            font-size: Theme.font-size-body-large;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/home.svg");
+                        tone: Tone.info;
+                        title: "Bangalore";
+                        subtitle: "today · IST";
+                        clicked => { root.city-pressed("bangalore"); }
+                        Text {
+                            text: "19:12";
+                            color: Theme.on-surface;
+                            font-size: Theme.font-size-body-large;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                        }
+                    }
                 }
             }
-            HorizontalLayout {
-                alignment: center;
-                Text {
-                    text: root.home-time;
-                    color: Theme.on-background;
-                    font-family: "Fraunces 9pt";
-                    font-size: 72px;
-                    font-weight: 400;
-                    letter-spacing: -2px;
-                }
-            }
-            HorizontalLayout {
-                alignment: center;
-                Text {
-                    text: root.home-date;
-                    color: Theme.muted;
-                    font-size: Theme.font-size-body;
-                    font-weight: 600;
-                }
-            }
         }
-
-        VerticalLayout {
-            padding-left: Theme.spacing-md;
-            padding-right: Theme.spacing-md;
-            padding-bottom: Theme.spacing-md;
-            Banner {
-                icon: @image-url("@mobile-components/icons/star.svg");
-                message: "Overlap window · 14:00–16:00 PT works for every selected city. Tap to schedule.";
-                tone: Tone.success;
-            }
-        }
-
-        SectionHeader { text: "FRI · MAY 16 · HOURS"; }
-
-        // Per-city rows.
-        TimezoneRow {
-            city: "San Francisco";
-            offset: "PT";
-            when: "Wed · now";
-            hours:  [0, 0, 1, 1, 1, 1, 2, 1, 1, 1, 1, 0];
-            labels: ["6","8","10","12","2p","4p","NOW","6p","8p","10p","12a","2a"];
-        }
-        Divider { }
-        TimezoneRow {
-            city: "New York";
-            offset: "ET";
-            when: "Wed · 17:00";
-            hours:  [1, 1, 1, 1, 1, 2, 1, 0, 0, 3, 3, 3];
-            labels: ["9","11","1p","3p","5p","6p","8p","10p","12a","2a","4a","6a"];
-        }
-        Divider { }
-        TimezoneRow {
-            city: "London";
-            offset: "BST";
-            when: "Wed · 22:00";
-            hours:  [1, 2, 1, 1, 0, 0, 3, 3, 3, 3, 3, 3];
-            labels: ["2p","4p","6p","8p","10p","12a","2a","4a","6a","8a","10a","12p"];
-        }
-        Divider { }
-        TimezoneRow {
-            city: "Lisbon";
-            offset: "WEST";
-            when: "Wed · 22:00";
-            hours:  [1, 2, 1, 1, 0, 0, 3, 3, 3, 3, 3, 3];
-            labels: ["2p","4p","6p","8p","10p","12a","2a","4a","6a","8a","10a","12p"];
-        }
-        Divider { }
-        TimezoneRow {
-            city: "Tokyo";
-            offset: "JST";
-            when: "Thu · 06:00";
-            hours:  [3, 3, 3, 3, 1, 2, 1, 1, 1, 0, 0, 0];
-            labels: ["10p","12a","2a","4a","6a","7a","9a","11a","1p","3p","5p","7p"];
-        }
-        Divider { }
-        TimezoneRow {
-            city: "Sydney";
-            offset: "AEDT";
-            when: "Thu · 08:00";
-            hours:  [3, 3, 1, 1, 1, 2, 1, 1, 1, 0, 0, 0];
-            labels: ["12a","2a","4a","6a","8a","9a","11a","1p","3p","5p","7p","9p"];
-        }
-
-        Rectangle { vertical-stretch: 1; }
     }
 }

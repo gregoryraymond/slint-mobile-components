@@ -1,119 +1,31 @@
 // MessageComposerPage
 // =====================================================================
 //
-// Twitter / Threads / Bluesky-style compose-a-post screen. Distinct
-// from `PostCreatorPage` (Instagram media-first), `EmailThreadPage`
-// (long-form reply), and `CommentsPage` (inline thread). Demonstrates:
-//
-//   - Top AppBar with Cancel left + audience pill + Drafts right.
-//   - Author row: avatar + name + audience chip with chevron-right.
-//   - Multi-paragraph text body (prefilled) + a tone-tinted character
-//     counter that flips from muted → warning → danger as it
-//     approaches the cap. Renders an inline progress ring in the
-//     bottom-right of the body.
-//   - Inline reply-to summary card showing what the user is replying to.
-//   - Bottom tool row: media / GIF / poll / location / schedule icons,
-//     plus the primary Post pill on the right.
+// New-message draft. TO section with chips-as-rows for recipients,
+// FormField for the subject, BODY section with a multi-line input area
+// (a tall SettingRow placeholder — caller swaps for a real multi-line
+// TextField when adopted), and an ATTACHMENTS section listing files.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
-import { Avatar } from "@mobile-components/avatar.slint";
-import { MobileButton, TextButton } from "@mobile-components/button.slint";
+import { FormField } from "@mobile-components/form-field.slint";
+import { FormSection } from "@mobile-components/form-section.slint";
+import { SettingRow } from "@mobile-components/setting-row.slint";
+import { TextField } from "@mobile-components/text-field.slint";
+import { TextButton } from "@mobile-components/button.slint";
 import { Divider } from "@mobile-components/divider.slint";
-import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
-
-// One tool icon in the bottom strip.
-component ToolIcon inherits Rectangle {
-    in property <image> icon;
-    in property <bool> disabled: false;
-    callback clicked();
-
-    accessible-role: button;
-    accessible-action-default => { root.clicked(); }
-
-    width: 40px;
-    height: 40px;
-    Image {
-        width: 22px;
-        height: 22px;
-        x: (parent.width - self.width) / 2;
-        y: (parent.height - self.height) / 2;
-        source: root.icon;
-        colorize: root.disabled ? Theme.muted : Theme.accent-info;
-        image-fit: contain;
-        opacity: root.disabled ? 0.5 : 1.0;
-    }
-    TouchArea {
-        enabled: !root.disabled;
-        clicked => { root.clicked(); }
-    }
-}
-
-// Character-count progress ring (just a thin colour ring with a tone).
-component CharCountRing inherits Rectangle {
-    in property <int> used: 184;
-    in property <int> cap: 280;
-
-    property <Tone> tone:
-          root.used > root.cap ? Tone.danger
-        : root.used > root.cap * 9 / 10 ? Tone.warning
-        : Tone.info;
-
-    property <color> tint:
-          tone == Tone.danger ? Theme.accent-danger
-        : tone == Tone.warning ? Theme.accent-warning
-        : Theme.accent-info;
-
-    width: 36px;
-    height: 36px;
-
-    Rectangle {
-        width: parent.width;
-        height: parent.height;
-        border-radius: self.width / 2;
-        border-width: 3px;
-        border-color: Theme.surface-variant;
-        background: transparent;
-    }
-    Rectangle {
-        width: parent.width;
-        height: parent.height;
-        border-radius: self.width / 2;
-        border-width: 3px;
-        border-color: tint;
-        background: transparent;
-        opacity: root.used / root.cap;
-    }
-    Text {
-        text: (root.cap - root.used);
-        color: tint;
-        font-size: 11px;
-        font-weight: 800;
-        horizontal-alignment: center;
-        vertical-alignment: center;
-        width: parent.width;
-        height: parent.height;
-    }
-}
+import { ScrollView } from "std-widgets.slint";
 
 export component MessageComposerPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
-    in property <string> author: "Greg Raymond";
-    in property <string> handle: "@graymond";
-    in property <string> audience: "Public";
-    in property <string> body:
-        "Iteration 25 of the slint-mobile-components catalogue is in: composer, calculator, recipe, multi-select, tip-jar. Snapshot diffing is keeping me honest — 111 baselines and counting.";
-    in property <int> used-chars: 184;
-    in property <int> cap-chars: 280;
-    in property <string> reply-to-author: "Anika Ravi";
-    in property <string> reply-to-handle: "@anika.ravi";
-    in property <string> reply-to-body: "How's the design-system rollout going?";
-    callback cancel-pressed();
-    callback drafts-pressed();
-    callback audience-pressed();
-    callback post-pressed();
-    callback tool-pressed(string);
+
+    in-out property <string> subject;
+    callback back-pressed();
+    callback send-pressed();
+    callback add-recipient-pressed();
+    callback remove-recipient-pressed();
+    callback remove-attachment-pressed(string);
 
     background: Theme.background;
 
@@ -121,210 +33,108 @@ export component MessageComposerPage inherits Window {
         spacing: 0;
 
         AppBar {
-            title: "replying";
-            title-style: HeadingStyle.lowercase-soft;
-            leading-icon: @image-url("@mobile-components/icons/close.svg");
-            trailing-icon: @image-url("@mobile-components/icons/queue.svg");
-            leading-pressed => { root.cancel-pressed(); }
-            trailing-pressed => { root.drafts-pressed(); }
+            title: "New message";
+            leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
+            leading-pressed => { root.back-pressed(); }
+            // Trailing slot: tap area only — text label below.
         }
-
-        VerticalLayout {
+        // Send action — kept inline as a TextButton anchored to the bar's
+        // trailing edge via a small overlay row so it can be a text label.
+        HorizontalLayout {
             padding-left: Theme.spacing-md;
             padding-right: Theme.spacing-md;
-            padding-top: Theme.spacing-sm;
-            spacing: Theme.spacing-sm;
-
-            // Reply-to summary.
-            Rectangle {
-                background: Theme.surface-1;
-                border-radius: Theme.radius-md;
-                drop-shadow-blur: Theme.elevation-1-blur;
-                drop-shadow-color: Theme.elevation-1-color;
-                drop-shadow-offset-y: Theme.elevation-1-y;
-                HorizontalLayout {
-                    padding: Theme.spacing-sm;
-                    spacing: Theme.spacing-sm;
-                    alignment: stretch;
-                    VerticalLayout {
-                        alignment: start;
-                        padding-top: 2px;
-                        Avatar {
-                            fallback: "AR";
-                            size: 28px;
-                        }
-                    }
-                    VerticalLayout {
-                        horizontal-stretch: 1;
-                        spacing: 2px;
-                        HorizontalLayout {
-                            spacing: Theme.spacing-xs;
-                            Text {
-                                text: root.reply-to-author;
-                                color: Theme.on-surface;
-                                font-size: Theme.font-size-caption;
-                                font-weight: 700;
-                            }
-                            Text {
-                                text: root.reply-to-handle + " · 2h";
-                                color: Theme.muted;
-                                font-size: Theme.font-size-caption;
-                            }
-                        }
-                        Text {
-                            text: root.reply-to-body;
-                            color: Theme.muted;
-                            font-size: Theme.font-size-caption;
-                            wrap: word-wrap;
-                        }
-                    }
-                }
-            }
-
-            // Author + audience chip.
-            HorizontalLayout {
-                spacing: Theme.spacing-sm;
-                alignment: stretch;
-                padding-top: Theme.spacing-sm;
-                VerticalLayout {
-                    alignment: start;
-                    padding-top: 2px;
-                    Avatar {
-                        fallback: "GR";
-                        size: 40px;
-                    }
-                }
-                VerticalLayout {
-                    horizontal-stretch: 1;
-                    spacing: 4px;
-                    HorizontalLayout {
-                        spacing: Theme.spacing-xs;
-                        Text {
-                            text: root.author;
-                            color: Theme.on-surface;
-                            font-family: "IBM Plex Sans";
-                            font-size: Theme.font-size-body;
-                            font-weight: 700;
-                            vertical-alignment: center;
-                        }
-                        Text {
-                            text: root.handle;
-                            color: Theme.muted;
-                            font-family: "JetBrains Mono";
-                            font-size: Theme.font-size-caption;
-                            vertical-alignment: center;
-                        }
-                    }
-                    // Audience pill.
-                    Rectangle {
-                        width: aud-row.preferred-width + 14px;
-                        height: 22px;
-                        border-radius: 11px;
-                        background: Theme.accent-info;
-                        aud-row := HorizontalLayout {
-                            spacing: 4px;
-                            padding-left: 8px;
-                            padding-right: 6px;
-                            alignment: center;
-                            Image {
-                                width: 12px;
-                                height: 12px;
-                                source: @image-url("@mobile-components/icons/profile.svg");
-                                colorize: Theme.on-primary;
-                                image-fit: contain;
-                                vertical-alignment: center;
-                            }
-                            Text {
-                                text: root.audience;
-                                color: Theme.on-primary;
-                                font-size: 10px;
-                                font-weight: 800;
-                                letter-spacing: 0.3px;
-                                vertical-alignment: center;
-                            }
-                            Image {
-                                width: 10px;
-                                height: 10px;
-                                source: @image-url("@mobile-components/icons/chevron-right.svg");
-                                colorize: Theme.on-primary;
-                                image-fit: contain;
-                                vertical-alignment: center;
-                            }
-                        }
-                        TouchArea {
-                            clicked => { root.audience-pressed(); }
-                        }
-                    }
-
-                    // Body text.
-                    Rectangle {
-                        horizontal-stretch: 1;
-                        height: 200px;
-                        VerticalLayout {
-                            padding-top: Theme.spacing-sm;
-                            Text {
-                                text: root.body;
-                                color: Theme.on-surface;
-                                font-size: Theme.font-size-body-large;
-                                wrap: word-wrap;
-                            }
-                        }
-                    }
-                }
+            alignment: end;
+            TextButton {
+                text: "Send";
+                clicked => { root.send-pressed(); }
             }
         }
 
-        Rectangle { vertical-stretch: 1; }
+        ScrollView {
+            vertical-stretch: 1;
 
-        Divider { }
-
-        // Bottom tool row.
-        Rectangle {
-            background: Theme.surface-1;
-            height: 72px;
-            HorizontalLayout {
-                padding-left: Theme.spacing-md;
-                padding-right: Theme.spacing-md;
-                spacing: Theme.spacing-xs;
+            VerticalLayout {
+                padding-top: Theme.spacing-md;
+                padding-bottom: Theme.spacing-xl;
+                spacing: Theme.spacing-md;
                 alignment: stretch;
-                ToolIcon {
-                    icon: @image-url("@mobile-components/icons/photo-ocean.svg");
-                    clicked => { root.tool-pressed("media"); }
-                }
-                ToolIcon {
-                    icon: @image-url("@mobile-components/icons/play.svg");
-                    clicked => { root.tool-pressed("gif"); }
-                }
-                ToolIcon {
-                    icon: @image-url("@mobile-components/icons/menu.svg");
-                    clicked => { root.tool-pressed("poll"); }
-                }
-                ToolIcon {
-                    icon: @image-url("@mobile-components/icons/pin.svg");
-                    clicked => { root.tool-pressed("location"); }
-                }
-                ToolIcon {
-                    icon: @image-url("@mobile-components/icons/bell.svg");
-                    clicked => { root.tool-pressed("schedule"); }
-                }
-                Rectangle { horizontal-stretch: 1; }
-                VerticalLayout {
-                    alignment: center;
-                    CharCountRing {
-                        used: root.used-chars;
-                        cap: root.cap-chars;
+
+                // ----- TO ---------------------------------------------------
+                FormSection {
+                    title: "TO";
+
+                    SettingRow {
+                        title: "Ada Lovelace";
+                        subtitle: "+32 478 12 34 · ada@analyticalengine.uk";
+                        clicked => { root.remove-recipient-pressed(); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/close.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/plus.svg");
+                        tone: Tone.info;
+                        title: "Add recipient";
+                        clicked => { root.add-recipient-pressed(); }
                     }
                 }
-                VerticalLayout {
-                    alignment: center;
-                    MobileButton {
-                        text: "Post";
+
+                // ----- Subject ----------------------------------------------
+                FormField {
+                    label: "Subject";
+                    TextField {
+                        placeholder: "Subject";
+                        text <=> root.subject;
+                    }
+                }
+
+                // ----- BODY -------------------------------------------------
+                FormSection {
+                    title: "BODY";
+
+                    SettingRow {
+                        title: "Write your message…";
+                        subtitle: "Use this space for a longer note. The text will wrap and grow vertically as you type — most adopters drop a real multi-line TextField in here at integration time.";
+                    }
+                }
+
+                // ----- ATTACHMENTS ------------------------------------------
+                FormSection {
+                    title: "ATTACHMENTS";
+
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/menu.svg");
                         tone: Tone.info;
-                        horizontal-stretch: 0;
-                        vertical-stretch: 0;
-                        min-width: 88px;
-                        max-height: 40px;
-                        clicked => { root.post-pressed(); }
+                        title: "report.pdf";
+                        subtitle: "412 KB";
+                        clicked => { root.remove-attachment-pressed("report.pdf"); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/close.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/menu.svg");
+                        tone: Tone.success;
+                        title: "screenshot.png";
+                        subtitle: "88 KB";
+                        clicked => { root.remove-attachment-pressed("screenshot.png"); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/close.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
                     }
                 }
             }

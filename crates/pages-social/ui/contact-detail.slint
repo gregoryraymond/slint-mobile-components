@@ -1,30 +1,25 @@
 // ContactDetailPage
 // =====================================================================
 //
-// A single contact's detail screen — the page behind a tap on
-// `AddressBookPage`. Distinct from `ProfilePage` (the user's own
-// profile) and `ProfileEditPage` (an editable form). Demonstrates a
-// detail surface:
-//
-//   - Hero block: a large avatar + name + role / company.
-//   - A 4-up quick-action row (Call / Message / Video / Email) — each
-//     a tone-tinted disc with a caption.
-//   - Grouped info rows: phone numbers, email, address — each with a
-//     leading icon disc, a type label, and the value.
-//   - A recent-activity list.
+// A single contact's full detail page. Hero block with large Avatar,
+// name and supporting line, then a chip-style MetaRow with stats,
+// then a row of 4 quick-action IconButton-styled tiles, then grouped
+// KeyValueRow + SettingRow sections for CONTACT / NOTES / SHARED.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
-import { SectionHeader } from "@mobile-components/section-header.slint";
 import { Avatar } from "@mobile-components/avatar.slint";
-import { Divider } from "@mobile-components/divider.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
+import { MetaRow, MetaChip } from "@mobile-components/meta-row.slint";
+import { FormSection } from "@mobile-components/form-section.slint";
+import { SettingRow } from "@mobile-components/setting-row.slint";
+import { KeyValueRow } from "@mobile-components/key-value-row.slint";
+import { Divider } from "@mobile-components/divider.slint";
+import { ScrollView } from "std-widgets.slint";
 
-// One quick-action disc + caption.
 component QuickAction inherits Rectangle {
     in property <image> icon;
     in property <string> label;
-    in property <Tone> tone: Tone.default;
     callback clicked();
 
     accessible-role: button;
@@ -32,198 +27,52 @@ component QuickAction inherits Rectangle {
     accessible-action-default => { root.clicked(); }
 
     horizontal-stretch: 1;
-    height: 76px;
-
-    VerticalLayout {
-        alignment: center;
-        spacing: 6px;
-        HorizontalLayout {
-            alignment: center;
-            Rectangle {
-                width: 46px;
-                height: 46px;
-                border-radius: 23px;
-                background:
-                      root.tone == Tone.success ? Theme.accent-success
-                    : root.tone == Tone.info    ? Theme.accent-info
-                    : root.tone == Tone.warning ? Theme.accent-warning
-                    : Theme.primary;
-                Image {
-                    width: 20px;
-                    height: 20px;
-                    x: (parent.width - self.width) / 2;
-                    y: (parent.height - self.height) / 2;
-                    source: root.icon;
-                    colorize: Theme.on-primary;
-                    image-fit: contain;
-                }
-                TouchArea {
-                    clicked => { root.clicked(); }
-                }
-            }
-        }
-        Text {
-            text: root.label;
-            color: Theme.muted;
-            font-size: 10px;
-            font-weight: 700;
-            horizontal-alignment: center;
-        }
-    }
-}
-
-// One info row — icon disc + type label + value.
-component InfoRow inherits Rectangle {
-    in property <image> icon;
-    in property <string> label;
-    in property <string> value;
-    in property <Tone> tone: Tone.default;
-    callback clicked();
-
-    accessible-role: button;
-    accessible-label: root.label;
-    accessible-action-default => { root.clicked(); }
-
-    horizontal-stretch: 1;
-    min-height: 60px;
-    background: touch.pressed ? Theme.surface-pressed : transparent;
+    min-width: 0;
+    height: 72px;
+    border-radius: Theme.radius-md;
+    background: touch.pressed ? Theme.surface-pressed : Theme.surface-1;
     animate background { duration: Theme.motion-fast; }
 
-    HorizontalLayout {
-        padding-left: Theme.spacing-md;
-        padding-right: Theme.spacing-md;
-        spacing: Theme.spacing-md;
-        alignment: stretch;
-        VerticalLayout {
+    VerticalLayout {
+        padding-top: Theme.spacing-sm;
+        padding-bottom: Theme.spacing-sm;
+        spacing: Theme.spacing-xs;
+        alignment: center;
+
+        HorizontalLayout {
             alignment: center;
-            Rectangle {
-                width: 36px;
-                height: 36px;
-                border-radius: 8px;
-                background:
-                      root.tone == Tone.success ? Theme.accent-success.with-alpha(0.18)
-                    : root.tone == Tone.info    ? Theme.accent-info.with-alpha(0.18)
-                    : root.tone == Tone.warning ? Theme.accent-warning.with-alpha(0.18)
-                    : Theme.surface-variant;
-                Image {
-                    width: 18px;
-                    height: 18px;
-                    x: (parent.width - self.width) / 2;
-                    y: (parent.height - self.height) / 2;
-                    source: root.icon;
-                    colorize:
-                          root.tone == Tone.success ? Theme.accent-success
-                        : root.tone == Tone.info    ? Theme.accent-info
-                        : root.tone == Tone.warning ? Theme.accent-warning
-                        : Theme.on-surface;
-                    image-fit: contain;
-                }
+            Image {
+                width: 22px;
+                height: 22px;
+                source: root.icon;
+                colorize: Theme.primary;
+                image-fit: contain;
             }
         }
-        VerticalLayout {
-            horizontal-stretch: 1;
+        HorizontalLayout {
             alignment: center;
-            spacing: 2px;
             Text {
                 text: root.label;
                 color: Theme.muted;
                 font-size: 10px;
-                font-weight: 800;
+                font-weight: 700;
                 letter-spacing: 0.5px;
             }
-            Text {
-                text: root.value;
-                color: Theme.on-surface;
-                font-size: Theme.font-size-body;
-                font-weight: 600;
-                overflow: elide;
-            }
-        }
-        VerticalLayout {
-            alignment: center;
-            Image {
-                width: 16px;
-                height: 16px;
-                source: @image-url("@mobile-components/icons/chevron-right.svg");
-                colorize: Theme.muted;
-                image-fit: contain;
-            }
         }
     }
+
     touch := TouchArea {
         clicked => { root.clicked(); }
-    }
-}
-
-// One recent-activity row.
-component ActivityRow inherits Rectangle {
-    in property <image> icon;
-    in property <string> title;
-    in property <string> time;
-    in property <Tone> tone: Tone.default;
-
-    horizontal-stretch: 1;
-    min-height: 52px;
-
-    HorizontalLayout {
-        padding-left: Theme.spacing-md;
-        padding-right: Theme.spacing-md;
-        spacing: Theme.spacing-md;
-        alignment: stretch;
-        VerticalLayout {
-            alignment: center;
-            Rectangle {
-                width: 28px;
-                height: 28px;
-                border-radius: 14px;
-                background:
-                      root.tone == Tone.success ? Theme.accent-success
-                    : root.tone == Tone.info    ? Theme.accent-info
-                    : root.tone == Tone.danger  ? Theme.accent-danger
-                    : Theme.surface-variant;
-                Image {
-                    width: 14px;
-                    height: 14px;
-                    x: (parent.width - self.width) / 2;
-                    y: (parent.height - self.height) / 2;
-                    source: root.icon;
-                    colorize: root.tone == Tone.default ? Theme.muted : Theme.on-primary;
-                    image-fit: contain;
-                }
-            }
-        }
-        VerticalLayout {
-            horizontal-stretch: 1;
-            alignment: center;
-            Text {
-                text: root.title;
-                color: Theme.on-surface;
-                font-size: Theme.font-size-body;
-                font-weight: 600;
-            }
-        }
-        VerticalLayout {
-            alignment: center;
-            Text {
-                text: root.time;
-                color: Theme.muted;
-                font-size: Theme.font-size-caption;
-            }
-        }
     }
 }
 
 export component ContactDetailPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
-    in property <string> name: "Aïsha Laurent";
-    in property <string> role: "Product Designer · Northwind Studio";
-    in property <string> initials: "AL";
-    in-out property <bool> favourite: true;
+
     callback back-pressed();
-    callback favourite-pressed();
+    callback edit-pressed();
     callback action-pressed(string);
-    callback info-pressed(string);
 
     background: Theme.background;
 
@@ -232,168 +81,156 @@ export component ContactDetailPage inherits Window {
 
         AppBar {
             title: "Contact";
-            title-style: HeadingStyle.serif-light;
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             trailing-icon: @image-url("@mobile-components/icons/pencil.svg");
             leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.action-pressed("edit"); }
+            trailing-pressed => { root.edit-pressed(); }
         }
 
-        VerticalLayout {
-            padding: Theme.spacing-lg;
-            spacing: Theme.spacing-sm;
-            alignment: start;
-            // Hero.
-            HorizontalLayout {
-                alignment: center;
-                Avatar {
-                    fallback: root.initials;
-                    size: 96px;
-                }
-            }
-            Heading {
-                style: HeadingStyle.serif-display;
-                text: root.name;
-                horizontal-alignment: center;
-            }
-            Text {
-                text: root.role;
-                color: Theme.muted;
-                font-family: "Fraunces 9pt";
-                font-size: Theme.font-size-body;
-                font-italic: true;
-                horizontal-alignment: center;
-            }
-            // Favourite chip.
-            HorizontalLayout {
-                alignment: center;
-                Rectangle {
-                    width: fav.preferred-width + 28px;
-                    height: 30px;
-                    border-radius: 15px;
-                    background: root.favourite
-                        ? Theme.accent-warning.with-alpha(0.18)
-                        : Theme.surface-2;
+        ScrollView {
+            vertical-stretch: 1;
+
+            VerticalLayout {
+                padding-top: Theme.spacing-md;
+                padding-bottom: Theme.spacing-xl;
+                spacing: Theme.spacing-lg;
+                alignment: stretch;
+
+                // ----- Hero --------------------------------------------------
+                VerticalLayout {
+                    spacing: Theme.spacing-sm;
+
                     HorizontalLayout {
-                        padding-left: 10px;
-                        padding-right: 12px;
-                        spacing: 5px;
                         alignment: center;
+                        Avatar {
+                            fallback: "AL";
+                            size: 96px;
+                        }
+                    }
+
+                    HorizontalLayout {
+                        alignment: center;
+                        Heading {
+                            text: "Ada Lovelace";
+                            style: HeadingStyle.serif-display;
+                            color: Theme.on-background;
+                            font-size: 24px;
+                            horizontal-alignment: center;
+                        }
+                    }
+                    HorizontalLayout {
+                        alignment: center;
+                        Text {
+                            text: "Mathematician · Brussels";
+                            color: Theme.muted;
+                            font-size: Theme.font-size-body;
+                            horizontal-alignment: center;
+                        }
+                    }
+
+                    MetaRow {
+                        items: [
+                            { icon: @image-url("@mobile-components/icons/profile.svg"), text: "12 mutual" },
+                            { icon: @image-url("@mobile-components/icons/star.svg"), text: "since 2024" },
+                        ];
+                    }
+                }
+
+                // ----- Quick actions ----------------------------------------
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    HorizontalLayout {
+                        spacing: Theme.spacing-lg;
+                        alignment: stretch;
+                        QuickAction {
+                            icon: @image-url("@mobile-components/icons/bell.svg");
+                            label: "CALL";
+                            clicked => { root.action-pressed("call"); }
+                        }
+                        QuickAction {
+                            icon: @image-url("@mobile-components/icons/inbox.svg");
+                            label: "MSG";
+                            clicked => { root.action-pressed("message"); }
+                        }
+                        QuickAction {
+                            icon: @image-url("@mobile-components/icons/send.svg");
+                            label: "SEND";
+                            clicked => { root.action-pressed("send"); }
+                        }
+                        QuickAction {
+                            icon: @image-url("@mobile-components/icons/star.svg");
+                            label: "STAR";
+                            clicked => { root.action-pressed("star"); }
+                        }
+                    }
+                }
+
+                // ----- CONTACT ----------------------------------------------
+                FormSection {
+                    title: "CONTACT";
+                    KeyValueRow { label: "Phone"; value: "+32 478 12 34"; }
+                    Divider { }
+                    KeyValueRow { label: "Email"; value: "ada@analyticalengine.uk"; }
+                    Divider { }
+                    KeyValueRow { label: "Address"; value: "Avenue Louise, BE"; }
+                }
+
+                // ----- NOTES ------------------------------------------------
+                FormSection {
+                    title: "NOTES";
+                    SettingRow {
+                        title: "Ada's birthday is in December";
+                        subtitle: "Send a hand-written card before the 10th — she still keeps the wall above her writing desk reserved for paper.";
+                    }
+                }
+
+                // ----- SHARED -----------------------------------------------
+                FormSection {
+                    title: "SHARED";
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/queue.svg");
+                        tone: Tone.info;
+                        title: "Slint design group";
+                        subtitle: "8 members · joined 2024";
                         Image {
-                            width: 13px;
-                            height: 13px;
-                            source: @image-url("@mobile-components/icons/star.svg");
-                            colorize: root.favourite ? Theme.accent-warning : Theme.muted;
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
                             image-fit: contain;
-                            vertical-alignment: center;
-                        }
-                        fav := Text {
-                            text: root.favourite ? "Favourite" : "Add to favourites";
-                            color: root.favourite ? Theme.accent-warning : Theme.muted;
-                            font-size: Theme.font-size-caption;
-                            font-weight: 800;
-                            vertical-alignment: center;
                         }
                     }
-                    TouchArea {
-                        clicked => {
-                            root.favourite = !root.favourite;
-                            root.favourite-pressed();
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/star.svg");
+                        tone: Tone.success;
+                        title: "Iteration 13 review";
+                        subtitle: "Event · May 6 2026";
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/menu.svg");
+                        tone: Tone.warning;
+                        title: "drawer-shadow-fix.pdf";
+                        subtitle: "Shared file · 88 KB";
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
                         }
                     }
                 }
             }
         }
-
-        // Quick actions.
-        Rectangle {
-            background: Theme.surface-1;
-            HorizontalLayout {
-                padding-left: Theme.spacing-md;
-                padding-right: Theme.spacing-md;
-                padding-bottom: Theme.spacing-sm;
-                QuickAction {
-                    icon: @image-url("@mobile-components/icons/send.svg");
-                    label: "Call";
-                    tone: Tone.success;
-                    clicked => { root.action-pressed("call"); }
-                }
-                QuickAction {
-                    icon: @image-url("@mobile-components/icons/inbox.svg");
-                    label: "Message";
-                    tone: Tone.info;
-                    clicked => { root.action-pressed("message"); }
-                }
-                QuickAction {
-                    icon: @image-url("@mobile-components/icons/queue.svg");
-                    label: "Video";
-                    tone: Tone.default;
-                    clicked => { root.action-pressed("video"); }
-                }
-                QuickAction {
-                    icon: @image-url("@mobile-components/icons/heart.svg");
-                    label: "Email";
-                    tone: Tone.warning;
-                    clicked => { root.action-pressed("email"); }
-                }
-            }
-        }
-
-        SectionHeader { text: "CONTACT INFO"; }
-        InfoRow {
-            icon: @image-url("@mobile-components/icons/send.svg");
-            label: "MOBILE";
-            value: "+1 (415) 555-0142";
-            tone: Tone.success;
-            clicked => { root.info-pressed("mobile"); }
-        }
-        Divider { }
-        InfoRow {
-            icon: @image-url("@mobile-components/icons/send.svg");
-            label: "WORK";
-            value: "+1 (415) 555-0199";
-            tone: Tone.default;
-            clicked => { root.info-pressed("work"); }
-        }
-        Divider { }
-        InfoRow {
-            icon: @image-url("@mobile-components/icons/inbox.svg");
-            label: "EMAIL";
-            value: "aisha@northwind.studio";
-            tone: Tone.info;
-            clicked => { root.info-pressed("email"); }
-        }
-        Divider { }
-        InfoRow {
-            icon: @image-url("@mobile-components/icons/pin.svg");
-            label: "ADDRESS";
-            value: "418 Valencia St, San Francisco";
-            tone: Tone.warning;
-            clicked => { root.info-pressed("address"); }
-        }
-
-        SectionHeader { text: "RECENT"; }
-        ActivityRow {
-            icon: @image-url("@mobile-components/icons/send.svg");
-            title: "Outgoing call · 6 min";
-            time: "Today";
-            tone: Tone.success;
-        }
-        Divider { }
-        ActivityRow {
-            icon: @image-url("@mobile-components/icons/inbox.svg");
-            title: "Message thread";
-            time: "Yesterday";
-            tone: Tone.info;
-        }
-        Divider { }
-        ActivityRow {
-            icon: @image-url("@mobile-components/icons/close.svg");
-            title: "Missed call";
-            time: "Mon";
-            tone: Tone.danger;
-        }
-
-        Rectangle { vertical-stretch: 1; }
     }
 }

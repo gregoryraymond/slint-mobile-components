@@ -1,0 +1,86 @@
+// FormField
+// =====================================================================
+//
+// Label-above + control + optional helper / error caption — the
+// canonical vertical form-row pattern. Pages drop the actual control
+// (`TextField`, `MobileSwitch` row, `SegmentedControl`, `Stepper`,
+// `Slider`, …) into the `@children` slot and the FormField handles
+// the surrounding label + helper text layout uniformly.
+//
+// Specification
+// -------------
+//
+// Geometry
+//   - Full width (`horizontal-stretch: 1`).
+//   - 16 px horizontal padding so labels line up with surrounding
+//     rows / cards.
+//   - Vertical rhythm: 6 px between label → control, 4 px between
+//     control → helper.
+//
+// Slots
+//   - `label` (string, optional): caption-sized, weight-600, muted.
+//     Sits above the control. Hidden when empty.
+//   - `required` (bool): when true, suffixes the label with a danger-
+//     coloured "*".
+//   - `@children`: the control. Caller is responsible for the
+//     control's own width — typically the control is full-width.
+//   - `helper` (string, optional): caption, muted. Sits below the
+//     control. Hidden when empty OR when `error` is non-empty.
+//   - `error` (string, optional): caption, danger. Takes priority
+//     over `helper` when both are set.
+//
+// Composition
+//   - Stack multiple FormFields inside a `VerticalLayout {
+//     spacing: Theme.spacing-md; }` to build form wizards, sign-up
+//     screens, profile-edit, write-review, etc.
+
+import { Theme } from "@mobile-theme/theme.slint";
+
+export component FormField inherits Rectangle {
+    in property <string> label;
+    in property <bool> required: false;
+    in property <string> helper;
+    in property <string> error;
+
+    horizontal-stretch: 1;
+
+    VerticalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        spacing: Theme.spacing-xs;
+        alignment: stretch;
+
+        if root.label != "": HorizontalLayout {
+            spacing: 2px;
+            alignment: start;
+            Text {
+                text: root.label;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+                font-weight: 600;
+            }
+            if root.required: Text {
+                text: "*";
+                color: Theme.accent-danger;
+                font-size: Theme.font-size-caption;
+                font-weight: 700;
+            }
+        }
+
+        @children
+
+        if root.error != "": Text {
+            text: root.error;
+            color: Theme.accent-danger;
+            font-size: Theme.font-size-caption;
+            wrap: word-wrap;
+        }
+
+        if root.error == "" && root.helper != "": Text {
+            text: root.helper;
+            color: Theme.muted;
+            font-size: Theme.font-size-caption;
+            wrap: word-wrap;
+        }
+    }
+}

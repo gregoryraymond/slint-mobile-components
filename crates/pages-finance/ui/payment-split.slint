@@ -1,125 +1,46 @@
 // PaymentSplitPage
 // =====================================================================
 //
-// Splitwise / Tab / Settle Up-style bill split screen. Demonstrates:
+// Group bill-split — a meal has been paid, now we divide the cost among
+// friends. Pure showcase of shared-row discipline: every row uses one of
+// the canonical components (SettingRow / KeyValueRow / FormSection), so
+// the leading-icon column, the title column, and the trailing-value
+// column all line up across the entire screen.
 //
-//   - "Total + per-member" composition: a big amount hero at the top
-//     with the venue / occasion subtitle, then a vertical list of
-//     members each showing their share and current settlement state
-//     (Paid / Owes you / You owe).
-//   - Tone-tinted status per row: `accent-success` for "paid",
-//     `accent-warning` for "owes you", `accent-danger` for "you owe",
-//     and the amount picks up the same colour.
-//   - Settle-up CTA in the footer + secondary "Add expense" TextButton.
+// Layout
+// ------
+//
+//   AppBar — "Split bill" with back arrow.
+//   Hero Card — amount paid (large mono numeral) + restaurant + date.
+//   FormSection "SPLIT EVENLY" — one SettingRow with a Stepper trailing.
+//   FormSection "PEOPLE" — one SettingRow per person, leading is a
+//     profile tile tinted Tone.info (same 32 × 32 footprint as every
+//     other leading tile in the library), trailing is the share value
+//     in accent-info colour.
+//   FormSection "TOTALS" — KeyValueRows for subtotal / tip / total
+//     (last with emphasis: true).
+//   Actions — primary "Send requests" + secondary "Adjust manually".
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
-import { SectionHeader } from "@mobile-components/section-header.slint";
-import { Avatar } from "@mobile-components/avatar.slint";
+import { Card } from "@mobile-components/card.slint";
+import { FormSection } from "@mobile-components/form-section.slint";
+import { SettingRow } from "@mobile-components/setting-row.slint";
+import { KeyValueRow } from "@mobile-components/key-value-row.slint";
 import { Divider } from "@mobile-components/divider.slint";
+import { Stepper } from "@mobile-components/stepper.slint";
 import { MobileButton, TextButton } from "@mobile-components/button.slint";
-
-// One participant row.
-//
-// `state` drives the tone:
-//   0 = paid (success)
-//   1 = owes you (warning)
-//   2 = you owe (danger)
-//   3 = neutral / settled
-component MemberRow inherits Rectangle {
-    in property <string> initials;
-    in property <string> name;
-    in property <string> share;
-    in property <string> status;
-    in property <int> state: 0;
-
-    horizontal-stretch: 1;
-    min-height: 72px;
-
-    property <Tone> row-tone:
-          state == 0 ? Tone.success
-        : state == 1 ? Tone.warning
-        : state == 2 ? Tone.danger
-        : Tone.default;
-
-    HorizontalLayout {
-        padding: Theme.spacing-md;
-        spacing: Theme.spacing-md;
-        alignment: stretch;
-
-        VerticalLayout {
-            alignment: center;
-            Avatar {
-                fallback: root.initials;
-                size: 44px;
-            }
-        }
-
-        VerticalLayout {
-            horizontal-stretch: 1;
-            alignment: center;
-            spacing: 2px;
-            Text {
-                text: root.name;
-                color: Theme.on-surface;
-                font-size: Theme.font-size-body;
-                font-weight: 600;
-            }
-            HorizontalLayout {
-                spacing: Theme.spacing-xs;
-                alignment: start;
-                Rectangle {
-                    width: status-text.preferred-width + 14px;
-                    height: 20px;
-                    border-radius: 4px;
-                    background:
-                          row-tone == Tone.success ? Theme.accent-success
-                        : row-tone == Tone.warning ? Theme.accent-warning
-                        : row-tone == Tone.danger  ? Theme.accent-danger
-                        : Theme.surface-variant;
-                    status-text := Text {
-                        text: root.status;
-                        color: row-tone == Tone.default ? Theme.muted : Theme.on-primary;
-                        font-size: 10px;
-                        font-weight: 700;
-                        letter-spacing: 0.5px;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                        width: parent.width;
-                        height: parent.height;
-                    }
-                }
-            }
-        }
-
-        VerticalLayout {
-            alignment: center;
-            Text {
-                text: root.share;
-                color:
-                      row-tone == Tone.success ? Theme.accent-success
-                    : row-tone == Tone.warning ? Theme.accent-warning
-                    : row-tone == Tone.danger  ? Theme.accent-danger
-                    : Theme.on-surface;
-                font-size: Theme.font-size-body-large;
-                font-weight: 700;
-                horizontal-alignment: right;
-            }
-        }
-    }
-}
+import { ScrollView } from "std-widgets.slint";
 
 export component PaymentSplitPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
-    in property <string> total: "$184.50";
-    in property <string> occasion: "Tartine Manufactory · last night";
-    in property <string> when: "Tuesday, May 13 · paid by Greg";
+
     callback back-pressed();
-    callback edit-pressed();
-    callback add-expense-pressed();
-    callback settle-up-pressed();
+    callback send-pressed();
+    callback adjust-pressed();
+    callback people-changed(int);
 
     background: Theme.background;
 
@@ -127,124 +48,165 @@ export component PaymentSplitPage inherits Window {
         spacing: 0;
 
         AppBar {
-            title: "split a bill";
-            title-style: HeadingStyle.lowercase-soft;
+            title: "Split bill";
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
-            trailing-icon: @image-url("@mobile-components/icons/pencil.svg");
             leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.edit-pressed(); }
         }
 
-        // ----- Hero summary -----
-        VerticalLayout {
-            padding-top: Theme.spacing-lg;
-            padding-bottom: Theme.spacing-md;
-            spacing: 4px;
+        ScrollView {
+            vertical-stretch: 1;
 
-            HorizontalLayout {
-                alignment: center;
-                Text {
-                    text: "TOTAL";
-                    color: Theme.muted;
-                    font-size: 10px;
-                    font-weight: 700;
-                    letter-spacing: 0.5px;
-                }
-            }
-            HorizontalLayout {
-                alignment: center;
-                Heading {
-                    text: root.total;
-                    style: HeadingStyle.mono;
-                    color: Theme.on-background;
-                    font-size: 44px;
-                    font-weight: 400;
-                }
-            }
-            HorizontalLayout {
-                alignment: center;
-                Text {
-                    text: root.occasion;
-                    color: Theme.on-surface;
-                    font-size: Theme.font-size-body;
-                    font-weight: 600;
-                }
-            }
-            HorizontalLayout {
-                alignment: center;
-                Text {
-                    text: root.when;
-                    color: Theme.muted;
-                    font-size: Theme.font-size-caption;
-                }
-            }
-        }
-
-        SectionHeader { text: "5 people · equal split"; }
-
-        MemberRow {
-            initials: "GR";
-            name: "Greg Raymond (you)";
-            share: "$36.90";
-            status: "PAID";
-            state: 0;
-        }
-        Divider { }
-        MemberRow {
-            initials: "AR";
-            name: "Anika Ravi";
-            share: "$36.90";
-            status: "OWES YOU";
-            state: 1;
-        }
-        Divider { }
-        MemberRow {
-            initials: "DV";
-            name: "Devika Sharma";
-            share: "$36.90";
-            status: "OWES YOU";
-            state: 1;
-        }
-        Divider { }
-        MemberRow {
-            initials: "LE";
-            name: "Léa Bernard";
-            share: "$36.90";
-            status: "SETTLED";
-            state: 3;
-        }
-        Divider { }
-        MemberRow {
-            initials: "MK";
-            name: "Marco Kovač";
-            share: "$36.90";
-            status: "PAID YOU";
-            state: 0;
-        }
-
-        Rectangle { vertical-stretch: 1; }
-
-        // ----- Sticky footer -----
-        Rectangle {
-            background: Theme.surface-1;
-            drop-shadow-blur: Theme.elevation-2-blur;
-            drop-shadow-color: Theme.elevation-2-color;
-            drop-shadow-offset-y: -4px;
-            height: 96px;
             VerticalLayout {
-                padding: Theme.spacing-md;
-                spacing: Theme.spacing-sm;
-                MobileButton {
-                    text: "Settle up · $73.80 owed to you";
-                    tone: Tone.success;
-                    max-height: 48px;
-                    clicked => { root.settle-up-pressed(); }
+                padding-top: Theme.spacing-md;
+                padding-bottom: Theme.spacing-xl;
+                spacing: Theme.spacing-md;
+                alignment: stretch;
+
+                // ----- Hero card: amount paid -------------------------------
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+
+                    Card {
+                        VerticalLayout {
+                            spacing: Theme.spacing-xs;
+                            alignment: center;
+
+                            Heading {
+                                text: "€ 184.20";
+                                style: HeadingStyle.mono;
+                                color: Theme.on-surface;
+                                font-size: 44px;
+                                font-weight: 700;
+                                horizontal-alignment: center;
+                            }
+                            Text {
+                                text: "Caffè San Carlo · 2026-05-15";
+                                color: Theme.muted;
+                                font-size: Theme.font-size-caption;
+                                horizontal-alignment: center;
+                            }
+                        }
+                    }
                 }
-                HorizontalLayout {
-                    alignment: center;
+
+                // ----- Split evenly -----------------------------------------
+                FormSection {
+                    title: "SPLIT EVENLY";
+
+                    SettingRow {
+                        title: "Among 4 people";
+                        subtitle: "Tap +/− to change the head count";
+
+                        Stepper {
+                            value: 4;
+                            minimum: 1;
+                            maximum: 12;
+                            changed(v) => { root.people-changed(v); }
+                        }
+                    }
+                }
+
+                // ----- People -----------------------------------------------
+                FormSection {
+                    title: "PEOPLE";
+
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        tone: Tone.info;
+                        title: "Ada";
+                        subtitle: "owes you";
+
+                        Text {
+                            text: "€ 46.05";
+                            color: Theme.accent-info;
+                            font-size: Theme.font-size-body-large;
+                            font-weight: 700;
+                            horizontal-alignment: right;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        tone: Tone.info;
+                        title: "Brent";
+                        subtitle: "owes you";
+
+                        Text {
+                            text: "€ 46.05";
+                            color: Theme.accent-info;
+                            font-size: Theme.font-size-body-large;
+                            font-weight: 700;
+                            horizontal-alignment: right;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        tone: Tone.info;
+                        title: "Cy";
+                        subtitle: "owes you";
+
+                        Text {
+                            text: "€ 46.05";
+                            color: Theme.accent-info;
+                            font-size: Theme.font-size-body-large;
+                            font-weight: 700;
+                            horizontal-alignment: right;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        tone: Tone.info;
+                        title: "Devi";
+                        subtitle: "owes you";
+
+                        Text {
+                            text: "€ 46.05";
+                            color: Theme.accent-info;
+                            font-size: Theme.font-size-body-large;
+                            font-weight: 700;
+                            horizontal-alignment: right;
+                        }
+                    }
+                }
+
+                // ----- Totals -----------------------------------------------
+                FormSection {
+                    title: "TOTALS";
+
+                    KeyValueRow {
+                        label: "Subtotal";
+                        value: "€ 160.17";
+                    }
+                    Divider { }
+                    KeyValueRow {
+                        label: "Tip · 15 %";
+                        value: "€ 24.03";
+                    }
+                    Divider { }
+                    KeyValueRow {
+                        label: "Total";
+                        value: "€ 184.20";
+                        emphasis: true;
+                    }
+                }
+
+                // ----- Actions ----------------------------------------------
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    spacing: Theme.spacing-sm;
+                    alignment: stretch;
+
+                    MobileButton {
+                        text: "Send requests";
+                        clicked => { root.send-pressed(); }
+                    }
                     TextButton {
-                        text: "Add another expense";
-                        clicked => { root.add-expense-pressed(); }
+                        text: "Adjust manually";
+                        clicked => { root.adjust-pressed(); }
                     }
                 }
             }

@@ -1,179 +1,38 @@
 // AccountSettingsPage
 // =====================================================================
 //
-// Account-flavoured settings — distinct from the existing
-// `SettingsPage` which is a general-purpose preferences screen. This
-// is the "Apple ID / Google Account" lookalike with:
-//
-//   - A profile-card header at the top (avatar + name + email + a
-//     "Manage" trailing chevron).
-//   - Three grouped surfaces: ACCOUNT (mostly nav rows), PRIVACY &
-//     SECURITY (MobileSwitch toggles), NOTIFICATIONS (more toggles).
-//   - A destructive "Sign out" row at the bottom rendered in danger
-//     tone — the canonical app-wide "log out" CTA.
+// Profile-card header + grouped settings (account / privacy / notifs /
+// danger). Pure showcase of `SettingRow` + `FormSection` discipline —
+// every row is the same primitive with a different trailing slot, so
+// the leading tiles, titles, dividers and trailing controls line up
+// across the whole page.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
-import { SectionHeader } from "@mobile-components/section-header.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
+import { Card } from "@mobile-components/card.slint";
 import { Avatar } from "@mobile-components/avatar.slint";
-import { MobileSwitch } from "@mobile-components/switch.slint";
+import { Chip } from "@mobile-components/chip.slint";
+import { FormSection } from "@mobile-components/form-section.slint";
+import { SettingRow } from "@mobile-components/setting-row.slint";
 import { Divider } from "@mobile-components/divider.slint";
+import { MobileSwitch } from "@mobile-components/switch.slint";
 import { ScrollView } from "std-widgets.slint";
-
-// Nav row — leading icon + title + trailing chevron + optional value
-// caption ("Plan: Pro").
-component NavRow inherits Rectangle {
-    in property <image> icon;
-    in property <string> title;
-    in property <string> value;
-    in property <Tone> tone: Tone.default;
-    callback clicked();
-
-    accessible-role: button;
-    accessible-label: root.title;
-    accessible-action-default => { root.clicked(); }
-
-    horizontal-stretch: 1;
-    min-height: 56px;
-    background: touch.pressed ? Theme.surface-pressed : transparent;
-    animate background { duration: Theme.motion-fast; }
-
-    HorizontalLayout {
-        padding-left: Theme.spacing-md;
-        padding-right: Theme.spacing-md;
-        spacing: Theme.spacing-md;
-        alignment: stretch;
-        VerticalLayout {
-            alignment: center;
-            Rectangle {
-                width: 32px;
-                height: 32px;
-                border-radius: 6px;
-                background:
-                      root.tone == Tone.success ? Theme.accent-success
-                    : root.tone == Tone.warning ? Theme.accent-warning
-                    : root.tone == Tone.danger  ? Theme.accent-danger
-                    : root.tone == Tone.info    ? Theme.accent-info
-                    : Theme.surface-variant;
-                Image {
-                    width: 18px;
-                    height: 18px;
-                    x: (parent.width - self.width) / 2;
-                    y: (parent.height - self.height) / 2;
-                    source: root.icon;
-                    colorize: root.tone == Tone.default ? Theme.on-surface : Theme.on-primary;
-                    image-fit: contain;
-                }
-            }
-        }
-        VerticalLayout {
-            horizontal-stretch: 1;
-            alignment: center;
-            Text {
-                text: root.title;
-                color: root.tone == Tone.danger ? Theme.accent-danger : Theme.on-surface;
-                font-size: Theme.font-size-body;
-                font-weight: root.tone == Tone.danger ? 600 : 500;
-            }
-        }
-        VerticalLayout {
-            alignment: center;
-            Text {
-                text: root.value;
-                color: Theme.muted;
-                font-size: Theme.font-size-caption;
-            }
-        }
-        VerticalLayout {
-            alignment: center;
-            Image {
-                width: 16px;
-                height: 16px;
-                source: @image-url("@mobile-components/icons/chevron-right.svg");
-                colorize: Theme.muted;
-                image-fit: contain;
-            }
-        }
-    }
-    touch := TouchArea {
-        clicked => { root.clicked(); }
-    }
-}
-
-// Toggle row — leading icon + title + description + trailing
-// MobileSwitch.
-component ToggleRow inherits Rectangle {
-    in property <image> icon;
-    in property <string> title;
-    in property <string> description;
-    in-out property <bool> checked: false;
-    in property <Tone> tone: Tone.default;
-
-    horizontal-stretch: 1;
-    min-height: 64px;
-
-    HorizontalLayout {
-        padding: Theme.spacing-md;
-        spacing: Theme.spacing-md;
-        alignment: stretch;
-        VerticalLayout {
-            alignment: start;
-            padding-top: 2px;
-            Rectangle {
-                width: 32px;
-                height: 32px;
-                border-radius: 6px;
-                background:
-                      root.tone == Tone.success ? Theme.accent-success
-                    : root.tone == Tone.warning ? Theme.accent-warning
-                    : root.tone == Tone.danger  ? Theme.accent-danger
-                    : root.tone == Tone.info    ? Theme.accent-info
-                    : Theme.surface-variant;
-                Image {
-                    width: 18px;
-                    height: 18px;
-                    x: (parent.width - self.width) / 2;
-                    y: (parent.height - self.height) / 2;
-                    source: root.icon;
-                    colorize: root.tone == Tone.default ? Theme.on-surface : Theme.on-primary;
-                    image-fit: contain;
-                }
-            }
-        }
-        VerticalLayout {
-            horizontal-stretch: 1;
-            spacing: 2px;
-            Text {
-                text: root.title;
-                color: Theme.on-surface;
-                font-size: Theme.font-size-body;
-                font-weight: 600;
-            }
-            Text {
-                text: root.description;
-                color: Theme.muted;
-                font-size: Theme.font-size-caption;
-                wrap: word-wrap;
-            }
-        }
-        VerticalLayout {
-            alignment: start;
-            padding-top: 2px;
-            MobileSwitch {
-                checked <=> root.checked;
-            }
-        }
-    }
-}
 
 export component AccountSettingsPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
-    in property <string> name: "Greg Raymond";
-    in property <string> email: "greg@slint.dev";
+
+    in-out property <bool> two-factor: true;
+    in-out property <bool> activity-log: true;
+    in-out property <bool> analytics: false;
+    in-out property <bool> push-notifications: true;
+    in-out property <bool> email-notifications: true;
+    in-out property <bool> marketing-notifications: false;
+
     callback back-pressed();
     callback row-pressed(string);
+    callback profile-pressed();
     callback sign-out-pressed();
 
     background: Theme.background;
@@ -183,174 +42,216 @@ export component AccountSettingsPage inherits Window {
 
         AppBar {
             title: "Account";
-            title-style: HeadingStyle.plex-medium;
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             leading-pressed => { root.back-pressed(); }
         }
 
         ScrollView {
             vertical-stretch: 1;
-            horizontal-stretch: 1;
-            viewport-width: 412px;
-            viewport-height: 1300px;
 
             VerticalLayout {
-                spacing: 0;
+                padding-top: Theme.spacing-md;
+                padding-bottom: Theme.spacing-xl;
+                spacing: Theme.spacing-md;
+                alignment: stretch;
 
-                // ----- Profile card -----
-                Rectangle {
-                    background: Theme.surface-1;
-                    drop-shadow-blur: Theme.elevation-1-blur;
-                    drop-shadow-color: Theme.elevation-1-color;
-                    drop-shadow-offset-y: Theme.elevation-1-y;
-                    height: 96px;
-                    HorizontalLayout {
-                        padding: Theme.spacing-md;
-                        spacing: Theme.spacing-md;
-                        alignment: stretch;
-                        VerticalLayout {
-                            alignment: center;
+                // ----- Profile hero card ------------------------------
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+
+                    Card {
+                        tappable: true;
+                        clicked => { root.profile-pressed(); }
+
+                        HorizontalLayout {
+                            spacing: Theme.spacing-md;
+                            alignment: stretch;
+
                             Avatar {
                                 fallback: "GR";
                                 size: 64px;
                             }
-                        }
-                        VerticalLayout {
-                            horizontal-stretch: 1;
-                            alignment: center;
-                            spacing: 2px;
-                            Text {
-                                text: root.name;
-                                color: Theme.on-surface;
-                                font-family: "IBM Plex Sans";
-                                font-size: 22px;
-                                font-weight: 700;
-                            }
-                            Text {
-                                text: root.email;
-                                color: Theme.muted;
-                                font-family: "JetBrains Mono";
-                                font-size: 11px;
-                                font-weight: 400;
-                            }
-                            HorizontalLayout {
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                alignment: center;
                                 spacing: Theme.spacing-xs;
-                                padding-top: 2px;
-                                Rectangle {
-                                    width: plan-text.preferred-width + 14px;
-                                    height: 18px;
-                                    border-radius: 4px;
-                                    background: Theme.accent-info;
-                                    plan-text := Text {
-                                        text: "PRO";
-                                        color: Theme.on-primary;
-                                        font-size: 10px;
-                                        font-weight: 700;
-                                        letter-spacing: 0.5px;
-                                        horizontal-alignment: center;
-                                        vertical-alignment: center;
-                                        width: parent.width;
-                                        height: parent.height;
+
+                                Text {
+                                    text: "Greg Raymond";
+                                    color: Theme.on-surface;
+                                    font-size: 18px;
+                                    font-weight: 700;
+                                    overflow: elide;
+                                }
+                                Text {
+                                    text: "greg@slint.dev";
+                                    color: Theme.muted;
+                                    font-size: Theme.font-size-caption;
+                                }
+                                HorizontalLayout {
+                                    alignment: start;
+                                    Chip {
+                                        label: "PRO";
+                                        selected: true;
                                     }
                                 }
                             }
-                        }
-                        VerticalLayout {
-                            alignment: center;
-                            Image {
-                                width: 16px;
-                                height: 16px;
-                                source: @image-url("@mobile-components/icons/chevron-right.svg");
-                                colorize: Theme.muted;
-                                image-fit: contain;
+                            VerticalLayout {
+                                alignment: center;
+                                Image {
+                                    width: 16px;
+                                    height: 16px;
+                                    source: @image-url("@mobile-components/icons/chevron-right.svg");
+                                    colorize: Theme.muted;
+                                    image-fit: contain;
+                                }
                             }
                         }
                     }
                 }
 
-                SectionHeader { text: "ACCOUNT"; }
-                NavRow {
-                    icon: @image-url("@mobile-components/icons/profile.svg");
-                    title: "Personal information";
-                    value: "";
-                    clicked => { root.row-pressed(self.title); }
-                }
-                Divider { }
-                NavRow {
-                    icon: @image-url("@mobile-components/icons/lock.svg");
-                    title: "Password & sign-in";
-                    value: "";
-                    clicked => { root.row-pressed(self.title); }
-                }
-                Divider { }
-                NavRow {
-                    icon: @image-url("@mobile-components/icons/star.svg");
-                    title: "Subscription";
-                    value: "Pro · annual";
-                    tone: Tone.info;
-                    clicked => { root.row-pressed(self.title); }
-                }
-                Divider { }
-                NavRow {
-                    icon: @image-url("@mobile-components/icons/queue.svg");
-                    title: "Connected apps";
-                    value: "3";
-                    clicked => { root.row-pressed(self.title); }
+                // ----- ACCOUNT ----------------------------------------
+                FormSection {
+                    title: "ACCOUNT";
+
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        tone: Tone.info;
+                        title: "Personal information";
+                        subtitle: "Name, photo, contact details.";
+                        clicked => { root.row-pressed("personal"); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/lock.svg");
+                        title: "Password & sign-in";
+                        subtitle: "Update password, security keys, passkeys.";
+                        clicked => { root.row-pressed("password"); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/star.svg");
+                        tone: Tone.warning;
+                        title: "Subscription";
+                        subtitle: "Renews 14 Jun 2026.";
+                        clicked => { root.row-pressed("subscription"); }
+                        Text {
+                            text: "Pro · annual";
+                            color: Theme.muted;
+                            font-size: Theme.font-size-body;
+                            vertical-alignment: center;
+                        }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/queue.svg");
+                        title: "Connected apps";
+                        subtitle: "Third-party access to your account.";
+                        clicked => { root.row-pressed("connected"); }
+                        Text {
+                            text: "3";
+                            color: Theme.muted;
+                            font-size: Theme.font-size-body;
+                            vertical-alignment: center;
+                        }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
                 }
 
-                SectionHeader { text: "PRIVACY & SECURITY"; }
-                ToggleRow {
-                    icon: @image-url("@mobile-components/icons/lock.svg");
-                    title: "Two-factor auth";
-                    description: "Require a 6-digit code when signing in from a new device.";
-                    tone: Tone.success;
-                    checked: true;
-                }
-                Divider { }
-                ToggleRow {
-                    icon: @image-url("@mobile-components/icons/menu.svg");
-                    title: "Activity log";
-                    description: "Keep a 90-day record of sign-ins and high-risk actions.";
-                    checked: true;
-                }
-                Divider { }
-                ToggleRow {
-                    icon: @image-url("@mobile-components/icons/send.svg");
-                    title: "Personalised analytics";
-                    description: "Allow us to use behavioural data to tune recommendations.";
-                    checked: false;
+                // ----- PRIVACY & SECURITY -----------------------------
+                FormSection {
+                    title: "PRIVACY & SECURITY";
+
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/lock.svg");
+                        tone: Tone.success;
+                        title: "Two-factor authentication";
+                        subtitle: "Authenticator app · 2 recovery codes left.";
+                        MobileSwitch { checked <=> root.two-factor; }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/menu.svg");
+                        title: "Activity log";
+                        subtitle: "Sign-ins and security events.";
+                        MobileSwitch { checked <=> root.activity-log; }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/pin.svg");
+                        title: "Personalised analytics";
+                        subtitle: "Improve recommendations using your usage.";
+                        MobileSwitch { checked <=> root.analytics; }
+                    }
                 }
 
-                SectionHeader { text: "NOTIFICATIONS"; }
-                ToggleRow {
-                    icon: @image-url("@mobile-components/icons/bell.svg");
-                    title: "Push notifications";
-                    description: "Receive alerts on this device.";
-                    tone: Tone.info;
-                    checked: true;
-                }
-                Divider { }
-                ToggleRow {
-                    icon: @image-url("@mobile-components/icons/send.svg");
-                    title: "Email digests";
-                    description: "Weekly summary every Monday at 09:00 local.";
-                    checked: true;
-                }
-                Divider { }
-                ToggleRow {
-                    icon: @image-url("@mobile-components/icons/heart.svg");
-                    title: "Marketing";
-                    description: "Promotions, new features, partner offers.";
-                    checked: false;
+                // ----- NOTIFICATIONS ----------------------------------
+                FormSection {
+                    title: "NOTIFICATIONS";
+
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/bell.svg");
+                        tone: Tone.info;
+                        title: "Push notifications";
+                        subtitle: "Mentions, alerts, account events.";
+                        MobileSwitch { checked <=> root.push-notifications; }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/send.svg");
+                        title: "Email digest";
+                        subtitle: "A weekly summary delivered Monday morning.";
+                        MobileSwitch { checked <=> root.email-notifications; }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/inbox.svg");
+                        title: "Product updates";
+                        subtitle: "New features, releases, tips.";
+                        MobileSwitch { checked <=> root.marketing-notifications; }
+                    }
                 }
 
-                SectionHeader { text: "DANGER ZONE"; }
-                NavRow {
-                    icon: @image-url("@mobile-components/icons/close.svg");
-                    title: "Sign out everywhere";
-                    value: "";
-                    tone: Tone.danger;
-                    clicked => { root.sign-out-pressed(); }
+                // ----- DANGER ZONE ------------------------------------
+                FormSection {
+                    title: "DANGER ZONE";
+
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/close.svg");
+                        tone: Tone.danger;
+                        title: "Sign out everywhere";
+                        subtitle: "Ends sessions on all your devices.";
+                        destructive: true;
+                        clicked => { root.sign-out-pressed(); }
+                    }
                 }
             }
         }

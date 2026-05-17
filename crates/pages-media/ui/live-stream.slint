@@ -1,443 +1,209 @@
 // LiveStreamPage
 // =====================================================================
 //
-// Twitch / YouTube Live / Kick-style live stream watch screen.
-// Distinct from `VideoPlayerPage` (VOD playback) and `VideoFeedPage`
-// (vertical shorts). Demonstrates a stream surface with a persistent
-// chat column:
+// Twitch / Instagram-Live style watch surface. The top 60% of the page
+// is dominated by the "video frame" placeholder (Theme.surface-3 with a
+// centred "LIVE" label and a small red dot indicator). The AppBar is
+// transparent so it overlays the stream. Below the frame: stream title,
+// streamer line, viewer / engagement metadata via `MetaRow`, three
+// quick-action buttons (Like / Share / Tip), a `FormSection` of recent
+// comments rendered as `SettingRow`s, and a chat composer at the very
+// bottom built from a `FormField` + `TextField`.
 //
-//   - 16:9 video frame at the top with a LIVE badge + viewer count +
-//     elapsed time overlaid.
-//   - Streamer row: avatar + channel name + category + Follow / Sub
-//     pills.
-//   - Chat list filling the rest of the screen — each message is a
-//     username (tone-tinted by role: mod success, sub info, vip
-//     warning, viewer muted) + message text, with occasional
-//     highlighted "event" rows (new subscriber, bits cheered).
-//   - Sticky chat composer with emote + send buttons.
+// Alignment discipline
+//   - The "rows" are SettingRows in a FormSection — same min-height,
+//     same gutters, same leading-tile size. No hand-rolled comment
+//     rows.
+//   - Metadata uses MetaRow so the icon-text chips share a baseline.
+//   - The chat composer wraps a TextField in a FormField for the same
+//     reason every other input on the page would: consistent label
+//     position and horizontal inset.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
-import { Avatar } from "@mobile-components/avatar.slint";
-import { TextField } from "@mobile-components/text-field.slint";
+import { AppBar } from "@mobile-components/app-bar.slint";
+import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
+import { MetaRow, MetaChip } from "@mobile-components/meta-row.slint";
+import { FormSection } from "@mobile-components/form-section.slint";
+import { FormField } from "@mobile-components/form-field.slint";
+import { SettingRow } from "@mobile-components/setting-row.slint";
 import { Divider } from "@mobile-components/divider.slint";
-
-// One chat message row.
-component ChatRow inherits Rectangle {
-    in property <string> user;
-    in property <string> message;
-    in property <Tone> role: Tone.default;     // mod=success, sub=info, vip=warning
-
-    horizontal-stretch: 1;
-    min-height: 32px;
-    HorizontalLayout {
-        padding-left: Theme.spacing-md;
-        padding-right: Theme.spacing-md;
-        padding-top: 3px;
-        padding-bottom: 3px;
-        spacing: Theme.spacing-xs;
-        VerticalLayout {
-            alignment: start;
-            HorizontalLayout {
-                spacing: 4px;
-                // Role badge dot.
-                if root.role != Tone.default: Rectangle {
-                    width: 12px;
-                    height: 12px;
-                    border-radius: 3px;
-                    y: 2px;
-                    background:
-                          root.role == Tone.success ? Theme.accent-success
-                        : root.role == Tone.info    ? Theme.accent-info
-                        : root.role == Tone.warning ? Theme.accent-warning
-                        : Theme.muted;
-                }
-                Text {
-                    text: root.user;
-                    color:
-                          root.role == Tone.success ? Theme.accent-success
-                        : root.role == Tone.info    ? Theme.accent-info
-                        : root.role == Tone.warning ? Theme.accent-warning
-                        : Theme.accent-info;
-                    font-size: Theme.font-size-caption;
-                    font-weight: 800;
-                }
-            }
-        }
-        Text {
-            text: root.message;
-            color: Theme.on-surface;
-            font-size: Theme.font-size-caption;
-            wrap: word-wrap;
-            horizontal-stretch: 1;
-        }
-    }
-}
-
-// One highlighted stream event (sub / cheer).
-component EventRow inherits Rectangle {
-    in property <string> text;
-    in property <Tone> tone: Tone.info;
-
-    horizontal-stretch: 1;
-    min-height: 36px;
-    background:
-          root.tone == Tone.success ? #22c55e22
-        : root.tone == Tone.warning ? #f59e0b22
-        : #4f8cff22;
-    border-radius: Theme.radius-sm;
-
-    HorizontalLayout {
-        padding: Theme.spacing-sm;
-        spacing: Theme.spacing-sm;
-        VerticalLayout {
-            alignment: center;
-            Image {
-                width: 14px;
-                height: 14px;
-                source: @image-url("@mobile-components/icons/star.svg");
-                colorize:
-                      root.tone == Tone.success ? Theme.accent-success
-                    : root.tone == Tone.warning ? Theme.accent-warning
-                    : Theme.accent-info;
-                image-fit: contain;
-            }
-        }
-        Text {
-            text: root.text;
-            color:
-                  root.tone == Tone.success ? Theme.accent-success
-                : root.tone == Tone.warning ? Theme.accent-warning
-                : Theme.accent-info;
-            font-size: Theme.font-size-caption;
-            font-weight: 700;
-            wrap: word-wrap;
-            horizontal-stretch: 1;
-            vertical-alignment: center;
-        }
-    }
-}
+import { MobileButton } from "@mobile-components/button.slint";
+import { TextField } from "@mobile-components/text-field.slint";
+import { ScrollView } from "std-widgets.slint";
 
 export component LiveStreamPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
-    in property <string> channel: "anika_codes";
-    in property <string> page-title: "Building the Slint mobile catalogue — iteration 30";
-    in property <string> category: "Software & Game Dev · Rust";
-    in property <string> viewers: "2,184 watching";
-    in property <string> elapsed: "1:42:08";
-    in-out property <bool> following: false;
+
+    in property <string> stream-title: "Building a Rust + Slint mobile app — live";
+    in property <string> streamer: "@graydevs";
+    in-out property <string> chat-draft;
     callback back-pressed();
-    callback follow-pressed();
-    callback subscribe-pressed();
-    callback send-pressed();
+    callback like-pressed();
+    callback share-pressed();
+    callback tip-pressed();
+    callback comment-pressed(string);
+    callback chat-submitted(string);
 
     background: Theme.background;
 
     VerticalLayout {
         spacing: 0;
 
-        // ----- Video frame -----
+        // ----- Video frame (top 60% of page) with overlay AppBar -----
         Rectangle {
-            height: 232px;
-            background: @radial-gradient(circle, #1d2937 0%, #0a0d12 80%);
+            // 60% of 892px = 535px. Hardcoded to avoid binding loops on
+            // parent.height (see video-player.slint for the same trick).
+            height: 535px;
+            background: Theme.surface-3;
             clip: true;
 
-            // Back button.
-            Rectangle {
-                x: Theme.spacing-md;
-                y: Theme.spacing-md;
-                width: 36px;
-                height: 36px;
-                border-radius: self.width / 2;
-                background: #00000099;
-                Image {
-                    width: 18px;
-                    height: 18px;
-                    x: (parent.width - self.width) / 2;
-                    y: (parent.height - self.height) / 2;
-                    source: @image-url("@mobile-components/icons/arrow-left.svg");
-                    colorize: #ffffff;
-                    image-fit: contain;
-                }
-                TouchArea {
-                    clicked => { root.back-pressed(); }
-                }
-            }
-
-            // LIVE badge + elapsed.
+            // Centred "LIVE" label + red live-indicator dot.
             HorizontalLayout {
-                x: parent.width - 180px;
-                y: Theme.spacing-md;
-                spacing: Theme.spacing-xs;
+                x: (parent.width - self.preferred-width) / 2;
+                y: (parent.height - self.preferred-height) / 2;
+                spacing: Theme.spacing-sm;
+                alignment: center;
                 Rectangle {
-                    width: live-text.preferred-width + 14px;
-                    height: 22px;
-                    border-radius: 4px;
+                    width: 12px;
+                    height: 12px;
+                    border-radius: self.width / 2;
                     background: Theme.accent-danger;
-                    live-text := Text {
-                        text: "● LIVE";
-                        color: #ffffff;
-                        font-family: "Space Grotesk";
-                        font-size: 11px;
-                        font-weight: 700;
-                        letter-spacing: 1.5px;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                        width: parent.width;
-                        height: parent.height;
-                    }
                 }
-                Rectangle {
-                    width: elapsed-text.preferred-width + 14px;
-                    height: 22px;
-                    border-radius: 4px;
-                    background: #00000099;
-                    elapsed-text := Text {
-                        text: root.elapsed;
-                        color: #ffffff;
-                        font-size: 10px;
-                        font-weight: 700;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                        width: parent.width;
-                        height: parent.height;
-                    }
+                Text {
+                    text: "LIVE";
+                    color: Theme.on-background;
+                    font-family: "Inter";
+                    font-size: 28px;
+                    font-weight: 800;
+                    letter-spacing: 4px;
+                    vertical-alignment: center;
                 }
             }
 
-            // Viewer count bottom-left.
-            Rectangle {
-                x: Theme.spacing-md;
-                y: parent.height - 34px;
-                width: viewers-text.preferred-width + 28px;
-                height: 24px;
-                border-radius: 12px;
-                background: #00000099;
-                viewers-text := HorizontalLayout {
-                    spacing: 4px;
-                    padding-left: 8px;
-                    padding-right: 8px;
-                    alignment: center;
-                    Image {
-                        width: 12px;
-                        height: 12px;
-                        source: @image-url("@mobile-components/icons/profile.svg");
-                        colorize: Theme.accent-danger;
-                        image-fit: contain;
-                        vertical-alignment: center;
-                    }
-                    Text {
-                        text: root.viewers;
-                        color: #ffffff;
-                        font-size: 11px;
-                        font-weight: 700;
-                        vertical-alignment: center;
-                    }
-                }
+            // Transparent AppBar overlaid at the top of the frame.
+            AppBar {
+                x: 0;
+                y: 0;
+                width: parent.width;
+                bar-background: transparent;
+                text-color: #ffffff;
+                leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
+                trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
+                leading-pressed => { root.back-pressed(); }
             }
         }
 
-        // ----- Streamer row -----
-        Rectangle {
-            background: Theme.surface-1;
-            HorizontalLayout {
-                padding: Theme.spacing-md;
-                spacing: Theme.spacing-sm;
-                alignment: stretch;
-                VerticalLayout {
-                    alignment: center;
-                    Avatar {
-                        fallback: "AC";
-                        size: 44px;
-                    }
-                }
-                VerticalLayout {
-                    horizontal-stretch: 1;
-                    alignment: center;
-                    spacing: 2px;
-                    Text {
-                        text: root.page-title;
-                        color: Theme.on-surface;
-                        font-family: "Space Grotesk";
-                        font-size: 18px;
-                        font-weight: 700;
-                        letter-spacing: -0.2px;
-                        overflow: elide;
-                    }
-                    Text {
-                        text: root.channel + " · " + root.category;
-                        color: Theme.muted;
-                        font-size: Theme.font-size-caption;
-                        overflow: elide;
-                    }
-                }
-                VerticalLayout {
-                    alignment: center;
-                    Rectangle {
-                        width: 84px;
-                        height: 36px;
-                        border-radius: 18px;
-                        background: root.following ? Theme.surface-variant : Theme.accent-danger;
-                        Text {
-                            text: root.following ? "Following" : "Follow";
-                            color: root.following ? Theme.on-surface : Theme.on-primary;
-                            font-size: Theme.font-size-caption;
-                            font-weight: 800;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
-                            width: parent.width;
-                            height: parent.height;
-                        }
-                        TouchArea {
-                            clicked => {
-                                root.following = !root.following;
-                                root.follow-pressed();
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        Divider { }
-
-        // ----- Chat header -----
-        HorizontalLayout {
-            padding: Theme.spacing-sm;
-            padding-left: Theme.spacing-md;
-            Text {
-                text: "STREAM CHAT";
-                color: Theme.muted;
-                font-family: "Space Grotesk";
-                font-size: 12px;
-                font-weight: 700;
-                letter-spacing: 2px;
-                horizontal-stretch: 1;
-                vertical-alignment: center;
-            }
-            Text {
-                text: "2,184 in chat";
-                color: Theme.muted;
-                font-size: Theme.font-size-caption;
-                vertical-alignment: center;
-            }
-        }
-
-        // ----- Chat list -----
-        VerticalLayout {
-            padding-left: 0;
-            padding-right: 0;
-            spacing: 0;
+        // ----- Scrolling body: title, meta, actions, comments, composer
+        ScrollView {
             vertical-stretch: 1;
-            ChatRow {
-                user: "streammod_lea";
-                role: Tone.success;
-                message: "welcome in everyone, iteration 30 today 🎉";
-            }
-            ChatRow {
-                user: "rustacean_42";
-                role: Tone.info;
-                message: "the Tone enum migration was so clean tbh";
-            }
-            ChatRow {
-                user: "devika_s";
-                message: "how many pages is the catalogue now??";
-            }
-            EventRow {
-                text: "marco_k just subscribed at Tier 2! 4-month streak";
-                tone: Tone.info;
-            }
-            ChatRow {
-                user: "anika_codes";
-                role: Tone.success;
-                message: "112 and counting — appearance settings going in now";
-            }
-            ChatRow {
-                user: "qr_enjoyer";
-                role: Tone.warning;
-                message: "the faux-QR pattern is unreasonably satisfying";
-            }
-            ChatRow {
-                user: "slint_fan";
-                message: "is this all pure rust? no js anywhere?";
-            }
-            EventRow {
-                text: "tomas_m cheered 500 bits — ship it!";
-                tone: Tone.warning;
-            }
-            ChatRow {
-                user: "anika_codes";
-                role: Tone.success;
-                message: "100% rust, zero webview. that's the whole point ✊";
-            }
-            ChatRow {
-                user: "night_owl_dev";
-                role: Tone.info;
-                message: "snapshot diffing on 131 baselines is wild";
-            }
-            ChatRow {
-                user: "ll_grey";
-                message: "what theme is this — looks like the dark scheme?";
-            }
-            Rectangle { vertical-stretch: 1; }
-        }
 
-        // ----- Composer -----
-        Rectangle {
-            background: Theme.surface-1;
-            drop-shadow-blur: Theme.elevation-2-blur;
-            drop-shadow-color: Theme.elevation-2-color;
-            drop-shadow-offset-y: -4px;
-            height: 64px;
-            HorizontalLayout {
-                padding: Theme.spacing-sm;
-                spacing: Theme.spacing-sm;
-                alignment: stretch;
+            VerticalLayout {
+                padding-top: Theme.spacing-md;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-md;
+                alignment: start;
+
+                // Title + streamer.
                 VerticalLayout {
-                    alignment: center;
-                    horizontal-stretch: 1;
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    spacing: Theme.spacing-xs;
+                    Heading {
+                        style: HeadingStyle.plex-medium;
+                        text: root.stream-title;
+                        font-size: 18px;
+                        color: Theme.on-background;
+                        wrap: word-wrap;
+                    }
+                    Text {
+                        text: root.streamer;
+                        color: Theme.muted;
+                        font-size: Theme.font-size-body;
+                        font-weight: 600;
+                    }
+                }
+
+                // Meta chips: viewers + likes.
+                MetaRow {
+                    items: [
+                        { icon: @image-url("@mobile-components/icons/profile.svg"), text: "1,247 watching" },
+                        { icon: @image-url("@mobile-components/icons/heart.svg"), text: "8.4K" },
+                    ];
+                }
+
+                // Quick actions — three equal-stretch buttons.
+                HorizontalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    spacing: Theme.spacing-sm;
+                    MobileButton {
+                        text: "Like";
+                        primary: false;
+                        clicked => { root.like-pressed(); }
+                    }
+                    MobileButton {
+                        text: "Share";
+                        primary: false;
+                        clicked => { root.share-pressed(); }
+                    }
+                    MobileButton {
+                        text: "Tip";
+                        clicked => { root.tip-pressed(); }
+                    }
+                }
+
+                // Comments — every row is the canonical SettingRow.
+                FormSection {
+                    title: "LIVE CHAT";
+
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        tone: Tone.info;
+                        title: "rustacean42";
+                        subtitle: "this build pipeline is so clean";
+                        clicked => { root.comment-pressed("rustacean42"); }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        tone: Tone.success;
+                        title: "mobile_mara";
+                        subtitle: "what theme is that? loving the colours";
+                        clicked => { root.comment-pressed("mobile_mara"); }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        tone: Tone.warning;
+                        title: "slint_fan";
+                        subtitle: "first time catching one of these live!";
+                        clicked => { root.comment-pressed("slint_fan"); }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        tone: Tone.danger;
+                        title: "kernel_kira";
+                        subtitle: "do the gesture demo next plz";
+                        clicked => { root.comment-pressed("kernel_kira"); }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        title: "anon_dev";
+                        subtitle: "how do you handle hot reload on android?";
+                        clicked => { root.comment-pressed("anon_dev"); }
+                    }
+                }
+
+                // Composer at the bottom.
+                FormField {
+                    label: "";
                     TextField {
-                        label: "";
-                        placeholder: "Send a message…";
-                    }
-                }
-                VerticalLayout {
-                    alignment: center;
-                    Rectangle {
-                        width: 44px;
-                        height: 44px;
-                        border-radius: self.width / 2;
-                        background: Theme.surface-variant;
-                        Image {
-                            width: 20px;
-                            height: 20px;
-                            x: (parent.width - self.width) / 2;
-                            y: (parent.height - self.height) / 2;
-                            source: @image-url("@mobile-components/icons/heart.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
-                        }
-                    }
-                }
-                VerticalLayout {
-                    alignment: center;
-                    Rectangle {
-                        width: 44px;
-                        height: 44px;
-                        border-radius: self.width / 2;
-                        background: Theme.accent-info;
-                        Image {
-                            width: 20px;
-                            height: 20px;
-                            x: (parent.width - self.width) / 2;
-                            y: (parent.height - self.height) / 2;
-                            source: @image-url("@mobile-components/icons/send.svg");
-                            colorize: Theme.on-primary;
-                            image-fit: contain;
-                        }
-                        TouchArea {
-                            clicked => { root.send-pressed(); }
-                        }
+                        placeholder: "Say something…";
+                        text <=> root.chat-draft;
+                        accepted(v) => { root.chat-submitted(v); }
                     }
                 }
             }

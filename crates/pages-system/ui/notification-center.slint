@@ -1,124 +1,30 @@
 // NotificationCenterPage
 // =====================================================================
 //
-// Grouped notification feed — the screen you land on after tapping the
-// bell icon in any of the other pages. Demonstrates:
-//
-//   - Three-section grouping (Today / Yesterday / This week) via
-//     SectionHeader
-//   - Per-row tone-tinted indicator (using the shared `Tone` enum) so
-//     the user can scan severity at a glance — mentions, system events,
-//     errors, and successes all carry distinct accent dots
-//   - Avatar + body + timestamp three-column row layout, which is the
-//     timeline pattern most notification surfaces converge on
-//
-// Layout
-// ------
-//
-//   AppBar — "Notifications" + clear-all trailing
-//   Section "TODAY"
-//     NotificationRow × N
-//   Section "YESTERDAY"
-//     NotificationRow × N
-//   Section "THIS WEEK"
-//     NotificationRow × N
+// A unified inbox for app, mention, mail and system notifications.
+// Filter strip at the top (SegmentedControl), then notifications grouped
+// by recency (TODAY / YESTERDAY / OLDER). Every row is a `SettingRow`,
+// so the leading-icon tiles, titles and timestamps line up at the same
+// 16 px gutters across the whole screen.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
-import { SectionHeader } from "@mobile-components/section-header.slint";
-import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
-import { Avatar } from "@mobile-components/avatar.slint";
+import { FormSection } from "@mobile-components/form-section.slint";
+import { SettingRow } from "@mobile-components/setting-row.slint";
+import { SegmentedControl } from "@mobile-components/segmented-control.slint";
+import { TextButton } from "@mobile-components/button.slint";
 import { Divider } from "@mobile-components/divider.slint";
 import { ScrollView } from "std-widgets.slint";
-
-// One notification row.
-component NotificationRow inherits Rectangle {
-    in property <string> initials;
-    // (mapped onto Avatar's `fallback` slot in the row body below.)
-    in property <string> message;
-    in property <string> when;
-    in property <Tone> tone: Tone.default;
-    in property <bool> unread: false;
-    callback clicked();
-
-    accessible-role: button;
-    accessible-label: root.message;
-    accessible-action-default => { root.clicked(); }
-
-    horizontal-stretch: 1;
-    min-height: 72px;
-    background: touch.pressed ? Theme.surface-pressed : transparent;
-
-    animate background { duration: Theme.motion-fast; }
-
-    // Leading unread / tone dot (8 × 8). Always rendered for layout
-    // stability — when the row is read, the dot is transparent so the
-    // row left-edge still aligns with its unread neighbours.
-    Rectangle {
-        x: Theme.spacing-sm;
-        y: (parent.height - self.height) / 2;
-        width: 8px;
-        height: 8px;
-        border-radius: 4px;
-        background: root.unread
-            ? (
-                  root.tone == Tone.success ? Theme.accent-success
-                : root.tone == Tone.warning ? Theme.accent-warning
-                : root.tone == Tone.danger  ? Theme.accent-danger
-                : root.tone == Tone.info    ? Theme.accent-info
-                : Theme.primary
-              )
-            : transparent;
-    }
-
-    HorizontalLayout {
-        padding-left: Theme.spacing-md + 8px;
-        padding-right: Theme.spacing-md;
-        padding-top: Theme.spacing-sm;
-        padding-bottom: Theme.spacing-sm;
-        spacing: Theme.spacing-md;
-        alignment: stretch;
-
-        // Avatar.
-        VerticalLayout {
-            alignment: start;
-            Avatar {
-                fallback: root.initials;
-                size: 40px;
-            }
-        }
-
-        // Body.
-        VerticalLayout {
-            horizontal-stretch: 1;
-            alignment: center;
-            spacing: 2px;
-            Text {
-                text: root.message;
-                color: root.unread ? Theme.on-surface : Theme.muted;
-                font-size: Theme.font-size-body;
-                font-weight: root.unread ? 600 : 400;
-                wrap: word-wrap;
-            }
-            Text {
-                text: root.when;
-                color: Theme.muted;
-                font-size: Theme.font-size-caption;
-            }
-        }
-    }
-
-    touch := TouchArea {
-        mouse-cursor: pointer;
-        clicked => { root.clicked(); }
-    }
-}
 
 export component NotificationCenterPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
+
+    in-out property <int> filter-index: 0;
+
     callback back-pressed();
     callback clear-all-pressed();
+    callback notification-pressed(string);
 
     background: Theme.background;
 
@@ -126,91 +32,225 @@ export component NotificationCenterPage inherits Window {
         spacing: 0;
 
         AppBar {
-            title: "notifications";
-            title-style: HeadingStyle.lowercase-soft;
+            title: "Notifications";
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
-            trailing-icon: @image-url("@mobile-components/icons/close.svg");
             leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.clear-all-pressed(); }
+        }
+
+        HorizontalLayout {
+            padding-left: Theme.spacing-md;
+            padding-right: Theme.spacing-md;
+            alignment: end;
+            TextButton {
+                text: "Clear all";
+                clicked => { root.clear-all-pressed(); }
+            }
         }
 
         ScrollView {
             vertical-stretch: 1;
-            horizontal-stretch: 1;
-            viewport-width: 412px;
-            viewport-height: 1100px;
+
             VerticalLayout {
-                spacing: 0;
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-xl;
+                spacing: Theme.spacing-md;
+                alignment: stretch;
 
-                SectionHeader { text: "TODAY"; }
-                NotificationRow {
-                    initials: "PR";
-                    message: "Priya mentioned you in #design — \"the new Tone enum looks great\"";
-                    when: "12 minutes ago";
-                    tone: Tone.info;
-                    unread: true;
+                // ----- Filter strip -----------------------------------
+                HorizontalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    SegmentedControl {
+                        options: ["All", "Mentions", "Mail", "System"];
+                        selected-index <=> root.filter-index;
+                    }
                 }
-                Divider { }
-                NotificationRow {
-                    initials: "DS";
-                    message: "Build #1842 succeeded on main";
-                    when: "1 hour ago";
-                    tone: Tone.success;
-                    unread: true;
-                }
-                Divider { }
-                NotificationRow {
-                    initials: "AR";
-                    message: "Anika requested your review on PR #312 — Drawer primitive";
-                    when: "3 hours ago";
-                    tone: Tone.default;
-                    unread: true;
-                }
-                Divider { }
 
-                SectionHeader { text: "YESTERDAY"; }
-                NotificationRow {
-                    initials: "SY";
-                    message: "Production deploy failed — rollback completed automatically";
-                    when: "yesterday, 18:42";
-                    tone: Tone.danger;
-                }
-                Divider { }
-                NotificationRow {
-                    initials: "MK";
-                    message: "Marco invited you to the \"Slint Conf 2026 dry run\" calendar event";
-                    when: "yesterday, 14:10";
-                    tone: Tone.info;
-                }
-                Divider { }
-                NotificationRow {
-                    initials: "ST";
-                    message: "Storage at 78% — consider archiving old build artifacts";
-                    when: "yesterday, 09:30";
-                    tone: Tone.warning;
-                }
-                Divider { }
+                // ----- TODAY ------------------------------------------
+                FormSection {
+                    title: "TODAY";
 
-                SectionHeader { text: "THIS WEEK"; }
-                NotificationRow {
-                    initials: "LE";
-                    message: "Léa published a new doc: \"Cargo-apk on Apple Silicon\"";
-                    when: "Monday";
-                    tone: Tone.info;
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        tone: Tone.info;
+                        title: "Léa mentioned you";
+                        subtitle: "2h ago · in #design-system thread.";
+                        clicked => { root.notification-pressed("lea-mention"); }
+                        Image {
+                            width: 14px;
+                            height: 14px;
+                            source: @image-url("@mobile-components/icons/bell.svg");
+                            colorize: Theme.accent-info;
+                            image-fit: contain;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/inbox.svg");
+                        title: "3 new emails";
+                        subtitle: "3h ago · from Atlas Coffee, Slint, Stripe.";
+                        clicked => { root.notification-pressed("inbox"); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/lock.svg");
+                        tone: Tone.warning;
+                        title: "New sign-in from Berlin";
+                        subtitle: "5h ago · review if this wasn't you.";
+                        clicked => { root.notification-pressed("signin"); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/star.svg");
+                        tone: Tone.success;
+                        title: "Weekly summary ready";
+                        subtitle: "8h ago · 4 wins, 2 follow-ups.";
+                        clicked => { root.notification-pressed("summary"); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/send.svg");
+                        title: "Invoice #2147 paid";
+                        subtitle: "11h ago · €115.33 from Atlas Coffee.";
+                        clicked => { root.notification-pressed("invoice"); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
                 }
-                Divider { }
-                NotificationRow {
-                    initials: "TM";
-                    message: "Your weekly digest is ready — 14 items closed, 3 new issues opened";
-                    when: "Monday";
-                    tone: Tone.default;
+
+                // ----- YESTERDAY --------------------------------------
+                FormSection {
+                    title: "YESTERDAY";
+
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/queue.svg");
+                        title: "Background sync completed";
+                        subtitle: "1d ago · 42 items updated.";
+                        clicked => { root.notification-pressed("sync"); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/heart.svg");
+                        tone: Tone.danger;
+                        title: "Marco liked your post";
+                        subtitle: "1d ago · \"Designing for thumbs\".";
+                        clicked => { root.notification-pressed("like"); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/menu.svg");
+                        title: "Update available · 1.4.2";
+                        subtitle: "1d ago · bug fixes and improvements.";
+                        clicked => { root.notification-pressed("update"); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/pin.svg");
+                        title: "Pinned thread updated";
+                        subtitle: "1d ago · Q3 roadmap.";
+                        clicked => { root.notification-pressed("pinned"); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
                 }
-                Divider { }
-                NotificationRow {
-                    initials: "DV";
-                    message: "Devika starred your repo \"slint-mobile-components\"";
-                    when: "Sunday";
-                    tone: Tone.success;
+
+                // ----- OLDER ------------------------------------------
+                FormSection {
+                    title: "OLDER";
+
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/bell.svg");
+                        title: "Reminder · Renew subscription";
+                        subtitle: "3d ago.";
+                        clicked => { root.notification-pressed("renew"); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        title: "Yumi accepted your invite";
+                        subtitle: "5d ago.";
+                        clicked => { root.notification-pressed("invite"); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/lock.svg");
+                        title: "Password changed";
+                        subtitle: "12d ago · from this device.";
+                        clicked => { root.notification-pressed("password"); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
                 }
             }
         }

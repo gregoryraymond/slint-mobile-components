@@ -1,164 +1,31 @@
 // SmartHomePage
 // =====================================================================
 //
-// IoT device dashboard — ambient stats strip + room selector + 2×2
-// device tile grid + scene buttons. Demonstrates:
-//
-//   - A tile-grid layout where each device tile is roughly square,
-//     active devices carry a tone-tinted fill, inactive ones stay on
-//     `surface-1`. A small toggle pill in the corner echoes the
-//     state for quick scanning.
-//   - Ambient strip with three small metric cells (temp / humidity /
-//     air quality) at the top of the page.
-//   - "Scenes" row at the bottom — quick-action pills like Movie,
-//     Bedtime, Away that orchestrate multiple devices at once.
+// Whole-home control dashboard. A row of four StatTiles (indoor,
+// outdoor, air quality, power), then FormSections for ROOMS (SettingRow
+// with device-count + chevron trailing), SCENES (SettingRow with
+// chevron trailing), and AUTOMATIONS (SettingRow + MobileSwitch).
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
-import { SectionHeader } from "@mobile-components/section-header.slint";
-import { TabBar, Tab } from "@mobile-components/tab-bar.slint";
-import { Chip } from "@mobile-components/chip.slint";
 import { HeadingStyle } from "@mobile-components/heading.slint";
-
-// One ambient metric — small caption + big value + unit.
-component AmbientCell inherits Rectangle {
-    in property <string> label;
-    in property <string> value;
-    in property <string> unit;
-    in property <Tone> tone: Tone.default;
-
-    horizontal-stretch: 1;
-    VerticalLayout {
-        padding: Theme.spacing-sm;
-        spacing: 2px;
-        Text {
-            text: root.label;
-            color: Theme.muted;
-            font-size: 10px;
-            font-weight: 700;
-            letter-spacing: 0.5px;
-        }
-        HorizontalLayout {
-            spacing: 2px;
-            alignment: start;
-            Text {
-                text: root.value;
-                color:
-                      root.tone == Tone.success ? Theme.accent-success
-                    : root.tone == Tone.warning ? Theme.accent-warning
-                    : root.tone == Tone.danger  ? Theme.accent-danger
-                    : root.tone == Tone.info    ? Theme.accent-info
-                    : Theme.on-surface;
-                font-family: "IBM Plex Sans";
-                font-size: Theme.font-size-title;
-                font-weight: 700;
-            }
-            VerticalLayout {
-                alignment: end;
-                padding-bottom: 4px;
-                Text {
-                    text: root.unit;
-                    color: Theme.muted;
-                    font-size: Theme.font-size-caption;
-                }
-            }
-        }
-    }
-}
-
-// One device tile — square card, icon + label + value, active state
-// swaps the background to a tone-tinted glow and the icon to white.
-component DeviceTile inherits Rectangle {
-    in property <image> icon;
-    in property <string> name;
-    in property <string> value;
-    in property <bool> active: false;
-    in property <Tone> tone: Tone.default;
-    callback toggled();
-
-    accessible-role: button;
-    accessible-label: root.name;
-    accessible-checkable: true;
-    accessible-checked: root.active;
-    accessible-action-default => { root.toggled(); }
-
-    height: 140px;
-    background: root.active
-        ? (
-              root.tone == Tone.success ? Theme.accent-success
-            : root.tone == Tone.warning ? Theme.accent-warning
-            : root.tone == Tone.danger  ? Theme.accent-danger
-            : root.tone == Tone.info    ? Theme.accent-info
-            : Theme.primary
-          )
-        : Theme.surface-1;
-    border-radius: Theme.radius-md;
-    drop-shadow-blur: Theme.elevation-1-blur;
-    drop-shadow-color: Theme.elevation-1-color;
-    drop-shadow-offset-y: Theme.elevation-1-y;
-
-    animate background { duration: Theme.motion-fast; }
-
-    VerticalLayout {
-        padding: Theme.spacing-md;
-        spacing: Theme.spacing-sm;
-        alignment: stretch;
-
-        // Icon row + toggle indicator.
-        HorizontalLayout {
-            alignment: stretch;
-            Image {
-                width: 28px;
-                height: 28px;
-                source: root.icon;
-                colorize: root.active ? Theme.on-primary : Theme.on-surface;
-                image-fit: contain;
-            }
-            Rectangle { horizontal-stretch: 1; }
-            // Toggle pill.
-            Rectangle {
-                width: 32px;
-                height: 18px;
-                border-radius: 9px;
-                background: root.active ? #ffffff44 : Theme.surface-variant;
-                Rectangle {
-                    x: root.active ? parent.width - self.width - 2px : 2px;
-                    y: (parent.height - self.height) / 2;
-                    width: 14px;
-                    height: 14px;
-                    border-radius: 7px;
-                    background: root.active ? Theme.on-primary : Theme.muted;
-                    animate x { duration: Theme.motion-fast; }
-                }
-            }
-        }
-
-        Rectangle { vertical-stretch: 1; }
-
-        Text {
-            text: root.name;
-            color: root.active ? Theme.on-primary : Theme.on-surface;
-            font-size: Theme.font-size-body;
-            font-weight: 600;
-        }
-        Text {
-            text: root.value;
-            color: root.active ? #ffffffcc : Theme.muted;
-            font-size: Theme.font-size-caption;
-        }
-    }
-
-    TouchArea {
-        clicked => { root.toggled(); }
-    }
-}
+import { FormSection } from "@mobile-components/form-section.slint";
+import { SettingRow } from "@mobile-components/setting-row.slint";
+import { StatTile } from "@mobile-components/stat-tile.slint";
+import { MobileSwitch } from "@mobile-components/switch.slint";
+import { Divider } from "@mobile-components/divider.slint";
+import { ScrollView } from "std-widgets.slint";
 
 export component SmartHomePage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
-    in-out property <int> current-room: 0;
+
+    in-out property <bool> sunset-automation: true;
+    in-out property <bool> leave-automation: true;
+
     callback back-pressed();
-    callback settings-pressed();
+    callback add-pressed();
+    callback room-pressed(string);
     callback scene-pressed(string);
 
     background: Theme.background;
@@ -167,111 +34,220 @@ export component SmartHomePage inherits Window {
         spacing: 0;
 
         AppBar {
-            title: "Home";
-            title-style: HeadingStyle.bold-impact;
+            title: "My home";
+            title-style: HeadingStyle.plex-medium;
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
-            trailing-icon: @image-url("@mobile-components/icons/profile.svg");
+            trailing-icon: @image-url("@mobile-components/icons/plus.svg");
             leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.settings-pressed(); }
+            trailing-pressed => { root.add-pressed(); }
         }
 
-        VerticalLayout {
-            padding: Theme.spacing-md;
-            spacing: Theme.spacing-md;
+        ScrollView {
+            vertical-stretch: 1;
 
-            // ----- Ambient strip -----
-            Rectangle {
-                background: Theme.surface-1;
-                border-radius: Theme.radius-md;
-                drop-shadow-blur: Theme.elevation-1-blur;
-                drop-shadow-color: Theme.elevation-1-color;
-                drop-shadow-offset-y: Theme.elevation-1-y;
+            VerticalLayout {
+                padding-top: Theme.spacing-md;
+                padding-bottom: Theme.spacing-xl;
+                spacing: Theme.spacing-md;
+                alignment: stretch;
+
+                // ----- Vitals row --------------------------------------
                 HorizontalLayout {
-                    AmbientCell {
-                        label: "TEMP";
-                        value: "21.4";
-                        unit: "°C";
-                    }
-                    Rectangle {
-                        width: 1px;
-                        background: Theme.outline;
-                    }
-                    AmbientCell {
-                        label: "HUMIDITY";
-                        value: "48";
-                        unit: "%";
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    spacing: Theme.spacing-sm;
+
+                    StatTile { value: "21°"; label: "INDOOR"; }
+                    StatTile { value: "12°"; label: "OUTDOOR"; tone: Tone.info; }
+                    StatTile { value: "76%"; label: "AIR QUAL"; tone: Tone.success; }
+                    StatTile { value: "245 W"; label: "POWER"; tone: Tone.warning; }
+                }
+
+                // ----- Rooms ------------------------------------------
+                FormSection {
+                    title: "ROOMS";
+
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/home.svg");
                         tone: Tone.info;
+                        title: "Living room";
+                        subtitle: "21° · 4 lights on · TV";
+                        clicked => { root.room-pressed("living"); }
+                        Text {
+                            text: "5";
+                            color: Theme.muted;
+                            font-size: Theme.font-size-body;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                        }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
                     }
-                    Rectangle {
-                        width: 1px;
-                        background: Theme.outline;
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/home.svg");
+                        tone: Tone.warning;
+                        title: "Kitchen";
+                        subtitle: "23° · oven idle · 2 lights on";
+                        clicked => { root.room-pressed("kitchen"); }
+                        Text {
+                            text: "4";
+                            color: Theme.muted;
+                            font-size: Theme.font-size-body;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                        }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
                     }
-                    AmbientCell {
-                        label: "AIR QUALITY";
-                        value: "Good";
-                        unit: "";
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/home.svg");
                         tone: Tone.success;
+                        title: "Bedroom";
+                        subtitle: "19° · blinds closed";
+                        clicked => { root.room-pressed("bedroom"); }
+                        Text {
+                            text: "3";
+                            color: Theme.muted;
+                            font-size: Theme.font-size-body;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                        }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/home.svg");
+                        tone: Tone.danger;
+                        title: "Office";
+                        subtitle: "22° · desk lamp on";
+                        clicked => { root.room-pressed("office"); }
+                        Text {
+                            text: "2";
+                            color: Theme.muted;
+                            font-size: Theme.font-size-body;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                        }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/home.svg");
+                        title: "Garage";
+                        subtitle: "11° · door closed";
+                        clicked => { root.room-pressed("garage"); }
+                        Text {
+                            text: "1";
+                            color: Theme.muted;
+                            font-size: Theme.font-size-body;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                        }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
                     }
                 }
-            }
 
-            // ----- Room tabs -----
-            TabBar {
-                Tab { label: "Living"; }
-                Tab { label: "Bedroom"; }
-                Tab { label: "Kitchen"; }
-                Tab { label: "Office"; }
-            }
+                // ----- Scenes -----------------------------------------
+                FormSection {
+                    title: "SCENES";
 
-            // ----- Device grid (2×2) -----
-            HorizontalLayout {
-                spacing: Theme.spacing-sm;
-                DeviceTile {
-                    horizontal-stretch: 1;
-                    icon: @image-url("@mobile-components/icons/spinner-arc.svg");
-                    name: "Ceiling lights";
-                    value: "Warm white · 80%";
-                    active: true;
-                    tone: Tone.warning;
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/star.svg");
+                        tone: Tone.warning;
+                        title: "Movie night";
+                        subtitle: "Tap to activate";
+                        clicked => { root.scene-pressed("movie"); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/pin.svg");
+                        tone: Tone.info;
+                        title: "Goodnight";
+                        subtitle: "Tap to activate";
+                        clicked => { root.scene-pressed("goodnight"); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/heart.svg");
+                        tone: Tone.success;
+                        title: "Wake up";
+                        subtitle: "Tap to activate";
+                        clicked => { root.scene-pressed("wake"); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
                 }
-                DeviceTile {
-                    horizontal-stretch: 1;
-                    icon: @image-url("@mobile-components/icons/play.svg");
-                    name: "Sonos";
-                    value: "Now playing · jazz";
-                    active: true;
-                    tone: Tone.info;
-                }
-            }
-            HorizontalLayout {
-                spacing: Theme.spacing-sm;
-                DeviceTile {
-                    horizontal-stretch: 1;
-                    icon: @image-url("@mobile-components/icons/star.svg");
-                    name: "Nest thermostat";
-                    value: "Heating · 21°C";
-                    active: false;
-                }
-                DeviceTile {
-                    horizontal-stretch: 1;
-                    icon: @image-url("@mobile-components/icons/lock.svg");
-                    name: "Front door";
-                    value: "Locked";
-                    active: false;
-                }
-            }
 
-            // ----- Scenes -----
-            SectionHeader { text: "SCENES"; }
-            HorizontalLayout {
-                spacing: Theme.spacing-sm;
-                Chip { label: "Movie night"; }
-                Chip { label: "Bedtime"; }
-                Chip { label: "Away"; }
-                Chip { label: "Reading"; }
+                // ----- Automations ------------------------------------
+                FormSection {
+                    title: "AUTOMATIONS";
+
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/bell.svg");
+                        tone: Tone.info;
+                        title: "Sunset → close blinds";
+                        subtitle: "Every day · about 21:14";
+                        MobileSwitch { checked <=> root.sunset-automation; }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/lock.svg");
+                        tone: Tone.success;
+                        title: "Leave home → arm security";
+                        subtitle: "When all phones leave geofence";
+                        MobileSwitch { checked <=> root.leave-automation; }
+                    }
+                }
             }
         }
-
-        Rectangle { vertical-stretch: 1; }
     }
 }

@@ -1,323 +1,188 @@
 // WriteReviewPage
 // =====================================================================
 //
-// Review composer — Amazon / Google Maps / Yelp-style. The user has
-// already bought / visited; this is the "share your experience" form.
-// Demonstrates:
+// User writes a review of a recently-purchased product. Demonstrates
+// FormField + SettingRow + FormSection composed together: every input
+// shares the SAME 16 px gutter, the SAME label rhythm, and the SAME
+// helper-text baseline.
 //
-//   - Product preview card at the top: thumbnail + name + variant.
-//   - Big 5-star rating picker with caption that reflects the chosen
-//     score ("Loved it" / "It was OK" / "Hated it").
-//   - Multi-line review text area + character counter underneath.
-//   - Suggested tag chip strip (so users can express "what stood out"
-//     without writing prose).
-//   - Photo-upload tiles (1 selected + 3 empty placeholders).
-//   - "Post anonymously" checkbox.
-//   - Sticky Submit CTA.
+// What this screen does
+//   - AppBar with back + "Post" trailing TextButton.
+//   - Product summary Card (title = product name, subtitle = "merchant
+//     · variant").
+//   - RATING FormSection — one SettingRow "Overall" with a 5-star
+//     trailing strip (4 stars filled with accent-warning, 1 muted).
+//   - "Title" FormField (TextField).
+//   - "Review" FormField (TextField + min-character helper).
+//   - RECOMMEND FormSection — two SettingRows each with a
+//     MobileSwitch in the trailing slot.
+//   - Primary "Post review" MobileButton at the bottom.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
-import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
+import { Card } from "@mobile-components/card.slint";
+import { FormField } from "@mobile-components/form-field.slint";
+import { FormSection } from "@mobile-components/form-section.slint";
+import { SettingRow } from "@mobile-components/setting-row.slint";
 import { TextField } from "@mobile-components/text-field.slint";
-import { Chip } from "@mobile-components/chip.slint";
-import { Checkbox } from "@mobile-components/checkbox.slint";
+import { MobileButton, TextButton } from "@mobile-components/button.slint";
+import { MobileSwitch } from "@mobile-components/switch.slint";
 import { Divider } from "@mobile-components/divider.slint";
-import { MobileButton } from "@mobile-components/button.slint";
-
-// One tappable star.
-component RatingStar inherits Rectangle {
-    in property <bool> filled: false;
-    callback clicked();
-
-    accessible-role: button;
-    accessible-action-default => { root.clicked(); }
-
-    width: 44px;
-    height: 44px;
-    Image {
-        width: 32px;
-        height: 32px;
-        x: (parent.width - self.width) / 2;
-        y: (parent.height - self.height) / 2;
-        source: @image-url("@mobile-components/icons/star.svg");
-        colorize: root.filled ? Theme.accent-warning : Theme.surface-variant;
-        image-fit: contain;
-    }
-    TouchArea {
-        clicked => { root.clicked(); }
-    }
-}
+import { ScrollView } from "std-widgets.slint";
 
 export component WriteReviewPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
-    in property <string> product: "Houdini windbreaker";
-    in property <string> variant: "Slate blue · M";
-    in property <int> rating: 4;
-    in property <string> review-body:
-        "Lighter than I expected — packs into its own pocket and disappears in a daypack. DWR holds up in light rain; wouldn't trust it in a downpour. Sizing runs slim; I'd size up if you plan to layer.";
-    in-out property <bool> anonymous: false;
+
+    in-out property <string> review-title;
+    in-out property <string> review-body;
+    in-out property <bool> would-buy-again: true;
+    in-out property <bool> allow-attribution: false;
+
     callback back-pressed();
-    callback rating-changed(int);
-    callback tag-toggled(string);
-    callback photo-pressed(int);
+    callback post-pressed();
     callback submit-pressed();
+    callback star-pressed(int);
 
     background: Theme.background;
-
-    property <string> rating-caption:
-          root.rating == 5 ? "Loved it"
-        : root.rating == 4 ? "Really liked it"
-        : root.rating == 3 ? "It was OK"
-        : root.rating == 2 ? "Didn't love it"
-        : root.rating == 1 ? "Hated it"
-        : "Pick a rating";
 
     VerticalLayout {
         spacing: 0;
 
         AppBar {
             title: "Write a review";
-            title-style: HeadingStyle.serif-light;
-            leading-icon: @image-url("@mobile-components/icons/close.svg");
+            leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             leading-pressed => { root.back-pressed(); }
         }
 
-        VerticalLayout {
-            padding: Theme.spacing-md;
-            spacing: Theme.spacing-md;
-            alignment: start;
+        ScrollView {
+            vertical-stretch: 1;
 
-            // ----- Product card -----
-            Rectangle {
-                height: 80px;
-                background: Theme.surface-1;
-                border-radius: Theme.radius-md;
-                drop-shadow-blur: Theme.elevation-1-blur;
-                drop-shadow-color: Theme.elevation-1-color;
-                drop-shadow-offset-y: Theme.elevation-1-y;
-                HorizontalLayout {
-                    padding: Theme.spacing-sm;
+            VerticalLayout {
+                padding-top: Theme.spacing-md;
+                padding-bottom: Theme.spacing-xl;
+                spacing: Theme.spacing-md;
+                alignment: stretch;
+
+                // ----- Product summary --------------------------------
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+
+                    Card {
+                        title: "Single-origin Yirgacheffe · 250 g";
+                        subtitle: "Atlas Coffee · House blend";
+                    }
+                }
+
+                // ----- RATING -----------------------------------------
+                FormSection {
+                    title: "RATING";
+
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/star.svg");
+                        tone: Tone.warning;
+                        title: "Overall";
+                        subtitle: "Tap a star";
+                        HorizontalLayout {
+                            spacing: Theme.spacing-xs;
+                            alignment: end;
+
+                            Image {
+                                width: 18px;
+                                height: 18px;
+                                source: @image-url("@mobile-components/icons/star.svg");
+                                colorize: Theme.accent-warning;
+                                image-fit: contain;
+                                TouchArea { clicked => { root.star-pressed(1); } }
+                            }
+                            Image {
+                                width: 18px;
+                                height: 18px;
+                                source: @image-url("@mobile-components/icons/star.svg");
+                                colorize: Theme.accent-warning;
+                                image-fit: contain;
+                                TouchArea { clicked => { root.star-pressed(2); } }
+                            }
+                            Image {
+                                width: 18px;
+                                height: 18px;
+                                source: @image-url("@mobile-components/icons/star.svg");
+                                colorize: Theme.accent-warning;
+                                image-fit: contain;
+                                TouchArea { clicked => { root.star-pressed(3); } }
+                            }
+                            Image {
+                                width: 18px;
+                                height: 18px;
+                                source: @image-url("@mobile-components/icons/star.svg");
+                                colorize: Theme.accent-warning;
+                                image-fit: contain;
+                                TouchArea { clicked => { root.star-pressed(4); } }
+                            }
+                            Image {
+                                width: 18px;
+                                height: 18px;
+                                source: @image-url("@mobile-components/icons/star.svg");
+                                colorize: Theme.muted;
+                                image-fit: contain;
+                                TouchArea { clicked => { root.star-pressed(5); } }
+                            }
+                        }
+                    }
+                }
+
+                // ----- Title field ------------------------------------
+                FormField {
+                    label: "Title";
+                    TextField {
+                        placeholder: "Short and punchy";
+                        text <=> root.review-title;
+                    }
+                }
+
+                // ----- Review body field ------------------------------
+                FormField {
+                    label: "Review";
+                    helper: "Min 30 characters.";
+                    TextField {
+                        placeholder: "What did you love? What could be better?";
+                        text <=> root.review-body;
+                    }
+                }
+
+                // ----- RECOMMEND --------------------------------------
+                FormSection {
+                    title: "RECOMMEND";
+
+                    SettingRow {
+                        title: "Would you buy this again?";
+                        subtitle: "Helps other shoppers decide.";
+                        MobileSwitch { checked <=> root.would-buy-again; }
+                    }
+                    Divider { }
+                    SettingRow {
+                        title: "Allow public attribution";
+                        subtitle: "Show your display name next to the review.";
+                        MobileSwitch { checked <=> root.allow-attribution; }
+                    }
+                }
+
+                // ----- Submit ------------------------------------------
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
                     spacing: Theme.spacing-sm;
                     alignment: stretch;
-                    VerticalLayout {
-                        alignment: center;
-                        Rectangle {
-                            width: 64px;
-                            height: 64px;
-                            border-radius: Theme.radius-sm;
-                            background: @linear-gradient(135deg, #506b8e 0%, #1f2a3b 100%);
-                            clip: true;
-                        }
-                    }
-                    VerticalLayout {
-                        horizontal-stretch: 1;
-                        alignment: center;
-                        spacing: 2px;
-                        Text {
-                            text: "PATAGONIA";
-                            color: Theme.muted;
-                            font-size: 10px;
-                            font-weight: 800;
-                            letter-spacing: 0.5px;
-                        }
-                        Text {
-                            text: root.product;
-                            color: Theme.on-surface;
-                            font-size: Theme.font-size-body;
-                            font-weight: 700;
-                        }
-                        Text {
-                            text: root.variant;
-                            color: Theme.muted;
-                            font-size: Theme.font-size-caption;
-                        }
-                    }
-                }
-            }
 
-            // ----- Rating picker -----
-            VerticalLayout {
-                spacing: Theme.spacing-xs;
-                alignment: center;
-                HorizontalLayout {
-                    alignment: center;
-                    Heading {
-                        text: "How was it?";
-                        style: HeadingStyle.serif-light;
-                        font-size: 20px;
+                    MobileButton {
+                        text: "Post review";
+                        clicked => { root.submit-pressed(); }
                     }
-                }
-                HorizontalLayout {
-                    alignment: center;
-                    spacing: 4px;
-                    for index in 5 : RatingStar {
-                        filled: index < root.rating;
-                        clicked => { root.rating-changed(index + 1); }
+                    TextButton {
+                        text: "Post";
+                        clicked => { root.post-pressed(); }
                     }
-                }
-                HorizontalLayout {
-                    alignment: center;
-                    Text {
-                        text: rating-caption;
-                        color:
-                              rating >= 4 ? Theme.accent-success
-                            : rating == 3 ? Theme.muted
-                            : Theme.accent-danger;
-                        font-size: Theme.font-size-body;
-                        font-weight: 600;
-                    }
-                }
-            }
-
-            Divider { }
-
-            // ----- Suggested tags -----
-            Text {
-                text: "What stood out?";
-                color: Theme.on-background;
-                font-size: Theme.font-size-body;
-                font-weight: 600;
-            }
-            HorizontalLayout {
-                spacing: Theme.spacing-sm;
-                Chip { label: "Lightweight"; selected: true; }
-                Chip { label: "Packable"; selected: true; }
-                Chip { label: "Runs slim"; selected: true; }
-                Chip { label: "Quality"; }
-            }
-
-            // ----- Body -----
-            Text {
-                text: "Tell us more";
-                color: Theme.on-background;
-                font-size: Theme.font-size-body;
-                font-weight: 600;
-            }
-            Rectangle {
-                background: Theme.surface-1;
-                border-radius: Theme.radius-md;
-                drop-shadow-blur: Theme.elevation-1-blur;
-                drop-shadow-color: Theme.elevation-1-color;
-                drop-shadow-offset-y: Theme.elevation-1-y;
-                height: 140px;
-                VerticalLayout {
-                    padding: Theme.spacing-md;
-                    Text {
-                        text: root.review-body;
-                        color: Theme.on-surface;
-                        font-size: Theme.font-size-body;
-                        wrap: word-wrap;
-                    }
-                }
-            }
-            HorizontalLayout {
-                Text {
-                    text: "Min 100 characters";
-                    color: Theme.muted;
-                    font-size: 10px;
-                    horizontal-stretch: 1;
-                }
-                Text {
-                    text: "248 / 1000";
-                    color: Theme.accent-success;
-                    font-size: 10px;
-                    font-weight: 600;
-                }
-            }
-
-            // ----- Photo tiles -----
-            Text {
-                text: "Add photos (optional)";
-                color: Theme.on-background;
-                font-size: Theme.font-size-body;
-                font-weight: 600;
-            }
-            HorizontalLayout {
-                spacing: Theme.spacing-sm;
-                // Filled tile.
-                Rectangle {
-                    width: 76px;
-                    height: 76px;
-                    border-radius: Theme.radius-sm;
-                    background: @linear-gradient(135deg, #506b8e 0%, #1f2a3b 100%);
-                    clip: true;
-                    // Remove × badge.
-                    Rectangle {
-                        x: parent.width - self.width - 4px;
-                        y: 4px;
-                        width: 20px;
-                        height: 20px;
-                        border-radius: 10px;
-                        background: #00000099;
-                        Text {
-                            text: "✕";
-                            color: #ffffff;
-                            font-size: 10px;
-                            font-weight: 800;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
-                            width: parent.width;
-                            height: parent.height;
-                        }
-                    }
-                }
-                // Empty placeholders.
-                for index in 3 : Rectangle {
-                    width: 76px;
-                    height: 76px;
-                    border-radius: Theme.radius-sm;
-                    background: Theme.surface-variant;
-                    Image {
-                        width: 22px;
-                        height: 22px;
-                        x: (parent.width - self.width) / 2;
-                        y: (parent.height - self.height) / 2;
-                        source: @image-url("@mobile-components/icons/plus.svg");
-                        colorize: Theme.muted;
-                        image-fit: contain;
-                    }
-                    TouchArea {
-                        clicked => { root.photo-pressed(index); }
-                    }
-                }
-            }
-
-            // Anonymous checkbox.
-            HorizontalLayout {
-                spacing: Theme.spacing-sm;
-                padding-top: Theme.spacing-xs;
-                Checkbox {
-                    checked <=> root.anonymous;
-                }
-                VerticalLayout {
-                    horizontal-stretch: 1;
-                    alignment: center;
-                    Text {
-                        text: "Post as anonymous";
-                        color: Theme.on-surface;
-                        font-size: Theme.font-size-body;
-                    }
-                }
-            }
-        }
-
-        Rectangle { vertical-stretch: 1; }
-
-        // Sticky submit.
-        Rectangle {
-            background: Theme.surface-1;
-            drop-shadow-blur: Theme.elevation-2-blur;
-            drop-shadow-color: Theme.elevation-2-color;
-            drop-shadow-offset-y: -4px;
-            height: 80px;
-            HorizontalLayout {
-                padding: Theme.spacing-md;
-                MobileButton {
-                    text: "Submit review";
-                    tone: Tone.info;
-                    max-height: 48px;
-                    clicked => { root.submit-pressed(); }
                 }
             }
         }

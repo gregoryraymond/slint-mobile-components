@@ -1,172 +1,55 @@
 // CalendarPage
 // =====================================================================
 //
-// Month-grid calendar + a same-day agenda strip. Demonstrates the 7-
-// column repeating grid pattern (a hole in the catalogue's layout
-// vocabulary up to this point) and how a tone-tinted dot can mark
-// "events on this day" without disrupting the cell typography.
-//
-// Layout
-// ------
-//
-//   AppBar — month/year + nav arrows
-//   Weekday header (S M T W T F S)
-//   Day grid (6 rows × 7 columns)
-//   Section header: "Today, May 14"
-//   Stack of Event cards
-//
-// The grid is rendered as a 6-row × 7-column GridLayout. Days from the
-// previous / next month are dimmed (`opacity: 0.4`); the "today" cell
-// gets a filled circle in `Theme.primary`. Cells with one or more
-// events show a 4 px tone-tinted dot under the date number.
+// Month / week / day view with a today highlight and a list of events
+// for today + tomorrow. Pure SettingRow + FormSection discipline for
+// the event rows — every row sits at the same 56 px floor.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
-import { Card } from "@mobile-components/card.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
+import { SegmentedControl } from "@mobile-components/segmented-control.slint";
+import { FormSection } from "@mobile-components/form-section.slint";
+import { SettingRow } from "@mobile-components/setting-row.slint";
+import { Divider } from "@mobile-components/divider.slint";
+import { ScrollView } from "std-widgets.slint";
 
-// One day cell in the month grid.
-component DayCell inherits Rectangle {
-    in property <int> day;
-    in property <bool> in-month: true;
+// One date cell in the month grid.
+component DateCell inherits Rectangle {
+    in property <string> day;
     in property <bool> today: false;
-    in property <Tone> event-tone: Tone.default;
-    in property <bool> has-event: false;
-    callback clicked();
+    in property <bool> muted: false;
 
-    accessible-role: button;
-    accessible-label: "Day " + root.day;
-    accessible-action-default => { root.clicked(); }
-
-    width: 44px;
-    height: 44px;
-    background: transparent;
-
-    // Today highlight — filled disc behind the date number.
-    if root.today: Rectangle {
-        width: 32px;
-        height: 32px;
-        x: (parent.width - self.width) / 2;
-        y: (parent.height - self.height) / 2 - 3px;
-        border-radius: self.width / 2;
-        background: Theme.primary;
-    }
+    width: 40px;
+    height: 40px;
+    border-radius: self.width / 2;
+    background: root.today ? Theme.primary : transparent;
 
     Text {
-        text: root.day;
         x: 0;
-        y: 4px;
+        y: 0;
         width: parent.width;
-        height: parent.height - 12px;
-        color: root.today
-            ? Theme.on-primary
-            : (root.in-month ? Theme.on-surface : Theme.muted);
-        opacity: root.in-month ? 1.0 : 0.5;
+        height: parent.height;
+        text: root.day;
+        color: root.today ? Theme.on-primary
+             : root.muted ? Theme.muted
+             : Theme.on-surface;
         font-size: Theme.font-size-body;
         font-weight: root.today ? 700 : 500;
         horizontal-alignment: center;
         vertical-alignment: center;
-    }
-
-    // Event dot — bottom-centre.
-    if root.has-event: Rectangle {
-        width: 4px;
-        height: 4px;
-        x: (parent.width - self.width) / 2;
-        y: parent.height - self.height - 6px;
-        border-radius: 2px;
-        background:
-              root.event-tone == Tone.success ? Theme.accent-success
-            : root.event-tone == Tone.warning ? Theme.accent-warning
-            : root.event-tone == Tone.danger  ? Theme.accent-danger
-            : root.event-tone == Tone.info    ? Theme.accent-info
-            : Theme.primary;
-    }
-
-    TouchArea {
-        clicked => { root.clicked(); }
-    }
-}
-
-// A single agenda card — coloured tone-bar on the leading edge gives
-// the agenda list a Trello/Notion-like at-a-glance categorization.
-component AgendaCard inherits Rectangle {
-    in property <string> when;
-    in property <string> title;
-    in property <string> location;
-    in property <Tone> tone: Tone.default;
-
-    height: 72px;
-    background: Theme.surface-1;
-    border-radius: Theme.radius-md;
-    clip: true;
-    drop-shadow-blur: Theme.elevation-1-blur;
-    drop-shadow-color: Theme.elevation-1-color;
-    drop-shadow-offset-y: Theme.elevation-1-y;
-
-    // Leading tone bar (4 px-wide colour strip).
-    Rectangle {
-        x: 0;
-        y: 0;
-        width: 4px;
-        height: parent.height;
-        background:
-              root.tone == Tone.success ? Theme.accent-success
-            : root.tone == Tone.warning ? Theme.accent-warning
-            : root.tone == Tone.danger  ? Theme.accent-danger
-            : root.tone == Tone.info    ? Theme.accent-info
-            : Theme.primary;
-    }
-
-    HorizontalLayout {
-        padding-left: Theme.spacing-md;
-        padding-right: Theme.spacing-md;
-        padding-top: Theme.spacing-sm;
-        padding-bottom: Theme.spacing-sm;
-        spacing: Theme.spacing-md;
-        alignment: stretch;
-
-        // Time column.
-        VerticalLayout {
-            alignment: center;
-            width: 64px;
-            Text {
-                text: root.when;
-                color: Theme.muted;
-                font-size: Theme.font-size-body;
-                font-weight: 600;
-            }
-        }
-
-        // Title + location.
-        VerticalLayout {
-            horizontal-stretch: 1;
-            alignment: center;
-            spacing: 2px;
-            Text {
-                text: root.title;
-                color: Theme.on-surface;
-                font-size: Theme.font-size-body-large;
-                font-weight: 600;
-                overflow: elide;
-            }
-            Text {
-                text: root.location;
-                color: Theme.muted;
-                font-size: Theme.font-size-caption;
-                overflow: elide;
-            }
-        }
     }
 }
 
 export component CalendarPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
-    in property <string> month-label: "May 2026";
+
+    in-out property <int> view-index: 0;
+
     callback back-pressed();
-    callback prev-month-pressed();
-    callback next-month-pressed();
+    callback add-pressed();
+    callback event-pressed(string);
 
     background: Theme.background;
 
@@ -174,118 +57,187 @@ export component CalendarPage inherits Window {
         spacing: 0;
 
         AppBar {
-            title: root.month-label;
-            title-style: HeadingStyle.serif-light;
+            title: "May 2026";
+            title-style: HeadingStyle.serif-display;
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             trailing-icon: @image-url("@mobile-components/icons/plus.svg");
             leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { /* new event */ }
+            trailing-pressed => { root.add-pressed(); }
         }
 
-        VerticalLayout {
-            padding: Theme.spacing-md;
-            spacing: Theme.spacing-md;
+        ScrollView {
             vertical-stretch: 1;
 
-            // ----- Weekday header -----
-            HorizontalLayout {
-                spacing: 0;
-                for label in ["S", "M", "T", "W", "T", "F", "S"]: VerticalLayout {
-                    horizontal-stretch: 1;
-                    alignment: center;
-                    Text {
-                        text: label;
-                        color: Theme.muted;
-                        font-size: Theme.font-size-caption;
-                        font-weight: 600;
-                        horizontal-alignment: center;
-                    }
-                }
-            }
-
-            // ----- Month grid (6 weeks × 7 days) -----
-            //
-            // May 2026 starts on a Friday and runs 31 days. The grid is
-            // padded with the trailing days of April (last week: 26→30)
-            // and the leading days of June (first week: 1→6).
-            //
-            // event-flag arrays mark which days carry events. Today is
-            // the 14th; tone-tinted dots accent a handful of other days
-            // to show the multi-tone capability.
-            for week-index in 6 : HorizontalLayout {
-                spacing: 0;
-                for day-index in 7 : VerticalLayout {
-                    horizontal-stretch: 1;
-                    alignment: center;
-                    property <int> cell-position: week-index * 7 + day-index;
-                    // Friday May 1 = position 5 (Sun=0..Sat=6, so Fri=5)
-                    // → start-offset = 5.
-                    property <int> day-number:
-                        cell-position < 5 ? 26 + cell-position
-                      : cell-position > 35 ? cell-position - 35
-                      : cell-position - 4;
-                    property <bool> in-may:
-                        cell-position >= 5 && cell-position <= 35;
-
-                    DayCell {
-                        day: day-number;
-                        in-month: in-may;
-                        today: in-may && day-number == 14;
-                        has-event:
-                            in-may && (
-                                  day-number == 6
-                               || day-number == 14
-                               || day-number == 17
-                               || day-number == 22
-                               || day-number == 28
-                            );
-                        event-tone:
-                              day-number == 6  ? Tone.info
-                            : day-number == 14 ? Tone.default
-                            : day-number == 17 ? Tone.success
-                            : day-number == 22 ? Tone.warning
-                            : day-number == 28 ? Tone.danger
-                            : Tone.default;
-                    }
-                }
-            }
-
-            // ----- Agenda section -----
             VerticalLayout {
-                spacing: Theme.spacing-sm;
-                padding-top: Theme.spacing-sm;
-                Heading {
-                    style: HeadingStyle.serif-display;
-                    text: "Today, May 14";
-                    color: Theme.on-background;
+                padding-top: Theme.spacing-md;
+                padding-bottom: Theme.spacing-xl;
+                spacing: Theme.spacing-md;
+                alignment: stretch;
+
+                // ----- View switcher --------------------------------
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    SegmentedControl {
+                        options: ["Month", "Week", "Day"];
+                        selected-index <=> root.view-index;
+                    }
                 }
-                AgendaCard {
-                    when: "09:00";
-                    title: "Standup";
-                    location: "Loom room";
-                    tone: Tone.info;
+
+                // ----- Month grid -----------------------------------
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    spacing: Theme.spacing-xs;
+
+                    // Weekday header row.
+                    HorizontalLayout {
+                        spacing: 0;
+                        alignment: stretch;
+                        for label in ["M", "T", "W", "T", "F", "S", "S"]:
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                alignment: center;
+                                HorizontalLayout {
+                                    alignment: center;
+                                    Text {
+                                        text: label;
+                                        color: Theme.muted;
+                                        font-size: 10px;
+                                        font-weight: 700;
+                                        letter-spacing: 0.5px;
+                                    }
+                                }
+                            }
+                    }
+
+                    // 5 rows × 7 columns covers May 2026.
+                    // May 1 2026 is a Friday → leading 4 blanks
+                    // (Mon..Thu), then 1..31.
+                    for row in [
+                        ["", "", "", "", "1", "2", "3"],
+                        ["4", "5", "6", "7", "8", "9", "10"],
+                        ["11", "12", "13", "14", "15", "16", "17"],
+                        ["18", "19", "20", "21", "22", "23", "24"],
+                        ["25", "26", "27", "28", "29", "30", "31"],
+                    ]: HorizontalLayout {
+                        spacing: 0;
+                        alignment: stretch;
+                        for day in row: VerticalLayout {
+                            horizontal-stretch: 1;
+                            alignment: center;
+                            HorizontalLayout {
+                                alignment: center;
+                                DateCell {
+                                    day: day;
+                                    today: day == "17";
+                                    muted: day == "";
+                                }
+                            }
+                        }
+                    }
                 }
-                AgendaCard {
-                    when: "11:30";
-                    title: "Design review — Tone enum rollout";
-                    location: "Conf room B";
-                    tone: Tone.default;
+
+                // ----- Today's events -------------------------------
+                FormSection {
+                    title: "TODAY · MAY 17";
+
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/bell.svg");
+                        tone: Tone.info;
+                        title: "09:00  Team sync";
+                        subtitle: "Conference Room A · 30 min";
+                        clicked => { root.event-pressed("sync"); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/heart.svg");
+                        tone: Tone.warning;
+                        title: "11:30  Design review";
+                        subtitle: "Zoom · 45 min · with Atlas team";
+                        clicked => { root.event-pressed("review"); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/pin.svg");
+                        tone: Tone.success;
+                        title: "13:00  Lunch with Sam";
+                        subtitle: "Le Pain Quotidien · 60 min";
+                        clicked => { root.event-pressed("lunch"); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/star.svg");
+                        tone: Tone.info;
+                        title: "16:00  1:1 with Maya";
+                        subtitle: "Meet · 30 min";
+                        clicked => { root.event-pressed("oneonone"); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
                 }
-                AgendaCard {
-                    when: "14:00";
-                    title: "1:1 with Priya";
-                    location: "Outside coffee bar";
-                    tone: Tone.success;
-                }
-                AgendaCard {
-                    when: "16:30";
-                    title: "Release cut deadline";
-                    location: "—";
-                    tone: Tone.warning;
+
+                // ----- Tomorrow -------------------------------------
+                FormSection {
+                    title: "TOMORROW";
+
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/bell.svg");
+                        tone: Tone.info;
+                        title: "08:30  Sprint planning";
+                        subtitle: "Conference Room B · 90 min";
+                        clicked => { root.event-pressed("planning"); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/heart.svg");
+                        tone: Tone.danger;
+                        title: "15:00  Doctor's appointment";
+                        subtitle: "Clinique Saint-Jean · 45 min";
+                        clicked => { root.event-pressed("doctor"); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
                 }
             }
-
-            Rectangle { vertical-stretch: 1; }
         }
     }
 }

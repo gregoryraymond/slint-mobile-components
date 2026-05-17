@@ -1,186 +1,33 @@
 // StorageManagerPage
 // =====================================================================
 //
-// Device-storage breakdown — iOS "iPhone Storage" / Android "Storage"
-// settings screen. Distinct from `ExpenseReportPage` (money) and
-// `AppPermissionsPage` (per-app). Demonstrates a quantity-breakdown
-// surface:
-//
-//   - Used/free hero: "182.4 GB of 256 GB used".
-//   - Stacked usage bar across categories, each band tone-tinted.
-//   - Category rows: tone-tinted icon disc + name + size + a faint
-//     per-row share bar.
-//   - "Recommendations" section: actionable cards (Offload unused
-//     apps, Review large attachments) with one-tap savings estimates.
-//   - Sticky "Clear cache" CTA.
+// Phone storage breakdown — a hero card with usage headline + progress,
+// a per-category list, a "largest files" list, and free-up actions at
+// the bottom. Every list row is a `SettingRow`; the percentage trailing
+// uses a `Chip` so the right-edge column stays consistent.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
-import { SectionHeader } from "@mobile-components/section-header.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
-import { Divider } from "@mobile-components/divider.slint";
+import { Card } from "@mobile-components/card.slint";
+import { Chip } from "@mobile-components/chip.slint";
+import { ProgressBar } from "@mobile-components/progress-bar.slint";
+import { FormSection } from "@mobile-components/form-section.slint";
+import { SettingRow } from "@mobile-components/setting-row.slint";
 import { MobileButton } from "@mobile-components/button.slint";
-
-// One band in the stacked usage bar.
-component UsageBand inherits Rectangle {
-    in property <float> fraction;
-    in property <color> fill;
-    horizontal-stretch: root.fraction * 1000;
-    height: 16px;
-    background: root.fill;
-}
-
-// One storage-category row.
-component CategoryRow inherits Rectangle {
-    in property <image> icon;
-    in property <string> name;
-    in property <string> size;
-    in property <float> share;
-    in property <Tone> tone: Tone.default;
-
-    horizontal-stretch: 1;
-    min-height: 64px;
-    HorizontalLayout {
-        padding: Theme.spacing-md;
-        spacing: Theme.spacing-md;
-        alignment: stretch;
-        VerticalLayout {
-            alignment: center;
-            Rectangle {
-                width: 36px;
-                height: 36px;
-                border-radius: 8px;
-                background:
-                      root.tone == Tone.success ? Theme.accent-success
-                    : root.tone == Tone.warning ? Theme.accent-warning
-                    : root.tone == Tone.danger  ? Theme.accent-danger
-                    : root.tone == Tone.info    ? Theme.accent-info
-                    : Theme.primary;
-                Image {
-                    width: 18px;
-                    height: 18px;
-                    x: (parent.width - self.width) / 2;
-                    y: (parent.height - self.height) / 2;
-                    source: root.icon;
-                    colorize: Theme.on-primary;
-                    image-fit: contain;
-                }
-            }
-        }
-        VerticalLayout {
-            horizontal-stretch: 1;
-            alignment: center;
-            spacing: 4px;
-            HorizontalLayout {
-                Text {
-                    text: root.name;
-                    color: Theme.on-surface;
-                    font-size: Theme.font-size-body;
-                    font-weight: 600;
-                    horizontal-stretch: 1;
-                }
-                Text {
-                    text: root.size;
-                    color: Theme.muted;
-                    font-size: Theme.font-size-caption;
-                    font-weight: 700;
-                }
-            }
-            Rectangle {
-                height: 4px;
-                background: Theme.surface-variant;
-                border-radius: 2px;
-                Rectangle {
-                    x: 0;
-                    y: 0;
-                    width: parent.width * root.share;
-                    height: parent.height;
-                    background:
-                          root.tone == Tone.success ? Theme.accent-success
-                        : root.tone == Tone.warning ? Theme.accent-warning
-                        : root.tone == Tone.danger  ? Theme.accent-danger
-                        : root.tone == Tone.info    ? Theme.accent-info
-                        : Theme.primary;
-                    border-radius: 2px;
-                }
-            }
-        }
-    }
-}
-
-// One recommendation card.
-component RecommendationCard inherits Rectangle {
-    in property <string> title;
-    in property <string> detail;
-    in property <string> savings;
-    in property <Tone> tone: Tone.info;
-    callback clicked();
-
-    accessible-role: button;
-    accessible-label: root.title;
-    accessible-action-default => { root.clicked(); }
-
-    horizontal-stretch: 1;
-    background: Theme.surface-1;
-    border-radius: Theme.radius-md;
-    drop-shadow-blur: Theme.elevation-1-blur;
-    drop-shadow-color: Theme.elevation-1-color;
-    drop-shadow-offset-y: Theme.elevation-1-y;
-
-    HorizontalLayout {
-        padding: Theme.spacing-md;
-        spacing: Theme.spacing-md;
-        alignment: stretch;
-        VerticalLayout {
-            horizontal-stretch: 1;
-            spacing: 2px;
-            Text {
-                text: root.title;
-                color: Theme.on-surface;
-                font-size: Theme.font-size-body;
-                font-weight: 700;
-            }
-            Text {
-                text: root.detail;
-                color: Theme.muted;
-                font-size: Theme.font-size-caption;
-                wrap: word-wrap;
-            }
-        }
-        VerticalLayout {
-            alignment: center;
-            Rectangle {
-                width: savings-text.preferred-width + 16px;
-                height: 28px;
-                border-radius: 14px;
-                background:
-                      root.tone == Tone.success ? Theme.accent-success
-                    : root.tone == Tone.warning ? Theme.accent-warning
-                    : Theme.accent-info;
-                savings-text := Text {
-                    text: root.savings;
-                    color: Theme.on-primary;
-                    font-size: Theme.font-size-caption;
-                    font-weight: 800;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
-                    width: parent.width;
-                    height: parent.height;
-                }
-            }
-        }
-    }
-    TouchArea {
-        clicked => { root.clicked(); }
-    }
-}
+import { Divider } from "@mobile-components/divider.slint";
+import { ScrollView } from "std-widgets.slint";
 
 export component StorageManagerPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
+
     callback back-pressed();
-    callback recommendation-pressed(string);
-    callback clear-cache-pressed();
+    callback category-pressed(string);
+    callback file-pressed(string);
+    callback delete-file(string);
+    callback free-up-pressed();
+    callback manage-backups-pressed();
 
     background: Theme.background;
 
@@ -188,160 +35,184 @@ export component StorageManagerPage inherits Window {
         spacing: 0;
 
         AppBar {
-            title: "STORAGE";
-            title-style: HeadingStyle.uppercase-spaced;
+            title: "Storage";
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             leading-pressed => { root.back-pressed(); }
         }
 
-        // Hero + stacked bar.
-        VerticalLayout {
-            padding: Theme.spacing-md;
-            spacing: Theme.spacing-sm;
-            HorizontalLayout {
-                alignment: center;
-                Text {
-                    text: "182.4 GB";
-                    color: Theme.on-background;
-                    font-family: "JetBrains Mono";
-                    font-size: 52px;
-                    font-weight: 700;
-                    letter-spacing: -1px;
-                }
-            }
-            HorizontalLayout {
-                alignment: center;
-                Text {
-                    text: "of 256 GB used · 73.6 GB free";
-                    color: Theme.muted;
-                    font-family: "JetBrains Mono";
-                    font-size: 11px;
-                    font-weight: 400;
-                }
-            }
-            Rectangle {
-                height: 16px;
-                border-radius: 8px;
-                clip: true;
-                HorizontalLayout {
-                    spacing: 0;
-                    UsageBand { fraction: 0.34; fill: Theme.accent-info; }
-                    UsageBand { fraction: 0.22; fill: Theme.accent-warning; }
-                    UsageBand { fraction: 0.16; fill: Theme.accent-success; }
-                    UsageBand { fraction: 0.11; fill: Theme.accent-danger; }
-                    UsageBand { fraction: 0.08; fill: Theme.primary; }
-                    UsageBand { fraction: 0.09; fill: Theme.muted; }
-                }
-            }
-            HorizontalLayout {
-                Text {
-                    text: "Photos & video · biggest user";
-                    color: Theme.muted;
-                    font-size: 10px;
-                    font-weight: 700;
-                    horizontal-stretch: 1;
-                }
-                Text {
-                    text: "Free 73.6 GB →";
-                    color: Theme.muted;
-                    font-size: 10px;
-                    font-weight: 700;
-                }
-            }
-        }
+        ScrollView {
+            vertical-stretch: 1;
 
-        SectionHeader { text: "BY CATEGORY"; }
-        CategoryRow {
-            icon: @image-url("@mobile-components/icons/photo-ocean.svg");
-            name: "Photos & video";
-            size: "62.1 GB";
-            share: 0.34;
-            tone: Tone.info;
-        }
-        Divider { }
-        CategoryRow {
-            icon: @image-url("@mobile-components/icons/queue.svg");
-            name: "Apps";
-            size: "40.2 GB";
-            share: 0.22;
-            tone: Tone.warning;
-        }
-        Divider { }
-        CategoryRow {
-            icon: @image-url("@mobile-components/icons/inbox.svg");
-            name: "Messages & attachments";
-            size: "29.0 GB";
-            share: 0.16;
-            tone: Tone.success;
-        }
-        Divider { }
-        CategoryRow {
-            icon: @image-url("@mobile-components/icons/play.svg");
-            name: "Music & podcasts";
-            size: "20.1 GB";
-            share: 0.11;
-            tone: Tone.danger;
-        }
-        Divider { }
-        CategoryRow {
-            icon: @image-url("@mobile-components/icons/menu.svg");
-            name: "System data";
-            size: "14.6 GB";
-            share: 0.08;
-            tone: Tone.default;
-        }
-        Divider { }
-        CategoryRow {
-            icon: @image-url("@mobile-components/icons/more-vertical.svg");
-            name: "Other";
-            size: "16.4 GB";
-            share: 0.09;
-            tone: Tone.default;
-        }
+            VerticalLayout {
+                padding-top: Theme.spacing-md;
+                padding-bottom: Theme.spacing-xl;
+                spacing: Theme.spacing-md;
+                alignment: stretch;
 
-        SectionHeader { text: "RECOMMENDATIONS"; }
-        VerticalLayout {
-            padding: Theme.spacing-md;
-            spacing: Theme.spacing-sm;
-            RecommendationCard {
-                title: "Offload 12 unused apps";
-                detail: "Apps not opened in 90+ days — data is kept, re-install in a tap.";
-                savings: "8.4 GB";
-                tone: Tone.warning;
-                clicked => { root.recommendation-pressed("offload"); }
-            }
-            RecommendationCard {
-                title: "Review large attachments";
-                detail: "31 files over 25 MB in Messages — mostly videos.";
-                savings: "11.2 GB";
-                tone: Tone.success;
-                clicked => { root.recommendation-pressed("attachments"); }
-            }
-            RecommendationCard {
-                title: "Empty 'Recently Deleted'";
-                detail: "184 photos waiting to be permanently removed.";
-                savings: "3.1 GB";
-                tone: Tone.info;
-                clicked => { root.recommendation-pressed("deleted"); }
-            }
-        }
+                // ----- Hero ------------------------------------------
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
 
-        Rectangle { vertical-stretch: 1; }
+                    Card {
+                        VerticalLayout {
+                            spacing: Theme.spacing-sm;
 
-        // Clear cache footer.
-        Rectangle {
-            background: Theme.surface-1;
-            drop-shadow-blur: Theme.elevation-2-blur;
-            drop-shadow-color: Theme.elevation-2-color;
-            drop-shadow-offset-y: -4px;
-            height: 80px;
-            HorizontalLayout {
-                padding: Theme.spacing-md;
-                MobileButton {
-                    text: "Clear cache · frees ~2.8 GB";
-                    tone: Tone.info;
-                    max-height: 48px;
-                    clicked => { root.clear-cache-pressed(); }
+                            Heading {
+                                text: "64 GB";
+                                style: HeadingStyle.bold-impact;
+                                color: Theme.on-surface;
+                            }
+                            Text {
+                                text: "of 128 GB used";
+                                color: Theme.muted;
+                                font-size: Theme.font-size-caption;
+                            }
+                            ProgressBar {
+                                value: 0.5;
+                            }
+                        }
+                    }
+                }
+
+                // ----- BY CATEGORY -----------------------------------
+                FormSection {
+                    title: "BY CATEGORY";
+
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/queue.svg");
+                        tone: Tone.info;
+                        title: "Photos & video";
+                        subtitle: "12.4 GB · 19 % of total.";
+                        clicked => { root.category-pressed("photos"); }
+                        Chip { label: "19 %"; }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/menu.svg");
+                        tone: Tone.success;
+                        title: "Apps";
+                        subtitle: "9.8 GB · 15 % of total.";
+                        clicked => { root.category-pressed("apps"); }
+                        Chip { label: "15 %"; }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/star.svg");
+                        tone: Tone.warning;
+                        title: "Audio";
+                        subtitle: "6.1 GB · 9 % of total.";
+                        clicked => { root.category-pressed("audio"); }
+                        Chip { label: "9 %"; }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/inbox.svg");
+                        tone: Tone.danger;
+                        title: "Documents";
+                        subtitle: "3.2 GB · 5 % of total.";
+                        clicked => { root.category-pressed("documents"); }
+                        Chip { label: "5 %"; }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/queue.svg");
+                        title: "System & cache";
+                        subtitle: "32.5 GB · 52 % of total.";
+                        clicked => { root.category-pressed("system"); }
+                        Chip { label: "52 %"; }
+                    }
+                }
+
+                // ----- LARGE FILES -----------------------------------
+                FormSection {
+                    title: "LARGE FILES";
+
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/menu.svg");
+                        title: "trip-album-2025.mov";
+                        subtitle: "412 MB · last opened 23 days ago.";
+                        clicked => { root.file-pressed("trip-album-2025.mov"); }
+                        Image {
+                            width: 18px;
+                            height: 18px;
+                            source: @image-url("@mobile-components/icons/close.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                            TouchArea {
+                                clicked => { root.delete-file("trip-album-2025.mov"); }
+                            }
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/menu.svg");
+                        title: "design-system.sketch";
+                        subtitle: "286 MB · last opened 41 days ago.";
+                        clicked => { root.file-pressed("design-system.sketch"); }
+                        Image {
+                            width: 18px;
+                            height: 18px;
+                            source: @image-url("@mobile-components/icons/close.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                            TouchArea {
+                                clicked => { root.delete-file("design-system.sketch"); }
+                            }
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/menu.svg");
+                        title: "podcast-archive.zip";
+                        subtitle: "204 MB · last opened 67 days ago.";
+                        clicked => { root.file-pressed("podcast-archive.zip"); }
+                        Image {
+                            width: 18px;
+                            height: 18px;
+                            source: @image-url("@mobile-components/icons/close.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                            TouchArea {
+                                clicked => { root.delete-file("podcast-archive.zip"); }
+                            }
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/menu.svg");
+                        title: "vacation-raws.zip";
+                        subtitle: "188 MB · last opened 80 days ago.";
+                        clicked => { root.file-pressed("vacation-raws.zip"); }
+                        Image {
+                            width: 18px;
+                            height: 18px;
+                            source: @image-url("@mobile-components/icons/close.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                            TouchArea {
+                                clicked => { root.delete-file("vacation-raws.zip"); }
+                            }
+                        }
+                    }
+                }
+
+                // ----- Actions ---------------------------------------
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    spacing: Theme.spacing-sm;
+                    alignment: stretch;
+
+                    MobileButton {
+                        text: "Free up space";
+                        clicked => { root.free-up-pressed(); }
+                    }
+                    MobileButton {
+                        text: "Manage backups";
+                        primary: false;
+                        clicked => { root.manage-backups-pressed(); }
+                    }
                 }
             }
         }

@@ -1,0 +1,91 @@
+// StatTile
+// =====================================================================
+//
+// Large numeric value over a small caption label. The unit of measure
+// in a row of stats — pages stack multiple StatTiles in a
+// `HorizontalLayout { spacing: Theme.spacing-md; }` so the columns
+// share equal width and the value baselines line up.
+//
+// Examples: dashboard hero metrics, leaderboard score breakdowns,
+// activity-rings counters, achievements progress, weather "feels like"
+// blocks, finance net-worth panel.
+//
+// Specification
+// -------------
+//
+// Geometry
+//   - Stretches to fill its layout cell (`horizontal-stretch: 1`,
+//     `min-width: 0`). When stacked siblings of equal stretch share
+//     a row, every StatTile gets the same width.
+//   - `min-height: 72px` — large enough that the value sits comfortably
+//     above the label without crowding.
+//   - 12 px padding on all sides.
+//
+// Content
+//   - `value` (string): the big number (or short token like "4.8★").
+//   - `label` (string): the caption underneath ("STEPS", "RANK", …).
+//   - `caption` (string, optional): a smaller third line below the
+//     label, in muted body size. Useful for "+12 % vs. last week".
+//
+// Tone
+//   - `tone` (Tone, default `default`): tints the VALUE only.
+//
+// Layout
+//   - Two-line stack, both horizontally centred. The card hosts no
+//     icon — when an icon is desired, use a `Card` + `SettingRow`
+//     instead.
+
+import { Theme, Tone } from "@mobile-theme/theme.slint";
+
+export component StatTile inherits Rectangle {
+    in property <string> value;
+    in property <string> label;
+    in property <string> caption;
+    in property <Tone> tone: Tone.default;
+
+    background: Theme.surface-1;
+    border-radius: Theme.radius-md;
+    drop-shadow-blur: Theme.elevation-1-blur;
+    drop-shadow-color: Theme.elevation-1-color;
+    drop-shadow-offset-y: Theme.elevation-1-y;
+
+    horizontal-stretch: 1;
+    min-width: 0;
+    min-height: 72px;
+
+    VerticalLayout {
+        padding: Theme.spacing-md;
+        spacing: 2px;
+        alignment: center;
+
+        Text {
+            text: root.value;
+            color:
+                  root.tone == Tone.success ? Theme.accent-success
+                : root.tone == Tone.warning ? Theme.accent-warning
+                : root.tone == Tone.danger  ? Theme.accent-danger
+                : root.tone == Tone.info    ? Theme.accent-info
+                : Theme.on-surface;
+            font-size: Theme.font-size-headline;
+            font-weight: 700;
+            horizontal-alignment: center;
+        }
+
+        Text {
+            text: root.label;
+            color: Theme.muted;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            horizontal-alignment: center;
+        }
+
+        if root.caption != "": Text {
+            text: root.caption;
+            color: Theme.muted;
+            font-size: Theme.font-size-caption;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+    }
+}

@@ -1,145 +1,31 @@
 // HelpCenterPage
 // =====================================================================
 //
-// Searchable help / FAQ landing screen. Demonstrates:
-//
-//   - A prominent search field with a leading magnifier icon — the
-//     "what are you stuck on?" anchor.
-//   - A 2×3 category tile grid where each tile is a tone-tinted soft
-//     surface with an icon + label + count. Tiles use the surface-2
-//     tier so they read as raised above the page; the icon disc on
-//     each carries the tone accent.
-//   - "Popular articles" stack — chevron-right nav rows with the
-//     article title and a small read-time caption.
-//   - "Still stuck?" footer card with primary CTA "Contact support".
+// FAQ-style help index with a search field, popular articles, and
+// contact entry points. Pure showcase of `SettingRow` discipline — every
+// "article" / "channel" / "version" row is the same primitive, so the
+// leading tiles and titles all line up vertically.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
-import { SectionHeader } from "@mobile-components/section-header.slint";
-import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
+import { FormField } from "@mobile-components/form-field.slint";
+import { FormSection } from "@mobile-components/form-section.slint";
+import { SettingRow } from "@mobile-components/setting-row.slint";
+import { KeyValueRow } from "@mobile-components/key-value-row.slint";
 import { TextField } from "@mobile-components/text-field.slint";
 import { Divider } from "@mobile-components/divider.slint";
-import { MobileButton } from "@mobile-components/button.slint";
-
-// One category tile.
-component CategoryTile inherits Rectangle {
-    in property <image> icon;
-    in property <string> label;
-    in property <string> count;
-    in property <Tone> tone: Tone.default;
-    callback clicked();
-
-    accessible-role: button;
-    accessible-label: root.label;
-    accessible-action-default => { root.clicked(); }
-
-    height: 112px;
-    background: Theme.surface-1;
-    border-radius: Theme.radius-md;
-    drop-shadow-blur: Theme.elevation-1-blur;
-    drop-shadow-color: Theme.elevation-1-color;
-    drop-shadow-offset-y: Theme.elevation-1-y;
-
-    VerticalLayout {
-        padding: Theme.spacing-md;
-        spacing: Theme.spacing-sm;
-        Rectangle {
-            width: 36px;
-            height: 36px;
-            border-radius: 8px;
-            background:
-                  root.tone == Tone.success ? Theme.accent-success
-                : root.tone == Tone.warning ? Theme.accent-warning
-                : root.tone == Tone.danger  ? Theme.accent-danger
-                : root.tone == Tone.info    ? Theme.accent-info
-                : Theme.primary;
-            Image {
-                width: 18px;
-                height: 18px;
-                x: (parent.width - self.width) / 2;
-                y: (parent.height - self.height) / 2;
-                source: root.icon;
-                colorize: Theme.on-primary;
-                image-fit: contain;
-            }
-        }
-        Text {
-            text: root.label;
-            color: Theme.on-surface;
-            font-size: Theme.font-size-body;
-            font-weight: 600;
-        }
-        Text {
-            text: root.count + " articles";
-            color: Theme.muted;
-            font-size: Theme.font-size-caption;
-        }
-    }
-    TouchArea {
-        clicked => { root.clicked(); }
-    }
-}
-
-// One article row.
-component ArticleRow inherits Rectangle {
-    in property <string> title;
-    in property <string> read-time;
-    callback clicked();
-
-    accessible-role: button;
-    accessible-label: root.title;
-    accessible-action-default => { root.clicked(); }
-
-    horizontal-stretch: 1;
-    min-height: 56px;
-    background: touch.pressed ? Theme.surface-pressed : transparent;
-    animate background { duration: Theme.motion-fast; }
-
-    HorizontalLayout {
-        padding: Theme.spacing-md;
-        spacing: Theme.spacing-md;
-        alignment: stretch;
-        VerticalLayout {
-            horizontal-stretch: 1;
-            alignment: center;
-            spacing: 2px;
-            Text {
-                text: root.title;
-                color: Theme.on-surface;
-                font-size: Theme.font-size-body;
-                font-weight: 500;
-                overflow: elide;
-            }
-            Text {
-                text: root.read-time;
-                color: Theme.muted;
-                font-size: Theme.font-size-caption;
-            }
-        }
-        VerticalLayout {
-            alignment: center;
-            Image {
-                width: 16px;
-                height: 16px;
-                source: @image-url("@mobile-components/icons/chevron-right.svg");
-                colorize: Theme.muted;
-                image-fit: contain;
-            }
-        }
-    }
-    touch := TouchArea {
-        clicked => { root.clicked(); }
-    }
-}
+import { ScrollView } from "std-widgets.slint";
 
 export component HelpCenterPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
+
+    in-out property <string> query;
+
     callback back-pressed();
-    callback search-changed(string);
-    callback category-pressed(string);
+    callback search-pressed();
     callback article-pressed(string);
-    callback contact-pressed();
+    callback contact-pressed(string);
 
     background: Theme.background;
 
@@ -147,132 +33,161 @@ export component HelpCenterPage inherits Window {
         spacing: 0;
 
         AppBar {
-            title: "Help center";
-            title-style: HeadingStyle.serif-light;
+            title: "Help";
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
+            trailing-icon: @image-url("@mobile-components/icons/search.svg");
             leading-pressed => { root.back-pressed(); }
+            trailing-pressed => { root.search-pressed(); }
         }
 
-        VerticalLayout {
-            padding: Theme.spacing-md;
-            spacing: Theme.spacing-md;
+        ScrollView {
+            vertical-stretch: 1;
 
-            // Hero search.
-            Heading {
-                text: "How can we help?";
-                style: HeadingStyle.serif-display;
-            }
-            TextField {
-                label: "";
-                placeholder: "Search articles, topics, or errors…";
-            }
-
-            // Categories grid (2 × 3).
-            HorizontalLayout {
-                spacing: Theme.spacing-sm;
-                CategoryTile {
-                    horizontal-stretch: 1;
-                    icon: @image-url("@mobile-components/icons/profile.svg");
-                    label: "Account";
-                    count: "24";
-                    tone: Tone.info;
-                }
-                CategoryTile {
-                    horizontal-stretch: 1;
-                    icon: @image-url("@mobile-components/icons/star.svg");
-                    label: "Billing";
-                    count: "12";
-                    tone: Tone.warning;
-                }
-            }
-            HorizontalLayout {
-                spacing: Theme.spacing-sm;
-                CategoryTile {
-                    horizontal-stretch: 1;
-                    icon: @image-url("@mobile-components/icons/lock.svg");
-                    label: "Privacy & security";
-                    count: "18";
-                    tone: Tone.success;
-                }
-                CategoryTile {
-                    horizontal-stretch: 1;
-                    icon: @image-url("@mobile-components/icons/queue.svg");
-                    label: "Integrations";
-                    count: "9";
-                }
-            }
-            HorizontalLayout {
-                spacing: Theme.spacing-sm;
-                CategoryTile {
-                    horizontal-stretch: 1;
-                    icon: @image-url("@mobile-components/icons/send.svg");
-                    label: "Notifications";
-                    count: "7";
-                    tone: Tone.info;
-                }
-                CategoryTile {
-                    horizontal-stretch: 1;
-                    icon: @image-url("@mobile-components/icons/close.svg");
-                    label: "Troubleshooting";
-                    count: "31";
-                    tone: Tone.danger;
-                }
-            }
-        }
-
-        SectionHeader { text: "POPULAR ARTICLES"; }
-        ArticleRow {
-            title: "How do I change my email address?";
-            read-time: "2 min read";
-        }
-        Divider { }
-        ArticleRow {
-            title: "Why am I being charged for an extra seat?";
-            read-time: "4 min read";
-        }
-        Divider { }
-        ArticleRow {
-            title: "Turn on two-factor authentication";
-            read-time: "3 min read";
-        }
-        Divider { }
-        ArticleRow {
-            title: "Cancel or pause your subscription";
-            read-time: "2 min read";
-        }
-        Divider { }
-        ArticleRow {
-            title: "Why isn't my SSO group syncing?";
-            read-time: "5 min read";
-        }
-
-        Rectangle { vertical-stretch: 1; }
-
-        // ----- Footer "still stuck?" card -----
-        Rectangle {
-            background: Theme.surface-1;
-            drop-shadow-blur: Theme.elevation-2-blur;
-            drop-shadow-color: Theme.elevation-2-color;
-            drop-shadow-offset-y: -4px;
             VerticalLayout {
-                padding: Theme.spacing-md;
-                spacing: Theme.spacing-sm;
-                Heading {
-                    text: "Still stuck?";
-                    style: HeadingStyle.serif-light;
-                    color: Theme.on-surface;
-                    font-size: 22px;
+                padding-top: Theme.spacing-md;
+                padding-bottom: Theme.spacing-xl;
+                spacing: Theme.spacing-md;
+                alignment: stretch;
+
+                // ----- Search field -----------------------------------
+                FormField {
+                    TextField {
+                        placeholder: "Search help articles";
+                        text <=> root.query;
+                    }
                 }
-                Text {
-                    text: "Our support team replies in under an hour, Mon–Fri 09–18 UTC.";
-                    color: Theme.muted;
-                    font-size: Theme.font-size-caption;
-                    wrap: word-wrap;
+
+                // ----- POPULAR ----------------------------------------
+                FormSection {
+                    title: "POPULAR";
+
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/inbox.svg");
+                        tone: Tone.info;
+                        title: "Getting started checklist";
+                        subtitle: "5 min read · updated last week.";
+                        clicked => { root.article-pressed("getting-started"); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/star.svg");
+                        tone: Tone.warning;
+                        title: "Upgrade to Pro";
+                        subtitle: "4 min read · updated last week.";
+                        clicked => { root.article-pressed("upgrade"); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/bell.svg");
+                        title: "Managing notifications";
+                        subtitle: "3 min read · updated last week.";
+                        clicked => { root.article-pressed("notifications"); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/lock.svg");
+                        tone: Tone.success;
+                        title: "Securing your account";
+                        subtitle: "7 min read · updated last week.";
+                        clicked => { root.article-pressed("security"); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
                 }
-                MobileButton {
-                    text: "Contact support";
-                    tone: Tone.info;
-                    clicked => { root.contact-pressed(); }
+
+                // ----- CONTACT US -------------------------------------
+                FormSection {
+                    title: "CONTACT US";
+
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/send.svg");
+                        tone: Tone.info;
+                        title: "Email support";
+                        subtitle: "Replies in 24 h.";
+                        clicked => { root.contact-pressed("email"); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/inbox.svg");
+                        tone: Tone.success;
+                        title: "Live chat";
+                        subtitle: "Mon–Fri 09:00–18:00 CET.";
+                        clicked => { root.contact-pressed("chat"); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        title: "Community forum";
+                        subtitle: "Get help from other users.";
+                        clicked => { root.contact-pressed("forum"); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: Theme.muted;
+                            image-fit: contain;
+                        }
+                    }
+                }
+
+                // ----- APP --------------------------------------------
+                FormSection {
+                    title: "APP";
+
+                    KeyValueRow {
+                        label: "Version";
+                        value: "1.4.2 · 3187";
+                    }
+                    Divider { }
+                    KeyValueRow {
+                        label: "Device ID";
+                        value: "d8e2-7710";
+                    }
+                    Divider { }
+                    KeyValueRow {
+                        label: "Locale";
+                        value: "en-GB";
+                    }
                 }
             }
         }

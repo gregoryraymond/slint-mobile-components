@@ -1,92 +1,34 @@
 // FormWizardPage
 // =====================================================================
 //
-// Multi-step form / onboarding wizard. The skeleton applies to any
-// "fill these out across several screens" flow: KYC checks, new-user
-// onboarding, post-signup setup, structured intake forms, etc.
-// Demonstrates:
-//
-//   - A stepped progress strip at the top — 5 pill segments where each
-//     completed segment is filled green (`accent-success`), the
-//     current segment is filled blue (`primary`), and pending segments
-//     are muted. The current step's label is also rendered below the
-//     strip so the user knows where they are.
-//   - A mixed field block — TextField, Checkboxes, Chip-based "pick
-//     one" radio, all wrapped in a ScrollView so long forms don't
-//     truncate.
-//   - Sticky Back + Continue button pair anchored to the bottom — the
-//     pattern shared across every multi-step form.
+// Multi-step form mid-flow. Pure FormField + ProgressBar discipline.
+// "Back / Continue" buttons sit at the bottom in a HorizontalLayout.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
+import { HeadingStyle } from "@mobile-components/heading.slint";
+import { FormField } from "@mobile-components/form-field.slint";
+import { FormSection } from "@mobile-components/form-section.slint";
+import { SettingRow } from "@mobile-components/setting-row.slint";
 import { TextField } from "@mobile-components/text-field.slint";
-import { Checkbox } from "@mobile-components/checkbox.slint";
-import { Chip } from "@mobile-components/chip.slint";
-import { Divider } from "@mobile-components/divider.slint";
+import { ProgressBar } from "@mobile-components/progress-bar.slint";
+import { MobileSwitch } from "@mobile-components/switch.slint";
 import { MobileButton, TextButton } from "@mobile-components/button.slint";
-import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
+import { Divider } from "@mobile-components/divider.slint";
 import { ScrollView } from "std-widgets.slint";
-
-// One step in the progress strip.
-component StepSegment inherits Rectangle {
-    in property <int> state;     // 0=pending, 1=current, 2=completed
-    horizontal-stretch: 1;
-    height: 4px;
-    border-radius: 2px;
-    background:
-          root.state == 2 ? Theme.accent-success
-        : root.state == 1 ? Theme.primary
-        : Theme.surface-variant;
-    animate background { duration: Theme.motion-base; }
-}
-
-// One labeled checkbox row (Checkbox component already pairs label +
-// box, but we wrap it here so we can add a description sub-text per
-// option in the "communication preferences" example block).
-component LabeledCheckboxRow inherits Rectangle {
-    in property <string> label;
-    in property <string> description;
-    in-out property <bool> checked: false;
-
-    min-height: 48px;
-    HorizontalLayout {
-        padding-top: Theme.spacing-xs;
-        padding-bottom: Theme.spacing-xs;
-        spacing: Theme.spacing-md;
-        alignment: stretch;
-        VerticalLayout {
-            alignment: start;
-            padding-top: 2px;
-            Checkbox {
-                checked <=> root.checked;
-            }
-        }
-        VerticalLayout {
-            horizontal-stretch: 1;
-            spacing: 2px;
-            Text {
-                text: root.label;
-                color: Theme.on-surface;
-                font-size: Theme.font-size-body;
-                font-weight: 600;
-            }
-            Text {
-                text: root.description;
-                color: Theme.muted;
-                font-size: Theme.font-size-caption;
-                wrap: word-wrap;
-            }
-        }
-    }
-}
 
 export component FormWizardPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
-    in property <int> current-step: 2;
-    in property <int> total-steps: 5;
+
+    in-out property <string> first-name;
+    in-out property <string> last-name;
+    in-out property <string> dob;
+    in-out property <string> phone;
+    in-out property <bool> product-updates: true;
+    in-out property <bool> marketing-emails: false;
+
     callback back-pressed();
-    callback close-pressed();
     callback continue-pressed();
 
     background: Theme.background;
@@ -95,155 +37,117 @@ export component FormWizardPage inherits Window {
         spacing: 0;
 
         AppBar {
-            title: "SET UP YOUR ACCOUNT";
-            title-style: HeadingStyle.uppercase-spaced;
-            leading-icon: @image-url("@mobile-components/icons/close.svg");
-            leading-pressed => { root.close-pressed(); }
+            title: "Step 2 of 4";
+            title-style: HeadingStyle.caps-tight;
+            leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
+            leading-pressed => { root.back-pressed(); }
         }
 
-        // ----- Stepper strip -----
+        // Progress bar directly under the bar — full-width inset matches body.
         VerticalLayout {
             padding-left: Theme.spacing-md;
             padding-right: Theme.spacing-md;
-            padding-top: Theme.spacing-sm;
-            padding-bottom: Theme.spacing-md;
-            spacing: Theme.spacing-sm;
-
-            HorizontalLayout {
-                spacing: Theme.spacing-sm;
-                for index in 5 : StepSegment {
-                    state:
-                          index < root.current-step ? 2
-                        : index == root.current-step ? 1
-                        : 0;
-                }
-            }
-            HorizontalLayout {
-                Text {
-                    text: "Step " + (root.current-step + 1) + " of " + root.total-steps;
-                    color: Theme.muted;
-                    font-size: Theme.font-size-caption;
-                    font-weight: 600;
-                    horizontal-stretch: 1;
-                }
-                Text {
-                    text: "Communication preferences";
-                    color: Theme.on-surface;
-                    font-size: Theme.font-size-caption;
-                    font-weight: 600;
-                    horizontal-alignment: right;
-                }
-            }
+            padding-top: Theme.spacing-xs;
+            padding-bottom: Theme.spacing-sm;
+            ProgressBar { value: 0.5; }
         }
 
-        // ----- Field block -----
-        // Plain VerticalLayout (no ScrollView wrapper) — at the
-        // current content footprint everything fits within the 892 px
-        // mobile target. Re-introduce the ScrollView only if the form
-        // grows past the visible area.
-        Rectangle {
+        ScrollView {
             vertical-stretch: 1;
+
             VerticalLayout {
-                padding-left: Theme.spacing-md;
-                padding-right: Theme.spacing-md;
-                spacing: Theme.spacing-md;
-                alignment: start;
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-xl;
+                spacing: Theme.spacing-lg;
+                alignment: stretch;
 
-                // Hero question.
-                Heading {
-                    style: HeadingStyle.serif-display;
-                    text: "How should we reach you?";
-                    color: Theme.on-background;
-                    wrap: word-wrap;
-                }
-                Text {
-                    text: "We'll only send what you turn on. You can change these later from Settings → Notifications.";
-                    color: Theme.muted;
-                    font-size: Theme.font-size-body;
-                    wrap: word-wrap;
+                // ----- About you -------------------------------------------
+                FormSection {
+                    title: "ABOUT YOU";
+                    caption: "Step 2 — Your details";
                 }
 
-                // Contact fields.
-                TextField {
-                    label: "Email";
-                    placeholder: "you@example.com";
-                    text: "greg@example.com";
-                }
-                TextField {
-                    label: "Mobile (optional)";
-                    placeholder: "+1 555 000 0000";
+                // The actual FormFields live OUTSIDE the FormSection's card
+                // so they get the standard field-stack rhythm rather than
+                // being squashed into the card chrome.
+                VerticalLayout {
+                    spacing: Theme.spacing-md;
+                    alignment: stretch;
+
+                    FormField {
+                        label: "First name";
+                        required: true;
+                        TextField {
+                            placeholder: "Ada";
+                            text <=> root.first-name;
+                        }
+                    }
+                    FormField {
+                        label: "Last name";
+                        required: true;
+                        TextField {
+                            placeholder: "Lovelace";
+                            text <=> root.last-name;
+                        }
+                    }
+                    FormField {
+                        label: "Date of birth";
+                        helper: "We use this to personalise content.";
+                        TextField {
+                            placeholder: "MM / DD / YYYY";
+                            text <=> root.dob;
+                        }
+                    }
+                    FormField {
+                        label: "Phone";
+                        helper: "Include country code.";
+                        TextField {
+                            placeholder: "+32 470 12 34 56";
+                            text <=> root.phone;
+                            input-type: InputType.number;
+                        }
+                    }
                 }
 
-                Divider { }
+                // ----- Preferences -----------------------------------------
+                FormSection {
+                    title: "PREFERENCES";
 
-                // Channel selector chips ("How often should we send digests?")
-                Text {
-                    text: "Digest cadence";
-                    color: Theme.on-background;
-                    font-size: Theme.font-size-body;
-                    font-weight: 600;
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/bell.svg");
+                        tone: Tone.info;
+                        title: "Send me product updates";
+                        subtitle: "Release notes and new features.";
+                        MobileSwitch { checked <=> root.product-updates; }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/send.svg");
+                        title: "Allow marketing emails";
+                        subtitle: "Occasional newsletters and promos.";
+                        MobileSwitch { checked <=> root.marketing-emails; }
+                    }
                 }
+
+                // ----- Nav bar at bottom -----------------------------------
                 HorizontalLayout {
-                    spacing: Theme.spacing-sm;
-                    Chip { label: "Daily"; }
-                    Chip { label: "Weekly"; selected: true; }
-                    Chip { label: "Monthly"; }
-                    Chip { label: "Never"; }
-                }
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    spacing: Theme.spacing-md;
+                    alignment: stretch;
 
-                Divider { }
-
-                // Communication preferences checkboxes.
-                Text {
-                    text: "Which updates do you want?";
-                    color: Theme.on-background;
-                    font-size: Theme.font-size-body;
-                    font-weight: 600;
-                }
-                LabeledCheckboxRow {
-                    label: "Product news";
-                    description: "Releases, new features, and changelog summaries.";
-                    checked: true;
-                }
-                LabeledCheckboxRow {
-                    label: "Tips & tutorials";
-                    description: "Short how-tos for getting more out of the product.";
-                    checked: true;
-                }
-                LabeledCheckboxRow {
-                    label: "Marketing";
-                    description: "Promotions, partner offers, and survey requests.";
-                }
-                LabeledCheckboxRow {
-                    label: "Critical alerts";
-                    description: "Security incidents and account-impacting events. Can't be turned off.";
-                    checked: true;
-                }
-            }
-        }
-
-        // ----- Sticky footer -----
-        Rectangle {
-            background: Theme.surface-1;
-            drop-shadow-blur: Theme.elevation-2-blur;
-            drop-shadow-color: Theme.elevation-2-color;
-            drop-shadow-offset-y: -4px;
-            height: 80px;
-            HorizontalLayout {
-                padding: Theme.spacing-md;
-                spacing: Theme.spacing-md;
-                MobileButton {
-                    text: "Back";
-                    primary: false;
-                    horizontal-stretch: 1;
-                    max-height: 48px;
-                    clicked => { root.back-pressed(); }
-                }
-                MobileButton {
-                    text: "Continue";
-                    horizontal-stretch: 1;
-                    max-height: 48px;
-                    clicked => { root.continue-pressed(); }
+                    TextButton {
+                        text: "Back";
+                        clicked => { root.back-pressed(); }
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                    MobileButton {
+                        text: "Continue";
+                        horizontal-stretch: 0;
+                        min-width: 160px;
+                        enabled: root.first-name != "" && root.last-name != "";
+                        clicked => { root.continue-pressed(); }
+                    }
                 }
             }
         }

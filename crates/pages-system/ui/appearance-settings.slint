@@ -1,127 +1,33 @@
 // AppearanceSettingsPage
 // =====================================================================
 //
-// Theme / appearance preferences — the screen that drives the
-// `Theme.color-scheme`, `Theme.primary`, and `Theme.font-size-*`
-// globals. Distinct from `AccountSettingsPage` (account prefs) and
-// `WiFiSettingsPage` (system network). Demonstrates the design system
-// configuring *itself*:
-//
-//   - Scheme picker: 3 large preview tiles (Light / Dark / Auto), the
-//     selected one carrying an info-tone ring.
-//   - Accent-colour swatch row — six tappable colour discs, the active
-//     one ringed.
-//   - Font-size SegmentedControl (Small / Default / Large / XL).
-//   - Live-preview card showing an AppBar-ish header, a Card-ish row,
-//     and two MobileButton-ish pills so the user sees the result.
+// Theme + text-size + accent-colour preferences. Showcases the trailing
+// slot of `SettingRow` carrying very different widgets — `MobileSwitch`,
+// `SegmentedControl`, `Slider`, value `Text` + check `Image` — while
+// the rows themselves all share the same 56 px floor and 16 px gutters.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
-import { SectionHeader } from "@mobile-components/section-header.slint";
-import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
-import { SegmentedControl } from "@mobile-components/segmented-control.slint";
+import { FormSection } from "@mobile-components/form-section.slint";
+import { SettingRow } from "@mobile-components/setting-row.slint";
 import { Divider } from "@mobile-components/divider.slint";
-
-// One scheme preview tile.
-component SchemeTile inherits Rectangle {
-    in property <string> label;
-    // `brush`, not `color`: the AUTO tile passes a @linear-gradient.
-    in property <brush> bg;
-    in property <color> fg;
-    in property <color> accent;
-    in property <bool> selected: false;
-    callback clicked();
-
-    accessible-role: button;
-    accessible-label: root.label;
-    accessible-action-default => { root.clicked(); }
-
-    horizontal-stretch: 1;
-    height: 120px;
-    background: root.bg;
-    border-radius: Theme.radius-md;
-    border-width: root.selected ? 3px : 1px;
-    border-color: root.selected ? Theme.accent-info : Theme.outline;
-    drop-shadow-blur: Theme.elevation-1-blur;
-    drop-shadow-color: Theme.elevation-1-color;
-    drop-shadow-offset-y: Theme.elevation-1-y;
-
-    VerticalLayout {
-        padding: Theme.spacing-sm;
-        spacing: 6px;
-        // Faux header bar.
-        Rectangle {
-            height: 14px;
-            border-radius: 3px;
-            background: root.accent;
-        }
-        // Faux text lines.
-        Rectangle {
-            height: 6px;
-            border-radius: 2px;
-            background: root.fg;
-            opacity: 0.7;
-        }
-        Rectangle {
-            width: 60%;
-            height: 6px;
-            border-radius: 2px;
-            background: root.fg;
-            opacity: 0.4;
-        }
-        Rectangle { vertical-stretch: 1; }
-        Text {
-            text: root.label;
-            color: root.fg;
-            font-size: 11px;
-            font-weight: 800;
-            letter-spacing: 0.3px;
-            horizontal-alignment: center;
-        }
-    }
-    TouchArea {
-        clicked => { root.clicked(); }
-    }
-}
-
-// One accent swatch.
-component AccentSwatch inherits Rectangle {
-    in property <color> tint;
-    in property <bool> selected: false;
-    callback clicked();
-
-    accessible-role: button;
-    accessible-action-default => { root.clicked(); }
-
-    width: 44px;
-    height: 44px;
-    border-radius: self.width / 2;
-    background: root.tint;
-    border-width: root.selected ? 3px : 0px;
-    border-color: Theme.on-background;
-
-    if root.selected: Image {
-        width: 18px;
-        height: 18px;
-        x: (parent.width - self.width) / 2;
-        y: (parent.height - self.height) / 2;
-        source: @image-url("@mobile-components/icons/check.svg");
-        colorize: #ffffff;
-        image-fit: contain;
-    }
-    TouchArea {
-        clicked => { root.clicked(); }
-    }
-}
+import { MobileSwitch } from "@mobile-components/switch.slint";
+import { SegmentedControl } from "@mobile-components/segmented-control.slint";
+import { Slider } from "@mobile-components/slider.slint";
+import { ScrollView } from "std-widgets.slint";
 
 export component AppearanceSettingsPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
-    in property <int> scheme: 1;       // 0 light, 1 dark, 2 auto
-    in property <int> accent: 0;       // index into the swatch row
-    in-out property <int> font-index: 1;
+
+    in-out property <bool> match-system: false;
+    in-out property <int> theme-mode: 1;
+    in-out property <float> text-scale: 0.5;
+    in-out property <int> accent-index: 0;
+    in-out property <bool> high-contrast: false;
+    in-out property <bool> reduce-motion: false;
+
     callback back-pressed();
-    callback scheme-pressed(int);
     callback accent-pressed(int);
 
     background: Theme.background;
@@ -131,256 +37,147 @@ export component AppearanceSettingsPage inherits Window {
 
         AppBar {
             title: "Appearance";
-            title-style: HeadingStyle.grotesk-bold;
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             leading-pressed => { root.back-pressed(); }
         }
 
-        VerticalLayout {
-            padding: Theme.spacing-md;
-            spacing: Theme.spacing-md;
-            alignment: start;
+        ScrollView {
+            vertical-stretch: 1;
 
-            // Scheme picker.
-            Heading {
-                text: "Theme";
-                style: HeadingStyle.grotesk-bold;
-                font-size: 18px;
-            }
-            HorizontalLayout {
-                spacing: Theme.spacing-sm;
-                SchemeTile {
-                    label: "LIGHT";
-                    bg: #fafafa;
-                    fg: #0f1115;
-                    accent: #2a72e0;
-                    selected: root.scheme == 0;
-                    clicked => { root.scheme-pressed(0); }
-                }
-                SchemeTile {
-                    label: "DARK";
-                    bg: #1a1d24;
-                    fg: #e4e6eb;
-                    accent: #4f8cff;
-                    selected: root.scheme == 1;
-                    clicked => { root.scheme-pressed(1); }
-                }
-                SchemeTile {
-                    label: "AUTO";
-                    bg: @linear-gradient(135deg, #fafafa 0%, #1a1d24 100%);
-                    fg: #8a8d94;
-                    accent: #4f8cff;
-                    selected: root.scheme == 2;
-                    clicked => { root.scheme-pressed(2); }
-                }
-            }
+            VerticalLayout {
+                padding-top: Theme.spacing-md;
+                padding-bottom: Theme.spacing-xl;
+                spacing: Theme.spacing-md;
+                alignment: stretch;
 
-            // Accent swatch row.
-            Heading {
-                text: "Accent colour";
-                style: HeadingStyle.grotesk-bold;
-                font-size: 18px;
-            }
-            HorizontalLayout {
-                spacing: Theme.spacing-sm;
-                alignment: start;
-                AccentSwatch {
-                    tint: #4f8cff;
-                    selected: root.accent == 0;
-                    clicked => { root.accent-pressed(0); }
-                }
-                AccentSwatch {
-                    tint: #22c55e;
-                    selected: root.accent == 1;
-                    clicked => { root.accent-pressed(1); }
-                }
-                AccentSwatch {
-                    tint: #f59e0b;
-                    selected: root.accent == 2;
-                    clicked => { root.accent-pressed(2); }
-                }
-                AccentSwatch {
-                    tint: #ef4444;
-                    selected: root.accent == 3;
-                    clicked => { root.accent-pressed(3); }
-                }
-                AccentSwatch {
-                    tint: #9333ea;
-                    selected: root.accent == 4;
-                    clicked => { root.accent-pressed(4); }
-                }
-                AccentSwatch {
-                    tint: #0e7490;
-                    selected: root.accent == 5;
-                    clicked => { root.accent-pressed(5); }
-                }
-            }
+                // ----- THEME ------------------------------------------
+                FormSection {
+                    title: "THEME";
 
-            // Font size.
-            Heading {
-                text: "Text size";
-                style: HeadingStyle.grotesk-bold;
-                font-size: 18px;
-            }
-            SegmentedControl {
-                options: ["Small", "Default", "Large", "XL"];
-                selected-index <=> root.font-index;
-            }
-        }
-
-        SectionHeader { text: "LIVE PREVIEW"; }
-
-        // Live preview card.
-        VerticalLayout {
-            padding: Theme.spacing-md;
-            Rectangle {
-                background: Theme.surface-1;
-                border-radius: Theme.radius-md;
-                drop-shadow-blur: Theme.elevation-2-blur;
-                drop-shadow-color: Theme.elevation-2-color;
-                drop-shadow-offset-y: Theme.elevation-2-y;
-                clip: true;
-                VerticalLayout {
-                    spacing: 0;
-                    // Faux app bar.
-                    Rectangle {
-                        height: 48px;
-                        background: Theme.surface-2;
-                        HorizontalLayout {
-                            padding-left: Theme.spacing-md;
-                            Text {
-                                text: "Preview";
-                                color: Theme.on-surface;
-                                font-size: Theme.font-size-body;
-                                font-weight: 700;
-                                vertical-alignment: center;
-                            }
+                    SettingRow {
+                        title: "Match system";
+                        subtitle: "Follow your OS light / dark setting.";
+                        MobileSwitch { checked <=> root.match-system; }
+                    }
+                    Divider { }
+                    SettingRow {
+                        title: "Theme mode";
+                        subtitle: "Override when not matching system.";
+                        SegmentedControl {
+                            width: 200px;
+                            options: ["Light", "Dark", "Auto"];
+                            selected-index <=> root.theme-mode;
                         }
                     }
-                    // Faux content rows.
-                    VerticalLayout {
-                        padding: Theme.spacing-md;
-                        spacing: Theme.spacing-sm;
-                        HorizontalLayout {
-                            spacing: Theme.spacing-sm;
-                            Rectangle {
-                                width: 40px;
-                                height: 40px;
-                                border-radius: 8px;
-                                background: Theme.primary;
-                            }
-                            VerticalLayout {
-                                horizontal-stretch: 1;
-                                alignment: center;
-                                spacing: 4px;
-                                Text {
-                                    text: "Card headline";
-                                    color: Theme.on-surface;
-                                    font-size: Theme.font-size-body;
-                                    font-weight: 700;
-                                }
-                                Text {
-                                    text: "Supporting line of muted text.";
-                                    color: Theme.muted;
-                                    font-size: Theme.font-size-caption;
-                                }
-                            }
+                }
+
+                // ----- TEXT SIZE --------------------------------------
+                FormSection {
+                    title: "TEXT SIZE";
+
+                    SettingRow {
+                        title: "Adjust scaling";
+                        subtitle: "Affects all reading surfaces.";
+                        Slider {
+                            width: 160px;
+                            value <=> root.text-scale;
                         }
-                        // Faux buttons.
-                        HorizontalLayout {
-                            spacing: Theme.spacing-sm;
-                            Rectangle {
-                                horizontal-stretch: 1;
-                                height: 40px;
-                                border-radius: Theme.radius-md;
-                                background: Theme.primary;
-                                Text {
-                                    text: "Primary";
-                                    color: Theme.on-primary;
-                                    font-size: Theme.font-size-caption;
-                                    font-weight: 700;
-                                    horizontal-alignment: center;
-                                    vertical-alignment: center;
-                                    width: parent.width;
-                                    height: parent.height;
-                                }
-                            }
-                            Rectangle {
-                                horizontal-stretch: 1;
-                                height: 40px;
-                                border-radius: Theme.radius-md;
-                                background: Theme.surface-1;
-                                border-width: 1px;
-                                border-color: Theme.outline;
-                                Text {
-                                    text: "Secondary";
-                                    color: Theme.on-surface;
-                                    font-size: Theme.font-size-caption;
-                                    font-weight: 700;
-                                    horizontal-alignment: center;
-                                    vertical-alignment: center;
-                                    width: parent.width;
-                                    height: parent.height;
-                                }
-                            }
+                    }
+                }
+
+                // ----- ACCENT COLOUR ----------------------------------
+                FormSection {
+                    title: "ACCENT COLOUR";
+
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/star.svg");
+                        tone: Tone.info;
+                        title: "Blue";
+                        clicked => { root.accent-pressed(0); }
+                        if root.accent-index == 0: Image {
+                            width: 18px;
+                            height: 18px;
+                            source: @image-url("@mobile-components/icons/check.svg");
+                            colorize: Theme.primary;
+                            image-fit: contain;
                         }
-                        // Status accent chips.
-                        HorizontalLayout {
-                            spacing: Theme.spacing-xs;
-                            Rectangle {
-                                horizontal-stretch: 1;
-                                height: 24px;
-                                border-radius: 12px;
-                                background: Theme.accent-success;
-                                Text {
-                                    text: "Success";
-                                    color: Theme.on-primary;
-                                    font-size: 10px;
-                                    font-weight: 800;
-                                    horizontal-alignment: center;
-                                    vertical-alignment: center;
-                                    width: parent.width;
-                                    height: parent.height;
-                                }
-                            }
-                            Rectangle {
-                                horizontal-stretch: 1;
-                                height: 24px;
-                                border-radius: 12px;
-                                background: Theme.accent-warning;
-                                Text {
-                                    text: "Warning";
-                                    color: Theme.on-primary;
-                                    font-size: 10px;
-                                    font-weight: 800;
-                                    horizontal-alignment: center;
-                                    vertical-alignment: center;
-                                    width: parent.width;
-                                    height: parent.height;
-                                }
-                            }
-                            Rectangle {
-                                horizontal-stretch: 1;
-                                height: 24px;
-                                border-radius: 12px;
-                                background: Theme.accent-danger;
-                                Text {
-                                    text: "Danger";
-                                    color: Theme.on-primary;
-                                    font-size: 10px;
-                                    font-weight: 800;
-                                    horizontal-alignment: center;
-                                    vertical-alignment: center;
-                                    width: parent.width;
-                                    height: parent.height;
-                                }
-                            }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/star.svg");
+                        tone: Tone.success;
+                        title: "Emerald";
+                        clicked => { root.accent-pressed(1); }
+                        if root.accent-index == 1: Image {
+                            width: 18px;
+                            height: 18px;
+                            source: @image-url("@mobile-components/icons/check.svg");
+                            colorize: Theme.primary;
+                            image-fit: contain;
                         }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/star.svg");
+                        tone: Tone.warning;
+                        title: "Sunset";
+                        clicked => { root.accent-pressed(2); }
+                        if root.accent-index == 2: Image {
+                            width: 18px;
+                            height: 18px;
+                            source: @image-url("@mobile-components/icons/check.svg");
+                            colorize: Theme.primary;
+                            image-fit: contain;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/star.svg");
+                        tone: Tone.danger;
+                        title: "Berry";
+                        clicked => { root.accent-pressed(3); }
+                        if root.accent-index == 3: Image {
+                            width: 18px;
+                            height: 18px;
+                            source: @image-url("@mobile-components/icons/check.svg");
+                            colorize: Theme.primary;
+                            image-fit: contain;
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/star.svg");
+                        title: "Slate";
+                        clicked => { root.accent-pressed(4); }
+                        if root.accent-index == 4: Image {
+                            width: 18px;
+                            height: 18px;
+                            source: @image-url("@mobile-components/icons/check.svg");
+                            colorize: Theme.primary;
+                            image-fit: contain;
+                        }
+                    }
+                }
+
+                // ----- ADVANCED ---------------------------------------
+                FormSection {
+                    title: "ADVANCED";
+
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/pencil.svg");
+                        title: "High contrast";
+                        subtitle: "Stronger separations between surfaces.";
+                        MobileSwitch { checked <=> root.high-contrast; }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/pin.svg");
+                        title: "Reduce motion";
+                        subtitle: "Disables non-essential animations.";
+                        MobileSwitch { checked <=> root.reduce-motion; }
                     }
                 }
             }
         }
-
-        Rectangle { vertical-stretch: 1; }
     }
 }
