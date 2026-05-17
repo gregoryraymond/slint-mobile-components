@@ -1,0 +1,114 @@
+// Heading + HeadingStyle
+// =====================================================================
+//
+// Typography presets for the page-level heading-shaped text in the
+// library. Use these to vary the typographic feel across pages without
+// each page reinventing its own font / size / weight / letter-spacing
+// combination.
+//
+// `HeadingStyle` is a small named enum — each entry corresponds to a
+// preset recipe that targets one of the bundled families
+// (see `crates/components/ui/fonts/`). Use it in three places:
+//
+//   1. Drop a `Heading { style: HeadingStyle.serif-display; text: "…" }`
+//      anywhere on a page to render with that preset.
+//   2. Bind `AppBar.title-style` to retypeset the bar title.
+//   3. Bind `SectionHeader.style` (where added) to retypeset section
+//      labels.
+//
+// Why an enum, not free-form props: when you want every page in the
+// catalogue to look intentionally different, an open-ended bag of
+// font-size / font-weight props ends in soup. A finite set of named
+// presets is a vocabulary — pages pick from it, and reviewers can
+// quickly see "this page uses `mono`, that page uses `serif-display`."
+// Bespoke per-page overrides are still allowed (each property below is
+// independently bindable on a plain `Text`) — but the enum is the
+// default surface.
+//
+// Sizes are tuned for the 412-px mobile width; pages that need a hero
+// numeral (e.g. WeatherPage's 96-px temperature) should hand-tune that
+// element directly rather than going through HeadingStyle.
+
+import { Theme } from "@mobile-theme/theme.slint";
+
+export enum HeadingStyle {
+    // The library default — Theme.font-size-title (20 px) at weight 700
+    // in whatever default font the consuming Window has bound. Use this
+    // when a page doesn't want to override.
+    plain,
+    // Editorial display serif — Fraunces 28 px, weight 700. Romantic,
+    // magazine-y. Pairs well with photographic backgrounds.
+    serif-display,
+    // Calmer serif — Fraunces 24 px, weight 400. Literary tone for
+    // long-form pages (reading lists, journal entries, e-reader).
+    serif-light,
+    // Industrial label — Inter 13 px, weight 700, letter-spacing 3 px.
+    // Caller is responsible for upper-casing the string; this preset
+    // can't transform case (Slint has no `text-transform`).
+    uppercase-spaced,
+    // Tech / code / data — JetBrains Mono 18 px, weight 700. Even
+    // glyph widths make tabular data feel deliberate.
+    mono,
+    // Impact headline — Inter 32 px, weight 700. Hero text on pages
+    // that want a single big statement (paywalls, splashes, summaries).
+    bold-impact,
+    // Humanist body-weight — IBM Plex Sans 22 px, weight 700.
+    // Slightly slabbed terminals give it more character than Inter
+    // without going full serif.
+    plex-medium,
+    // Geometric grotesque — Space Grotesk 26 px, weight 700. Distinct
+    // angular cuts; great for app names / brand-y headings.
+    grotesk-bold,
+    // Soft lowercase — Inter 22 px, weight 400. Caller passes the
+    // string already lower-cased. Reads quiet, friendly.
+    lowercase-soft,
+    // Compact caps — Space Grotesk 16 px, weight 700, letter-spacing
+    // 1.5 px. Tight all-caps for compact app-bar titles. Caller
+    // upper-cases.
+    caps-tight,
+}
+
+// Drop-in replacement for a `Text` element styled as a heading. Inherits
+// from Text so all the usual properties (horizontal-alignment,
+// overflow, wrap, accessible-role…) still work — `style` is layered on
+// top of those.
+export component Heading inherits Text {
+    in property <HeadingStyle> style: HeadingStyle.plain;
+
+    color: Theme.on-background;
+
+    font-family: root.style == HeadingStyle.serif-display    ? "Fraunces 9pt"
+               : root.style == HeadingStyle.serif-light      ? "Fraunces 9pt"
+               : root.style == HeadingStyle.uppercase-spaced ? "Inter"
+               : root.style == HeadingStyle.mono             ? "JetBrains Mono"
+               : root.style == HeadingStyle.bold-impact      ? "Inter"
+               : root.style == HeadingStyle.plex-medium      ? "IBM Plex Sans"
+               : root.style == HeadingStyle.grotesk-bold     ? "Space Grotesk"
+               : root.style == HeadingStyle.lowercase-soft   ? "Inter"
+               : root.style == HeadingStyle.caps-tight       ? "Space Grotesk"
+                                                             : "";
+
+    font-size: root.style == HeadingStyle.serif-display    ? 28px
+             : root.style == HeadingStyle.serif-light      ? 24px
+             : root.style == HeadingStyle.uppercase-spaced ? 13px
+             : root.style == HeadingStyle.mono             ? 18px
+             : root.style == HeadingStyle.bold-impact      ? 32px
+             : root.style == HeadingStyle.plex-medium      ? 22px
+             : root.style == HeadingStyle.grotesk-bold     ? 26px
+             : root.style == HeadingStyle.lowercase-soft   ? 22px
+             : root.style == HeadingStyle.caps-tight       ? 16px
+                                                           : Theme.font-size-title;
+
+    // `plain` keeps the historical AppBar title weight (600) so dropping
+    // Heading into AppBar's title slot doesn't visibly bold the bar on
+    // every previously-untouched page. The other presets are 700 unless
+    // explicitly lighter.
+    font-weight: root.style == HeadingStyle.serif-light    ? 400
+               : root.style == HeadingStyle.lowercase-soft ? 400
+               : root.style == HeadingStyle.plain          ? 600
+                                                           : 700;
+
+    letter-spacing: root.style == HeadingStyle.uppercase-spaced ? 3px
+                  : root.style == HeadingStyle.caps-tight       ? 1.5px
+                                                                : 0px;
+}

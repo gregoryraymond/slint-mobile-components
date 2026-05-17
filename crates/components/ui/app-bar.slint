@@ -38,6 +38,7 @@
 //   - `leading-pressed()` and `trailing-pressed()` fire on tap of the
 //     respective slot (only when its icon is set).
 import { Theme } from "@mobile-theme/theme.slint";
+import { Heading, HeadingStyle } from "heading.slint";
 
 export component AppBar inherits Rectangle {
     in property <string> title;
@@ -53,6 +54,12 @@ export component AppBar inherits Rectangle {
     // Title text colour override — defaults to Theme.on-background. Pages
     // with a non-flat dark background usually want #ffffff for contrast.
     in property <color> text-color: Theme.on-background;
+    // Typography preset for the title text. Default `plain` renders the
+    // bar title at Theme.font-size-title / weight 600 in whatever
+    // default font the consuming Window is using — i.e. existing pages
+    // render unchanged. Pages opt into a distinctive typeface by
+    // binding e.g. `title-style: HeadingStyle.serif-display`.
+    in property <HeadingStyle> title-style: HeadingStyle.plain;
     callback leading-pressed();
     callback trailing-pressed();
 
@@ -92,12 +99,15 @@ export component AppBar inherits Rectangle {
             }
         }
 
-        // Title — takes all remaining horizontal space.
-        Text {
+        // Title — takes all remaining horizontal space. Renders via the
+        // shared `Heading` component so a page can swap the title's
+        // entire typographic feel by binding `title-style`. When
+        // `title-style` is `plain` (default) Heading reads Theme tokens
+        // and the result matches the previous AppBar look exactly.
+        Heading {
             text: root.title;
             color: root.text-color;
-            font-size: Theme.font-size-title;
-            font-weight: 600;
+            style: root.title-style;
             horizontal-alignment: left;
             vertical-alignment: center;
             horizontal-stretch: 1;

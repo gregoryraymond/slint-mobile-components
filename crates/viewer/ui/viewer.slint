@@ -128,7 +128,13 @@ export component Viewer inherits Window {
     private property <length> cell-w: 412px;
     private property <length> cell-h: 892px + 44px;
     private property <length> gap: 16px;
-    private property <int> cols: 4;
+    // Width available to the cell grid (window minus the outer padding
+    // on both sides + a slight reserve for the vertical scrollbar).
+    private property <length> grid-w: root.width - 2 * root.gap - 16px;
+    // Column count: fit as many full cells as the window can hold, at
+    // least one. Solves `n*(cell-w) + (n-1)*gap <= grid-w` for n →
+    // `n = floor((grid-w + gap) / (cell-w + gap))`. Recomputes on resize.
+    private property <int> cols: max(1, floor((root.grid-w + root.gap) / (root.cell-w + root.gap)));
     private property <int> row-count: ceil(root.titles.length / root.cols);
     private property <bool> still-loading: root.loaded < root.total;
 
