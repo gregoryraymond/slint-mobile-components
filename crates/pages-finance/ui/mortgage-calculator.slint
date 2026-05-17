@@ -191,23 +191,29 @@ export component MortgageCalculatorPage inherits Window {
                 padding-right: Theme.spacing-md;
                 padding-bottom: Theme.spacing-md;
                 spacing: Theme.spacing-md;
-                // Stacked split bar.
-                HorizontalLayout {
+                // Stacked split bar. Plain clipped track with x-positioned
+                // segments — `width: parent.width * frac` inside a
+                // HorizontalLayout would be a binding loop.
+                Rectangle {
                     height: 14px;
-                    spacing: 3px;
+                    border-radius: 7px;
+                    clip: true;
                     Rectangle {
-                        horizontal-stretch: root.principal-frac;
-                        border-radius: 7px;
+                        x: 0;
+                        width: parent.width * root.principal-frac;
+                        height: parent.height;
                         background: Theme.accent-info;
                     }
                     Rectangle {
-                        horizontal-stretch: root.interest-frac;
-                        border-radius: 7px;
+                        x: parent.width * root.principal-frac;
+                        width: parent.width * root.interest-frac;
+                        height: parent.height;
                         background: Theme.accent-warning;
                     }
                     Rectangle {
-                        horizontal-stretch: max(0, 1 - root.principal-frac - root.interest-frac);
-                        border-radius: 7px;
+                        x: parent.width * (root.principal-frac + root.interest-frac);
+                        width: parent.width * (1.0 - root.principal-frac - root.interest-frac);
+                        height: parent.height;
                         background: Theme.accent-danger;
                     }
                 }

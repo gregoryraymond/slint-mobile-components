@@ -175,22 +175,29 @@ export component NutritionLabelPage inherits Window {
                 VerticalLayout {
                     padding: Theme.spacing-md;
                     spacing: Theme.spacing-sm;
-                    HorizontalLayout {
+                    // Macro split. Plain clipped track with x-positioned
+                    // segments — `width: parent.width * frac` inside a
+                    // HorizontalLayout would be a binding loop.
+                    Rectangle {
                         height: 12px;
-                        spacing: 3px;
+                        border-radius: 6px;
+                        clip: true;
                         Rectangle {
-                            horizontal-stretch: root.carbs-frac;
-                            border-radius: 6px;
+                            x: 0;
+                            width: parent.width * root.carbs-frac;
+                            height: parent.height;
                             background: Theme.accent-warning;
                         }
                         Rectangle {
-                            horizontal-stretch: root.protein-frac;
-                            border-radius: 6px;
+                            x: parent.width * root.carbs-frac;
+                            width: parent.width * root.protein-frac;
+                            height: parent.height;
                             background: Theme.accent-info;
                         }
                         Rectangle {
-                            horizontal-stretch: max(0, 1 - root.carbs-frac - root.protein-frac);
-                            border-radius: 6px;
+                            x: parent.width * (root.carbs-frac + root.protein-frac);
+                            width: parent.width * (1.0 - root.carbs-frac - root.protein-frac);
+                            height: parent.height;
                             background: Theme.accent-danger;
                         }
                     }

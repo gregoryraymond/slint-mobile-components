@@ -240,18 +240,23 @@ export component NetWorthPage inherits Window {
                             }
                         }
                     }
-                    // Split bar.
-                    HorizontalLayout {
+                    // Split bar. A plain clipped Rectangle track with
+                    // x-positioned segments — `width: parent.width * frac`
+                    // inside a HorizontalLayout would be a binding loop.
+                    Rectangle {
                         height: 10px;
-                        spacing: 3px;
+                        border-radius: 5px;
+                        clip: true;
                         Rectangle {
-                            horizontal-stretch: root.assets-fraction;
-                            border-radius: 5px;
+                            x: 0;
+                            width: parent.width * root.assets-fraction;
+                            height: parent.height;
                             background: Theme.accent-success;
                         }
                         Rectangle {
-                            horizontal-stretch: max(0, 1 - root.assets-fraction);
-                            border-radius: 5px;
+                            x: parent.width * root.assets-fraction;
+                            width: parent.width * (1.0 - root.assets-fraction);
+                            height: parent.height;
                             background: Theme.accent-danger;
                         }
                     }
