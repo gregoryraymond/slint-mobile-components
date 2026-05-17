@@ -16,6 +16,7 @@
 //     row layout, with a tone-tinted leading marker per session.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
+import { AuroraSkin } from "@mobile-theme/skins.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { SectionHeader } from "@mobile-components/section-header.slint";
 import { Divider } from "@mobile-components/divider.slint";
@@ -131,9 +132,14 @@ component RecentRow inherits Rectangle {
     }
 }
 
+// Visual treatment: opt-in to `AuroraSkin` — deep night-sky SVG with
+// green + violet wisps as the page background, URW Bookman for the
+// quiet literary tone, translucent AppBar over the aurora.
 export component MeditationPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
+    default-font-family: AuroraSkin.font-family;
+
     in property <string> phase: "BREATHE IN";
     in property <string> elapsed: "01:24";
     in property <string> session-name: "Morning calm";
@@ -141,7 +147,16 @@ export component MeditationPage inherits Window {
     callback share-pressed();
     callback session-pressed(string);
 
-    background: Theme.background;
+    background: AuroraSkin.page-background;
+
+    if AuroraSkin.has-background-image: Image {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        source: AuroraSkin.page-background-image;
+        image-fit: cover;
+    }
 
     VerticalLayout {
         spacing: 0;
@@ -150,6 +165,8 @@ export component MeditationPage inherits Window {
             title: root.session-name;
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
+            bar-background: AuroraSkin.bar-background;
+            text-color: AuroraSkin.text-primary;
             leading-pressed => { root.back-pressed(); }
             trailing-pressed => { root.share-pressed(); }
         }

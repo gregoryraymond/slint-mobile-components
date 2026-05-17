@@ -80,17 +80,44 @@ pub fn library_paths() -> std::collections::HashMap<String, std::path::PathBuf> 
     use std::path::PathBuf;
     [
         ("mobile-theme", slint_mobile_theme::UI_LIBRARY_DIR),
-        ("mobile-components", slint_mobile_components_widgets::UI_LIBRARY_DIR),
+        (
+            "mobile-components",
+            slint_mobile_components_widgets::UI_LIBRARY_DIR,
+        ),
         ("mobile-pages-auth", slint_mobile_pages_auth::UI_LIBRARY_DIR),
-        ("mobile-pages-commerce", slint_mobile_pages_commerce::UI_LIBRARY_DIR),
-        ("mobile-pages-finance", slint_mobile_pages_finance::UI_LIBRARY_DIR),
-        ("mobile-pages-health", slint_mobile_pages_health::UI_LIBRARY_DIR),
-        ("mobile-pages-media", slint_mobile_pages_media::UI_LIBRARY_DIR),
+        (
+            "mobile-pages-commerce",
+            slint_mobile_pages_commerce::UI_LIBRARY_DIR,
+        ),
+        (
+            "mobile-pages-finance",
+            slint_mobile_pages_finance::UI_LIBRARY_DIR,
+        ),
+        (
+            "mobile-pages-health",
+            slint_mobile_pages_health::UI_LIBRARY_DIR,
+        ),
+        (
+            "mobile-pages-media",
+            slint_mobile_pages_media::UI_LIBRARY_DIR,
+        ),
         ("mobile-pages-misc", slint_mobile_pages_misc::UI_LIBRARY_DIR),
-        ("mobile-pages-productivity", slint_mobile_pages_productivity::UI_LIBRARY_DIR),
-        ("mobile-pages-social", slint_mobile_pages_social::UI_LIBRARY_DIR),
-        ("mobile-pages-system", slint_mobile_pages_system::UI_LIBRARY_DIR),
-        ("mobile-pages-travel", slint_mobile_pages_travel::UI_LIBRARY_DIR),
+        (
+            "mobile-pages-productivity",
+            slint_mobile_pages_productivity::UI_LIBRARY_DIR,
+        ),
+        (
+            "mobile-pages-social",
+            slint_mobile_pages_social::UI_LIBRARY_DIR,
+        ),
+        (
+            "mobile-pages-system",
+            slint_mobile_pages_system::UI_LIBRARY_DIR,
+        ),
+        (
+            "mobile-pages-travel",
+            slint_mobile_pages_travel::UI_LIBRARY_DIR,
+        ),
     ]
     .into_iter()
     .map(|(k, v)| (k.to_string(), PathBuf::from(v)))

@@ -46,11 +46,18 @@ export component AppBar inherits Rectangle {
     // Default false per DESIGN.md (no borders). Set true on a per-page
     // basis if a hairline separator under the bar is wanted.
     in property <bool> show-divider: false;
+    // Override slot for pages that want a translucent / tinted bar
+    // (e.g. over a gradient or image background). Default matches the
+    // page surface so existing pages render unchanged.
+    in property <brush> bar-background: Theme.background;
+    // Title text colour override — defaults to Theme.on-background. Pages
+    // with a non-flat dark background usually want #ffffff for contrast.
+    in property <color> text-color: Theme.on-background;
     callback leading-pressed();
     callback trailing-pressed();
 
     height: 56px;
-    background: Theme.background;
+    background: root.bar-background;
     horizontal-stretch: 1;
 
     HorizontalLayout {
@@ -75,7 +82,7 @@ export component AppBar inherits Rectangle {
                 x: (parent.width - self.width) / 2;
                 y: (parent.height - self.height) / 2;
                 source: root.leading-icon;
-                colorize: Theme.on-background;
+                colorize: root.text-color;
                 image-fit: contain;
             }
 
@@ -88,7 +95,7 @@ export component AppBar inherits Rectangle {
         // Title — takes all remaining horizontal space.
         Text {
             text: root.title;
-            color: Theme.on-background;
+            color: root.text-color;
             font-size: Theme.font-size-title;
             font-weight: 600;
             horizontal-alignment: left;
@@ -112,7 +119,7 @@ export component AppBar inherits Rectangle {
                 x: (parent.width - self.width) / 2;
                 y: (parent.height - self.height) / 2;
                 source: root.trailing-icon;
-                colorize: Theme.on-background;
+                colorize: root.text-color;
                 image-fit: contain;
             }
 

@@ -24,6 +24,5 @@ fn main() {
             PathBuf::from(slint_mobile_components_widgets::UI_LIBRARY_DIR),
         ),
     ]));
-    slint_build::compile_with_config("ui/viewer.slint", config)
-        .expect("Slint build failed");
+    slint_build::compile_with_config("ui/viewer.slint", config).expect("Slint build failed");
 }

@@ -1,0 +1,150 @@
+// Skins
+// =====================================================================
+//
+// A "skin" is a self-contained look-and-feel bundle a page can adopt
+// without redeclaring its own colour / font / texture stack. Where the
+// base `Theme` global (theme.slint) is the dark↔light palette every
+// component reads from, a Skin is an *additional* layer that a small
+// number of pages opt into to demonstrate alternative typography +
+// non-flat backgrounds + visible transparency.
+//
+// Why globals (not a property on Window):
+//
+//   Each Skin is exported as its own `global` so a page just imports
+//   the one it wants and reads tokens by name. No per-page hex literal,
+//   no font-family string sprinkled into the .slint, no duplicated
+//   "translucent white at 18 %" magic number. Adding a new skin = one
+//   block in this file; retheming an existing skinned page = changing
+//   the import.
+//
+// Token contract (every skin exposes the same surface):
+//
+//   - `font-family`           — face name to bind to a Window's
+//                               `default-font-family`. Resolved by the
+//                               renderer via the OS font lookup.
+//   - `page-background`       — brush for `Window { background: … }`.
+//                               Solid colour, linear gradient, or
+//                               radial gradient.
+//   - `page-background-image` — full-bleed SVG drawn as the first
+//                               child of the Window. Pages render it
+//                               via `Image { source: …; image-fit: cover }`
+//                               and treat its layout as a no-op (pure
+//                               z-bottom visual). Always present; skins
+//                               that don't want one return a 1×1
+//                               transparent placeholder so the page
+//                               code stays uniform.
+//   - `has-background-image`  — when false the page may skip the
+//                               background-image element entirely.
+//   - `text-primary`          — colour for hero / title text on top of
+//                               the page background.
+//   - `text-secondary`        — slightly muted variant for subtitles.
+//   - `text-muted`            — caption / supporting text.
+//   - `bar-background`        — fill for AppBar / BottomNav. Translucent
+//                               by design so the page background bleeds
+//                               through; this is the validation point
+//                               for "transparency actually works".
+//   - `glass-fill`            — translucent white/dark used for any
+//                               opt-in "glass" surface (e.g. a form
+//                               sheet on a photo background).
+//   - `hairline`              — colour for 1-px separators rendered on
+//                               top of the page background (the normal
+//                               `Theme.outline` is too dark over a
+//                               coloured gradient).
+//
+// All globals here are read-only `out property` because skins are
+// designed picks — flipping a colour on the global would mutate the
+// look in every place the skin is referenced, which is rarely what you
+// want. To tweak a skin you edit this file directly.
+
+export global LiquidGlassSkin {
+    // Inspired by iOS Liquid Glass — warm photographic background with
+    // a translucent panel layered over it.
+    out property <string> font-family: "Liberation Serif";
+    out property <brush>  page-background: #2d0f1f;
+    out property <image>  page-background-image:
+        @image-url("../../components/ui/backgrounds/warm-bokeh.svg");
+    out property <bool>   has-background-image: true;
+    out property <color>  text-primary:   #ffffff;
+    out property <color>  text-secondary: #ffffffcc;
+    out property <color>  text-muted:     #ffffff99;
+    out property <brush>  bar-background: transparent;
+    // 18 % white — the form sheet over the bokeh.
+    out property <color>  glass-fill:     #ffffff2e;
+    out property <color>  hairline:       #ffffff33;
+}
+
+export global AuroraSkin {
+    // Calm / meditative — deep night-sky gradient with green + violet
+    // wisps painted into the SVG. Pairs with a serif for a quiet tone.
+    out property <string> font-family: "URW Bookman";
+    out property <brush>  page-background: #04060d;
+    out property <image>  page-background-image:
+        @image-url("../../components/ui/backgrounds/aurora.svg");
+    out property <bool>   has-background-image: true;
+    out property <color>  text-primary:   #ffffff;
+    out property <color>  text-secondary: #ffffffcc;
+    out property <color>  text-muted:     #ffffff88;
+    out property <brush>  bar-background: transparent;
+    out property <color>  glass-fill:     #ffffff14;
+    out property <color>  hairline:       #ffffff22;
+}
+
+export global DawnSkin {
+    // Sky-fade dawn — vertical gradient amber → coral → violet → indigo
+    // baked into an SVG (the inline @linear-gradient brush on
+    // Window.background flattens to a single colour under Slint's
+    // software renderer — keep the gradient in the SVG so the
+    // rasteriser draws it). A radial sun-halo near the top gives
+    // translucent surfaces over it something distinctive to occlude.
+    out property <string> font-family: "DejaVu Sans";
+    out property <brush>  page-background: #2a1a55;
+    out property <image>  page-background-image:
+        @image-url("../../components/ui/backgrounds/dawn-sky.svg");
+    out property <bool>   has-background-image: true;
+    out property <color>  text-primary:   #ffffff;
+    out property <color>  text-secondary: #ffffffd9;
+    out property <color>  text-muted:     #ffffffaa;
+    out property <brush>  bar-background: transparent;
+    out property <color>  glass-fill:     #ffffff33;
+    out property <color>  hairline:       #ffffff44;
+}
+
+export global NebulaSkin {
+    // Deep-space radial — indigo core fading to near-black, with cyan
+    // and magenta cloud highlights and scattered stars. Same reason
+    // as DawnSkin for using an SVG over an inline @radial-gradient:
+    // Slint's software renderer flattens gradient brushes, so we bake
+    // the colour transitions into the SVG asset instead.
+    out property <string> font-family: "Nimbus Sans";
+    out property <brush>  page-background: #03040d;
+    out property <image>  page-background-image:
+        @image-url("../../components/ui/backgrounds/nebula.svg");
+    out property <bool>   has-background-image: true;
+    out property <color>  text-primary:   #ffffff;
+    out property <color>  text-secondary: #d4d8f5;
+    out property <color>  text-muted:     #8a8fb8;
+    // 55 % black — bottom bar reads as a darkened band over the radial.
+    out property <brush>  bar-background: #0a0d1f8c;
+    out property <color>  glass-fill:     #ffffff14;
+    out property <color>  hairline:       #ffffff1a;
+}
+
+export global LatticeSkin {
+    // Subtle dot-grid background; pairs with a geometric humanist sans.
+    // The dot pattern is the easiest visual cue for transparency: any
+    // surface with alpha < 1 softens the dots underneath it, so the
+    // proof of translucency is immediate.
+    out property <string> font-family: "URW Gothic";
+    out property <brush>  page-background: #0f1525;
+    out property <image>  page-background-image:
+        @image-url("../../components/ui/backgrounds/dot-grid.svg");
+    out property <bool>   has-background-image: true;
+    out property <color>  text-primary:   #ffffff;
+    out property <color>  text-secondary: #d6dbeb;
+    out property <color>  text-muted:     #8a8fb8;
+    // 60 % alpha on the bottom bar — content scrolling beneath is
+    // partially visible, the iOS-style nav bar effect.
+    out property <brush>  bar-background: #1a1d2499;
+    out property <color>  glass-fill:     #ffffff1a;
+    out property <color>  hairline:       #ffffff1a;
+}

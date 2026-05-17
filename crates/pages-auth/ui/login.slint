@@ -1,20 +1,39 @@
 import { Theme } from "@mobile-theme/theme.slint";
+import { LiquidGlassSkin } from "@mobile-theme/skins.slint";
 import { MobileButton, TextButton } from "@mobile-components/button.slint";
 import { TextField } from "@mobile-components/text-field.slint";
 
 // Example login page: heading, two TextFields, primary submit button, and
 // a secondary "create account" affordance.
+//
+// Visual treatment: opt-in to `LiquidGlassSkin`. The skin (defined in
+// `crates/theme/ui/skins.slint`) supplies the typeface, the warm-bokeh
+// page background, all text colours, and the translucent glass fill —
+// nothing about the look is hardcoded here. Swap one import to reskin.
 export component LoginPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
+    default-font-family: LiquidGlassSkin.font-family;
+
     in-out property <string> email;
     in-out property <string> password;
     in property <bool> loading: false;
     callback submit(string, string);
     callback create-account();
 
-    background: Theme.background;
+    background: LiquidGlassSkin.page-background;
 
+    // ---- z-bottom: full-bleed photo-style background ----
+    if LiquidGlassSkin.has-background-image: Image {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        source: LiquidGlassSkin.page-background-image;
+        image-fit: cover;
+    }
+
+    // ---- z-top: form content ----
     VerticalLayout {
         padding: Theme.spacing-lg;
         spacing: Theme.spacing-lg;
@@ -24,32 +43,42 @@ export component LoginPage inherits Window {
             spacing: Theme.spacing-xs;
             Text {
                 text: "Sign in";
-                color: Theme.on-background;
+                color: LiquidGlassSkin.text-primary;
                 font-size: Theme.font-size-headline;
                 font-weight: 600;
             }
             Text {
                 text: "Welcome back. Use your email to continue.";
-                color: Theme.muted;
+                color: LiquidGlassSkin.text-secondary;
                 font-size: Theme.font-size-body;
                 wrap: word-wrap;
             }
         }
 
-        VerticalLayout {
-            spacing: Theme.spacing-md;
+        // Glass card — translucent surface from the skin.
+        Rectangle {
+            background: LiquidGlassSkin.glass-fill;
+            border-radius: Theme.radius-lg;
+            drop-shadow-blur: Theme.elevation-2-blur;
+            drop-shadow-color: #00000066;
+            drop-shadow-offset-y: Theme.elevation-2-y;
 
-            TextField {
-                label: "Email";
-                placeholder: "you@example.com";
-                text <=> root.email;
-            }
+            VerticalLayout {
+                padding: Theme.spacing-lg;
+                spacing: Theme.spacing-md;
 
-            TextField {
-                label: "Password";
-                placeholder: "••••••••";
-                input-type: InputType.password;
-                text <=> root.password;
+                TextField {
+                    label: "Email";
+                    placeholder: "you@example.com";
+                    text <=> root.email;
+                }
+
+                TextField {
+                    label: "Password";
+                    placeholder: "••••••••";
+                    input-type: InputType.password;
+                    text <=> root.password;
+                }
             }
         }
 

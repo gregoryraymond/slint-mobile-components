@@ -7,6 +7,11 @@
 // inside a vertical page (a layout that pairs awkwardly in some
 // frameworks but composes cleanly in Slint).
 //
+// Visual treatment: opt-in to `DawnSkin` — a dawn-sky vertical
+// gradient (no SVG, the brush is the background) and DejaVu Sans for
+// the giant temperature numeral. All translucent overlays and text
+// colours come from the skin; no hex literals live in this file.
+//
 // Layout
 // ------
 //
@@ -22,6 +27,7 @@
 //   Tone bar at the bottom — "Severe weather alert" when applicable
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
+import { DawnSkin } from "@mobile-theme/skins.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { SectionHeader } from "@mobile-components/section-header.slint";
 import { Divider } from "@mobile-components/divider.slint";
@@ -36,7 +42,8 @@ component HourCell inherits Rectangle {
 
     width: 56px;
     height: 96px;
-    background: root.highlight ? Theme.surface-2 : transparent;
+    // Highlighted "Now" pill keeps the gradient visible behind it.
+    background: root.highlight ? DawnSkin.glass-fill : transparent;
     border-radius: Theme.radius-md;
 
     VerticalLayout {
@@ -47,7 +54,7 @@ component HourCell inherits Rectangle {
 
         Text {
             text: root.when;
-            color: Theme.muted;
+            color: DawnSkin.text-secondary;
             font-size: Theme.font-size-caption;
             font-weight: 600;
             horizontal-alignment: center;
@@ -66,7 +73,7 @@ component HourCell inherits Rectangle {
         }
         Text {
             text: root.temp;
-            color: Theme.on-surface;
+            color: DawnSkin.text-primary;
             font-size: Theme.font-size-body;
             font-weight: 600;
             horizontal-alignment: center;
@@ -96,7 +103,7 @@ component DayRow inherits Rectangle {
         Text {
             text: root.day;
             width: 48px;
-            color: Theme.on-surface;
+            color: DawnSkin.text-primary;
             font-size: Theme.font-size-body;
             font-weight: 500;
             vertical-alignment: center;
@@ -117,7 +124,7 @@ component DayRow inherits Rectangle {
         Text {
             text: root.low;
             width: 36px;
-            color: Theme.muted;
+            color: DawnSkin.text-muted;
             font-size: Theme.font-size-body;
             horizontal-alignment: right;
             vertical-alignment: center;
@@ -130,7 +137,7 @@ component DayRow inherits Rectangle {
                 alignment: center;
                 Rectangle {
                     height: 4px;
-                    background: Theme.surface-variant;
+                    background: DawnSkin.hairline;
                     border-radius: 2px;
                     // Filled segment.
                     Rectangle {
@@ -148,7 +155,7 @@ component DayRow inherits Rectangle {
         Text {
             text: root.high;
             width: 36px;
-            color: Theme.on-surface;
+            color: DawnSkin.text-primary;
             font-size: Theme.font-size-body;
             font-weight: 600;
             horizontal-alignment: right;
@@ -160,6 +167,8 @@ component DayRow inherits Rectangle {
 export component WeatherPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
+    default-font-family: DawnSkin.font-family;
+
     in property <string> city: "San Francisco";
     in property <string> temp: "62°";
     in property <string> condition: "Mostly Sunny";
@@ -167,7 +176,19 @@ export component WeatherPage inherits Window {
     callback back-pressed();
     callback refresh-pressed();
 
-    background: Theme.background;
+    background: DawnSkin.page-background;
+
+    // DawnSkin uses an inline gradient brush, so no background-image
+    // element is needed. The guard keeps the structure consistent with
+    // image-backed skins like LiquidGlassSkin / LatticeSkin.
+    if DawnSkin.has-background-image: Image {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        source: DawnSkin.page-background-image;
+        image-fit: cover;
+    }
 
     VerticalLayout {
         spacing: 0;
@@ -176,6 +197,8 @@ export component WeatherPage inherits Window {
             title: root.city;
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             trailing-icon: @image-url("@mobile-components/icons/chevron-right.svg");
+            bar-background: DawnSkin.bar-background;
+            text-color: DawnSkin.text-primary;
             leading-pressed => { root.back-pressed(); }
             trailing-pressed => { root.refresh-pressed(); }
         }
@@ -201,7 +224,7 @@ export component WeatherPage inherits Window {
                 alignment: center;
                 Text {
                     text: root.temp;
-                    color: Theme.on-background;
+                    color: DawnSkin.text-primary;
                     font-size: 96px;
                     font-weight: 200;
                     horizontal-alignment: center;
@@ -211,7 +234,7 @@ export component WeatherPage inherits Window {
                 alignment: center;
                 Text {
                     text: root.condition;
-                    color: Theme.on-background;
+                    color: DawnSkin.text-primary;
                     font-size: Theme.font-size-body-large;
                     font-weight: 500;
                     horizontal-alignment: center;
@@ -221,7 +244,7 @@ export component WeatherPage inherits Window {
                 alignment: center;
                 Text {
                     text: root.hi-lo;
-                    color: Theme.muted;
+                    color: DawnSkin.text-secondary;
                     font-size: Theme.font-size-body;
                     horizontal-alignment: center;
                 }
@@ -237,7 +260,7 @@ export component WeatherPage inherits Window {
 
             Text {
                 text: "Hourly";
-                color: Theme.on-background;
+                color: DawnSkin.text-primary;
                 font-size: Theme.font-size-body;
                 font-weight: 600;
             }

@@ -31,7 +31,7 @@ use std::time::{Duration, Instant};
 #[allow(deprecated)]
 use slint::ComponentFactory;
 use slint::{ComponentHandle, Model, ModelRc, SharedString, Timer, TimerMode, VecModel, Weak};
-use slint_interpreter::{ComponentDefinition, ComponentInstance, Compiler, Struct, Value};
+use slint_interpreter::{Compiler, ComponentDefinition, ComponentInstance, Struct, Value};
 use slint_mapping::cache::{FileTileCache, LayeredTileCache, TileCache};
 use slint_mapping::source::TileSource;
 use slint_mapping::sources::OsmTileSource;
@@ -148,7 +148,10 @@ impl PageCompiler {
         // map-using pages import `MapEmbed` from there. Without this
         // entry, interpreting any of those pages fails with
         // "Cannot find requested import @mapping/map.slint".
-        paths.insert("mapping".into(), PathBuf::from(slint_mapping::UI_LIBRARY_DIR));
+        paths.insert(
+            "mapping".into(),
+            PathBuf::from(slint_mapping::UI_LIBRARY_DIR),
+        );
         compiler.set_library_paths(paths);
         Self { compiler }
     }
@@ -192,9 +195,7 @@ fn append_page(
     // dynamic map handler when the cell instantiates the component;
     // other pages instantiate as-is. Marker specs are picked per-page
     // by display name — pure tile-only pages get an empty vec.
-    let is_map_page = def
-        .properties()
-        .any(|(name, _)| name == "map-tiles");
+    let is_map_page = def.properties().any(|(name, _)| name == "map-tiles");
     let map_state = if is_map_page {
         let specs = Rc::new(demo_markers_for_page(&page.display, icons));
         Some((Rc::clone(map_source), specs))
@@ -364,9 +365,8 @@ struct DemoIcons {
 impl DemoIcons {
     fn load(root: &Path) -> Self {
         let icons_dir = root.join("crates/components/ui/icons");
-        let load = |name: &str| {
-            slint::Image::load_from_path(&icons_dir.join(name)).unwrap_or_default()
-        };
+        let load =
+            |name: &str| slint::Image::load_from_path(&icons_dir.join(name)).unwrap_or_default();
         Self {
             pin: load("pin.svg"),
             home: load("home.svg"),
@@ -390,26 +390,90 @@ fn demo_markers_for_page(page_display: &str, icons: &DemoIcons) -> Vec<MarkerSpe
     match page_display {
         "map" => vec![
             // Just the camera centre, as a heart POI.
-            MarkerSpec { lon: -0.1276, lat: 51.5074, size: 28.0, colour: PINK, icon: Some(icons.heart.clone()) },
+            MarkerSpec {
+                lon: -0.1276,
+                lat: 51.5074,
+                size: 28.0,
+                colour: PINK,
+                icon: Some(icons.heart.clone()),
+            },
         ],
         "driver-on-the-way" => vec![
-            MarkerSpec { lon: -0.1380, lat: 51.5030, size: 28.0, colour: BLUE,  icon: Some(icons.home.clone()) },
-            MarkerSpec { lon: -0.1100, lat: 51.5140, size: 30.0, colour: RED,   icon: Some(icons.pin.clone()) },
-            MarkerSpec { lon: -0.1220, lat: 51.5085, size: 26.0, colour: AMBER, icon: None /* car */ },
+            MarkerSpec {
+                lon: -0.1380,
+                lat: 51.5030,
+                size: 28.0,
+                colour: BLUE,
+                icon: Some(icons.home.clone()),
+            },
+            MarkerSpec {
+                lon: -0.1100,
+                lat: 51.5140,
+                size: 30.0,
+                colour: RED,
+                icon: Some(icons.pin.clone()),
+            },
+            MarkerSpec {
+                lon: -0.1220,
+                lat: 51.5085,
+                size: 26.0,
+                colour: AMBER,
+                icon: None, /* car */
+            },
         ],
         "ride-share-booking" => vec![
-            MarkerSpec { lon: -0.1400, lat: 51.5120, size: 28.0, colour: BLUE, icon: Some(icons.home.clone()) },
-            MarkerSpec { lon: -0.1100, lat: 51.5020, size: 32.0, colour: RED,  icon: Some(icons.pin.clone()) },
+            MarkerSpec {
+                lon: -0.1400,
+                lat: 51.5120,
+                size: 28.0,
+                colour: BLUE,
+                icon: Some(icons.home.clone()),
+            },
+            MarkerSpec {
+                lon: -0.1100,
+                lat: 51.5020,
+                size: 32.0,
+                colour: RED,
+                icon: Some(icons.pin.clone()),
+            },
         ],
         "store-locator" => vec![
-            MarkerSpec { lon: -0.1350, lat: 51.5100, size: 26.0, colour: RED, icon: Some(icons.pin.clone()) },
-            MarkerSpec { lon: -0.1180, lat: 51.5050, size: 26.0, colour: RED, icon: Some(icons.pin.clone()) },
-            MarkerSpec { lon: -0.1290, lat: 51.5020, size: 26.0, colour: RED, icon: Some(icons.pin.clone()) },
-            MarkerSpec { lon: -0.1220, lat: 51.5140, size: 26.0, colour: RED, icon: Some(icons.pin.clone()) },
+            MarkerSpec {
+                lon: -0.1350,
+                lat: 51.5100,
+                size: 26.0,
+                colour: RED,
+                icon: Some(icons.pin.clone()),
+            },
+            MarkerSpec {
+                lon: -0.1180,
+                lat: 51.5050,
+                size: 26.0,
+                colour: RED,
+                icon: Some(icons.pin.clone()),
+            },
+            MarkerSpec {
+                lon: -0.1290,
+                lat: 51.5020,
+                size: 26.0,
+                colour: RED,
+                icon: Some(icons.pin.clone()),
+            },
+            MarkerSpec {
+                lon: -0.1220,
+                lat: 51.5140,
+                size: 26.0,
+                colour: RED,
+                icon: Some(icons.pin.clone()),
+            },
         ],
-        "parking-session" => vec![
-            MarkerSpec { lon: -0.1276, lat: 51.5074, size: 28.0, colour: BLUE, icon: Some(icons.pin.clone()) },
-        ],
+        "parking-session" => vec![MarkerSpec {
+            lon: -0.1276,
+            lat: 51.5074,
+            size: 28.0,
+            colour: BLUE,
+            icon: Some(icons.pin.clone()),
+        }],
         _ => Vec::new(),
     }
 }
@@ -485,7 +549,11 @@ fn attach_map_handler(
         cells.borrow_mut().push(MapCell {
             refresher: Box::new(move || {
                 let inst = inst_weak.upgrade()?;
-                Some(refresh_map(&inst, &source_for_refresh, &markers_for_refresh))
+                Some(refresh_map(
+                    &inst,
+                    &source_for_refresh,
+                    &markers_for_refresh,
+                ))
             }),
             source: cell_source,
         });
@@ -603,9 +671,7 @@ fn read_viewport(instance: &ComponentInstance) -> (f64, f64) {
         Ok(Value::Number(n)) if *n > 0.0 => *n,
         _ => FALLBACK_VIEWPORT_H,
     };
-    eprintln!(
-        "[viewport] raw_w={raw_w:?} raw_h={raw_h:?} → ({w:.1}, {h:.1})"
-    );
+    eprintln!("[viewport] raw_w={raw_w:?} raw_h={raw_h:?} → ({w:.1}, {h:.1})");
     (w, h)
 }
 
@@ -648,14 +714,8 @@ fn refresh_map(
 ) -> std::collections::HashSet<slint_mapping::TileKey> {
     let (lon, lat, zoom) = read_camera(instance);
     let (vp_w, vp_h) = read_viewport(instance);
-    let mut placed = slint_mapping::viewport::visible_tiles(
-        lon,
-        lat,
-        zoom,
-        vp_w,
-        vp_h,
-        source.tile_size(),
-    );
+    let mut placed =
+        slint_mapping::viewport::visible_tiles(lon, lat, zoom, vp_w, vp_h, source.tile_size());
     let keep: std::collections::HashSet<slint_mapping::TileKey> =
         placed.iter().map(|p| p.key).collect();
 
@@ -664,8 +724,7 @@ fn refresh_map(
     // FIFO queue this translates directly into centre-first dequeue —
     // the area the user is actually looking at fills in before the
     // edges. Cheap: <50 tiles, integer-arithmetic sort key.
-    let (centre_tx, centre_ty) =
-        slint_mapping::projection::lonlat_to_tile(lon, lat, zoom.floor());
+    let (centre_tx, centre_ty) = slint_mapping::projection::lonlat_to_tile(lon, lat, zoom.floor());
     let centre_tile_x = centre_tx.floor() as i64;
     let centre_tile_y = centre_ty.floor() as i64;
     placed.sort_by_key(|p| {
@@ -699,15 +758,24 @@ fn refresh_map(
     let mut marker_rows: Vec<Value> = Vec::with_capacity(markers.len());
     for spec in markers {
         let (px, py) = slint_mapping::viewport::lonlat_to_viewport_px(
-            spec.lon, spec.lat, lon, lat, zoom,
-            vp_w, vp_h, source.tile_size(),
+            spec.lon,
+            spec.lat,
+            lon,
+            lat,
+            zoom,
+            vp_w,
+            vp_h,
+            source.tile_size(),
         );
         let mut m = Struct::default();
         m.set_field("x".into(), Value::Number(px));
         m.set_field("y".into(), Value::Number(py));
         m.set_field("size".into(), Value::Number(spec.size));
         m.set_field("colour".into(), Value::Brush(rgba_brush(spec.colour)));
-        m.set_field("icon".into(), Value::Image(spec.icon.clone().unwrap_or_default()));
+        m.set_field(
+            "icon".into(),
+            Value::Image(spec.icon.clone().unwrap_or_default()),
+        );
         marker_rows.push(Value::Struct(m));
     }
     let markers_model: Rc<VecModel<Value>> = Rc::new(VecModel::from(marker_rows));
@@ -718,7 +786,10 @@ fn refresh_map(
     let polylines_model: Rc<VecModel<Value>> = Rc::new(VecModel::from(Vec::<Value>::new()));
     let mut layer = Struct::default();
     layer.set_field("markers".into(), Value::Model(ModelRc::from(markers_model)));
-    layer.set_field("polylines".into(), Value::Model(ModelRc::from(polylines_model)));
+    layer.set_field(
+        "polylines".into(),
+        Value::Model(ModelRc::from(polylines_model)),
+    );
     let layers_model = Rc::new(VecModel::from(vec![Value::Struct(layer)]));
     let _ = instance.set_property("map-layers", Value::Model(ModelRc::from(layers_model)));
 
@@ -760,7 +831,9 @@ fn main() {
     std::fs::create_dir_all(&cache_dir).ok();
     let cache: Arc<dyn TileCache> = Arc::new(LayeredTileCache::new(
         Box::new(FileTileCache::new(&cache_dir)),
-        vec![Box::new(FileTileCache::new(slint_mapping::SAMPLE_TILES_DIR))],
+        vec![Box::new(FileTileCache::new(
+            slint_mapping::SAMPLE_TILES_DIR,
+        ))],
     ));
     let osm = Arc::new(OsmTileSource::new(cache));
     // OsmTileSource already coalesces tile-ready notifications via
@@ -854,7 +927,11 @@ fn main() {
         );
     }
     viewer.set_summary(
-        summary(pages.len() as i32, &verdicts_model.iter().collect::<Vec<_>>()).into(),
+        summary(
+            pages.len() as i32,
+            &verdicts_model.iter().collect::<Vec<_>>(),
+        )
+        .into(),
     );
 
     // Background loader: one page per ~16 ms tick (≈ frame rate). The
@@ -914,7 +991,11 @@ mod tests {
 
     #[test]
     fn verdicts_json_round_trips() {
-        let names = vec!["home".to_string(), "settings".to_string(), "login".to_string()];
+        let names = vec![
+            "home".to_string(),
+            "settings".to_string(),
+            "login".to_string(),
+        ];
         let verdicts = vec![1, 0, 2];
         let mut sorted: BTreeMap<&str, i32> = BTreeMap::new();
         for (n, &v) in names.iter().zip(&verdicts) {
@@ -937,7 +1018,10 @@ mod tests {
         assert_eq!(parsed.len(), 2);
         assert_eq!(parsed.get("home"), Some(&1));
         assert_eq!(parsed.get("login"), Some(&2));
-        assert!(parsed.get("settings").is_none(), "unrated keys must be absent");
+        assert!(
+            parsed.get("settings").is_none(),
+            "unrated keys must be absent"
+        );
     }
 
     #[test]

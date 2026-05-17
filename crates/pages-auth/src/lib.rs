@@ -13,13 +13,8 @@ mod _generated_snapshot_scenes {
 /// identical names re-exported from sibling pages-* crates).
 pub mod scenes {
     pub use crate::_generated_snapshot_scenes::{
-        SnapAppLockScreen,
-        SnapAppPermissionsPage,
-        SnapOnboardingHintPage,
-        SnapOnboardingPage,
-        SnapSignupPage,
-        SnapTwoFactorAuthPage,
-        SnapWelcomeSplashPage
+        SnapAppLockScreen, SnapAppPermissionsPage, SnapLoginPage, SnapOnboardingHintPage,
+        SnapOnboardingPage, SnapSignupPage, SnapTwoFactorAuthPage, SnapWelcomeSplashPage,
     };
 }
 

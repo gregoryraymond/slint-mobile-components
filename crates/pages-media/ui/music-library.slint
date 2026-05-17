@@ -28,6 +28,7 @@
 //     fixed 412 px.
 
 import { Theme } from "@mobile-theme/theme.slint";
+import { NebulaSkin } from "@mobile-theme/skins.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { SectionHeader } from "@mobile-components/section-header.slint";
 import { ScrollView } from "std-widgets.slint";
@@ -140,9 +141,13 @@ component GridTile inherits Rectangle {
     }
 }
 
+// Visual treatment: opt-in to `NebulaSkin` — radial indigo→black
+// gradient (no SVG, the brush is the background), Nimbus Sans for the
+// album-cover energy, translucent dark band on the AppBar.
 export component MusicLibraryPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
+    default-font-family: NebulaSkin.font-family;
     in property <[AlbumEntry]> featured: [
         { title: "Tail Recursion", artist: "Functional Coffee", cover: @image-url("@mobile-components/icons/album-blue.svg") },
         { title: "Emerald Layers", artist: "Greenfield Trio", cover: @image-url("@mobile-components/icons/album-emerald.svg") },
@@ -160,7 +165,16 @@ export component MusicLibraryPage inherits Window {
     callback search-pressed();
     callback album-pressed(AlbumEntry);
 
-    background: Theme.background;
+    background: NebulaSkin.page-background;
+
+    if NebulaSkin.has-background-image: Image {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        source: NebulaSkin.page-background-image;
+        image-fit: cover;
+    }
 
     VerticalLayout {
         spacing: 0;
@@ -169,6 +183,8 @@ export component MusicLibraryPage inherits Window {
             title: "Music";
             leading-icon: @image-url("@mobile-components/icons/menu.svg");
             trailing-icon: @image-url("@mobile-components/icons/search.svg");
+            bar-background: NebulaSkin.bar-background;
+            text-color: NebulaSkin.text-primary;
             leading-pressed => { root.menu-pressed(); }
             trailing-pressed => { root.search-pressed(); }
         }

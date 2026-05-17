@@ -1,4 +1,5 @@
 import { Theme } from "@mobile-theme/theme.slint";
+import { LatticeSkin } from "@mobile-theme/skins.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { BottomNav } from "@mobile-components/bottom-nav.slint";
 import { IconButton } from "@mobile-components/icon-button.slint";
@@ -9,21 +10,40 @@ import { ScrollView } from "std-widgets.slint";
 // Example feed-style page: top app bar + scrollable cards + FAB +
 // bottom navigation. Use as-is, or as a layout reference when composing
 // your own pages.
+//
+// Visual treatment: opt-in to `LatticeSkin`. The dot-grid background
+// SVG, geometric sans typeface, and translucent AppBar / BottomNav
+// fills all come from the skin — see crates/theme/ui/skins.slint.
 export component HomePage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
+    default-font-family: LatticeSkin.font-family;
+
     in-out property <int> nav-index: 0;
     callback fab-pressed();
     callback nav-changed(int);
 
-    background: Theme.background;
+    background: LatticeSkin.page-background;
 
+    // ---- z-bottom: dot-grid background ----
+    if LatticeSkin.has-background-image: Image {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        source: LatticeSkin.page-background-image;
+        image-fit: cover;
+    }
+
+    // ---- z-top: page content ----
     VerticalLayout {
         spacing: 0;
 
         AppBar {
             title: "Today";
             trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
+            bar-background: LatticeSkin.bar-background;
+            text-color: LatticeSkin.text-primary;
         }
 
         scroll := ScrollView {
@@ -60,6 +80,7 @@ export component HomePage inherits Window {
 
         BottomNav {
             current-index <=> root.nav-index;
+            bar-background: LatticeSkin.bar-background;
 
             IconButton {
                 label: "Home";

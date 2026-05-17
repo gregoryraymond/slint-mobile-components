@@ -13,25 +13,11 @@ mod _generated_snapshot_scenes {
 /// identical names re-exported from sibling pages-* crates).
 pub mod scenes {
     pub use crate::_generated_snapshot_scenes::{
-        SnapAchievementsPage,
-        SnapCalculatorPage,
-        SnapCodeReviewPage,
-        SnapDashboardPage,
-        SnapDeliveryDriverPage,
-        SnapEventDetailPage,
-        SnapGameLobbyPage,
-        SnapJobListingPage,
-        SnapLeaderboardPage,
-        SnapLiveSportsScorePage,
-        SnapPollResultsPage,
-        SnapQuizPage,
-        SnapRoomThermostatPage,
-        SnapSmartHomePage,
-        SnapSmartTVRemotePage,
-        SnapTVShowDetailPage,
-        SnapVotingBallotPage,
-        SnapWeatherPage,
-        SnapWordlePuzzlePage
+        SnapAchievementsPage, SnapCalculatorPage, SnapCodeReviewPage, SnapDashboardPage,
+        SnapDeliveryDriverPage, SnapEventDetailPage, SnapGameLobbyPage, SnapHomePage,
+        SnapJobListingPage, SnapLeaderboardPage, SnapLiveSportsScorePage, SnapPollResultsPage,
+        SnapQuizPage, SnapRoomThermostatPage, SnapSmartHomePage, SnapSmartTVRemotePage,
+        SnapTVShowDetailPage, SnapVotingBallotPage, SnapWeatherPage, SnapWordlePuzzlePage,
     };
 }
 

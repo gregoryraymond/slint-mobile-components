@@ -155,10 +155,7 @@ fn parse_pages_imports(text: &str) -> BTreeMap<String, (String, String)> {
     out
 }
 
-fn collect_snap_blocks(
-    text: &str,
-    cls_to_meta: &BTreeMap<String, (String, String)>,
-) -> Vec<Block> {
+fn collect_snap_blocks(text: &str, cls_to_meta: &BTreeMap<String, (String, String)>) -> Vec<Block> {
     let mut blocks = Vec::new();
     let prefix = "export component ";
     let mut idx = 0usize;
@@ -186,7 +183,10 @@ fn collect_snap_blocks(
         }
         // Find opening `{` (must be on the header line) and walk to the
         // matching `}`.
-        let Some(open) = text[after_prefix..line_end].find('{').map(|o| after_prefix + o) else {
+        let Some(open) = text[after_prefix..line_end]
+            .find('{')
+            .map(|o| after_prefix + o)
+        else {
             idx = line_end + 1;
             continue;
         };

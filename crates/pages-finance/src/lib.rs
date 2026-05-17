@@ -13,27 +13,12 @@ mod _generated_snapshot_scenes {
 /// identical names re-exported from sibling pages-* crates).
 pub mod scenes {
     pub use crate::_generated_snapshot_scenes::{
-        SnapBudgetOverviewPage,
-        SnapCryptoPortfolioPage,
-        SnapCurrencyConverterPage,
-        SnapDonationPage,
-        SnapExpenseReportPage,
-        SnapGiftCardPage,
-        SnapInvestmentDetailPage,
-        SnapInvoicePage,
-        SnapLoyaltyCardPage,
-        SnapMortgageCalculatorPage,
-        SnapNetWorthPage,
-        SnapPaymentMethodPage,
-        SnapPaymentSplitPage,
-        SnapPaywallPage,
-        SnapReferralPage,
-        SnapSavingsGoalPage,
-        SnapSendMoneyPage,
-        SnapStockWatchlistPage,
-        SnapSubscriptionsPage,
-        SnapTipJarPage,
-        SnapWalletPage
+        SnapBudgetOverviewPage, SnapCryptoPortfolioPage, SnapCurrencyConverterPage,
+        SnapDonationPage, SnapExpenseReportPage, SnapGiftCardPage, SnapInvestmentDetailPage,
+        SnapInvoicePage, SnapLoyaltyCardPage, SnapMortgageCalculatorPage, SnapNetWorthPage,
+        SnapPaymentMethodPage, SnapPaymentSplitPage, SnapPaywallPage, SnapReferralPage,
+        SnapSavingsGoalPage, SnapSendMoneyPage, SnapStockWatchlistPage, SnapSubscriptionsPage,
+        SnapTipJarPage, SnapWalletPage,
     };
 }
 

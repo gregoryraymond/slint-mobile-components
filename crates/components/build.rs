@@ -9,6 +9,5 @@ fn main() {
         PathBuf::from(slint_mobile_theme::UI_LIBRARY_DIR),
     )]));
 
-    slint_build::compile_with_config("ui/_validate.slint", config)
-        .expect("Slint build failed");
+    slint_build::compile_with_config("ui/_validate.slint", config).expect("Slint build failed");
 }

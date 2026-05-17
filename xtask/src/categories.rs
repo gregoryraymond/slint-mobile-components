@@ -204,4 +204,3 @@ pub const CATEGORIES: &[(&str, &[&str])] = &[
         ],
     ),
 ];
-

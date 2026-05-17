@@ -44,24 +44,25 @@ use slint_mobile_components::{
     SnapEmailThreadPage, SnapEmptyState, SnapEqualizerPage, SnapEventDetailPage,
     SnapExpenseReportPage, SnapFileBrowserPage, SnapFlightSearchPage, SnapFormWizardPage,
     SnapGameLobbyPage, SnapGiftCardPage, SnapGroceryListPage, SnapGroupChatListPage,
-    SnapHabitTrackerPage, SnapHelpCenterPage, SnapHotelBookingPage, SnapIconButtonActive,
-    SnapInboxPage, SnapInsuranceClaimPage, SnapInvestmentDetailPage, SnapInvoicePage,
-    SnapJobListingPage, SnapJournalEntryPage, SnapLabResultsPage, SnapLeaderboardPage,
-    SnapLiveSportsScorePage, SnapLiveStreamPage, SnapLoyaltyCardPage, SnapMapPage, SnapMealLogPage,
-    SnapMediaPlayerLockscreenPage, SnapMedicationPage, SnapMeditationPage, SnapMessageComposerPage,
-    SnapMobileButtonPrimary, SnapMobileButtonSecondary, SnapMortgageCalculatorPage,
-    SnapMultiSelectListPage, SnapMusicLibraryPage, SnapNetWorthPage, SnapNewsArticleFeedPage,
-    SnapNotificationCenterPage, SnapNutritionLabelPage, SnapOnboardingHintPage, SnapOnboardingPage,
-    SnapOrderHistoryPage, SnapOrderTrackingPage, SnapParkingSessionPage, SnapPaymentMethodPage,
-    SnapPaymentSplitPage, SnapPaywallPage, SnapPetAdoptionPage, SnapPhotoGridPage,
-    SnapPhotoViewerPage, SnapPlaylistDetailPage, SnapPodcastPage, SnapPollResultsPage,
-    SnapPostCreatorPage, SnapPostDetailPage, SnapProductDetailPage, SnapProfileEditPage,
-    SnapProfilePage, SnapProgressDeterminate, SnapQRScannerPage, SnapQuizPage, SnapRadioGroup,
-    SnapReadingListPage, SnapRecipePage, SnapReferralPage, SnapRestaurantMenuPage,
-    SnapReviewSummaryPage, SnapRideShareBookingPage, SnapRoomThermostatPage, SnapSavingsGoalPage,
-    SnapSearchResultsPage, SnapSeatSelectionPage, SnapSecurityCheckupPage, SnapSegmentedThree,
-    SnapSendMoneyPage, SnapSignupPage, SnapSkeletonRow, SnapSleepTrackingPage, SnapSliderAt35,
-    SnapSmartHomePage, SnapSmartTVRemotePage, SnapSnackbarTones, SnapSpinnerStatic, SnapStepperAt3,
+    SnapHabitTrackerPage, SnapHelpCenterPage, SnapHomePage, SnapHotelBookingPage,
+    SnapIconButtonActive, SnapInboxPage, SnapInsuranceClaimPage, SnapInvestmentDetailPage,
+    SnapInvoicePage, SnapJobListingPage, SnapJournalEntryPage, SnapLabResultsPage,
+    SnapLeaderboardPage, SnapLiveSportsScorePage, SnapLiveStreamPage, SnapLoginPage,
+    SnapLoyaltyCardPage, SnapMapPage, SnapMealLogPage, SnapMediaPlayerLockscreenPage,
+    SnapMedicationPage, SnapMeditationPage, SnapMessageComposerPage, SnapMobileButtonPrimary,
+    SnapMobileButtonSecondary, SnapMortgageCalculatorPage, SnapMultiSelectListPage,
+    SnapMusicLibraryPage, SnapNetWorthPage, SnapNewsArticleFeedPage, SnapNotificationCenterPage,
+    SnapNutritionLabelPage, SnapOnboardingHintPage, SnapOnboardingPage, SnapOrderHistoryPage,
+    SnapOrderTrackingPage, SnapParkingSessionPage, SnapPaymentMethodPage, SnapPaymentSplitPage,
+    SnapPaywallPage, SnapPetAdoptionPage, SnapPhotoGridPage, SnapPhotoViewerPage,
+    SnapPlaylistDetailPage, SnapPodcastPage, SnapPollResultsPage, SnapPostCreatorPage,
+    SnapPostDetailPage, SnapProductDetailPage, SnapProfileEditPage, SnapProfilePage,
+    SnapProgressDeterminate, SnapQRScannerPage, SnapQuizPage, SnapRadioGroup, SnapReadingListPage,
+    SnapRecipePage, SnapReferralPage, SnapRestaurantMenuPage, SnapReviewSummaryPage,
+    SnapRideShareBookingPage, SnapRoomThermostatPage, SnapSavingsGoalPage, SnapSearchResultsPage,
+    SnapSeatSelectionPage, SnapSecurityCheckupPage, SnapSegmentedThree, SnapSendMoneyPage,
+    SnapSignupPage, SnapSkeletonRow, SnapSleepTrackingPage, SnapSliderAt35, SnapSmartHomePage,
+    SnapSmartTVRemotePage, SnapSnackbarTones, SnapSpinnerStatic, SnapStepperAt3,
     SnapStockWatchlistPage, SnapStorageManagerPage, SnapStoreLocatorPage, SnapSubscriptionsPage,
     SnapTVShowDetailPage, SnapTabBar, SnapTaskListPage, SnapTimerPage, SnapTimezoneConverterPage,
     SnapTipJarPage, SnapTransitDeparturesPage, SnapTrendingTopicsPage, SnapTripItineraryPage,
@@ -225,6 +226,8 @@ fn render_snapshots() {
     snapshot("profile-page", 412, 892, SnapProfilePage::new);
     snapshot("chat-page", 412, 892, SnapChatPage::new);
     snapshot("dashboard-page", 412, 892, SnapDashboardPage::new);
+    snapshot("home-page", 412, 892, SnapHomePage::new);
+    snapshot("login-page", 412, 892, SnapLoginPage::new);
     snapshot("music-library-page", 412, 892, SnapMusicLibraryPage::new);
     snapshot("onboarding-page", 412, 892, SnapOnboardingPage::new);
     snapshot("photo-grid-page", 412, 892, SnapPhotoGridPage::new);

@@ -125,8 +125,7 @@ macro_rules! wire_and_run {
                 let lon = page.get_map_longitude() as f64;
                 let lat = page.get_map_latitude() as f64;
 
-                let (tx_c, ty_c) =
-                    slint_mapping::projection::lonlat_to_tile(lon, lat, z_before);
+                let (tx_c, ty_c) = slint_mapping::projection::lonlat_to_tile(lon, lat, z_before);
                 let adx = anchor_x as f64 - vw / 2.0;
                 let ady = anchor_y as f64 - vh / 2.0;
                 let (alon, alat) = slint_mapping::projection::tile_to_lonlat(
@@ -135,8 +134,7 @@ macro_rules! wire_and_run {
                     z_before,
                 );
                 let z_after = (z_before + delta as f64).clamp(min_z, max_z);
-                let (tx_an, ty_an) =
-                    slint_mapping::projection::lonlat_to_tile(alon, alat, z_after);
+                let (tx_an, ty_an) = slint_mapping::projection::lonlat_to_tile(alon, alat, z_after);
                 let (nlon, nlat) = slint_mapping::projection::tile_to_lonlat(
                     tx_an - adx / tile_size,
                     ty_an - ady / tile_size,
@@ -242,4 +240,3 @@ fn logical_size<P: ComponentHandle>(page: &P) -> (f64, f64) {
     let scale = if scale == 0.0 { 1.0 } else { scale };
     (phys.width as f64 / scale, phys.height as f64 / scale)
 }
-
