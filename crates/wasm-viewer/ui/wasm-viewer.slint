@@ -72,8 +72,14 @@ component PageCell inherits Rectangle {
 
 export component WasmViewer inherits Window {
     title: "slint-mobile-components — catalogue";
-    preferred-width: 1740px;
-    preferred-height: 1080px;
+    // No preferred-width / preferred-height — on wasm those propagate
+    // to the canvas's rendering size and lock the layout at 1740 ×
+    // 1080 *logical* px regardless of the actual browser viewport,
+    // so the grid would compute its column count against a width that
+    // doesn't match what's visible (3 cells "fit" in a 1740-px world
+    // even when the user has only 1000 px of real screen). Leaving
+    // them out lets Slint fill whatever the canvas's CSS size is, and
+    // the column math reflects the actual visible area.
     background: Theme.background;
 
     in property <[string]> titles;
@@ -84,10 +90,38 @@ export component WasmViewer inherits Window {
 
     private property <length> cell-w: 412px;
     private property <length> cell-h: 892px + 44px;
-    private property <length> gap: 16px;
-    private property <length> grid-w: root.width - 2 * root.gap - 16px;
-    private property <int> cols: max(1, floor((root.grid-w + root.gap) / (root.cell-w + root.gap)));
+    // Spacing tunables. `min-gap` is the floor (cells never get closer
+    // than this); `max-gap` is the ceiling (cells stop spreading once
+    // gaps get this wide — past that the leftover space sits on the
+    // outer edges and the cell block centers). The 96-px ceiling
+    // keeps a 2-column row from sliding the cells onto opposite
+    // edges of a 3000-px window with a sea of nothing between.
+    private property <length> min-gap: 16px;
+    private property <length> max-gap: 96px;
+
+    private property <length> grid-w: root.width - 2 * root.min-gap - 16px;
+    // Column count is computed against the *minimum* gap, so the
+    // pack-as-tight-as-possible math doesn't change as gaps expand.
+    private property <int> cols: max(1, floor((root.grid-w + root.min-gap) / (root.cell-w + root.min-gap)));
     private property <int> row-count: ceil(root.titles.length / root.cols);
+
+    // Distribute leftover horizontal space across the inter-cell
+    // gaps, clamped between min-gap and max-gap. With a single
+    // column there are no gaps to widen, so the value's irrelevant
+    // and we just pin it to min-gap to keep arithmetic simple.
+    private property <length> cell-gap:
+        root.cols <= 1
+            ? root.min-gap
+            : max(root.min-gap, min(root.max-gap,
+                (root.grid-w - root.cols * root.cell-w) / (root.cols - 1)));
+
+    // Total width the cell block actually occupies after gaps are
+    // chosen. When gaps are at max-gap and the window is still
+    // wider, this is < grid-w and the difference centers the block.
+    private property <length> content-w: root.cols * root.cell-w + (root.cols - 1) * root.cell-gap;
+    private property <length> content-x-offset: (root.grid-w - root.content-w) / 2;
+
+    private property <length> cell-h-stride: root.cell-h + root.min-gap;
     private property <bool> still-loading: root.loaded < root.total;
 
     VerticalLayout {
@@ -126,23 +160,27 @@ export component WasmViewer inherits Window {
         // ----- Scrollable grid -----
         ScrollView {
             VerticalLayout {
-                padding: root.gap;
+                padding: root.min-gap;
                 alignment: start;
+                // The grid surface fills the full available width so
+                // we can center / space-between the cells inside it.
+                // Height grows with the number of loaded rows.
                 Rectangle {
-                    width: root.cols * (root.cell-w + root.gap) - root.gap;
-                    height: root.row-count * (root.cell-h + root.gap)
+                    width: root.grid-w;
+                    height: root.row-count * root.cell-h-stride
                         + (root.still-loading ? 80px : 0px);
 
                     for cell[i] in root.cells: PageCell {
-                        x: mod(i, root.cols) * (root.cell-w + root.gap);
-                        y: floor(i / root.cols) * (root.cell-h + root.gap);
+                        x: root.content-x-offset
+                            + mod(i, root.cols) * (root.cell-w + root.cell-gap);
+                        y: floor(i / root.cols) * root.cell-h-stride;
                         title: root.titles[i];
                         page-factory: cell;
                     }
 
                     if root.still-loading: Rectangle {
                         x: 0;
-                        y: root.row-count * (root.cell-h + root.gap);
+                        y: root.row-count * root.cell-h-stride;
                         width: parent.width;
                         height: 80px;
                         Text {

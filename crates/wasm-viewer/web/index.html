@@ -37,19 +37,38 @@
     <canvas id="canvas"></canvas>
     <div id="loading">Loading slint-mobile-components catalogue…</div>
     <script type="module">
-        // Size the canvas to the viewport before init() runs so the
-        // grid reflows to the actual window. Slint's winit-web backend
-        // attaches to <canvas id="canvas"> and honours the width/height
-        // attributes that are set when init() resolves.
+        // Size the canvas to whatever room it has — works both as a
+        // top-level document and inside an iframe. Slint's winit-web
+        // backend attaches to <canvas id="canvas"> and uses its
+        // CSS width / height as the Window's logical px dimensions;
+        // the framebuffer pixel attributes are DPR-multiplied for
+        // HiDPI sharpness.
+        //
+        // We size from the canvas's *own* getBoundingClientRect, not
+        // from window.innerWidth — inside an iframe the canvas's box
+        // is what we should fill (CSS sets it to position:absolute /
+        // inset:0), and window.innerWidth may not reflect a parent-
+        // driven resize. A ResizeObserver on the canvas catches every
+        // case: initial layout, browser resize, devtools toggle,
+        // iframe outer-container resize.
         const canvas = document.getElementById('canvas');
         const sizeCanvas = () => {
             const dpr = window.devicePixelRatio || 1;
-            canvas.width = Math.round(window.innerWidth * dpr);
-            canvas.height = Math.round(window.innerHeight * dpr);
-            canvas.style.width = window.innerWidth + 'px';
-            canvas.style.height = window.innerHeight + 'px';
+            const rect = canvas.getBoundingClientRect();
+            const cssW = Math.max(1, Math.round(rect.width));
+            const cssH = Math.max(1, Math.round(rect.height));
+            canvas.width = Math.round(cssW * dpr);
+            canvas.height = Math.round(cssH * dpr);
+            canvas.style.width = cssW + 'px';
+            canvas.style.height = cssH + 'px';
         };
         sizeCanvas();
+        // ResizeObserver fires synchronously after layout changes the
+        // canvas's box. Belt-and-braces: also keep the window resize
+        // listener as a fallback in older browsers.
+        if ('ResizeObserver' in window) {
+            new ResizeObserver(sizeCanvas).observe(canvas);
+        }
         window.addEventListener('resize', sizeCanvas);
     </script>
     <script type="module">
