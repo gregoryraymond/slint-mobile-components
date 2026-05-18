@@ -35,8 +35,12 @@ check:
 test:
     cargo test
 
-# Full local CI pipeline (mirrors what runs on PRs)
-ci: fmt-check clippy check test
+# Full local CI pipeline (mirrors what runs on PRs).
+# No standalone `check`: `clippy` already runs the same type-checking
+# pass plus lints, so a separate `cargo check` is redundant work
+# (~30s warm / 3 min cold saved). `check` is still available as its
+# own recipe when you want the lighter version locally.
+ci: fmt-check clippy test
 
 # --- private helpers (callable, but hidden from `just --list`) -------------
 

@@ -30,16 +30,29 @@ jobs:
             cmake \
             ninja-build
 
-      - name: Cache cargo registry + target
-        uses: actions/cache@v4
+      # Smart Rust-aware cache: keys include Cargo.lock + the rustc
+      # version, so the cache is invalidated when either changes
+      # (instead of every Cargo.toml edit, as the old actions/cache
+      # key did). Also strips target/ of intermediate artefacts that
+      # rebuild faster than they restore, so the cache stays bounded
+      # in size. With Skia in the dep tree (via the viewer crate's
+      # renderer-skia feature) the first cold compile takes ~10 min;
+      # cache hits drop that to seconds.
+      - name: Cache cargo + target
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
+          # Cache the workspace root. Single shared cache across all
+          # jobs (fmt / clippy / check / test) — they all reuse the
+          # same compiled deps.
+          workspaces: ". -> target"
+          # Bump if you want to force-invalidate the cache without
+          # touching Cargo.lock (e.g. after a Slint major-version
+          # bump shakes loose stale Skia bindings).
+          prefix-key: "v1"
+          # Save the cache even if a job step fails — so a one-off
+          # test failure doesn't waste the 10-min Skia rebuild on
+          # the next retry.
+          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'pull_request' }}
 
       - name: Install just
         uses: extractions/setup-just@v2
@@ -47,11 +60,12 @@ jobs:
       - name: fmt-check
         run: just fmt-check
 
+      # `clippy` already runs the same type-checking pass as
+      # `cargo check` plus lints, so a separate check step would
+      # rebuild for nothing. `just check` is still available for
+      # local use when you want the lighter version.
       - name: clippy
         run: just clippy
-
-      - name: check
-        run: just check
 
       - name: test
         run: just test
