@@ -47,14 +47,24 @@ component VerdictButton inherits Rectangle {
     }
 }
 
+// Natural cell dimensions — what the embedded page templates lay
+// themselves out against (412 × 892 phone viewport plus a 44-px
+// header strip for the title + verdict buttons). The Viewer derives
+// a `cell-scale` from the window size and renders this cell scaled
+// uniformly so phone shape is preserved.
 component PageCell inherits Rectangle {
     in property <string> title;
     in property <int> verdict;
     in property <component-factory> page-factory;
+    // 0.0 < scale ≤ 1.0. Outer bounding box shrinks; the inner
+    // content keeps its native 412 × 936 layout and is scaled
+    // visually via transform-scale so the embedded page template
+    // doesn't have to know it's being rendered as a thumbnail.
+    in property <float> scale: 1.0;
     callback verdict-set(int);
 
-    width: 412px;
-    height: 892px + 44px;  // 44 = header
+    width: 412px * root.scale;
+    height: (892px + 44px) * root.scale;
     background: Theme.surface-1;
     border-radius: Theme.radius-md;
     border-width: 1px;
@@ -63,44 +73,56 @@ component PageCell inherits Rectangle {
         : Theme.outline;
     clip: true;
 
-    VerticalLayout {
-        spacing: 0;
-        Rectangle {
-            height: 44px;
-            background: Theme.surface-2;
-            HorizontalLayout {
-                padding-left: 12px;
-                padding-right: 8px;
-                padding-top: 8px;
-                padding-bottom: 8px;
-                spacing: 6px;
-                Text {
-                    text: root.title;
-                    color: Theme.on-surface;
-                    font-size: 13px;
-                    font-weight: 700;
-                    vertical-alignment: center;
-                    overflow: elide;
-                    horizontal-stretch: 1;
-                }
-                VerdictButton {
-                    icon: @image-url("@mobile-components/icons/check.svg");
-                    active: root.verdict == 1;
-                    active-color: #2e7d32;
-                    clicked => { root.verdict-set(root.verdict == 1 ? 0 : 1); }
-                }
-                VerdictButton {
-                    icon: @image-url("@mobile-components/icons/close.svg");
-                    active: root.verdict == 2;
-                    active-color: #c62828;
-                    clicked => { root.verdict-set(root.verdict == 2 ? 0 : 2); }
+    // Inner content rendered at NATURAL size, then scaled to fit
+    // the outer box. transform-origin pinned to top-left so the
+    // scaled output anchors at (0, 0) of the cell instead of
+    // shrinking toward the center.
+    Rectangle {
+        width: 412px;
+        height: 892px + 44px;
+        transform-origin: { x: 0px, y: 0px };
+        transform-scale-x: root.scale * 100%;
+        transform-scale-y: root.scale * 100%;
+
+        VerticalLayout {
+            spacing: 0;
+            Rectangle {
+                height: 44px;
+                background: Theme.surface-2;
+                HorizontalLayout {
+                    padding-left: 12px;
+                    padding-right: 8px;
+                    padding-top: 8px;
+                    padding-bottom: 8px;
+                    spacing: 6px;
+                    Text {
+                        text: root.title;
+                        color: Theme.on-surface;
+                        font-size: 13px;
+                        font-weight: 700;
+                        vertical-alignment: center;
+                        overflow: elide;
+                        horizontal-stretch: 1;
+                    }
+                    VerdictButton {
+                        icon: @image-url("@mobile-components/icons/check.svg");
+                        active: root.verdict == 1;
+                        active-color: #2e7d32;
+                        clicked => { root.verdict-set(root.verdict == 1 ? 0 : 1); }
+                    }
+                    VerdictButton {
+                        icon: @image-url("@mobile-components/icons/close.svg");
+                        active: root.verdict == 2;
+                        active-color: #c62828;
+                        clicked => { root.verdict-set(root.verdict == 2 ? 0 : 2); }
+                    }
                 }
             }
-        }
-        ComponentContainer {
-            component-factory: root.page-factory;
-            width: 412px;
-            height: 892px;
+            ComponentContainer {
+                component-factory: root.page-factory;
+                width: 412px;
+                height: 892px;
+            }
         }
     }
 }
@@ -123,17 +145,39 @@ export component Viewer inherits Window {
     // updates the model and rewrites `showcase-verdicts.json` live.
     callback verdict-changed(int /* index */, int /* verdict 0/1/2 */);
 
-    // Cell + grid geometry. Kept in slint so we can position cells via
-    // absolute x/y based on their index (slint has no flow/wrap layout).
-    private property <length> cell-w: 412px;
-    private property <length> cell-h: 892px + 44px;
+    // Cell + grid geometry. Kept in slint so we can position cells
+    // via absolute x/y based on their index (slint has no flow/wrap
+    // layout). Both axes of the cell shrink uniformly with `cell-scale`
+    // so the phone aspect ratio is preserved as the window resizes.
+    private property <length> natural-cell-w: 412px;
+    private property <length> natural-cell-h: 892px + 44px;
     private property <length> gap: 16px;
+
+    // Height available to the grid (window minus status-bar minus
+    // grid padding top + bottom).
+    private property <length> grid-h: root.height - 56px - 2 * root.gap;
+    // Scale derived from vertical room: shrink the cell so one full
+    // row fits without scrolling when the window is shorter than the
+    // natural height. Never upscales above 1.0 (keeps phone-resolution
+    // pixel fidelity when there's room), never below 0.4 (cells stop
+    // being readable below ~165 × 374). User can still scroll for
+    // more rows once cells are at native size.
+    private property <float> cell-scale: max(0.4, min(1.0, root.grid-h / root.natural-cell-h));
+
+    // Scaled cell dimensions — what the grid layout math consumes.
+    // PageCell's outer bounding box shrinks to match; its inner
+    // content stays at native size and is visually scaled via
+    // transform-scale (see PageCell above).
+    private property <length> cell-w: root.natural-cell-w * root.cell-scale;
+    private property <length> cell-h: root.natural-cell-h * root.cell-scale;
+
     // Width available to the cell grid (window minus the outer padding
     // on both sides + a slight reserve for the vertical scrollbar).
     private property <length> grid-w: root.width - 2 * root.gap - 16px;
-    // Column count: fit as many full cells as the window can hold, at
-    // least one. Solves `n*(cell-w) + (n-1)*gap <= grid-w` for n →
-    // `n = floor((grid-w + gap) / (cell-w + gap))`. Recomputes on resize.
+    // Column count: fit as many scaled cells as the window can hold,
+    // at least one. Solves `n*(cell-w) + (n-1)*gap <= grid-w` for n →
+    // `n = floor((grid-w + gap) / (cell-w + gap))`. Recomputes on
+    // every resize and every cell-scale change.
     private property <int> cols: max(1, floor((root.grid-w + root.gap) / (root.cell-w + root.gap)));
     private property <int> row-count: ceil(root.titles.length / root.cols);
     private property <bool> still-loading: root.loaded < root.total;
@@ -190,6 +234,7 @@ export component Viewer inherits Window {
                         title: root.titles[i];
                         verdict: root.verdicts[i];
                         page-factory: cell;
+                        scale: root.cell-scale;
                         verdict-set(v) => { root.verdict-changed(i, v); }
                     }
 
