@@ -57,6 +57,14 @@ fn build_time_library_paths(root: &Path) -> HashMap<&'static str, PathBuf> {
     let mut m = HashMap::new();
     m.insert("mobile-theme", root.join("crates/theme/ui"));
     m.insert("mobile-components", root.join("crates/components/ui"));
+    // @mapping resolves to slint-mapping's ui/ directory. UI_LIBRARY_DIR
+    // is a `pub const &str` exported by the crate — at build time it
+    // points into the cargo registry where the published 0.1.0 was
+    // unpacked. Map pages import `MapEmbed` from
+    // `@mapping/map.slint`; pre-baking that here lets the rewriter
+    // resolve any @image-url references inside it (currently none,
+    // but future-proof).
+    m.insert("mapping", PathBuf::from(slint_mapping::UI_LIBRARY_DIR));
     m
 }
 
@@ -69,6 +77,17 @@ fn input_roots(root: &Path) -> Vec<(String, PathBuf)> {
         (
             "mobile-components".to_string(),
             root.join("crates/components/ui"),
+        ),
+        // slint-mapping's ui/ — same UI_LIBRARY_DIR const, now used
+        // as an input root so map.slint (and its associated structs)
+        // are embedded into the runtime virtual fs as
+        // /embedded/mapping/map.slint. Without this, an interpreted
+        // map page's `import { MapEmbed } from "@mapping/map.slint"`
+        // would hit `set_file_loader` looking for that path and
+        // get None.
+        (
+            "mapping".to_string(),
+            PathBuf::from(slint_mapping::UI_LIBRARY_DIR),
         ),
     ];
     for entry in fs::read_dir(root.join("crates")).expect("read crates/") {

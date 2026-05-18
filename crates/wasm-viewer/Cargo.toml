@@ -41,15 +41,29 @@ pollster = "0.3"
 # Workspace crates we read library paths from.
 slint-mobile-theme = { path = "../theme" }
 slint-mobile-components-widgets = { path = "../components" }
+# slint-mapping at runtime: TileSource trait + camera/viewport math
+# used by the embedded tile handler the 6 map-using pages need.
+# No feature flags — we don't pull `wasm` (network OsmTileSource);
+# our `EmbeddedTileSource` reads from include_dir!'d sample tiles
+# at compile time, so the maps render offline with no fetch.
+slint-mapping = "0.1"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"
 console_error_panic_hook = "0.1"
+# PNG decoding for the EmbeddedTileSource. The image crate gets
+# trimmed to png-only here so we don't drag in jpeg / gif / webp /
+# bmp decoders the tile bundle never uses.
+image = { version = "0.25", default-features = false, features = ["png"] }
 
 [build-dependencies]
 slint-build = "1"
 slint-mobile-theme = { path = "../theme" }
 slint-mobile-components-widgets = { path = "../components" }
+# slint-mapping at build time only for its `UI_LIBRARY_DIR` const —
+# we hand the pre-bake step that path so the 6 map-using pages can
+# resolve `import { MapEmbed } from "@mapping/map.slint";`.
+slint-mapping = "0.1"
 # base64 for the build-time pre-rewriter that inlines every
 # @image-url(...) reference into a `data:image/<mime>;base64,...` URL,
 # so the runtime interpreter never has to hit a filesystem.

@@ -26,12 +26,15 @@
 //!      renders it.
 
 use include_dir::{include_dir, Dir};
-use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
-use slint_interpreter::{Compiler, Value};
+use slint::{ComponentHandle, ModelRc, SharedPixelBuffer, SharedString, VecModel};
+use slint_interpreter::{Compiler, ComponentInstance, Struct, Value};
+use slint_mapping::source::{TileKey, TileSource};
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
@@ -53,6 +56,79 @@ slint::include_modules!();
 /// Each top-level segment matches the library-path alias the runtime
 /// installs into `slint_interpreter::Compiler::set_library_paths`.
 static EMBEDDED: Dir<'_> = include_dir!("$OUT_DIR/embedded");
+
+/// Sample OSM tile bundle copied from `slint-mapping/sample-tiles/`.
+/// Worldwide z0–3 + Greater London z4–12 — ~5.6 MB of PNGs that get
+/// linked into the wasm binary at compile time. The 6 map-using pages
+/// in the catalogue all centre on London at z10–12, so this bundle
+/// covers every default-camera tile they request without a single
+/// network call. Pan past Greater London or zoom past 12 and tiles
+/// will miss; the EmbeddedTileSource returns None and `map.slint`
+/// paints its loading placeholder.
+static EMBEDDED_TILES: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/assets-tiles");
+
+/// PNG → SharedPixelBuffer cache keyed by TileKey. First read decodes
+/// the PNG via the `image` crate; subsequent reads hit the cache.
+/// Wrapped in Arc<Mutex<…>> to satisfy TileSource's Send + Sync
+/// bound — wasm is single-threaded so the lock never actually
+/// contends, but the trait requires it for the native-target case.
+type DecodedTiles = Arc<Mutex<HashMap<TileKey, SharedPixelBuffer<slint::Rgba8Pixel>>>>;
+
+/// Read-only TileSource backed by the EMBEDDED_TILES dir. No network,
+/// no async, no LRU bookkeeping — bytes are already in the wasm
+/// binary's data segments, and the bundle is small enough that we
+/// just hang on to every tile that's been decoded for the lifetime
+/// of the page.
+struct EmbeddedTileSource {
+    cache: DecodedTiles,
+}
+
+impl EmbeddedTileSource {
+    fn new() -> Self {
+        Self {
+            cache: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+}
+
+impl TileSource for EmbeddedTileSource {
+    fn tile(&self, key: TileKey) -> Option<slint::Image> {
+        if let Some(buf) = self.cache.lock().unwrap().get(&key).cloned() {
+            return Some(slint::Image::from_rgba8(buf));
+        }
+        // include_dir paths are unix-style relative to the embed root
+        // (e.g. "10/511/340.png"). The slint-mapping sample tiles use
+        // the standard {z}/{x}/{y}.png layout that OSM also uses, so
+        // the lookup is direct.
+        let rel = format!("{}/{}/{}.png", key.z, key.x, key.y);
+        let file = EMBEDDED_TILES.get_file(&rel)?;
+        let bytes = file.contents();
+        // PNG → DynamicImage → RGBA8 → SharedPixelBuffer. The image
+        // crate's `load_from_memory_with_format` skips the format
+        // sniffing pass since we know everything in the bundle is PNG.
+        let decoded = image::load_from_memory_with_format(bytes, image::ImageFormat::Png)
+            .ok()?
+            .to_rgba8();
+        let (w, h) = decoded.dimensions();
+        let buf = SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(
+            decoded.as_raw(),
+            w,
+            h,
+        );
+        self.cache.lock().unwrap().insert(key, buf.clone());
+        Some(slint::Image::from_rgba8(buf))
+    }
+
+    fn tile_size(&self) -> u32 {
+        256
+    }
+    fn min_zoom(&self) -> u8 {
+        0
+    }
+    fn max_zoom(&self) -> u8 {
+        12
+    }
+}
 
 /// The library-path roots the interpreter sees. They're "virtual" —
 /// the paths don't exist on disk in the browser. `set_file_loader`
@@ -86,9 +162,10 @@ struct PageMeta {
 }
 
 /// Walk EMBEDDED for every `mobile-pages-<cat>/<name>.slint` and
-/// return its parsed metadata. `_*` aggregators are skipped; map
-/// pages (anything that imports from `@mapping/...`) are skipped too
-/// because we don't bundle the mapping crate for v1.
+/// return its parsed metadata. `_*` aggregators are skipped. Map
+/// pages (`from "@mapping/…"`) are kept — their imports resolve
+/// against the embedded `mapping/` virtual dir, and each instance
+/// is wired to `EmbeddedTileSource` at factory-creation time.
 fn discover_pages() -> Vec<PageMeta> {
     let mut out = Vec::new();
     for dir in EMBEDDED.dirs() {
@@ -107,11 +184,6 @@ fn discover_pages() -> Vec<PageMeta> {
             let Some(text) = file.contents_utf8() else {
                 continue;
             };
-            // Skip map pages — they import from @mapping/... which
-            // isn't bundled. Trying to compile them would error.
-            if text.contains("from \"@mapping/") {
-                continue;
-            }
             let Some(class) = scan_page_class(text) else {
                 continue;
             };
@@ -288,9 +360,158 @@ fn compile_to_factory(page: &PageMeta) -> Option<ComponentFactory> {
         web_log(&format!("[{}] {}", page.display, diag));
     }
     let def = result.component(&page.class)?;
+    // Detect map pages by looking for the canonical `map-tiles`
+    // property on the compiled definition. If present, the factory
+    // attaches the EmbeddedTileSource handler when the cell
+    // instantiates; otherwise it's a plain embed.
+    let is_map_page = def.properties().any(|(name, _)| name == "map-tiles");
     Some(ComponentFactory::new(move |ctx| {
-        def.create_embedded(ctx).ok()
+        let instance = def.create_embedded(ctx).ok()?;
+        if is_map_page {
+            attach_map_handler(&instance);
+        }
+        Some(instance)
     }))
+}
+
+/// Wire an interpreted map-page instance to an EmbeddedTileSource.
+/// Each map page exposes the canonical map-* property + callback
+/// surface (map-latitude, map-longitude, map-zoom, map-tiles,
+/// map-pan, map-zoom-by); we read/write those via slint-interpreter's
+/// dynamic property + callback API so we don't need a Rust handle
+/// to the page type.
+///
+/// Compared to the desktop viewer's `attach_map_handler` this is a
+/// stripped-down demo version: no per-page demo markers, no
+/// burst-locked cursor-anchored zoom, no on_tile_ready callbacks
+/// (the embedded source returns synchronously, so the first
+/// `refresh_map` populates everything visible immediately). Camera
+/// + pan + simple zoom all work; tiles outside the embedded London
+/// bundle render as the loading placeholder.
+fn attach_map_handler(instance: &ComponentInstance) {
+    let source: Rc<dyn TileSource> = Rc::new(EmbeddedTileSource::new());
+
+    // Open on London at z10 — the embedded bundle has full coverage
+    // of Greater London from z4–12, so this is always tile-complete.
+    let _ = instance.set_property("map-latitude", Value::Number(51.5074));
+    let _ = instance.set_property("map-longitude", Value::Number(-0.1276));
+    let _ = instance.set_property("map-zoom", Value::Number(10.0));
+
+    refresh_map(instance, source.as_ref());
+
+    // map-pan(dx, dy) — projection-correct camera shift, then refresh.
+    {
+        let inst = instance.clone_strong();
+        let src = Rc::clone(&source);
+        let _ = instance.set_callback("map-pan", move |args| {
+            let dx = number_arg(args, 0);
+            let dy = number_arg(args, 1);
+            let (lon, lat, zoom) = read_camera(&inst);
+            let (new_lon, new_lat) =
+                slint_mapping::camera::pan(lon, lat, zoom, dx, dy, src.tile_size());
+            let _ = inst.set_property("map-longitude", Value::Number(new_lon));
+            let _ = inst.set_property("map-latitude", Value::Number(new_lat));
+            refresh_map(&inst, src.as_ref());
+            Value::Void
+        });
+    }
+
+    // map-zoom-by(delta, anchor-x, anchor-y) — simple unanchored zoom.
+    // The desktop viewer's anchored-zoom-burst implementation gives
+    // better UX (cursor stays put while zooming) but adds ~80 lines
+    // of burst-state bookkeeping; stripped here to keep the demo
+    // surface small.
+    {
+        let inst = instance.clone_strong();
+        let src = Rc::clone(&source);
+        let _ = instance.set_callback("map-zoom-by", move |args| {
+            let delta = number_arg(args, 0);
+            let (lon, lat, zoom) = read_camera(&inst);
+            let new_zoom = (zoom + delta)
+                .clamp(src.min_zoom() as f64, src.max_zoom() as f64);
+            let _ = inst.set_property("map-zoom", Value::Number(new_zoom));
+            let _ = inst.set_property("map-longitude", Value::Number(lon));
+            let _ = inst.set_property("map-latitude", Value::Number(lat));
+            refresh_map(&inst, src.as_ref());
+            Value::Void
+        });
+    }
+}
+
+/// Read the page's `map-viewport-width` / `map-viewport-height`
+/// properties (bound to the MapEmbed's measured size on the slint
+/// side). Falls back to the cell's default 412 × 892 if the page
+/// hasn't declared them — projection is approximately right for
+/// full-bleed maps even then.
+fn read_viewport(instance: &ComponentInstance) -> (f64, f64) {
+    let w = match instance.get_property("map-viewport-width") {
+        Ok(Value::Number(n)) if n > 0.0 => n,
+        _ => 412.0,
+    };
+    let h = match instance.get_property("map-viewport-height") {
+        Ok(Value::Number(n)) if n > 0.0 => n,
+        _ => 892.0,
+    };
+    (w, h)
+}
+
+fn read_camera(instance: &ComponentInstance) -> (f64, f64, f64) {
+    let lon = match instance.get_property("map-longitude") {
+        Ok(Value::Number(n)) => n,
+        _ => 0.0,
+    };
+    let lat = match instance.get_property("map-latitude") {
+        Ok(Value::Number(n)) => n,
+        _ => 0.0,
+    };
+    let zoom = match instance.get_property("map-zoom") {
+        Ok(Value::Number(n)) => n,
+        _ => 2.0,
+    };
+    (lon, lat, zoom)
+}
+
+fn number_arg(args: &[Value], idx: usize) -> f64 {
+    match args.get(idx) {
+        Some(Value::Number(n)) => *n,
+        _ => 0.0,
+    }
+}
+
+/// Recompute visible tiles for the current camera + viewport and push
+/// them as a `Value::Model` of `Tile` structs to `map-tiles`. Map
+/// pages also expect a `map-layers` model for marker / polyline
+/// overlays — we set it to a single empty layer so the slint side
+/// doesn't choke on a missing model.
+fn refresh_map(instance: &ComponentInstance, source: &dyn TileSource) {
+    let (lon, lat, zoom) = read_camera(instance);
+    let (vp_w, vp_h) = read_viewport(instance);
+    let placed =
+        slint_mapping::viewport::visible_tiles(lon, lat, zoom, vp_w, vp_h, source.tile_size());
+
+    let mut rows: Vec<Value> = Vec::with_capacity(placed.len());
+    for p in placed {
+        let image = source.tile(p.key).unwrap_or_default();
+        let mut tile = Struct::default();
+        tile.set_field("x".into(), Value::Number(p.x as f64));
+        tile.set_field("y".into(), Value::Number(p.y as f64));
+        tile.set_field("size".into(), Value::Number(p.size as f64));
+        tile.set_field("image".into(), Value::Image(image));
+        rows.push(Value::Struct(tile));
+    }
+    let tiles_model: Rc<VecModel<Value>> = Rc::new(VecModel::from(rows));
+    let _ = instance.set_property("map-tiles", Value::Model(ModelRc::from(tiles_model)));
+
+    // Empty layer so map.slint's `for layer in root.layers` iteration
+    // sees a valid model. Pages that don't declare a `map-layers`
+    // property just ignore the set.
+    let markers: Rc<VecModel<Value>> = Rc::new(VecModel::from(Vec::<Value>::new()));
+    let polylines: Rc<VecModel<Value>> = Rc::new(VecModel::from(Vec::<Value>::new()));
+    let mut layer = Struct::default();
+    layer.set_field("markers".into(), Value::Model(ModelRc::from(markers)));
+    layer.set_field("polylines".into(), Value::Model(ModelRc::from(polylines)));
+    let layers_model = Rc::new(VecModel::from(vec![Value::Struct(layer)]));
+    let _ = instance.set_property("map-layers", Value::Model(ModelRc::from(layers_model)));
 }
 
 /// Tiny diagnostic logger that prints to the browser console on wasm
