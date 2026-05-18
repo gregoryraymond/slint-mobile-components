@@ -1,0 +1,57 @@
+[package]
+name = "slint-mobile-components-wasm-viewer"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Browser build of the slint-mobile-components catalogue — 145 page templates rendered as an infinite-scroll grid, compiled to wasm."
+publish = false
+
+# cdylib is what wasm-pack needs to emit the .wasm file; rlib lets
+# `cargo check` run normally without forcing a wasm build during
+# development.
+#
+# Build for production with:
+#   wasm-pack build --release --target web crates/wasm-viewer \
+#     --out-dir ../../dist/pkg --no-typescript
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# Slint on wasm: backend-winit + renderer-femtovg is the supported
+# combo (Skia doesn't compile to wasm32-unknown-unknown).
+slint = { version = "1", default-features = false, features = [
+    "compat-1-2",
+    "std",
+    "backend-winit",
+    "renderer-femtovg",
+] }
+# `features = ["internal"]` exposes `ComponentDefinition::create_embedded`,
+# the documented bridge for plugging an interpreted component into a
+# `ComponentContainer` slot. Same posture as the desktop viewer.
+slint-interpreter = { version = "1", features = ["internal"] }
+# Bundle every .slint source in the workspace into the wasm binary
+# at compile time. The interpreter then resolves imports against the
+# embedded directory tree instead of std::fs.
+include_dir = "0.7"
+# pollster::block_on for the slint-interpreter Compiler::build_from_source
+# call (it returns a Future; the wasm event loop doesn't have an async
+# executor wired in, and this Future resolves immediately because
+# set_file_loader returns synchronously-ready data).
+pollster = "0.3"
+# Workspace crates we read library paths from.
+slint-mobile-theme = { path = "../theme" }
+slint-mobile-components-widgets = { path = "../components" }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
+console_error_panic_hook = "0.1"
+
+[build-dependencies]
+slint-build = "1"
+slint-mobile-theme = { path = "../theme" }
+slint-mobile-components-widgets = { path = "../components" }
+# base64 for the build-time pre-rewriter that inlines every
+# @image-url(...) reference into a `data:image/<mime>;base64,...` URL,
+# so the runtime interpreter never has to hit a filesystem.
+base64 = "0.22"
+walkdir = "2"

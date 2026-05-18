@@ -1,0 +1,161 @@
+// Browser-side chrome for the slint-mobile-components catalogue.
+//
+// Structurally a cut-down copy of crates/viewer/ui/viewer.slint without
+// the verdict-toggle row (the wasm site is read-only — it's an
+// audition surface, not a review tool, so the keep / redo buttons
+// would just confuse a first-time visitor).
+//
+// The grid reflows with the browser viewport so visitors get as many
+// 412-px cells per row as their window can hold, with the column count
+// computed in `cols` from `root.width`.
+
+import { ScrollView } from "std-widgets.slint";
+import { Theme } from "@mobile-theme/theme.slint";
+
+// Statically embed + register every bundled font at chrome-compile
+// time so runtime-interpreted pages can reference those families by
+// name without re-loading any TTF from disk (the pre-bake stage in
+// build.rs strips the matching `import "..ttf";` lines from the
+// interpreted pages' source for exactly this reason).
+import "../../components/ui/fonts/inter/Inter-Regular.ttf";
+import "../../components/ui/fonts/inter/Inter-Bold.ttf";
+import "../../components/ui/fonts/ibm-plex-sans/IBMPlexSans-Regular.ttf";
+import "../../components/ui/fonts/ibm-plex-sans/IBMPlexSans-Bold.ttf";
+import "../../components/ui/fonts/space-grotesk/SpaceGrotesk-Regular.ttf";
+import "../../components/ui/fonts/space-grotesk/SpaceGrotesk-Bold.ttf";
+import "../../components/ui/fonts/fraunces/Fraunces-Regular.ttf";
+import "../../components/ui/fonts/fraunces/Fraunces-Bold.ttf";
+import "../../components/ui/fonts/fraunces/Fraunces-Display.ttf";
+import "../../components/ui/fonts/jetbrains-mono/JetBrainsMono-Regular.ttf";
+import "../../components/ui/fonts/jetbrains-mono/JetBrainsMono-Bold.ttf";
+
+component PageCell inherits Rectangle {
+    in property <string> title;
+    in property <component-factory> page-factory;
+
+    width: 412px;
+    height: 892px + 44px;  // 44 = title strip
+    background: Theme.surface-1;
+    border-radius: Theme.radius-md;
+    border-width: 1px;
+    border-color: Theme.outline;
+    clip: true;
+
+    VerticalLayout {
+        spacing: 0;
+        Rectangle {
+            height: 44px;
+            background: Theme.surface-2;
+            HorizontalLayout {
+                padding-left: 12px;
+                padding-right: 8px;
+                padding-top: 8px;
+                padding-bottom: 8px;
+                Text {
+                    text: root.title;
+                    color: Theme.on-surface;
+                    font-size: 13px;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    overflow: elide;
+                    horizontal-stretch: 1;
+                }
+            }
+        }
+        ComponentContainer {
+            component-factory: root.page-factory;
+            width: 412px;
+            height: 892px;
+        }
+    }
+}
+
+export component WasmViewer inherits Window {
+    title: "slint-mobile-components — catalogue";
+    preferred-width: 1740px;
+    preferred-height: 1080px;
+    background: Theme.background;
+
+    in property <[string]> titles;
+    in property <[component-factory]> cells;
+    in property <int> loaded: 0;
+    in property <int> total: 0;
+    in property <string> summary;
+
+    private property <length> cell-w: 412px;
+    private property <length> cell-h: 892px + 44px;
+    private property <length> gap: 16px;
+    private property <length> grid-w: root.width - 2 * root.gap - 16px;
+    private property <int> cols: max(1, floor((root.grid-w + root.gap) / (root.cell-w + root.gap)));
+    private property <int> row-count: ceil(root.titles.length / root.cols);
+    private property <bool> still-loading: root.loaded < root.total;
+
+    VerticalLayout {
+        spacing: 0;
+
+        // ----- Status bar -----
+        Rectangle {
+            height: 56px;
+            background: Theme.surface-1;
+            drop-shadow-blur: Theme.elevation-1-blur;
+            drop-shadow-color: Theme.elevation-1-color;
+            drop-shadow-offset-y: Theme.elevation-1-y;
+            HorizontalLayout {
+                padding-left: 20px;
+                padding-right: 20px;
+                spacing: 24px;
+                Text {
+                    text: "slint-mobile-components — " + root.loaded + " / " + root.total + " pages"
+                        + (root.still-loading ? "   ·   loading…" : "   ·   ready");
+                    color: Theme.on-surface;
+                    font-size: 16px;
+                    font-weight: 800;
+                    vertical-alignment: center;
+                }
+                Text {
+                    text: root.summary;
+                    color: Theme.muted;
+                    font-size: 14px;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+            }
+        }
+
+        // ----- Scrollable grid -----
+        ScrollView {
+            VerticalLayout {
+                padding: root.gap;
+                alignment: start;
+                Rectangle {
+                    width: root.cols * (root.cell-w + root.gap) - root.gap;
+                    height: root.row-count * (root.cell-h + root.gap)
+                        + (root.still-loading ? 80px : 0px);
+
+                    for cell[i] in root.cells: PageCell {
+                        x: mod(i, root.cols) * (root.cell-w + root.gap);
+                        y: floor(i / root.cols) * (root.cell-h + root.gap);
+                        title: root.titles[i];
+                        page-factory: cell;
+                    }
+
+                    if root.still-loading: Rectangle {
+                        x: 0;
+                        y: root.row-count * (root.cell-h + root.gap);
+                        width: parent.width;
+                        height: 80px;
+                        Text {
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                            text: "loading more pages…";
+                            color: Theme.muted;
+                            font-size: 15px;
+                            font-weight: 700;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
