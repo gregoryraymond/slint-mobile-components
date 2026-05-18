@@ -5,6 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>slint-mobile-components — catalogue</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%234f8cff' d='M7 2h10a3 3 0 0 1 3 3v14a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V5a3 3 0 0 1 3-3zm5 17a1 1 0 1 0 0-2 1 1 0 0 0 0 2z'/%3E%3C/svg%3E">
+
+    <!-- Trunk build directive: this is a rust crate at ../, target=web.
+         `data-import="none"` suppresses trunk's auto-init script —
+         trunk would inject it into <head>, which runs before <body>
+         parses, which means our <canvas> doesn't exist yet when
+         Slint's wasm init tries to attach to it. The script block in
+         <body> below does the init ourselves after the canvas is in
+         the DOM. The .github/workflows/pages.yml CI step also uses
+         `trunk build`, so dev + prod produce identical artefacts. -->
+    <link data-trunk rel="rust" href="../Cargo.toml"
+          data-bindgen-target="web"
+          data-import="none">
+
     <style>
         html, body {
             margin: 0;
@@ -24,55 +37,78 @@
             letter-spacing: 0.5px;
             opacity: 0.7;
         }
+        /* The shell-frame is the authoritative box: it always fills
+           the visual viewport (its CSS size is what JS reads to drive
+           the slint Window). The canvas sits inside it and is sized
+           via inline style by the JS resize loop to match. Reading
+           getBoundingClientRect on the canvas itself is unreliable
+           because slint's femtovg backend writes back to
+           canvas.style after each frame; reading the parent gives a
+           stable size source. */
+        #shell-frame {
+            position: absolute;
+            inset: 0;
+        }
         canvas {
             display: block;
             position: absolute;
             inset: 0;
-            width: 100%;
-            height: 100%;
         }
     </style>
 </head>
 <body>
-    <canvas id="canvas"></canvas>
+    <div id="shell-frame">
+        <canvas id="canvas"></canvas>
+    </div>
     <div id="loading">Loading slint-mobile-components catalogue…</div>
     <script type="module">
-        // Size the canvas to whatever room it has — works both as a
-        // top-level document and inside an iframe. Slint's winit-web
-        // backend attaches to <canvas id="canvas"> and uses its
-        // CSS width / height as the Window's logical px dimensions;
-        // the framebuffer pixel attributes are DPR-multiplied for
-        // HiDPI sharpness.
-        //
-        // We size from the canvas's *own* getBoundingClientRect, not
-        // from window.innerWidth — inside an iframe the canvas's box
-        // is what we should fill (CSS sets it to position:absolute /
-        // inset:0), and window.innerWidth may not reflect a parent-
-        // driven resize. A ResizeObserver on the canvas catches every
-        // case: initial layout, browser resize, devtools toggle,
-        // iframe outer-container resize.
+        // Trunk emits the wasm-bindgen ES module at this exact path
+        // (Trunk.toml has `filehash = false`, so no content hash is
+        // inserted into the filename, which keeps this import stable
+        // across rebuilds). The base name comes from the crate name
+        // with underscores preserved as dashes.
+        import init, { embedded_file_count, set_canvas_size }
+            from './slint-mobile-components-wasm-viewer.js';
+
         const canvas = document.getElementById('canvas');
+        const shell = document.getElementById('shell-frame');
+
+        // Size source = the shell-frame, NOT the canvas. Slint's
+        // femtovg backend writes back to canvas.style every frame
+        // with the Window's logical size — reading getBoundingClientRect
+        // on the canvas would create a feedback loop where slint
+        // shrinks the canvas to the Window's natural-min, JS reads
+        // back that shrunk value, and the layout stays collapsed.
+        // The shell-frame's size is browser-driven (CSS inset:0) so
+        // it's a stable, authoritative source.
+        const measureShell = () => {
+            const rect = shell.getBoundingClientRect();
+            return {
+                w: Math.max(320, Math.round(rect.width)),
+                h: Math.max(240, Math.round(rect.height)),
+            };
+        };
+
         const sizeCanvas = () => {
             const dpr = window.devicePixelRatio || 1;
-            const rect = canvas.getBoundingClientRect();
-            const cssW = Math.max(1, Math.round(rect.width));
-            const cssH = Math.max(1, Math.round(rect.height));
-            canvas.width = Math.round(cssW * dpr);
-            canvas.height = Math.round(cssH * dpr);
-            canvas.style.width = cssW + 'px';
-            canvas.style.height = cssH + 'px';
+            const { w, h } = measureShell();
+            canvas.width = Math.round(w * dpr);
+            canvas.height = Math.round(h * dpr);
+            canvas.style.width = w + 'px';
+            canvas.style.height = h + 'px';
+            // Push the size to slint AFTER init has resolved. Before
+            // that, set_canvas_size's thread-local handle is None and
+            // the call is a safe no-op (the slint chrome uses its
+            // 1200×800 preferred size for the first paint).
+            if (typeof set_canvas_size === 'function') {
+                try { set_canvas_size(w, h); } catch (e) { /* not yet ready */ }
+            }
         };
         sizeCanvas();
-        // ResizeObserver fires synchronously after layout changes the
-        // canvas's box. Belt-and-braces: also keep the window resize
-        // listener as a fallback in older browsers.
         if ('ResizeObserver' in window) {
-            new ResizeObserver(sizeCanvas).observe(canvas);
+            new ResizeObserver(sizeCanvas).observe(shell);
         }
         window.addEventListener('resize', sizeCanvas);
-    </script>
-    <script type="module">
-        import init, { embedded_file_count } from './pkg/slint_mobile_components_wasm_viewer.js';
 
         // winit's web backend yields control back to the browser by
         // throwing a JS exception — documented mechanism, not a
@@ -80,22 +116,23 @@
         // overlay on top of a perfectly working canvas.
         const WINIT_CONTROL_FLOW = /Using exceptions for control flow/;
 
-        try {
-            await init();
-            // Sanity-print embedded source count to the console so a
-            // visitor with devtools open can see how many .slint
-            // sources made it into the wasm bundle. ~165 expected
-            // (theme + components + ~140 non-map pages).
+        const onReady = () => {
+            // First sync once slint owns the canvas — feeds shell-frame
+            // size to the chrome so the layout doesn't sit at the
+            // 1200×800 default after init().
+            sizeCanvas();
             try {
                 console.log(`slint-mobile-components: embedded ${embedded_file_count()} .slint sources`);
             } catch (e) { /* probe optional */ }
             document.getElementById('loading')?.remove();
+        };
+
+        try {
+            await init();
+            onReady();
         } catch (err) {
             if (WINIT_CONTROL_FLOW.test(String(err?.message ?? err))) {
-                try {
-                    console.log(`slint-mobile-components: embedded ${embedded_file_count()} .slint sources`);
-                } catch (e) { /* probe optional */ }
-                document.getElementById('loading')?.remove();
+                onReady();
             } else {
                 const el = document.getElementById('loading');
                 if (el) {

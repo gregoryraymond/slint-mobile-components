@@ -189,15 +189,26 @@ fn discover_pages() -> Vec<PageMeta> {
             };
             let stem = name.trim_end_matches(".slint").to_string();
             let virt = virtual_root().join(dir.path()).join(name);
-            out.push(PageMeta {
-                path: virt,
-                class,
-                display: stem,
-            });
+            // Tag each page as "map" or "other" by scanning for the
+            // canonical `@mapping/` import. We sort map pages first
+            // so they appear at the top of the catalogue grid — makes
+            // screenshot-based verification of the embedded tile
+            // pipeline trivial (top-left cells are always maps).
+            let is_map = text.contains("@mapping/");
+            out.push((
+                is_map,
+                PageMeta {
+                    path: virt,
+                    class,
+                    display: stem,
+                },
+            ));
         }
     }
-    out.sort_by(|a, b| a.display.cmp(&b.display));
-    out
+    // Sort: map pages first (false < true reversed → put true=map
+    // before false=other), then alphabetically within each group.
+    out.sort_by(|(am, a), (bm, b)| bm.cmp(am).then_with(|| a.display.cmp(&b.display)));
+    out.into_iter().map(|(_, p)| p).collect()
 }
 
 /// Last `export component XxxPage|XxxScreen inherits …` in a source.
@@ -252,6 +263,34 @@ fn make_compiler() -> Compiler {
     compiler
 }
 
+// JS bridge for canvas → slint Window size. Slint's femtovg backend
+// reads the canvas's CSS box once on start; after that, the only way
+// to push a new size through is `slint::Window::set_size`. JS calls
+// `set_canvas_size` after each ResizeObserver tick on the shell-frame
+// so the Window tracks the actual visible area and the grid reflows.
+// The Weak<WasmViewer> is held in a thread-local set by `run()` —
+// wasm is single-threaded so a TLS slot is fine.
+#[cfg(target_arch = "wasm32")]
+thread_local! {
+    static VIEWER_HANDLE: RefCell<Option<slint::Weak<WasmViewer>>> = const { RefCell::new(None) };
+}
+
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
+pub fn set_canvas_size(_w: f32, _h: f32) {
+    #[cfg(target_arch = "wasm32")]
+    VIEWER_HANDLE.with(|h| {
+        if let Some(weak) = h.borrow().as_ref() {
+            if let Some(viewer) = weak.upgrade() {
+                let w = _w.max(320.0) as u32;
+                let h = _h.max(240.0) as u32;
+                viewer
+                    .window()
+                    .set_size(slint::PhysicalSize::new(w, h));
+            }
+        }
+    });
+}
+
 /// Embedded source-count probe — wasm-bindgen exports this so a
 /// JS caller can read it (`init().then(() => embedded_file_count())`)
 /// to confirm the build embedded what build.rs produced. Also
@@ -291,6 +330,10 @@ pub fn run() {
     std::env::set_var("SLINT_ENABLE_EXPERIMENTAL_FEATURES", "1");
 
     let viewer = WasmViewer::new().expect("WasmViewer::new");
+
+    // Stash a Weak<WasmViewer> for `set_canvas_size` to drive.
+    #[cfg(target_arch = "wasm32")]
+    VIEWER_HANDLE.with(|h| *h.borrow_mut() = Some(viewer.as_weak()));
 
     let titles: Rc<VecModel<SharedString>> = Rc::new(VecModel::from(Vec::new()));
     let cells: Rc<VecModel<ComponentFactory>> = Rc::new(VecModel::from(Vec::new()));

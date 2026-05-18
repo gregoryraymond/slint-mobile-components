@@ -72,14 +72,17 @@ component PageCell inherits Rectangle {
 
 export component WasmViewer inherits Window {
     title: "slint-mobile-components — catalogue";
-    // No preferred-width / preferred-height — on wasm those propagate
-    // to the canvas's rendering size and lock the layout at 1740 ×
-    // 1080 *logical* px regardless of the actual browser viewport,
-    // so the grid would compute its column count against a width that
-    // doesn't match what's visible (3 cells "fit" in a 1740-px world
-    // even when the user has only 1000 px of real screen). Leaving
-    // them out lets Slint fill whatever the canvas's CSS size is, and
-    // the column math reflects the actual visible area.
+    // Initial preferred size — slint's femtovg/wasm backend uses this
+    // as the canvas's initial CSS size on first paint. After init the
+    // JS side measures the surrounding shell-frame and calls
+    // `slint::Window::set_size` (via the `set_canvas_size` wasm
+    // export) on every ResizeObserver tick, so the Window tracks the
+    // actual visible area and the grid reflows accordingly.
+    // Without an initial preferred-size the layout collapses to the
+    // chrome's natural minimum (~594 × 106) which made every cell
+    // appear as a one-column stack on first paint.
+    preferred-width: 1200px;
+    preferred-height: 800px;
     background: Theme.background;
 
     in property <[string]> titles;

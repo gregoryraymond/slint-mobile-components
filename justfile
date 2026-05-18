@@ -52,6 +52,23 @@ fmt-check:
 # CI-only: install Linux apt packages Slint's renderer needs to build.
 # (Not strictly required for this library crate since it doesn't enable a
 # renderer feature, but kept for parity with consuming apps.)
+
+# --- wasm-viewer (browser catalogue) --------------------------------------
+
+# Build + serve the wasm-viewer via trunk on http://127.0.0.1:8081.
+# Trunk does the wasm-pack build, copies index.html, and watches the
+# source tree for changes (hot-reload). Re-run is automatic — leave
+# this running while editing .slint or .rs files.
+serve:
+    @echo "Catalogue: http://127.0.0.1:8081/"
+    cd crates/wasm-viewer/web && trunk serve --release
+
+# One-shot wasm-viewer build into dist/. Mirrors what
+# .github/workflows/pages.yml does in CI so the local build matches
+# the deployed artefact.
+build-wasm:
+    cd crates/wasm-viewer/web && trunk build --release --dist ../../../dist
+
 # --- Android demo APK ------------------------------------------------------
 
 # Build the demo APK (debug, multi-arch).

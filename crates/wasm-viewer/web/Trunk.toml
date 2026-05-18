@@ -1,0 +1,32 @@
+# Trunk config for the wasm-viewer browser catalogue.
+#
+# `just serve` runs `trunk serve --release` from this directory, which
+# builds the cdylib at ../, copies index.html to dist/, and watches
+# the source tree for hot-reload. `just build-wasm` does a one-shot
+# build into ../../../dist/ for CI parity.
+
+[build]
+target = "index.html"
+# Hashed filenames would break the explicit
+# `./slint-mobile-components-wasm-viewer.js` import path in
+# index.html. Disabling the hash means cache-busting falls to GitHub
+# Pages' default 10-minute TTL, which is fine for a demo surface.
+filehash = false
+
+[watch]
+# Watch the actual Rust source + .slint files, not just the web/
+# directory — otherwise edits to lib.rs or ui/ wouldn't trigger a
+# rebuild.
+watch = [
+    "index.html",
+    "Trunk.toml",
+    "../src",
+    "../ui",
+    "../build.rs",
+    "../Cargo.toml",
+    "../assets-tiles",
+]
+
+[serve]
+addresses = ["127.0.0.1"]
+port = 8081
