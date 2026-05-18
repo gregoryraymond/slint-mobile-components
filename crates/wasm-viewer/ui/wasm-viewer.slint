@@ -124,7 +124,16 @@ export component WasmViewer inherits Window {
     private property <length> cell-h-stride: root.cell-h + root.min-gap;
     private property <bool> still-loading: root.loaded < root.total;
 
+    // Explicit fill: without preferred-width / preferred-height on
+    // Window (which would otherwise be treated as fixed render-size
+    // and ignore the canvas), the inner VerticalLayout doesn't know
+    // to expand to the Window's actual dimensions and would collapse
+    // to its content's natural size — leaving the chrome rendered at
+    // about one cell wide and a single title-bar tall. Binding
+    // width / height directly to root.* forces it to track the canvas.
     VerticalLayout {
+        width: root.width;
+        height: root.height;
         spacing: 0;
 
         // ----- Status bar -----
