@@ -293,7 +293,12 @@ fn transcode_sample_tiles(out_dir: &Path) {
         let mut out = fs::File::create(&dest).expect("create dest");
         let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 70);
         encoder
-            .encode(rgb.as_raw(), rgb.width(), rgb.height(), image::ExtendedColorType::Rgb8)
+            .encode(
+                rgb.as_raw(),
+                rgb.width(),
+                rgb.height(),
+                image::ExtendedColorType::Rgb8,
+            )
             .expect("encode jpeg");
         count += 1;
     }
