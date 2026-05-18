@@ -11,6 +11,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Native build deps for the viewer crate's Slint backend chain
+      # (Skia -> fontconfig + freetype, winit -> xkbcommon). Without
+      # these, yeslogic-fontconfig-sys fails its pkg-config probe with
+      # "Package fontconfig was not found" and the whole workspace
+      # build dies during clippy/check. Static literals only -- no
+      # github.event.* interpolation here.
+      - name: Install Slint native deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config \
+            libfontconfig1-dev \
+            libfreetype-dev \
+            libxkbcommon-dev \
+            libxkbcommon-x11-dev \
+            clang \
+            cmake \
+            ninja-build
+
       - name: Cache cargo registry + target
         uses: actions/cache@v4
         with:
