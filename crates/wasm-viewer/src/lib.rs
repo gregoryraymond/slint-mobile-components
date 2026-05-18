@@ -110,11 +110,7 @@ impl TileSource for EmbeddedTileSource {
             .ok()?
             .to_rgba8();
         let (w, h) = decoded.dimensions();
-        let buf = SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(
-            decoded.as_raw(),
-            w,
-            h,
-        );
+        let buf = SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(decoded.as_raw(), w, h);
         self.cache.lock().unwrap().insert(key, buf.clone());
         Some(slint::Image::from_rgba8(buf))
     }
@@ -283,9 +279,7 @@ pub fn set_canvas_size(_w: f32, _h: f32) {
             if let Some(viewer) = weak.upgrade() {
                 let w = _w.max(320.0) as u32;
                 let h = _h.max(240.0) as u32;
-                viewer
-                    .window()
-                    .set_size(slint::PhysicalSize::new(w, h));
+                viewer.window().set_size(slint::PhysicalSize::new(w, h));
             }
         }
     });
@@ -470,8 +464,7 @@ fn attach_map_handler(instance: &ComponentInstance) {
         let _ = instance.set_callback("map-zoom-by", move |args| {
             let delta = number_arg(args, 0);
             let (lon, lat, zoom) = read_camera(&inst);
-            let new_zoom = (zoom + delta)
-                .clamp(src.min_zoom() as f64, src.max_zoom() as f64);
+            let new_zoom = (zoom + delta).clamp(src.min_zoom() as f64, src.max_zoom() as f64);
             let _ = inst.set_property("map-zoom", Value::Number(new_zoom));
             let _ = inst.set_property("map-longitude", Value::Number(lon));
             let _ = inst.set_property("map-latitude", Value::Number(lat));
