@@ -273,16 +273,27 @@ thread_local! {
 
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
 pub fn set_canvas_size(_w: f32, _h: f32) {
+    // Defer the actual `Window::set_size` to a fresh event-loop tick.
+    // Calling it directly from a ResizeObserver callback re-enters
+    // winit-web's runner while it's still holding its RefCell, which
+    // panics with "RefCell already borrowed" — the same reentrancy
+    // trap that bit slint-mapping's WASM tile pipeline.
+    // `invoke_from_event_loop` posts the work between frames, which
+    // is the documented escape hatch.
     #[cfg(target_arch = "wasm32")]
-    VIEWER_HANDLE.with(|h| {
-        if let Some(weak) = h.borrow().as_ref() {
-            if let Some(viewer) = weak.upgrade() {
-                let w = _w.max(320.0) as u32;
-                let h = _h.max(240.0) as u32;
-                viewer.window().set_size(slint::PhysicalSize::new(w, h));
-            }
-        }
-    });
+    {
+        let w = _w.max(320.0) as u32;
+        let h = _h.max(240.0) as u32;
+        let _ = slint::invoke_from_event_loop(move || {
+            VIEWER_HANDLE.with(|holder| {
+                if let Some(weak) = holder.borrow().as_ref() {
+                    if let Some(viewer) = weak.upgrade() {
+                        viewer.window().set_size(slint::PhysicalSize::new(w, h));
+                    }
+                }
+            });
+        });
+    }
 }
 
 /// Embedded source-count probe — wasm-bindgen exports this so a
