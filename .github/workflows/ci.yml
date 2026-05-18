@@ -57,15 +57,13 @@ jobs:
       - name: Install just
         uses: extractions/setup-just@v2
 
-      - name: fmt-check
-        run: just fmt-check
-
-      # `clippy` already runs the same type-checking pass as
-      # `cargo check` plus lints, so a separate check step would
-      # rebuild for nothing. `just check` is still available for
-      # local use when you want the lighter version.
-      - name: clippy
-        run: just clippy
-
-      - name: test
-        run: just test
+      # Single `just ci` step instead of separate clippy + test steps.
+      # The recipe sets `RUSTC_WORKSPACE_WRAPPER=clippy-driver` for the
+      # `cargo test` invocation, which makes it compile workspace
+      # crates through clippy-driver — the subsequent `cargo clippy`
+      # in the recipe then reuses those artefacts instead of
+      # rebuilding everything from scratch. Saves ~6 min of duplicated
+      # workspace compile on a cold cache (the previous flow took
+      # ~13 min for clippy + test; combined drops to ~7 min).
+      - name: ci (fmt-check + clippy + test, shared workspace compile)
+        run: just ci

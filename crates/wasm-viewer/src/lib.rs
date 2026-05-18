@@ -57,15 +57,16 @@ slint::include_modules!();
 /// installs into `slint_interpreter::Compiler::set_library_paths`.
 static EMBEDDED: Dir<'_> = include_dir!("$OUT_DIR/embedded");
 
-/// Sample OSM tile bundle copied from `slint-mapping/sample-tiles/`.
-/// Worldwide z0–3 + Greater London z4–12 — ~5.6 MB of PNGs that get
-/// linked into the wasm binary at compile time. The 6 map-using pages
-/// in the catalogue all centre on London at z10–12, so this bundle
-/// covers every default-camera tile they request without a single
-/// network call. Pan past Greater London or zoom past 12 and tiles
-/// will miss; the EmbeddedTileSource returns None and `map.slint`
-/// paints its loading placeholder.
-static EMBEDDED_TILES: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/assets-tiles");
+/// Sample OSM tile bundle, JPEG-Q70 transcoded by build.rs from the
+/// PNGs that ship inside the published `slint-mapping` crate
+/// (`SAMPLE_TILES_DIR` const). Worldwide z0–3 + Greater London z4–12,
+/// ~2.4 MB of JPEGs linked into the wasm binary at compile time. The
+/// 6 map-using pages in the catalogue all centre on London at
+/// z10–12, so this bundle covers every default-camera tile they
+/// request without a single network call. Pan past Greater London
+/// or zoom past 12 and tiles will miss; the EmbeddedTileSource
+/// returns None and `map.slint` paints its loading placeholder.
+static EMBEDDED_TILES: Dir<'_> = include_dir!("$OUT_DIR/jpeg-tiles");
 
 /// PNG → SharedPixelBuffer cache keyed by TileKey. First read decodes
 /// the PNG via the `image` crate; subsequent reads hit the cache.
@@ -96,17 +97,16 @@ impl TileSource for EmbeddedTileSource {
         if let Some(buf) = self.cache.lock().unwrap().get(&key).cloned() {
             return Some(slint::Image::from_rgba8(buf));
         }
-        // include_dir paths are unix-style relative to the embed root
-        // (e.g. "10/511/340.png"). The slint-mapping sample tiles use
-        // the standard {z}/{x}/{y}.png layout that OSM also uses, so
-        // the lookup is direct.
-        let rel = format!("{}/{}/{}.png", key.z, key.x, key.y);
+        // Tiles are stored as JPEG-Q70 (raw OSM PNGs averaged 24 KB,
+        // re-encoded JPEGs ~10 KB — a 3.2 MB saving on the wasm
+        // binary). The slint-mapping sample-tiles directory itself
+        // ships PNGs; the JPEG conversion is local to this crate
+        // and re-runs on demand (see `just rebake-tiles` if you ever
+        // need to refresh).
+        let rel = format!("{}/{}/{}.jpg", key.z, key.x, key.y);
         let file = EMBEDDED_TILES.get_file(&rel)?;
         let bytes = file.contents();
-        // PNG → DynamicImage → RGBA8 → SharedPixelBuffer. The image
-        // crate's `load_from_memory_with_format` skips the format
-        // sniffing pass since we know everything in the bundle is PNG.
-        let decoded = image::load_from_memory_with_format(bytes, image::ImageFormat::Png)
+        let decoded = image::load_from_memory_with_format(bytes, image::ImageFormat::Jpeg)
             .ok()?
             .to_rgba8();
         let (w, h) = decoded.dimensions();

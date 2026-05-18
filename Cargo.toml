@@ -101,3 +101,18 @@ i-slint-backend-testing = "1"
 
 [profile.dev]
 opt-level = 1
+
+# Wasm-viewer ships ~22 MB raw / ~11 MB gzipped without these knobs,
+# dominated by slint-interpreter + femtovg + winit-web. The combo
+# below halves the binary by enabling cross-crate LTO, a single
+# codegen unit (lets LLVM inline + dead-strip aggressively across
+# crate boundaries), size-tuned optimisation, and full symbol
+# stripping. Native release builds (the desktop viewer, snapshot
+# tests) take noticeably longer to link with `lto=fat` — but those
+# builds aren't latency-critical and the size win on the wasm
+# artefact is the priority.
+[profile.release]
+lto = "fat"
+codegen-units = 1
+opt-level = "z"
+strip = "symbols"

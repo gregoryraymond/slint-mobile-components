@@ -13,10 +13,15 @@
          Slint's wasm init tries to attach to it. The script block in
          <body> below does the init ourselves after the canvas is in
          the DOM. The .github/workflows/pages.yml CI step also uses
-         `trunk build`, so dev + prod produce identical artefacts. -->
+         `trunk build`, so dev + prod produce identical artefacts.
+         `data-wasm-opt="z"` runs `wasm-opt -Oz` on the post-link
+         binary, which on top of the workspace's `[profile.release]`
+         strip+lto+opt-z combo brings the artefact down further. -->
     <link data-trunk rel="rust" href="../Cargo.toml"
           data-bindgen-target="web"
-          data-import="none">
+          data-import="none"
+          data-wasm-opt="z"
+          data-wasm-opt-params="--enable-bulk-memory --enable-nontrapping-float-to-int --enable-reference-types --enable-mutable-globals --enable-sign-ext">
 
     <style>
         html, body {

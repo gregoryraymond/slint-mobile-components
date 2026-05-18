@@ -38,19 +38,20 @@ jobs:
         with:
           workspaces: ". -> target"
 
-      - name: Install wasm-pack
-        uses: jetli/wasm-pack-action@v0.4.0
+      # Trunk is the same build path `just serve` uses locally — keeps
+      # local dev and the deployed artefact byte-identical (modulo the
+      # release-profile timestamp). The previous wasm-pack-based step
+      # emitted files into `pkg/` with underscored names; index.html
+      # imports a trunk-style dashed name at the dist root, so the
+      # mismatch returned 404 on Firefox with `NS_ERROR_CORRUPTED`.
+      - name: Install trunk
+        uses: jetli/trunk-action@v0.5.0
         with:
           version: latest
 
       - name: Build wasm-viewer
-        run: |
-          wasm-pack build --release --target web crates/wasm-viewer \
-            --out-dir ../../dist/pkg \
-            --no-typescript
-
-      - name: Assemble static site
-        run: cp crates/wasm-viewer/web/index.html dist/index.html
+        working-directory: crates/wasm-viewer/web
+        run: trunk build --release --dist ../../../dist --public-url /slint-mobile-components/
 
       - name: Configure Pages
         uses: actions/configure-pages@v4

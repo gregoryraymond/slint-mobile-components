@@ -51,21 +51,31 @@ slint-mapping = "0.1"
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"
 console_error_panic_hook = "0.1"
-# PNG decoding for the EmbeddedTileSource. The image crate gets
-# trimmed to png-only here so we don't drag in jpeg / gif / webp /
-# bmp decoders the tile bundle never uses.
-image = { version = "0.25", default-features = false, features = ["png"] }
+# JPEG decoding for the EmbeddedTileSource. Tiles ship as JPEG-Q70
+# (3× smaller than PNG for OSM map data). The image crate gets
+# trimmed to jpeg-only so we don't drag in png / gif / webp / bmp
+# decoders the tile bundle never uses.
+image = { version = "0.25", default-features = false, features = ["jpeg"] }
 
 [build-dependencies]
 slint-build = "1"
 slint-mobile-theme = { path = "../theme" }
 slint-mobile-components-widgets = { path = "../components" }
-# slint-mapping at build time only for its `UI_LIBRARY_DIR` const —
-# we hand the pre-bake step that path so the 6 map-using pages can
-# resolve `import { MapEmbed } from "@mapping/map.slint";`.
+# slint-mapping at build time for two things:
+#   - `UI_LIBRARY_DIR` const → the pre-bake step uses it so map pages
+#     resolve `import { MapEmbed } from "@mapping/map.slint";`.
+#   - `SAMPLE_TILES_DIR` const → points at the PNG tile bundle that
+#     ships inside the published crate. We re-encode those PNGs as
+#     JPEG-Q70 into $OUT_DIR/jpeg-tiles at build time, then include
+#     them via `include_dir!`. Keeps the wasm-viewer's own repo
+#     tile-free (one less binary blob to track).
 slint-mapping = "0.1"
 # base64 for the build-time pre-rewriter that inlines every
 # @image-url(...) reference into a `data:image/<mime>;base64,...` URL,
 # so the runtime interpreter never has to hit a filesystem.
 base64 = "0.22"
 walkdir = "2"
+# Image re-encoding pipeline: png decoder + jpeg encoder. PNG is
+# what slint-mapping ships; JPEG-Q70 is ~3× smaller per tile and
+# good enough for OSM photo-like map data.
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }

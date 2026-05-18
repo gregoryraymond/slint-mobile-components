@@ -40,7 +40,18 @@ test:
 # pass plus lints, so a separate `cargo check` is redundant work
 # (~30s warm / 3 min cold saved). `check` is still available as its
 # own recipe when you want the lighter version locally.
-ci: fmt-check clippy test
+# `RUSTC_WORKSPACE_WRAPPER=clippy-driver` makes both `cargo test` and
+# `cargo clippy` compile every workspace crate through clippy-driver,
+# which means the second invocation reuses the artefacts the first
+# one built (the workspace-wrapper hash is part of cargo's
+# fingerprint, so without aligning them each pass rebuilds the whole
+# tree). Net: one compile pass instead of two. The explicit
+# `cargo clippy ... -- -D warnings` after is what actually fails the
+# build on a lint — `cargo test` emits the warnings during the
+# shared compile but doesn't deny them on its own.
+ci: fmt-check
+    RUSTC_WORKSPACE_WRAPPER=clippy-driver cargo test --all-targets
+    RUSTC_WORKSPACE_WRAPPER=clippy-driver cargo clippy --all-targets -- -D warnings
 
 # --- private helpers (callable, but hidden from `just --list`) -------------
 

@@ -254,6 +254,54 @@ fn prebake_role(
     }
 }
 
+/// Walk slint-mapping's bundled `sample-tiles/` (from the published
+/// crate in the cargo registry), re-encode every PNG as JPEG-Q70, and
+/// write the result to `$OUT_DIR/jpeg-tiles/{z}/{x}/{y}.jpg`. lib.rs
+/// `include_dir!`s that directory so the runtime EmbeddedTileSource
+/// has zero-dependency access to the bytes.
+fn transcode_sample_tiles(out_dir: &Path) {
+    let src_root = PathBuf::from(slint_mapping::SAMPLE_TILES_DIR);
+    let dest_root = out_dir.join("jpeg-tiles");
+    if dest_root.exists() {
+        fs::remove_dir_all(&dest_root).expect("clean jpeg-tiles/");
+    }
+    fs::create_dir_all(&dest_root).expect("create jpeg-tiles/");
+
+    let mut count = 0u32;
+    for entry in walkdir::WalkDir::new(&src_root)
+        .into_iter()
+        .filter_map(Result::ok)
+    {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        if path.extension().and_then(|s| s.to_str()) != Some("png") {
+            continue;
+        }
+        let rel = path.strip_prefix(&src_root).expect("strip src root");
+        let dest = dest_root.join(rel).with_extension("jpg");
+        if let Some(parent) = dest.parent() {
+            fs::create_dir_all(parent).expect("create dest parent");
+        }
+        // Decode PNG, drop alpha (JPEG can't carry it; OSM tiles are
+        // opaque anyway), encode as JPEG-Q70 with default 4:2:0
+        // subsampling. The image crate's JPEG encoder is pure-Rust
+        // so no system libjpeg is needed at build time.
+        let img = image::open(path).unwrap_or_else(|e| panic!("decode {}: {e}", path.display()));
+        let rgb = img.to_rgb8();
+        let mut out = fs::File::create(&dest).expect("create dest");
+        let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 70);
+        encoder
+            .encode(rgb.as_raw(), rgb.width(), rgb.height(), image::ExtendedColorType::Rgb8)
+            .expect("encode jpeg");
+        count += 1;
+    }
+    println!("cargo:warning=wasm-viewer: transcoded {count} tiles to JPEG-Q70");
+    // Re-run if the source bundle changes (e.g. slint-mapping bump).
+    println!("cargo:rerun-if-changed={}", src_root.display());
+}
+
 fn main() {
     // `ComponentContainer` + `component-factory` are gated behind
     // Slint's experimental flag. Match the desktop viewer's build.rs
@@ -277,6 +325,17 @@ fn main() {
     // Surface the OUT_DIR/embedded path to lib.rs for `include_dir!`.
     // It's already at a deterministic location (`$OUT_DIR/embedded`)
     // but emitting it explicitly lets the macro use `env!`.
+
+    // ---- Pass 1b: transcode the slint-mapping sample tiles to JPEG-Q70 ----
+    // slint-mapping 0.1.0 ships its `sample-tiles/` directory (worldwide
+    // z0–3 + Greater London z4–12) inside the published crate. The PNGs
+    // are ~5.6 MB total; re-encoded as JPEG-Q70 they shrink to ~2.4 MB
+    // with no visible quality loss for OSM photo-like tiles. The
+    // converted tree lives at $OUT_DIR/jpeg-tiles/{z}/{x}/{y}.jpg —
+    // lib.rs `include_dir!`s that path, so the conversion is fully
+    // deterministic and the wasm-viewer's own repo doesn't need to
+    // commit binary tile blobs.
+    transcode_sample_tiles(&out_dir);
 
     // ---- Pass 2: compile the chrome ----
     let mut chrome_paths = HashMap::new();
