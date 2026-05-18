@@ -66,7 +66,10 @@ fn build_time_library_paths(root: &Path) -> HashMap<&'static str, PathBuf> {
 fn input_roots(root: &Path) -> Vec<(String, PathBuf)> {
     let mut roots = vec![
         ("mobile-theme".to_string(), root.join("crates/theme/ui")),
-        ("mobile-components".to_string(), root.join("crates/components/ui")),
+        (
+            "mobile-components".to_string(),
+            root.join("crates/components/ui"),
+        ),
     ];
     for entry in fs::read_dir(root.join("crates")).expect("read crates/") {
         let entry = entry.expect("read crates entry");
@@ -198,11 +201,19 @@ fn rewrite_image_urls(
 /// `out_root/<role>/<relative path>`. Non-.slint files are skipped
 /// entirely (font TTFs, SVG icons — those are inlined into the
 /// .slint sources or registered statically by the chrome).
-fn prebake_role(role: &str, src_root: &Path, out_root: &Path, libs: &HashMap<&'static str, PathBuf>) {
+fn prebake_role(
+    role: &str,
+    src_root: &Path,
+    out_root: &Path,
+    libs: &HashMap<&'static str, PathBuf>,
+) {
     let target_role_dir = out_root.join(role);
     fs::create_dir_all(&target_role_dir).expect("create role dir");
 
-    for entry in walkdir::WalkDir::new(src_root).into_iter().filter_map(Result::ok) {
+    for entry in walkdir::WalkDir::new(src_root)
+        .into_iter()
+        .filter_map(Result::ok)
+    {
         let path = entry.path();
         if !path.is_file() {
             continue;
@@ -270,6 +281,5 @@ fn main() {
     let config = slint_build::CompilerConfiguration::new()
         .with_library_paths(chrome_paths)
         .embed_resources(slint_build::EmbedResourcesKind::EmbedFiles);
-    slint_build::compile_with_config("ui/wasm-viewer.slint", config)
-        .expect("slint-build compile");
+    slint_build::compile_with_config("ui/wasm-viewer.slint", config).expect("slint-build compile");
 }

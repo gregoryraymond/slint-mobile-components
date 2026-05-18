@@ -176,6 +176,7 @@ impl PageCompiler {
 
 /// Parse a single page, append its factory + title + seeded verdict to
 /// the live models, and bump the loaded counter on the Window.
+#[allow(clippy::too_many_arguments)]
 fn append_page(
     viewer: &Viewer,
     titles: &Rc<VecModel<SharedString>>,
@@ -991,7 +992,7 @@ mod tests {
 
     #[test]
     fn verdicts_json_round_trips() {
-        let names = vec![
+        let names = [
             "home".to_string(),
             "settings".to_string(),
             "login".to_string(),
@@ -1019,7 +1020,7 @@ mod tests {
         assert_eq!(parsed.get("home"), Some(&1));
         assert_eq!(parsed.get("login"), Some(&2));
         assert!(
-            parsed.get("settings").is_none(),
+            !parsed.contains_key("settings"),
             "unrated keys must be absent"
         );
     }

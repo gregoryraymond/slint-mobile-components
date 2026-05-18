@@ -172,9 +172,9 @@ fn make_compiler() -> Compiler {
     // resolves immediately.
     compiler.set_file_loader(|path| {
         let owned = path.to_path_buf();
-        Box::pin(async move {
-            read_embedded(&owned).map(|s| Ok::<String, io::Error>(s.to_string()))
-        })
+        Box::pin(
+            async move { read_embedded(&owned).map(|s| Ok::<String, io::Error>(s.to_string())) },
+        )
     });
 
     compiler
