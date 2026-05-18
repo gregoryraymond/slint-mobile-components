@@ -151,11 +151,18 @@ export component Viewer inherits Window {
     // so the phone aspect ratio is preserved as the window resizes.
     private property <length> natural-cell-w: 412px;
     private property <length> natural-cell-h: 892px + 44px;
-    private property <length> gap: 16px;
+
+    // Spacing tunables. `min-gap` is the floor (cells never get closer
+    // than this); `max-gap` is the ceiling (cells stop spreading once
+    // gaps get this wide — past that the leftover space sits on the
+    // outer edges and the cell block centers). Mirrors the wasm-viewer
+    // chrome so the local desktop test matches the deployed look.
+    private property <length> min-gap: 16px;
+    private property <length> max-gap: 96px;
 
     // Height available to the grid (window minus status-bar minus
     // grid padding top + bottom).
-    private property <length> grid-h: root.height - 56px - 2 * root.gap;
+    private property <length> grid-h: root.height - 56px - 2 * root.min-gap;
     // Scale derived from vertical room: shrink the cell so one full
     // row fits without scrolling when the window is shorter than the
     // natural height. Never upscales above 1.0 (keeps phone-resolution
@@ -173,13 +180,33 @@ export component Viewer inherits Window {
 
     // Width available to the cell grid (window minus the outer padding
     // on both sides + a slight reserve for the vertical scrollbar).
-    private property <length> grid-w: root.width - 2 * root.gap - 16px;
-    // Column count: fit as many scaled cells as the window can hold,
-    // at least one. Solves `n*(cell-w) + (n-1)*gap <= grid-w` for n →
-    // `n = floor((grid-w + gap) / (cell-w + gap))`. Recomputes on
-    // every resize and every cell-scale change.
-    private property <int> cols: max(1, floor((root.grid-w + root.gap) / (root.cell-w + root.gap)));
+    private property <length> grid-w: root.width - 2 * root.min-gap - 16px;
+    // Column count is computed against the *minimum* gap so the
+    // pack-as-tight-as-possible math doesn't shift as gaps expand.
+    private property <int> cols: max(1, floor((root.grid-w + root.min-gap) / (root.cell-w + root.min-gap)));
     private property <int> row-count: ceil(root.titles.length / root.cols);
+
+    // Distribute leftover horizontal space across the inter-cell
+    // gaps, clamped between min-gap and max-gap. With a single
+    // column there are no gaps to widen, so pin to min-gap.
+    private property <length> cell-gap:
+        root.cols <= 1
+            ? root.min-gap
+            : max(root.min-gap, min(root.max-gap,
+                (root.grid-w - root.cols * root.cell-w) / (root.cols - 1)));
+
+    // Total width the cell block occupies after gaps are chosen.
+    // When gaps are at max-gap and the window is still wider, this
+    // is < grid-w and the difference centers the block.
+    private property <length> content-w: root.cols * root.cell-w + (root.cols - 1) * root.cell-gap;
+    private property <length> content-x-offset: (root.grid-w - root.content-w) / 2;
+
+    // Vertical stride between rows uses the minimum gap — vertical
+    // spacing doesn't space-between because the catalogue scrolls
+    // naturally on overflow, and a stretching vertical gap would
+    // make the page feel sparse.
+    private property <length> cell-h-stride: root.cell-h + root.min-gap;
+
     private property <bool> still-loading: root.loaded < root.total;
 
     VerticalLayout {
@@ -218,19 +245,20 @@ export component Viewer inherits Window {
         // ----- Scrollable grid -----
         ScrollView {
             VerticalLayout {
-                padding: root.gap;
+                padding: root.min-gap;
                 alignment: start;
-                // The grid surface: 4 cols wide, height grows with the
-                // number of loaded cells. Each cell is positioned by its
-                // index — slint has no flow layout, so we do it manually.
+                // The grid surface fills the full available width so
+                // we can centre / space-between the cells inside it.
+                // Height grows with the number of loaded rows.
                 Rectangle {
-                    width: root.cols * (root.cell-w + root.gap) - root.gap;
-                    height: root.row-count * (root.cell-h + root.gap)
+                    width: root.grid-w;
+                    height: root.row-count * root.cell-h-stride
                         + (root.still-loading ? 80px : 0px);
 
                     for cell[i] in root.cells: PageCell {
-                        x: mod(i, root.cols) * (root.cell-w + root.gap);
-                        y: floor(i / root.cols) * (root.cell-h + root.gap);
+                        x: root.content-x-offset
+                            + mod(i, root.cols) * (root.cell-w + root.cell-gap);
+                        y: floor(i / root.cols) * root.cell-h-stride;
                         title: root.titles[i];
                         verdict: root.verdicts[i];
                         page-factory: cell;
@@ -242,7 +270,7 @@ export component Viewer inherits Window {
                     // Shown only while the background loader is still working.
                     if root.still-loading: Rectangle {
                         x: 0;
-                        y: root.row-count * (root.cell-h + root.gap);
+                        y: root.row-count * root.cell-h-stride;
                         width: parent.width;
                         height: 80px;
                         Text {
