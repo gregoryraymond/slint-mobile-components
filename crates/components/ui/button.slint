@@ -48,6 +48,9 @@ export component MobileButton inherits Rectangle {
 
     min-height: Theme.touch-target;
     horizontal-stretch: 1;
+    // Buttons should never stretch vertically to consume free space — they
+    // stay at `touch-target` height regardless of the surrounding layout.
+    vertical-stretch: 0;
     border-radius: Theme.radius-md;
     // Primary variant fills with `tone-fill`; pressed state shifts to a
     // pre-defined `primary-pressed` for the default tone, and to a
@@ -110,8 +113,12 @@ export component TextButton inherits Rectangle {
     accessible-enabled: root.enabled;
     accessible-action-default => { root.clicked(); }
 
+    // Tighter than MobileButton: 40px and 80px are the documented
+    // tertiary-action footprint. Keep as numeric literals — these
+    // bespoke values aren't represented in the theme scale.
     min-height: 40px;
     min-width: 80px;
+    vertical-stretch: 0;
     border-radius: Theme.radius-sm;
     background: touch.pressed ? Theme.surface-pressed : transparent;
     opacity: root.enabled ? 1.0 : 0.5;
