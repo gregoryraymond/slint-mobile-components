@@ -185,14 +185,22 @@ fn discover_pages() -> Vec<PageMeta> {
             };
             let stem = name.trim_end_matches(".slint").to_string();
             let virt = virtual_root().join(dir.path()).join(name);
-            // Tag each page as "map" or "other" by scanning for the
-            // canonical `@mapping/` import. We sort map pages first
-            // so they appear at the top of the catalogue grid — makes
-            // screenshot-based verification of the embedded tile
-            // pipeline trivial (top-left cells are always maps).
-            let is_map = text.contains("@mapping/");
+            // Three sort tiers, lowest number = front of catalogue:
+            //   0 — hand-picked showcase pages (look polished, good
+            //       first impression in a screenshot or live demo)
+            //   1 — map-using pages (top-of-shelf so the offline tile
+            //       pipeline is the second thing a visitor sees, and
+            //       so screenshot-based verification is trivial)
+            //   2 — everything else, alphabetical
+            let tier = if SHOWCASE_STEMS.contains(&stem.as_str()) {
+                0
+            } else if text.contains("@mapping/") {
+                1
+            } else {
+                2
+            };
             out.push((
-                is_map,
+                tier,
                 PageMeta {
                     path: virt,
                     class,
@@ -201,11 +209,16 @@ fn discover_pages() -> Vec<PageMeta> {
             ));
         }
     }
-    // Sort: map pages first (false < true reversed → put true=map
-    // before false=other), then alphabetically within each group.
-    out.sort_by(|(am, a), (bm, b)| bm.cmp(am).then_with(|| a.display.cmp(&b.display)));
+    out.sort_by(|(at, a), (bt, b)| at.cmp(bt).then_with(|| a.display.cmp(&b.display)));
     out.into_iter().map(|(_, p)| p).collect()
 }
+
+/// Hand-picked pages shown first in the catalogue grid. Kept small and
+/// updated by eye — these are the ones that look most finished when a
+/// first-time visitor lands on the live demo. Stems are filenames
+/// without the `.slint` extension; case-sensitive match against
+/// `PageMeta::display`.
+const SHOWCASE_STEMS: &[&str] = &["album-detail", "app-lock"];
 
 /// Last `export component XxxPage|XxxScreen inherits …` in a source.
 /// Mirrors the heuristic used by the desktop viewer.
@@ -443,7 +456,12 @@ fn attach_map_handler(instance: &ComponentInstance) {
     // of Greater London from z4–12, so this is always tile-complete.
     let _ = instance.set_property("map-latitude", Value::Number(51.5074));
     let _ = instance.set_property("map-longitude", Value::Number(-0.1276));
-    let _ = instance.set_property("map-zoom", Value::Number(10.0));
+    // z=11 gives a tighter London view (~20 km across) than the
+    // wider z=10 ~40 km, while still staying within the embedded
+    // bundle's z=4–12 range so the whole viewport is tile-complete
+    // at default camera. Pages that pan or zoom further may hit
+    // bundle edges and show the MapEmbed's #1a1a1a placeholder.
+    let _ = instance.set_property("map-zoom", Value::Number(11.0));
 
     refresh_map(instance, source.as_ref());
 
