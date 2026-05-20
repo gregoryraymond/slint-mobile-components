@@ -42,20 +42,22 @@ pollster = "0.3"
 slint-mobile-theme = { path = "../theme" }
 slint-mobile-components-widgets = { path = "../components" }
 # slint-mapping at runtime: TileSource trait + camera/viewport math
-# used by the embedded tile handler the 6 map-using pages need.
-# No feature flags — we don't pull `wasm` (network OsmTileSource);
-# our `EmbeddedTileSource` reads from include_dir!'d sample tiles
-# at compile time, so the maps render offline with no fetch.
+# (base, all targets). The wasm32 target additionally enables the
+# `wasm` feature below for `WasmOsmTileSource`, which lazily fetches
+# tiles over XHR from our same-origin `dist/tiles/` static assets —
+# so the ~2.4 MB tile bundle is NOT embedded in the wasm binary and
+# only the visible tiles for the 6 map pages are pulled, on demand.
 slint-mapping = "0.1"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"
 console_error_panic_hook = "0.1"
-# JPEG decoding for the EmbeddedTileSource. Tiles ship as JPEG-Q70
-# (3× smaller than PNG for OSM map data). The image crate gets
-# trimmed to jpeg-only so we don't drag in png / gif / webp / bmp
-# decoders the tile bundle never uses.
-image = { version = "0.25", default-features = false, features = ["jpeg"] }
+# `wasm` feature → `WasmOsmTileSource` (XHR tile fetch + LRU decode).
+# Cargo unions this with the base `slint-mapping` dep above, so the
+# wasm feature is only on for the wasm32 target; a native `cargo
+# check` keeps the lean base build. Pulls `image` (jpeg decode) +
+# `lru` transitively, so we no longer need our own `image` dep.
+slint-mapping = { version = "0.1", features = ["wasm"] }
 
 [build-dependencies]
 slint-build = "1"

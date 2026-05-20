@@ -26,17 +26,21 @@
 //!      renders it.
 
 use include_dir::{include_dir, Dir};
-use slint::{
-    ComponentHandle, Model, ModelRc, SharedPixelBuffer, SharedString, Timer, TimerMode, VecModel,
-};
-use slint_interpreter::{Compiler, ComponentInstance, Struct, Value};
-use slint_mapping::source::{TileKey, TileSource};
+use slint::{ComponentHandle, Model, ModelRc, SharedString, Timer, TimerMode, VecModel};
+use slint_interpreter::{Compiler, ComponentInstance};
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
+
+// `Struct` / `Value` (interpreter dynamic API) and the `TileSource`
+// trait are only referenced by the wasm-only map handler + tile
+// refresh code; importing them unconditionally trips unused-import
+// warnings on a native `cargo check`.
+#[cfg(target_arch = "wasm32")]
+use slint_interpreter::{Struct, Value};
+#[cfg(target_arch = "wasm32")]
+use slint_mapping::source::TileSource;
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
@@ -59,74 +63,13 @@ slint::include_modules!();
 /// installs into `slint_interpreter::Compiler::set_library_paths`.
 static EMBEDDED: Dir<'_> = include_dir!("$OUT_DIR/embedded");
 
-/// Sample OSM tile bundle, JPEG-Q70 transcoded by build.rs from the
-/// PNGs that ship inside the published `slint-mapping` crate
-/// (`SAMPLE_TILES_DIR` const). Worldwide z0–3 + Greater London z4–12,
-/// ~2.4 MB of JPEGs linked into the wasm binary at compile time. The
-/// 6 map-using pages in the catalogue all centre on London at
-/// z10–12, so this bundle covers every default-camera tile they
-/// request without a single network call. Pan past Greater London
-/// or zoom past 12 and tiles will miss; the EmbeddedTileSource
-/// returns None and `map.slint` paints its loading placeholder.
-static EMBEDDED_TILES: Dir<'_> = include_dir!("$OUT_DIR/jpeg-tiles");
-
-/// PNG → SharedPixelBuffer cache keyed by TileKey. First read decodes
-/// the PNG via the `image` crate; subsequent reads hit the cache.
-/// Wrapped in Arc<Mutex<…>> to satisfy TileSource's Send + Sync
-/// bound — wasm is single-threaded so the lock never actually
-/// contends, but the trait requires it for the native-target case.
-type DecodedTiles = Arc<Mutex<HashMap<TileKey, SharedPixelBuffer<slint::Rgba8Pixel>>>>;
-
-/// Read-only TileSource backed by the EMBEDDED_TILES dir. No network,
-/// no async, no LRU bookkeeping — bytes are already in the wasm
-/// binary's data segments, and the bundle is small enough that we
-/// just hang on to every tile that's been decoded for the lifetime
-/// of the page.
-struct EmbeddedTileSource {
-    cache: DecodedTiles,
-}
-
-impl EmbeddedTileSource {
-    fn new() -> Self {
-        Self {
-            cache: Arc::new(Mutex::new(HashMap::new())),
-        }
-    }
-}
-
-impl TileSource for EmbeddedTileSource {
-    fn tile(&self, key: TileKey) -> Option<slint::Image> {
-        if let Some(buf) = self.cache.lock().unwrap().get(&key).cloned() {
-            return Some(slint::Image::from_rgba8(buf));
-        }
-        // Tiles are stored as JPEG-Q70 (raw OSM PNGs averaged 24 KB,
-        // re-encoded JPEGs ~10 KB — a 3.2 MB saving on the wasm
-        // binary). The slint-mapping sample-tiles directory itself
-        // ships PNGs; the JPEG conversion is local to this crate
-        // and re-runs on demand (see `just rebake-tiles` if you ever
-        // need to refresh).
-        let rel = format!("{}/{}/{}.jpg", key.z, key.x, key.y);
-        let file = EMBEDDED_TILES.get_file(&rel)?;
-        let bytes = file.contents();
-        let decoded = image::load_from_memory_with_format(bytes, image::ImageFormat::Jpeg)
-            .ok()?
-            .to_rgba8();
-        let (w, h) = decoded.dimensions();
-        let buf = SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(decoded.as_raw(), w, h);
-        self.cache.lock().unwrap().insert(key, buf.clone());
-        Some(slint::Image::from_rgba8(buf))
-    }
-
-    fn tile_size(&self) -> u32 {
-        256
-    }
-    fn min_zoom(&self) -> u8 {
-        0
-    }
-    fn max_zoom(&self) -> u8 {
-        12
-    }
-}
+// Map tiles are NOT embedded in the wasm binary. build.rs transcodes
+// the slint-mapping sample PNGs to JPEG-Q70 under `crates/wasm-viewer/
+// tiles/`, trunk's `copy-dir` ships that to `dist/tiles/`, and the
+// runtime (see `attach_map_handler`) points a `WasmOsmTileSource` at
+// the same-origin `tiles/{z}/{x}/{y}.jpg` URL. Tiles are fetched
+// lazily — only the visible tiles of the 6 map pages, only when those
+// cells render — keeping ~2.4 MB out of the initial download.
 
 /// The library-path roots the interpreter sees. They're "virtual" —
 /// the paths don't exist on disk in the browser. `set_file_loader`
@@ -509,33 +452,49 @@ fn compile_to_factory(page: &PageMeta) -> Option<ComponentFactory> {
     }))
 }
 
-/// Wire an interpreted map-page instance to an EmbeddedTileSource.
-/// Each map page exposes the canonical map-* property + callback
-/// surface (map-latitude, map-longitude, map-zoom, map-tiles,
-/// map-pan, map-zoom-by); we read/write those via slint-interpreter's
-/// dynamic property + callback API so we don't need a Rust handle
-/// to the page type.
+/// Wire an interpreted map-page instance to a lazily-fetching tile
+/// source. Each map page exposes the canonical map-* property +
+/// callback surface (map-latitude, map-longitude, map-zoom,
+/// map-tiles, map-pan, map-zoom-by); we read/write those via
+/// slint-interpreter's dynamic property + callback API so we don't
+/// need a Rust handle to the page type.
 ///
-/// Compared to the desktop viewer's `attach_map_handler` this is a
-/// stripped-down demo version: no per-page demo markers, no
-/// burst-locked cursor-anchored zoom, no on_tile_ready callbacks
-/// (the embedded source returns synchronously, so the first
-/// `refresh_map` populates everything visible immediately). Camera
-/// + pan + simple zoom all work; tiles outside the embedded London
-/// bundle render as the loading placeholder.
+/// Tiles come from `WasmOsmTileSource` pointed at our same-origin
+/// `tiles/{z}/{x}/{y}.jpg` static assets — fetched over XHR on
+/// demand, never embedded in the wasm. `tile()` returns `None` on a
+/// miss and kicks off a background fetch; `on_tile_ready` re-runs
+/// `refresh_map` as each tile lands, so the loading placeholders
+/// fill in progressively. Camera + pan + simple zoom all work;
+/// panning/zooming past the shipped London z0–12 set shows the
+/// MapEmbed's placeholder.
+#[cfg(target_arch = "wasm32")]
 fn attach_map_handler(instance: &ComponentInstance) {
-    let source: Rc<dyn TileSource> = Rc::new(EmbeddedTileSource::new());
+    let source = Rc::new(
+        slint_mapping::sources::WasmOsmTileSource::with_url("tiles/{z}/{x}/{y}.jpg")
+            .with_zoom_range(0, 12),
+    );
 
-    // Open on London at z10 — the embedded bundle has full coverage
-    // of Greater London from z4–12, so this is always tile-complete.
+    // London at z11 (~20 km across) — fully covered by the shipped
+    // tile set so the default camera is tile-complete.
     let _ = instance.set_property("map-latitude", Value::Number(51.5074));
     let _ = instance.set_property("map-longitude", Value::Number(-0.1276));
-    // z=11 gives a tighter London view (~20 km across) than the
-    // wider z=10 ~40 km, while still staying within the embedded
-    // bundle's z=4–12 range so the whole viewport is tile-complete
-    // at default camera. Pages that pan or zoom further may hit
-    // bundle edges and show the MapEmbed's #1a1a1a placeholder.
     let _ = instance.set_property("map-zoom", Value::Number(11.0));
+
+    // Re-pull the visible tiles each time an async fetch resolves, so
+    // placeholders fill in as bytes arrive. Both captures are weak:
+    // the source is kept alive by the pan/zoom callbacks (owned by
+    // the instance), and the instance by the ComponentContainer — so
+    // this closure never extends either's lifetime and there's no
+    // Rc cycle.
+    {
+        let weak = instance.as_weak();
+        let src_weak = Rc::downgrade(&source);
+        source.on_tile_ready(move || {
+            if let (Some(inst), Some(src)) = (weak.upgrade(), src_weak.upgrade()) {
+                refresh_map(&inst, src.as_ref());
+            }
+        });
+    }
 
     refresh_map(instance, source.as_ref());
 
@@ -557,10 +516,6 @@ fn attach_map_handler(instance: &ComponentInstance) {
     }
 
     // map-zoom-by(delta, anchor-x, anchor-y) — simple unanchored zoom.
-    // The desktop viewer's anchored-zoom-burst implementation gives
-    // better UX (cursor stays put while zooming) but adds ~80 lines
-    // of burst-state bookkeeping; stripped here to keep the demo
-    // surface small.
     {
         let inst = instance.clone_strong();
         let src = Rc::clone(&source);
@@ -577,11 +532,19 @@ fn attach_map_handler(instance: &ComponentInstance) {
     }
 }
 
+/// Native (non-wasm) stub. The catalogue only runs in the browser and
+/// `WasmOsmTileSource` is wasm-only, so the host `cargo check` (which
+/// builds this crate as an rlib) compiles a no-op. Map pages on native
+/// just render with empty tile models.
+#[cfg(not(target_arch = "wasm32"))]
+fn attach_map_handler(_instance: &ComponentInstance) {}
+
 /// Read the page's `map-viewport-width` / `map-viewport-height`
 /// properties (bound to the MapEmbed's measured size on the slint
 /// side). Falls back to the cell's default 412 × 892 if the page
 /// hasn't declared them — projection is approximately right for
 /// full-bleed maps even then.
+#[cfg(target_arch = "wasm32")]
 fn read_viewport(instance: &ComponentInstance) -> (f64, f64) {
     let w = match instance.get_property("map-viewport-width") {
         Ok(Value::Number(n)) if n > 0.0 => n,
@@ -594,6 +557,7 @@ fn read_viewport(instance: &ComponentInstance) -> (f64, f64) {
     (w, h)
 }
 
+#[cfg(target_arch = "wasm32")]
 fn read_camera(instance: &ComponentInstance) -> (f64, f64, f64) {
     let lon = match instance.get_property("map-longitude") {
         Ok(Value::Number(n)) => n,
@@ -610,6 +574,7 @@ fn read_camera(instance: &ComponentInstance) -> (f64, f64, f64) {
     (lon, lat, zoom)
 }
 
+#[cfg(target_arch = "wasm32")]
 fn number_arg(args: &[Value], idx: usize) -> f64 {
     match args.get(idx) {
         Some(Value::Number(n)) => *n,
@@ -622,6 +587,7 @@ fn number_arg(args: &[Value], idx: usize) -> f64 {
 /// pages also expect a `map-layers` model for marker / polyline
 /// overlays — we set it to a single empty layer so the slint side
 /// doesn't choke on a missing model.
+#[cfg(target_arch = "wasm32")]
 fn refresh_map(instance: &ComponentInstance, source: &dyn TileSource) {
     let (lon, lat, zoom) = read_camera(instance);
     let (vp_w, vp_h) = read_viewport(instance);
@@ -665,7 +631,6 @@ fn web_log(msg: &str) {
     {
         eprintln!("{msg}");
     }
-    let _ = Value::default; // touch slint_interpreter::Value to keep it in scope for future use
 }
 
 #[cfg(target_arch = "wasm32")]

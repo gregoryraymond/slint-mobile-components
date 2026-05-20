@@ -28,6 +28,14 @@
           data-wasm-opt="z"
           data-wasm-opt-params="--enable-bulk-memory --enable-nontrapping-float-to-int --enable-reference-types --enable-mutable-globals --enable-sign-ext">
 
+    <!-- Ship the JPEG map tiles as static assets at dist/tiles/. They
+         are NOT embedded in the wasm; the runtime fetches them lazily
+         over XHR (only the 6 map pages, only visible tiles). build.rs
+         populates ../tiles/ from the slint-mapping sample set before
+         trunk runs, so this copy-dir always finds a fully-built tree.
+         Keeps ~2.4 MB out of the initial wasm download. -->
+    <link data-trunk rel="copy-dir" href="../tiles" data-target-path="tiles">
+
     <style>
         html, body {
             margin: 0;

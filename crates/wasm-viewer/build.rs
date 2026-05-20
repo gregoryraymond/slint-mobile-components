@@ -256,16 +256,19 @@ fn prebake_role(
 
 /// Walk slint-mapping's bundled `sample-tiles/` (from the published
 /// crate in the cargo registry), re-encode every PNG as JPEG-Q70, and
-/// write the result to `$OUT_DIR/jpeg-tiles/{z}/{x}/{y}.jpg`. lib.rs
-/// `include_dir!`s that directory so the runtime EmbeddedTileSource
-/// has zero-dependency access to the bytes.
-fn transcode_sample_tiles(out_dir: &Path) {
+/// write the result to `crates/wasm-viewer/tiles/{z}/{x}/{y}.jpg`.
+/// These are NOT embedded in the wasm — trunk's `copy-dir` ships the
+/// `tiles/` directory to `dist/tiles/` and the runtime fetches them
+/// lazily over XHR. Writing into the (git-ignored) source tree rather
+/// than `$OUT_DIR` is deliberate: it gives trunk's copy-dir pipeline
+/// a stable path to pick up, and `just`/CI run `cargo build` once
+/// before `trunk` so the dir is fully populated before copy-dir runs.
+fn transcode_sample_tiles(dest_root: &Path) {
     let src_root = PathBuf::from(slint_mapping::SAMPLE_TILES_DIR);
-    let dest_root = out_dir.join("jpeg-tiles");
     if dest_root.exists() {
-        fs::remove_dir_all(&dest_root).expect("clean jpeg-tiles/");
+        fs::remove_dir_all(dest_root).expect("clean tiles/");
     }
-    fs::create_dir_all(&dest_root).expect("create jpeg-tiles/");
+    fs::create_dir_all(dest_root).expect("create tiles/");
 
     let mut count = 0u32;
     for entry in walkdir::WalkDir::new(&src_root)
@@ -336,11 +339,11 @@ fn main() {
     // z0–3 + Greater London z4–12) inside the published crate. The PNGs
     // are ~5.6 MB total; re-encoded as JPEG-Q70 they shrink to ~2.4 MB
     // with no visible quality loss for OSM photo-like tiles. The
-    // converted tree lives at $OUT_DIR/jpeg-tiles/{z}/{x}/{y}.jpg —
-    // lib.rs `include_dir!`s that path, so the conversion is fully
-    // deterministic and the wasm-viewer's own repo doesn't need to
-    // commit binary tile blobs.
-    transcode_sample_tiles(&out_dir);
+    // converted tree lives at `crates/wasm-viewer/tiles/` (git-ignored)
+    // and is served as static assets via trunk's copy-dir — NOT
+    // embedded in the wasm — so it stays out of the initial download.
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    transcode_sample_tiles(&manifest_dir.join("tiles"));
 
     // ---- Pass 2: compile the chrome ----
     let mut chrome_paths = HashMap::new();

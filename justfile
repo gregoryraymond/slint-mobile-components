@@ -66,18 +66,26 @@ fmt-check:
 
 # --- wasm-viewer (browser catalogue) --------------------------------------
 
+# Transcode the slint-mapping sample tiles into crates/wasm-viewer/tiles/
+# (git-ignored). Runs build.rs once via `cargo build`, which populates
+# the tile dir BEFORE trunk's copy-dir picks it up — avoiding a race
+# where copy-dir reads a half-written tree. Cheap on a warm target.
+[private]
+tiles:
+    cargo build --target wasm32-unknown-unknown -p slint-mobile-components-wasm-viewer
+
 # Build + serve the wasm-viewer via trunk on http://127.0.0.1:8081.
-# Trunk does the wasm-pack build, copies index.html, and watches the
-# source tree for changes (hot-reload). Re-run is automatic — leave
-# this running while editing .slint or .rs files.
-serve:
+# Trunk builds the wasm, copies index.html + the static tiles/, and
+# watches the source tree for changes (hot-reload). Leave it running
+# while editing .slint or .rs files.
+serve: tiles
     @echo "Catalogue: http://127.0.0.1:8081/"
     cd crates/wasm-viewer/web && trunk serve --release
 
 # One-shot wasm-viewer build into dist/. Mirrors what
 # .github/workflows/pages.yml does in CI so the local build matches
 # the deployed artefact.
-build-wasm:
+build-wasm: tiles
     cd crates/wasm-viewer/web && trunk build --release --dist ../../../dist
 
 # --- Android demo APK ------------------------------------------------------

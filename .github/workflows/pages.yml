@@ -49,6 +49,13 @@ jobs:
         with:
           version: latest
 
+      # Populate crates/wasm-viewer/tiles/ (via build.rs) before trunk
+      # runs, so trunk's copy-dir pipeline ships a fully-built tile
+      # tree to dist/tiles/. Without this pre-step copy-dir can race
+      # the rust pipeline's build.rs and copy an empty/partial dir.
+      - name: Transcode map tiles
+        run: cargo build --target wasm32-unknown-unknown -p slint-mobile-components-wasm-viewer
+
       - name: Build wasm-viewer
         working-directory: crates/wasm-viewer/web
         run: trunk build --release --dist ../../../dist --public-url /slint-mobile-components/
