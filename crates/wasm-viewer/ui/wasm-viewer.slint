@@ -72,17 +72,25 @@ component PageCell inherits Rectangle {
 
 export component WasmViewer inherits Window {
     title: "slint-mobile-components — catalogue";
-    // Initial preferred size — slint's femtovg/wasm backend uses this
-    // as the canvas's initial CSS size on first paint. After init the
-    // JS side measures the surrounding shell-frame and calls
-    // `slint::Window::set_size` (via the `set_canvas_size` wasm
-    // export) on every ResizeObserver tick, so the Window tracks the
-    // actual visible area and the grid reflows accordingly.
-    // Without an initial preferred-size the layout collapses to the
-    // chrome's natural minimum (~594 × 106) which made every cell
-    // appear as a one-column stack on first paint.
-    preferred-width: 1200px;
-    preferred-height: 800px;
+    // Window size is driven by JS, not by `preferred-*`. The JS side
+    // measures the surrounding shell-frame on every ResizeObserver
+    // tick and pushes the dimensions into `canvas-w` / `canvas-h` via
+    // the `set_canvas_size` wasm export; the Window's `width` /
+    // `height` bind to those props.
+    //
+    // Why a property binding and NOT `preferred-*` + `Window::set_size`:
+    // the incremental loader pushes a cell into the model every 100 ms,
+    // and every push triggers a layout pass. With only `preferred-*`
+    // set, slint re-asserts the preferred size (1200×800) on each of
+    // those passes, stomping whatever `set_size` had applied — so the
+    // canvas snapped back to 1200×800 the moment streaming began.
+    // Binding `width`/`height` to in-props makes the size survive
+    // relayout because the binding is re-evaluated to the same
+    // JS-provided value every pass.
+    in property <length> canvas-w: 1200px;
+    in property <length> canvas-h: 800px;
+    width: root.canvas-w;
+    height: root.canvas-h;
     background: Theme.background;
 
     in property <[string]> titles;

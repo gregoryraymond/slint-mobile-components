@@ -12,6 +12,16 @@ target = "index.html"
 # index.html. Disabling the hash means cache-busting falls to GitHub
 # Pages' default 10-minute TTL, which is fine for a demo surface.
 filehash = false
+# Disable Subresource Integrity. SRI is fundamentally incompatible
+# with `filehash = false`: the filename is stable across builds, so a
+# browser caches the .js/.wasm under that name, but each rebuild emits
+# a fresh `index.html` carrying a *new* integrity hash. On the next
+# load the cached (old) resource fails the new digest and the browser
+# hard-blocks it — the module never loads, slint never starts, the
+# canvas sits at its 300×150 default. Without SRI a stale cached
+# resource simply serves old-but-working content until the 10-min TTL
+# refreshes it.
+no_sri = true
 
 [watch]
 # Watch the actual Rust source + .slint files, not just the web/

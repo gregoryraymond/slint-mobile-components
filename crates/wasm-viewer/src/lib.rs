@@ -280,11 +280,13 @@ fn make_compiler() -> Compiler {
     compiler
 }
 
-// JS bridge for canvas → slint Window size. Slint's femtovg backend
-// reads the canvas's CSS box once on start; after that, the only way
-// to push a new size through is `slint::Window::set_size`. JS calls
-// `set_canvas_size` after each ResizeObserver tick on the shell-frame
-// so the Window tracks the actual visible area and the grid reflows.
+// JS bridge for canvas → slint Window size. The chrome's WasmViewer
+// binds its `width`/`height` to the `canvas-w`/`canvas-h` in-props;
+// JS calls `set_canvas_size` after each ResizeObserver tick on the
+// shell-frame and we push the values into those props. Driving the
+// size through a bound property (rather than `Window::set_size`) is
+// what makes it survive the incremental loader's relayouts — a plain
+// `set_size` gets stomped by `preferred-*` on every layout pass.
 // The Weak<WasmViewer> is held in a thread-local set by `run()` —
 // wasm is single-threaded so a TLS slot is fine.
 #[cfg(target_arch = "wasm32")]
@@ -302,22 +304,25 @@ thread_local! {
 
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
 pub fn set_canvas_size(_w: f32, _h: f32) {
-    // Defer the actual `Window::set_size` to a fresh event-loop tick.
-    // Calling it directly from a ResizeObserver callback re-enters
-    // winit-web's runner while it's still holding its RefCell, which
-    // panics with "RefCell already borrowed" — the same reentrancy
-    // trap that bit slint-mapping's WASM tile pipeline.
-    // `invoke_from_event_loop` posts the work between frames, which
-    // is the documented escape hatch.
+    // Defer the property write to a fresh event-loop tick. Setting it
+    // directly from a ResizeObserver callback re-enters winit-web's
+    // runner while it's still holding its RefCell, which panics with
+    // "RefCell already borrowed" — the same reentrancy trap that bit
+    // slint-mapping's WASM tile pipeline. `invoke_from_event_loop`
+    // posts the work between frames, which is the documented escape
+    // hatch.
     #[cfg(target_arch = "wasm32")]
     {
-        let w = _w.max(320.0) as u32;
-        let h = _h.max(240.0) as u32;
+        let w = _w.max(320.0);
+        let h = _h.max(240.0);
         let _ = slint::invoke_from_event_loop(move || {
             VIEWER_HANDLE.with(|holder| {
                 if let Some(weak) = holder.borrow().as_ref() {
                     if let Some(viewer) = weak.upgrade() {
-                        viewer.window().set_size(slint::PhysicalSize::new(w, h));
+                        // `length`-typed slint props map to `f32`
+                        // (logical px) in the generated Rust API.
+                        viewer.set_canvas_w(w);
+                        viewer.set_canvas_h(h);
                     }
                 }
             });
