@@ -13,24 +13,11 @@ mod _generated_snapshot_scenes {
 /// identical names re-exported from sibling pages-* crates).
 pub mod scenes {
     pub use crate::_generated_snapshot_scenes::{
-        SnapAddressBookPage,
-        SnapChatPage,
-        SnapClayProfilePage,
-        SnapCommentsPage,
-        SnapCommunityForumPage,
-        SnapContactDetailPage,
-        SnapDialerPage,
-        SnapEmailThreadPage,
-        SnapGroupChatListPage,
-        SnapInboxPage,
-        SnapMessageComposerPage,
-        SnapNewsArticleFeedPage,
-        SnapPostCreatorPage,
-        SnapPostDetailPage,
-        SnapProfileEditPage,
-        SnapProfilePage,
-        SnapTrendingTopicsPage,
-        SnapVideoCallPage
+        SnapAddressBookPage, SnapChatPage, SnapClayProfilePage, SnapCommentsPage,
+        SnapCommunityForumPage, SnapContactDetailPage, SnapDialerPage, SnapEmailThreadPage,
+        SnapGroupChatListPage, SnapInboxPage, SnapMessageComposerPage, SnapNewsArticleFeedPage,
+        SnapPostCreatorPage, SnapPostDetailPage, SnapProfileEditPage, SnapProfilePage,
+        SnapTrendingTopicsPage, SnapVideoCallPage,
     };
 }
 

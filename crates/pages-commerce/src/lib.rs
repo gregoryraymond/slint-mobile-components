@@ -13,18 +13,9 @@ mod _generated_snapshot_scenes {
 /// identical names re-exported from sibling pages-* crates).
 pub mod scenes {
     pub use crate::_generated_snapshot_scenes::{
-        SnapAppStoreListingPage,
-        SnapCartPage,
-        SnapCheckoutPage,
-        SnapGroceryListPage,
-        SnapOrderHistoryPage,
-        SnapOrderTrackingPage,
-        SnapProductDetailPage,
-        SnapRecipePage,
-        SnapRestaurantMenuPage,
-        SnapReviewSummaryPage,
-        SnapStoreLocatorPage,
-        SnapWriteReviewPage
+        SnapAppStoreListingPage, SnapCartPage, SnapCheckoutPage, SnapGroceryListPage,
+        SnapOrderHistoryPage, SnapOrderTrackingPage, SnapProductDetailPage, SnapRecipePage,
+        SnapRestaurantMenuPage, SnapReviewSummaryPage, SnapStoreLocatorPage, SnapWriteReviewPage,
     };
 }
 

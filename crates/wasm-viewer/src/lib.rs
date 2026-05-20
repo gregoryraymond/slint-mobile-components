@@ -26,7 +26,9 @@
 //!      renders it.
 
 use include_dir::{include_dir, Dir};
-use slint::{ComponentHandle, Model, ModelRc, SharedPixelBuffer, SharedString, Timer, TimerMode, VecModel};
+use slint::{
+    ComponentHandle, Model, ModelRc, SharedPixelBuffer, SharedString, Timer, TimerMode, VecModel,
+};
 use slint_interpreter::{Compiler, ComponentInstance, Struct, Value};
 use slint_mapping::source::{TileKey, TileSource};
 use std::cell::RefCell;
@@ -418,7 +420,12 @@ pub fn run() {
     viewer.set_summary(if pages_rc.len() <= INITIAL_BATCH {
         format!("{} pages ready", *cursor.borrow()).into()
     } else {
-        format!("{} of {} pages — loading…", *cursor.borrow(), pages_rc.len()).into()
+        format!(
+            "{} of {} pages — loading…",
+            *cursor.borrow(),
+            pages_rc.len()
+        )
+        .into()
     });
 
     // ---- Timer-driven trickle for the remaining pages ----
