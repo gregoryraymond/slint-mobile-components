@@ -92,6 +92,10 @@ export component WasmViewer inherits Window {
     width: root.canvas-w;
     height: root.canvas-h;
     background: Theme.background;
+    // Hand initial keyboard focus to the grid's FocusScope so
+    // PageUp/PageDown/Home/End scroll the catalogue without the user
+    // having to click into it first.
+    forward-focus: key-scope;
 
     in property <[string]> titles;
     in property <[component-factory]> cells;
@@ -178,38 +182,75 @@ export component WasmViewer inherits Window {
         }
 
         // ----- Scrollable grid -----
-        ScrollView {
-            VerticalLayout {
-                padding: root.min-gap;
-                alignment: start;
-                // The grid surface fills the full available width so
-                // we can center / space-between the cells inside it.
-                // Height grows with the number of loaded rows.
-                Rectangle {
-                    width: root.grid-w;
-                    height: root.row-count * root.cell-h-stride
-                        + (root.still-loading ? 80px : 0px);
+        // Wrapped in a FocusScope so the keyboard scroll keys work.
+        // The Window `forward-focus`es this scope on load (see the
+        // `forward-focus` binding on the root) so the catalogue is
+        // keyboard-scrollable without the user having to click first.
+        // PageUp/PageDown jump one viewport height; Home/End snap to
+        // the extremes. `viewport-y` is 0 at the top and goes negative
+        // as content scrolls up, so the bottom limit is
+        // (visible-height − viewport-height), which is ≤ 0.
+        key-scope := FocusScope {
+            vertical-stretch: 1;
 
-                    for cell[i] in root.cells: PageCell {
-                        x: root.content-x-offset
-                            + mod(i, root.cols) * (root.cell-w + root.cell-gap);
-                        y: floor(i / root.cols) * root.cell-h-stride;
-                        title: root.titles[i];
-                        page-factory: cell;
-                    }
+            key-pressed(event) => {
+                if (event.text == Key.PageDown) {
+                    scroll.viewport-y = max(
+                        scroll.viewport-y - scroll.visible-height,
+                        min(0px, scroll.visible-height - scroll.viewport-height));
+                    return accept;
+                }
+                if (event.text == Key.PageUp) {
+                    scroll.viewport-y = min(scroll.viewport-y + scroll.visible-height, 0px);
+                    return accept;
+                }
+                if (event.text == Key.Home) {
+                    scroll.viewport-y = 0px;
+                    return accept;
+                }
+                if (event.text == Key.End) {
+                    scroll.viewport-y = min(0px, scroll.visible-height - scroll.viewport-height);
+                    return accept;
+                }
+                return reject;
+            }
 
-                    if root.still-loading: Rectangle {
-                        x: 0;
-                        y: root.row-count * root.cell-h-stride;
-                        width: parent.width;
-                        height: 80px;
-                        Text {
-                            x: (parent.width - self.width) / 2;
-                            y: (parent.height - self.height) / 2;
-                            text: "loading more pages…";
-                            color: Theme.muted;
-                            font-size: 15px;
-                            font-weight: 700;
+            scroll := ScrollView {
+                width: parent.width;
+                height: parent.height;
+
+                VerticalLayout {
+                    padding: root.min-gap;
+                    alignment: start;
+                    // The grid surface fills the full available width so
+                    // we can center / space-between the cells inside it.
+                    // Height grows with the number of loaded rows.
+                    Rectangle {
+                        width: root.grid-w;
+                        height: root.row-count * root.cell-h-stride
+                            + (root.still-loading ? 80px : 0px);
+
+                        for cell[i] in root.cells: PageCell {
+                            x: root.content-x-offset
+                                + mod(i, root.cols) * (root.cell-w + root.cell-gap);
+                            y: floor(i / root.cols) * root.cell-h-stride;
+                            title: root.titles[i];
+                            page-factory: cell;
+                        }
+
+                        if root.still-loading: Rectangle {
+                            x: 0;
+                            y: root.row-count * root.cell-h-stride;
+                            width: parent.width;
+                            height: 80px;
+                            Text {
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+                                text: "loading more pages…";
+                                color: Theme.muted;
+                                font-size: 15px;
+                                font-weight: 700;
+                            }
                         }
                     }
                 }
