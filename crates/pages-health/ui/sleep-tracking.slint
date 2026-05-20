@@ -15,6 +15,7 @@
 //   - Per-stage breakdown rows (duration + % + tone dot).
 //   - Vitals strip: resting HR / HRV / respiratory rate.
 
+import { ScrollView } from "std-widgets.slint";
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { SectionHeader } from "@mobile-components/section-header.slint";
@@ -194,6 +195,15 @@ export component SleepTrackingPage inherits Window {
             leading-pressed => { root.back-pressed(); }
             trailing-pressed => { root.share-pressed(); }
         }
+
+        // Score hero + hypnogram + stage breakdown + overnight vitals
+        // overflow a single 892-px screen, so everything below the
+        // pinned AppBar scrolls.
+        ScrollView {
+            vertical-stretch: 1;
+
+            VerticalLayout {
+                spacing: 0;
 
         // Score hero.
         VerticalLayout {
@@ -380,7 +390,7 @@ export component SleepTrackingPage inherits Window {
                 }
             }
         }
-
-        Rectangle { vertical-stretch: 1; }
+            }   // end inner VerticalLayout
+        }       // end ScrollView
     }
 }

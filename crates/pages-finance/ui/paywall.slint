@@ -22,6 +22,7 @@
 //   FAQ-style accordion teaser (3 collapsed rows)
 //   Footer — Subscribe primary button + small restore link
 
+import { ScrollView } from "std-widgets.slint";
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
@@ -203,10 +204,15 @@ export component PaywallPage inherits Window {
             leading-pressed => { root.close-pressed(); }
         }
 
+        // Hero + 3 tier cards (each with its feature checklist) + FAQ
+        // teaser overflow a single 892-px screen, so the middle region
+        // scrolls between the pinned AppBar and the footer CTA below.
+        ScrollView {
+            vertical-stretch: 1;
+
         VerticalLayout {
             padding: Theme.spacing-md;
             spacing: Theme.spacing-md;
-            vertical-stretch: 1;
 
             // ----- Hero -----
             VerticalLayout {
@@ -278,9 +284,8 @@ export component PaywallPage inherits Window {
                 Divider { }
                 FaqRow { question: "What payment methods do you support?"; }
             }
-
-            Rectangle { vertical-stretch: 1; }
         }
+        }       // end ScrollView
 
         // ----- Footer CTA -----
         Rectangle {

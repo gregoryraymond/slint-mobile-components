@@ -1,0 +1,235 @@
+// VaporwavePlayerPage  —  VaporwaveSkin demo
+// =====================================================================
+//
+// Retro-future now-playing screen. A magenta→cyan sunset with a
+// perspective horizon grid (baked SVG) sits behind a translucent neon
+// player card. Space Grotesk, electric pink + cyan accents. Shows album
+// art, a scrubber, transport controls, and an up-next strip. Reads
+// VaporwaveSkin tokens.
+
+import { Theme } from "@mobile-theme/theme.slint";
+import { VaporwaveSkin } from "@mobile-theme/skins.slint";
+import { ScrollView } from "std-widgets.slint";
+
+// A circular transport button.
+component TransportButton inherits Rectangle {
+    in property <string> glyph;
+    in property <bool> primary;
+    in property <length> diameter: 56px;
+    width: root.diameter;
+    height: root.diameter;
+    border-radius: self.width / 2;
+    background: root.primary ? #ff2fae : VaporwaveSkin.glass-fill;
+    border-width: 1px;
+    border-color: VaporwaveSkin.hairline;
+    Text {
+        text: root.glyph;
+        color: VaporwaveSkin.text-primary;
+        font-size: root.primary ? Theme.font-size-headline : Theme.font-size-title;
+        font-weight: 700;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+    }
+}
+
+// An up-next row.
+component UpNextRow inherits Rectangle {
+    in property <string> title;
+    in property <string> artist;
+    in property <string> dur;
+    min-height: 52px;
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        Rectangle {
+            width: 36px;
+            height: 36px;
+            y: 8px;
+            border-radius: Theme.radius-sm;
+            background: #ff4fd84d;
+            border-width: 1px;
+            border-color: VaporwaveSkin.hairline;
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 1px;
+            Text {
+                text: root.title;
+                color: VaporwaveSkin.text-primary;
+                font-size: Theme.font-size-body;
+                font-weight: 700;
+                overflow: elide;
+            }
+            Text {
+                text: root.artist;
+                color: VaporwaveSkin.text-muted;
+                font-size: Theme.font-size-caption;
+                overflow: elide;
+            }
+        }
+        Text {
+            text: root.dur;
+            color: VaporwaveSkin.text-secondary;
+            font-size: Theme.font-size-caption;
+            vertical-alignment: center;
+        }
+    }
+}
+
+export component VaporwavePlayerPage inherits Window {
+    preferred-width: 412px;
+    preferred-height: 892px;
+    default-font-family: VaporwaveSkin.font-family;
+    background: VaporwaveSkin.page-background;
+
+    if VaporwaveSkin.has-background-image: Image {
+        x: 0; y: 0;
+        width: root.width;
+        height: root.height;
+        source: VaporwaveSkin.page-background-image;
+        image-fit: cover;
+    }
+
+    ScrollView {
+        VerticalLayout {
+            spacing: Theme.spacing-lg;
+            padding: Theme.spacing-lg;
+            padding-bottom: Theme.spacing-xl;
+
+            // ---- Top bar ----
+            HorizontalLayout {
+                alignment: space-between;
+                Text {
+                    text: "▾";
+                    color: VaporwaveSkin.text-primary;
+                    font-size: Theme.font-size-title;
+                }
+                Text {
+                    text: "N E O N   D R I V E";
+                    color: VaporwaveSkin.text-secondary;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                    letter-spacing: 2px;
+                    vertical-alignment: center;
+                }
+                Text {
+                    text: "⋯";
+                    color: VaporwaveSkin.text-primary;
+                    font-size: Theme.font-size-title;
+                }
+            }
+
+            // ---- Album art (neon frame) ----
+            HorizontalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 280px;
+                    height: 280px;
+                    border-radius: Theme.radius-lg;
+                    background: #ff2fae40;
+                    border-width: 2px;
+                    border-color: #00f0ff;
+                    clip: true;
+                    drop-shadow-blur: Theme.elevation-3-blur;
+                    drop-shadow-color: #ff2fae66;
+                    Text {
+                        text: "◑";
+                        color: #00f0ff;
+                        font-size: 140px;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                    }
+                }
+            }
+
+            // ---- Track title ----
+            VerticalLayout {
+                spacing: Theme.spacing-xs;
+                Text {
+                    text: "Sunset Cassette";
+                    color: VaporwaveSkin.text-primary;
+                    font-size: Theme.font-size-headline;
+                    font-weight: 700;
+                    horizontal-alignment: center;
+                }
+                Text {
+                    text: "MACINTOSH PLAYER";
+                    color: VaporwaveSkin.text-secondary;
+                    font-size: Theme.font-size-body;
+                    letter-spacing: 1px;
+                    horizontal-alignment: center;
+                }
+            }
+
+            // ---- Scrubber ----
+            VerticalLayout {
+                spacing: Theme.spacing-xs;
+                Rectangle {
+                    height: 6px;
+                    border-radius: 3px;
+                    background: VaporwaveSkin.glass-fill;
+                    clip: true;
+                    Rectangle {
+                        x: 0;
+                        y: 0;
+                        height: parent.height;
+                        width: parent.width * 0.38;
+                        background: #00f0ff;
+                    }
+                }
+                HorizontalLayout {
+                    Text {
+                        text: "1:24";
+                        color: VaporwaveSkin.text-muted;
+                        font-size: Theme.font-size-caption;
+                        horizontal-stretch: 1;
+                    }
+                    Text {
+                        text: "-2:15";
+                        color: VaporwaveSkin.text-muted;
+                        font-size: Theme.font-size-caption;
+                    }
+                }
+            }
+
+            // ---- Transport ----
+            HorizontalLayout {
+                alignment: center;
+                spacing: Theme.spacing-lg;
+                TransportButton { glyph: "↺"; }
+                TransportButton { glyph: "◀◀"; }
+                TransportButton { glyph: "▶"; primary: true; diameter: 72px; }
+                TransportButton { glyph: "▶▶"; }
+                TransportButton { glyph: "♡"; }
+            }
+
+            // ---- Up next ----
+            Rectangle {
+                background: VaporwaveSkin.bar-background;
+                border-radius: Theme.radius-lg;
+                clip: true;
+                border-width: 1px;
+                border-color: VaporwaveSkin.hairline;
+                VerticalLayout {
+                    padding-top: Theme.spacing-sm;
+                    padding-bottom: Theme.spacing-sm;
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-md;
+                        Text {
+                            text: "UP NEXT";
+                            color: VaporwaveSkin.text-secondary;
+                            font-size: Theme.font-size-caption;
+                            font-weight: 700;
+                            letter-spacing: 2px;
+                        }
+                    }
+                    UpNextRow { title: "Midnight Modem"; artist: "Telecom"; dur: "3:41"; }
+                    UpNextRow { title: "Mall at Dawn"; artist: "Atrium"; dur: "4:02"; }
+                    UpNextRow { title: "Pastel Highway"; artist: "VHS Dreams"; dur: "3:17"; }
+                }
+            }
+        }
+    }
+}

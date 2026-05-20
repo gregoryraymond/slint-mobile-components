@@ -11,6 +11,7 @@
 //     status pill (TAKEN success, DUE info, MISSED danger).
 //   - Sticky bottom "Mark all morning taken" CTA.
 
+import { ScrollView } from "std-widgets.slint";
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { SectionHeader } from "@mobile-components/section-header.slint";
@@ -165,6 +166,15 @@ export component MedicationPage inherits Window {
             leading-pressed => { root.back-pressed(); }
         }
 
+        // Hero summary + 6 dose rows across 3 time-of-day sections
+        // overflow a single 892-px screen, so the middle region scrolls
+        // between the pinned AppBar and the sticky CTA below.
+        ScrollView {
+            vertical-stretch: 1;
+
+            VerticalLayout {
+                spacing: 0;
+
         // ----- Hero summary -----
         VerticalLayout {
             padding: Theme.spacing-md;
@@ -282,8 +292,8 @@ export component MedicationPage inherits Window {
             state: 3;
             pill-color: Theme.accent-info;
         }
-
-        Rectangle { vertical-stretch: 1; }
+            }   // end inner VerticalLayout
+        }       // end ScrollView
 
         // Sticky CTA — most actionable: log all morning doses at once.
         Rectangle {

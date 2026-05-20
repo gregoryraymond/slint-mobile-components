@@ -12,6 +12,7 @@
 //     "sparkline" in the middle, and price + tone-tinted change on
 //     the right.
 
+import { ScrollView } from "std-widgets.slint";
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { HeadingStyle } from "@mobile-components/heading.slint";
@@ -194,6 +195,14 @@ export component StockWatchlistPage inherits Window {
             trailing-pressed => { root.search-pressed(); }
         }
 
+        // Market summary + filter tabs + 7 ticker rows overflow a single
+        // 892-px screen, so everything below the pinned AppBar scrolls.
+        ScrollView {
+            vertical-stretch: 1;
+
+            VerticalLayout {
+                spacing: 0;
+
         // Market summary.
         Rectangle {
             background: Theme.surface-1;
@@ -298,7 +307,7 @@ export component StockWatchlistPage inherits Window {
             spark: [0.35, 0.4, 0.38, 0.46, 0.5, 0.48, 0.56, 0.6, 0.68, 0.72, 0.8, 0.92];
             clicked => { root.ticker-pressed("AMD"); }
         }
-
-        Rectangle { vertical-stretch: 1; }
+            }   // end inner VerticalLayout
+        }       // end ScrollView
     }
 }

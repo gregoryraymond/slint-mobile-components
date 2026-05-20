@@ -17,6 +17,7 @@
 //   - Trailing destructive section: "Force stop" and "Clear data"
 //     rendered as danger-toned nav rows.
 
+import { ScrollView } from "std-widgets.slint";
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { SectionHeader } from "@mobile-components/section-header.slint";
@@ -163,6 +164,17 @@ export component AppPermissionsPage inherits Window {
             trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
             leading-pressed => { root.back-pressed(); }
         }
+
+        // Everything below the AppBar lives in a ScrollView. The page
+        // stacks ~10 sections (header, ratings, permissions, location
+        // strip, danger zone) which overflow a single 892-px screen.
+        // Without this wrapper the danger-zone rows below the fold
+        // were unreachable.
+        ScrollView {
+            vertical-stretch: 1;
+
+            VerticalLayout {
+                spacing: 0;
 
         // App header card.
         Rectangle {
@@ -355,5 +367,7 @@ export component AppPermissionsPage inherits Window {
             tone: Tone.danger;
             clicked => { root.clear-data-pressed(); }
         }
-    }
+            }   // end inner VerticalLayout
+        }       // end ScrollView
+    }           // end outer VerticalLayout
 }

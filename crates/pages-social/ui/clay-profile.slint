@@ -1,0 +1,211 @@
+// ClayProfilePage  —  ClaySkin demo
+// =====================================================================
+//
+// Soft pastel claymorphism profile. Puffy rounded translucent-white
+// "clay" surfaces float over a lavender→peach gradient ground; type is
+// low-contrast plum (IBM Plex Sans). Shows an avatar hero, a stat strip,
+// pill chips, and a soft settings list. Reads ClaySkin tokens.
+
+import { Theme } from "@mobile-theme/theme.slint";
+import { ClaySkin } from "@mobile-theme/skins.slint";
+import { ScrollView } from "std-widgets.slint";
+
+// One puffy stat tile.
+component StatTile inherits Rectangle {
+    in property <string> value;
+    in property <string> label;
+    background: ClaySkin.glass-fill;
+    border-radius: Theme.radius-lg;
+    drop-shadow-blur: Theme.elevation-1-blur;
+    drop-shadow-color: #b89ce033;
+    drop-shadow-offset-y: Theme.elevation-1-y;
+    clip: true;
+    VerticalLayout {
+        padding: Theme.spacing-md;
+        alignment: center;
+        spacing: 2px;
+        Text {
+            text: root.value;
+            color: ClaySkin.text-primary;
+            font-size: Theme.font-size-headline;
+            font-weight: 700;
+            horizontal-alignment: center;
+        }
+        Text {
+            text: root.label;
+            color: ClaySkin.text-muted;
+            font-size: Theme.font-size-caption;
+            horizontal-alignment: center;
+        }
+    }
+}
+
+// A soft pill chip.
+component ClayChip inherits Rectangle {
+    in property <string> label;
+    in property <bool> filled;
+    background: root.filled ? #c9a9ff : ClaySkin.glass-fill;
+    border-radius: Theme.radius-lg;
+    clip: true;
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        padding-top: Theme.spacing-sm;
+        padding-bottom: Theme.spacing-sm;
+        Text {
+            text: root.label;
+            color: root.filled ? #ffffff : ClaySkin.text-secondary;
+            font-size: Theme.font-size-body;
+            font-weight: 600;
+        }
+    }
+}
+
+// A soft list row.
+component ClayRow inherits Rectangle {
+    in property <string> title;
+    in property <string> trailing;
+    min-height: 56px;
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        Text {
+            text: root.title;
+            color: ClaySkin.text-primary;
+            font-size: Theme.font-size-body-large;
+            font-weight: 500;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+        Text {
+            text: root.trailing;
+            color: ClaySkin.text-muted;
+            font-size: Theme.font-size-body;
+            vertical-alignment: center;
+        }
+    }
+}
+
+export component ClayProfilePage inherits Window {
+    preferred-width: 412px;
+    preferred-height: 892px;
+    default-font-family: ClaySkin.font-family;
+    background: ClaySkin.page-background;
+
+    if ClaySkin.has-background-image: Image {
+        x: 0; y: 0;
+        width: root.width;
+        height: root.height;
+        source: ClaySkin.page-background-image;
+        image-fit: cover;
+    }
+
+    ScrollView {
+        VerticalLayout {
+            padding: Theme.spacing-lg;
+            spacing: Theme.spacing-lg;
+            padding-bottom: Theme.spacing-xl;
+
+            // ---- Top frosted nav ----
+            Rectangle {
+                background: ClaySkin.bar-background;
+                border-radius: Theme.radius-lg;
+                clip: true;
+                height: Theme.touch-target;
+                HorizontalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    alignment: space-between;
+                    Text {
+                        text: "‹ back";
+                        color: ClaySkin.text-secondary;
+                        font-size: Theme.font-size-body-large;
+                        vertical-alignment: center;
+                    }
+                    Text {
+                        text: "edit";
+                        color: ClaySkin.text-secondary;
+                        font-size: Theme.font-size-body-large;
+                        font-weight: 600;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+
+            // ---- Avatar hero ----
+            VerticalLayout {
+                spacing: Theme.spacing-sm;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 120px;
+                        height: 120px;
+                        border-radius: 60px;
+                        background: #d7b9ff;
+                        drop-shadow-blur: Theme.elevation-2-blur;
+                        drop-shadow-color: #a987e055;
+                        drop-shadow-offset-y: Theme.elevation-2-y;
+                        clip: true;
+                        Text {
+                            text: "🌸";
+                            font-size: 56px;
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                        }
+                    }
+                }
+                Text {
+                    text: "Mira Aoki";
+                    color: ClaySkin.text-primary;
+                    font-size: Theme.font-size-headline;
+                    font-weight: 700;
+                    horizontal-alignment: center;
+                }
+                Text {
+                    text: "ceramicist · kyoto";
+                    color: ClaySkin.text-secondary;
+                    font-size: Theme.font-size-body-large;
+                    horizontal-alignment: center;
+                }
+            }
+
+            // ---- Stat strip ----
+            HorizontalLayout {
+                spacing: Theme.spacing-md;
+                StatTile { value: "248"; label: "pieces"; horizontal-stretch: 1; }
+                StatTile { value: "12.4k"; label: "follows"; horizontal-stretch: 1; }
+                StatTile { value: "31"; label: "shows"; horizontal-stretch: 1; }
+            }
+
+            // ---- Chips ----
+            HorizontalLayout {
+                spacing: Theme.spacing-sm;
+                ClayChip { label: "wheel"; filled: true; }
+                ClayChip { label: "glaze"; }
+                ClayChip { label: "raku"; }
+                ClayChip { label: "kiln"; }
+                Rectangle { horizontal-stretch: 1; }
+            }
+
+            // ---- Soft settings card ----
+            Rectangle {
+                background: ClaySkin.glass-fill;
+                border-radius: Theme.radius-lg;
+                clip: true;
+                drop-shadow-blur: Theme.elevation-1-blur;
+                drop-shadow-color: #b89ce033;
+                drop-shadow-offset-y: Theme.elevation-1-y;
+                VerticalLayout {
+                    padding-top: Theme.spacing-sm;
+                    padding-bottom: Theme.spacing-sm;
+                    ClayRow { title: "Studio hours"; trailing: "9–5"; }
+                    Rectangle { height: 1px; background: ClaySkin.hairline; }
+                    ClayRow { title: "Commissions"; trailing: "open"; }
+                    Rectangle { height: 1px; background: ClaySkin.hairline; }
+                    ClayRow { title: "Notifications"; trailing: "on"; }
+                }
+            }
+        }
+    }
+}

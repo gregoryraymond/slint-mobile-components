@@ -13,6 +13,7 @@
 // The page header carries a Week-picker chip strip; the footer shows
 // the rolled-up weekly stats (total kcal + protein avg + meals planned).
 
+import { ScrollView } from "std-widgets.slint";
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { SectionHeader } from "@mobile-components/section-header.slint";
@@ -133,6 +134,15 @@ export component WeeklyMealPlanPage inherits Window {
             trailing-icon: @image-url("@mobile-components/icons/queue.svg");
             leading-pressed => { root.back-pressed(); }
         }
+
+        // Week picker + column headers + 7 day rows overflow a single
+        // 892-px screen, so the middle region scrolls between the pinned
+        // AppBar and the footer stats below.
+        ScrollView {
+            vertical-stretch: 1;
+
+            VerticalLayout {
+                spacing: 0;
 
         // Week picker + label.
         VerticalLayout {
@@ -273,8 +283,8 @@ export component WeeklyMealPlanPage inherits Window {
             MealPill { name: "Leftovers"; kcal: "400 kcal"; tone: Tone.default; }
             MealPill { name: "Soup + bread"; kcal: "350 kcal"; tone: Tone.default; }
         }
-
-        Rectangle { vertical-stretch: 1; }
+            }   // end inner VerticalLayout
+        }       // end ScrollView
 
         // Footer stats.
         Rectangle {

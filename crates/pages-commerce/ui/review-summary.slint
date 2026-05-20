@@ -12,6 +12,7 @@
 //   - Per-review card: author avatar + 5-star rating + author + tone-
 //     tinted "VERIFIED PURCHASE" pill + body + helpful counter row.
 
+import { ScrollView } from "std-widgets.slint";
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
@@ -257,6 +258,15 @@ export component ReviewSummaryPage inherits Window {
             trailing-pressed => { root.write-review-pressed(); }
         }
 
+        // Hero card + filters + 3 review cards overflow a single 892-px
+        // screen, so the middle region scrolls between the pinned AppBar
+        // and the sticky write-a-review CTA below.
+        ScrollView {
+            vertical-stretch: 1;
+
+            VerticalLayout {
+                spacing: 0;
+
         VerticalLayout {
             padding: Theme.spacing-md;
             spacing: Theme.spacing-md;
@@ -371,8 +381,8 @@ export component ReviewSummaryPage inherits Window {
                 helpful: 3;
             }
         }
-
-        Rectangle { vertical-stretch: 1; }
+            }   // end inner VerticalLayout
+        }       // end ScrollView
 
         // Sticky write-a-review CTA.
         Rectangle {

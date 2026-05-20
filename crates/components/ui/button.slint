@@ -118,14 +118,22 @@ export component TextButton inherits Rectangle {
     // bespoke values aren't represented in the theme scale.
     min-height: 40px;
     min-width: 80px;
+    // preferred-width: label.preferred-width + 2 × spacing-sm — this is
+    // what makes the button grow past `min-width` so long labels
+    // ("Forgot passcode?", "Create an account") don't clip on the
+    // right edge. Without it, the Rectangle stays at min-width: 80px
+    // because nothing tells the layout the inner Text wants more
+    // room.
+    preferred-width: label.preferred-width + 2 * Theme.spacing-sm;
     vertical-stretch: 0;
+    horizontal-stretch: 0;
     border-radius: Theme.radius-sm;
     background: touch.pressed ? Theme.surface-pressed : transparent;
     opacity: root.enabled ? 1.0 : 0.5;
 
     animate background { duration: Theme.motion-fast; }
 
-    Text {
+    label := Text {
         x: Theme.spacing-sm;
         y: 0;
         width: parent.width - 2 * Theme.spacing-sm;

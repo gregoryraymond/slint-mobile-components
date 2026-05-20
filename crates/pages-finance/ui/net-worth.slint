@@ -12,6 +12,7 @@
 //   - Grouped account rows: ASSETS (values in success tone) then
 //     LIABILITIES (values in danger tone), each with an icon disc.
 
+import { ScrollView } from "std-widgets.slint";
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
@@ -127,6 +128,15 @@ export component NetWorthPage inherits Window {
             leading-pressed => { root.back-pressed(); }
             trailing-pressed => { root.history-pressed(); }
         }
+
+        // Hero + split card + ASSETS (4 rows) + LIABILITIES (3 rows)
+        // overflow a single 892-px screen, so everything below the
+        // pinned AppBar scrolls.
+        ScrollView {
+            vertical-stretch: 1;
+
+            VerticalLayout {
+                spacing: 0;
 
         VerticalLayout {
             padding: Theme.spacing-md;
@@ -333,7 +343,7 @@ export component NetWorthPage inherits Window {
             liability: true;
             clicked => { root.account-pressed("Auto loan"); }
         }
-
-        Rectangle { vertical-stretch: 1; }
+            }   // end inner VerticalLayout
+        }       // end ScrollView
     }
 }

@@ -26,7 +26,7 @@
 //!      renders it.
 
 use include_dir::{include_dir, Dir};
-use slint::{ComponentHandle, ModelRc, SharedPixelBuffer, SharedString, VecModel};
+use slint::{ComponentHandle, Model, ModelRc, SharedPixelBuffer, SharedString, Timer, TimerMode, VecModel};
 use slint_interpreter::{Compiler, ComponentInstance, Struct, Value};
 use slint_mapping::source::{TileKey, TileSource};
 use std::cell::RefCell;
@@ -218,7 +218,15 @@ fn discover_pages() -> Vec<PageMeta> {
 /// first-time visitor lands on the live demo. Stems are filenames
 /// without the `.slint` extension; case-sensitive match against
 /// `PageMeta::display`.
-const SHOWCASE_STEMS: &[&str] = &["album-detail", "app-lock"];
+const SHOWCASE_STEMS: &[&str] = &[
+    "album-detail",
+    "app-lock",
+    "control-panel",
+    "clay-profile",
+    "terminal-dashboard",
+    "editorial-article",
+    "vaporwave-player",
+];
 
 /// Last `export component XxxPage|XxxScreen inherits …` in a source.
 /// Mirrors the heuristic used by the desktop viewer.
@@ -282,6 +290,14 @@ fn make_compiler() -> Compiler {
 #[cfg(target_arch = "wasm32")]
 thread_local! {
     static VIEWER_HANDLE: RefCell<Option<slint::Weak<WasmViewer>>> = const { RefCell::new(None) };
+}
+
+// Slint Timer dropping cancels its scheduled work, so the incremental
+// loader's Timer needs to outlive `run()`. Park it in a thread-local
+// slot — wasm is single-threaded and the timer is set up exactly
+// once.
+thread_local! {
+    static LOADER_TIMER: RefCell<Option<Timer>> = const { RefCell::new(None) };
 }
 
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
@@ -363,38 +379,84 @@ pub fn run() {
     viewer.set_loaded(0);
     viewer.set_summary("compiling pages…".into());
 
-    // Parse + register every page synchronously. Wasm is single-
-    // threaded; a streaming-parse loop (like the desktop viewer)
-    // would just yield to the browser between iterations without
-    // gaining real parallelism, and would make the initial paint
-    // feel jankier. With ~140 pages this loop is bounded by
-    // interpreter speed and resolves in a fraction of a second.
-    let cursor = Rc::new(RefCell::new(0_usize));
+    // Incremental load. Compile the first batch synchronously so the
+    // visitor sees content immediately (the showcase tier + the map
+    // pages — the most polished cells), then drive the rest via a
+    // Slint Timer that ticks between frames. Each tick compiles one
+    // page and appends it to the model, so the catalogue grows
+    // visibly under the user's scroll. ~25 ms per tick lands ~40
+    // pages/sec, which means the full 145-page catalogue finishes in
+    // ~3.5 s while keeping the canvas responsive.
+    // Visitor-facing pacing. 6 pages up-front fills the first row at
+    // most window widths. After that ~10 pages/sec is a deliberate
+    // "watch the catalogue grow" pace — fast enough to land the full
+    // 145-page catalogue in ~15 s but slow enough that a visitor sees
+    // it as a load-in animation rather than a flash of bare cells.
+    const INITIAL_BATCH: usize = 6;
+    const TICK_MS: u64 = 100;
+
     let pages_rc = Rc::new(pages);
+    let cursor = Rc::new(RefCell::new(0_usize));
+
+    // ---- Synchronous initial batch ----
+    let initial_end = INITIAL_BATCH.min(pages_rc.len());
+    for page in &pages_rc[..initial_end] {
+        let Some(factory) = compile_to_factory(page) else {
+            *cursor.borrow_mut() += 1;
+            continue;
+        };
+        titles.push(SharedString::from(page.display.as_str()));
+        cells.push(factory);
+        *cursor.borrow_mut() += 1;
+    }
+    viewer.set_loaded(*cursor.borrow() as i32);
+    viewer.set_summary(if pages_rc.len() <= INITIAL_BATCH {
+        format!("{} pages ready", *cursor.borrow()).into()
+    } else {
+        format!("{} of {} pages — loading…", *cursor.borrow(), pages_rc.len()).into()
+    });
+
+    // ---- Timer-driven trickle for the remaining pages ----
+    // Store the timer somewhere it won't be dropped: a thread-local
+    // slot owned by the wasm module (single-threaded, so a TLS Cell is
+    // safe). Dropping the timer would cancel the trickle mid-load.
     let viewer_weak = viewer.as_weak();
+    let timer = Timer::default();
     {
-        let cursor = Rc::clone(&cursor);
         let pages_rc = Rc::clone(&pages_rc);
+        let cursor = Rc::clone(&cursor);
         let titles = titles.clone();
         let cells = cells.clone();
-        // Run a single batch right now. If this becomes too long,
-        // it's safe to split across requestAnimationFrame ticks via
-        // slint::Timer::single_shot — but with the v1 page count it
-        // hasn't been a problem.
-        for page in pages_rc.iter() {
-            let Some(factory) = compile_to_factory(page) else {
-                continue;
-            };
-            titles.push(SharedString::from(page.display.as_str()));
-            cells.push(factory);
-            *cursor.borrow_mut() += 1;
-        }
-        if let Some(v) = viewer_weak.upgrade() {
-            let loaded = *cursor.borrow() as i32;
-            v.set_loaded(loaded);
-            v.set_summary(format!("{loaded} pages ready").into());
-        }
+        timer.start(
+            TimerMode::Repeated,
+            std::time::Duration::from_millis(TICK_MS),
+            move || {
+                let i = *cursor.borrow();
+                if i >= pages_rc.len() {
+                    return;
+                }
+                *cursor.borrow_mut() = i + 1;
+                let page = &pages_rc[i];
+                let Some(factory) = compile_to_factory(page) else {
+                    return;
+                };
+                titles.push(SharedString::from(page.display.as_str()));
+                cells.push(factory);
+                if let Some(v) = viewer_weak.upgrade() {
+                    let loaded = titles.row_count() as i32;
+                    v.set_loaded(loaded);
+                    if i + 1 >= pages_rc.len() {
+                        v.set_summary(format!("{loaded} pages ready").into());
+                    } else {
+                        v.set_summary(
+                            format!("{loaded} of {} pages — loading…", pages_rc.len()).into(),
+                        );
+                    }
+                }
+            },
+        );
     }
+    LOADER_TIMER.with(|slot| *slot.borrow_mut() = Some(timer));
 
     // On wasm, `.run()` hands off to winit's web backend which drives
     // the Slint event loop via requestAnimationFrame. Returns

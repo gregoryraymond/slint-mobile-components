@@ -160,20 +160,31 @@ component InfoPill inherits Rectangle {
     HorizontalLayout {
         alignment: center;
         spacing: 6px;
-        Image {
-            width: 16px;
-            height: 16px;
-            source: root.icon;
-            colorize: Theme.on-surface;
-            image-fit: contain;
-            vertical-alignment: center;
+        // Each child wrapped in a `VerticalLayout { alignment: center; }`
+        // so both the icon and the label sit at the same vertical
+        // midline. `vertical-alignment` on Image/Text only centers the
+        // glyph inside its own bounding box — it doesn't align two
+        // different children to each other inside a HorizontalLayout
+        // (HorizontalLayout has no `vertical-alignment` knob). Without
+        // these wrappers the icon was offset relative to the label.
+        VerticalLayout {
+            alignment: center;
+            Image {
+                width: 16px;
+                height: 16px;
+                source: root.icon;
+                colorize: Theme.on-surface;
+                image-fit: contain;
+            }
         }
-        Text {
-            text: root.label;
-            color: Theme.on-surface;
-            font-size: Theme.font-size-caption;
-            font-weight: 700;
-            vertical-alignment: center;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-caption;
+                font-weight: 700;
+            }
         }
     }
     touch := TouchArea {

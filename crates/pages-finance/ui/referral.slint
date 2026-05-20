@@ -13,6 +13,7 @@
 //   - Invited-friends list: each row an avatar + name + a tone-tinted
 //     status pill (Joined / Pending) + the reward earned.
 
+import { ScrollView } from "std-widgets.slint";
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
@@ -166,6 +167,15 @@ export component ReferralPage inherits Window {
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             leading-pressed => { root.back-pressed(); }
         }
+
+        // Reward hero + code card + bonus progress + invited-friends
+        // list overflow a single 892-px screen, so the middle region
+        // scrolls between the pinned AppBar and the sticky CTA below.
+        ScrollView {
+            vertical-stretch: 1;
+
+            VerticalLayout {
+                spacing: 0;
 
         VerticalLayout {
             padding: Theme.spacing-md;
@@ -388,8 +398,8 @@ export component ReferralPage inherits Window {
             status: 1;
             reward: "$0";
         }
-
-        Rectangle { vertical-stretch: 1; }
+            }   // end inner VerticalLayout
+        }       // end ScrollView
 
         // Sticky CTA.
         Rectangle {

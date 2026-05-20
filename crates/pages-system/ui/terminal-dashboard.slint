@@ -1,0 +1,203 @@
+// TerminalDashboardPage  —  TerminalSkin demo
+// =====================================================================
+//
+// Neon cyberpunk terminal. Acid-green + cyan mono type over a near-black
+// phosphor grid with scanlines (baked SVG). Translucent dark panels let
+// the grid bleed through. Shows a command-prompt hero, a live log
+// stream, and a node-status grid. Reads TerminalSkin tokens.
+
+import { Theme } from "@mobile-theme/theme.slint";
+import { TerminalSkin } from "@mobile-theme/skins.slint";
+import { ScrollView } from "std-widgets.slint";
+
+// A monospaced log line: timestamp + level tag + message.
+component LogLine inherits HorizontalLayout {
+    in property <string> ts;
+    in property <string> level;
+    in property <string> msg;
+    in property <color> level-color;
+    padding-left: Theme.spacing-md;
+    padding-right: Theme.spacing-md;
+    spacing: Theme.spacing-sm;
+    Text {
+        text: root.ts;
+        color: TerminalSkin.text-muted;
+        font-size: Theme.font-size-caption;
+    }
+    Text {
+        text: root.level;
+        color: root.level-color;
+        font-size: Theme.font-size-caption;
+        font-weight: 700;
+        width: 44px;
+    }
+    Text {
+        text: root.msg;
+        color: TerminalSkin.text-secondary;
+        font-size: Theme.font-size-caption;
+        horizontal-stretch: 1;
+        overflow: elide;
+    }
+}
+
+// A node tile in the status grid.
+component NodeTile inherits Rectangle {
+    in property <string> name;
+    in property <string> stat;
+    in property <bool> up;
+    background: TerminalSkin.glass-fill;
+    border-width: 1px;
+    border-color: TerminalSkin.hairline;
+    border-radius: Theme.radius-sm;
+    clip: true;
+    min-height: 72px;
+    VerticalLayout {
+        padding: Theme.spacing-sm;
+        spacing: Theme.spacing-xs;
+        HorizontalLayout {
+            spacing: Theme.spacing-xs;
+            Rectangle {
+                width: 8px;
+                height: 8px;
+                border-radius: 4px;
+                background: root.up ? #5dff9b : #ff4f6d;
+                y: 4px;
+            }
+            Text {
+                text: root.name;
+                color: TerminalSkin.text-primary;
+                font-size: Theme.font-size-body;
+                font-weight: 700;
+            }
+        }
+        Text {
+            text: root.stat;
+            color: TerminalSkin.text-muted;
+            font-size: Theme.font-size-caption;
+        }
+    }
+}
+
+export component TerminalDashboardPage inherits Window {
+    preferred-width: 412px;
+    preferred-height: 892px;
+    default-font-family: TerminalSkin.font-family;
+    background: TerminalSkin.page-background;
+
+    if TerminalSkin.has-background-image: Image {
+        x: 0; y: 0;
+        width: root.width;
+        height: root.height;
+        source: TerminalSkin.page-background-image;
+        image-fit: cover;
+    }
+
+    VerticalLayout {
+        spacing: 0;
+
+        // ---- Status bar ----
+        Rectangle {
+            background: TerminalSkin.bar-background;
+            height: 64px;
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                alignment: space-between;
+                Text {
+                    text: "root@orbital:~#";
+                    color: TerminalSkin.text-primary;
+                    font-size: Theme.font-size-body-large;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                }
+                Text {
+                    text: "● LIVE";
+                    color: TerminalSkin.text-secondary;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        ScrollView {
+            vertical-stretch: 1;
+            VerticalLayout {
+                spacing: Theme.spacing-lg;
+                padding: Theme.spacing-md;
+                padding-bottom: Theme.spacing-xl;
+
+                // ---- Prompt hero ----
+                Rectangle {
+                    background: TerminalSkin.glass-fill;
+                    border-width: 1px;
+                    border-color: TerminalSkin.hairline;
+                    border-radius: Theme.radius-sm;
+                    clip: true;
+                    VerticalLayout {
+                        padding: Theme.spacing-md;
+                        spacing: Theme.spacing-xs;
+                        Text {
+                            text: "$ uptime --fleet";
+                            color: TerminalSkin.text-muted;
+                            font-size: Theme.font-size-caption;
+                        }
+                        Text {
+                            text: "99.982%";
+                            color: TerminalSkin.text-primary;
+                            font-size: 48px;
+                            font-weight: 700;
+                        }
+                        Text {
+                            text: "14 nodes online · 0 incidents · 42d";
+                            color: TerminalSkin.text-secondary;
+                            font-size: Theme.font-size-caption;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+
+                // ---- Log stream ----
+                Text {
+                    text: ">> tail -f /var/log/sys";
+                    color: TerminalSkin.text-muted;
+                    font-size: Theme.font-size-caption;
+                }
+                Rectangle {
+                    background: TerminalSkin.glass-fill;
+                    border-width: 1px;
+                    border-color: TerminalSkin.hairline;
+                    border-radius: Theme.radius-sm;
+                    clip: true;
+                    VerticalLayout {
+                        padding-top: Theme.spacing-sm;
+                        padding-bottom: Theme.spacing-sm;
+                        spacing: Theme.spacing-xs;
+                        LogLine { ts: "08:21"; level: "OK"; msg: "auth handshake complete"; level-color: #5dff9b; }
+                        LogLine { ts: "08:21"; level: "INFO"; msg: "cache warmed 1.2GB"; level-color: #2fd8c4; }
+                        LogLine { ts: "08:22"; level: "WARN"; msg: "node-07 latency 240ms"; level-color: #ffd24f; }
+                        LogLine { ts: "08:22"; level: "OK"; msg: "rebalanced shard ring"; level-color: #5dff9b; }
+                        LogLine { ts: "08:23"; level: "INFO"; msg: "snapshot pushed to cold"; level-color: #2fd8c4; }
+                    }
+                }
+
+                // ---- Node grid ----
+                Text {
+                    text: ">> nodes --status";
+                    color: TerminalSkin.text-muted;
+                    font-size: Theme.font-size-caption;
+                }
+                HorizontalLayout {
+                    spacing: Theme.spacing-sm;
+                    NodeTile { name: "node-01"; stat: "cpu 38%"; up: true; horizontal-stretch: 1; }
+                    NodeTile { name: "node-02"; stat: "cpu 55%"; up: true; horizontal-stretch: 1; }
+                }
+                HorizontalLayout {
+                    spacing: Theme.spacing-sm;
+                    NodeTile { name: "node-07"; stat: "degraded"; up: false; horizontal-stretch: 1; }
+                    NodeTile { name: "node-11"; stat: "cpu 12%"; up: true; horizontal-stretch: 1; }
+                }
+            }
+        }
+    }
+}

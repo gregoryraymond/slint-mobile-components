@@ -14,6 +14,7 @@
 //   - "Add item" inline row at the bottom of the last section + a Fab
 //     for quick-add.
 
+import { ScrollView } from "std-widgets.slint";
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
@@ -130,6 +131,15 @@ export component GroceryListPage inherits Window {
             leading-pressed => { root.back-pressed(); }
             trailing-pressed => { root.share-pressed(); }
         }
+
+        // The list overflows a single 892-px screen (3 aisle sections,
+        // ~11 rows). Wrap everything below the pinned AppBar in a
+        // ScrollView so the lower aisles + add-item row stay reachable.
+        ScrollView {
+            vertical-stretch: 1;
+
+            VerticalLayout {
+                spacing: 0;
 
         // Progress hero.
         Rectangle {
@@ -249,8 +259,8 @@ export component GroceryListPage inherits Window {
                 clicked => { root.add-pressed(); }
             }
         }
-
-        Rectangle { vertical-stretch: 1; }
+            }   // end inner VerticalLayout
+        }       // end ScrollView
     }
 
     Fab {

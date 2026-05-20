@@ -16,6 +16,7 @@
 //     pills.
 //   - "Add new" row at the bottom + a Card-removal CTA.
 
+import { ScrollView } from "std-widgets.slint";
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
@@ -280,6 +281,15 @@ export component PaymentMethodPage inherits Window {
             trailing-pressed => { root.add-card-pressed(); }
         }
 
+        // Default card hero + quick-pay + 5 saved-card rows overflow a
+        // single 892-px screen, so the middle region scrolls between the
+        // pinned AppBar and the sticky add-new footer below.
+        ScrollView {
+            vertical-stretch: 1;
+
+            VerticalLayout {
+                spacing: 0;
+
         VerticalLayout {
             padding: Theme.spacing-md;
             spacing: Theme.spacing-md;
@@ -365,8 +375,8 @@ export component PaymentMethodPage inherits Window {
             state: 0;
             swatch: #ffa8c5;
         }
-
-        Rectangle { vertical-stretch: 1; }
+            }   // end inner VerticalLayout
+        }       // end ScrollView
 
         // Sticky add-new + manage row.
         Rectangle {

@@ -1,0 +1,167 @@
+// EditorialArticlePage  —  EditorialSkin demo
+// =====================================================================
+//
+// Print-magazine longform reader. Warm cream paper, near-black ink, a
+// deep burgundy accent, Fraunces serif throughout. A kicker + giant
+// display headline, a byline rule, a drop-cap opening paragraph, a
+// pull-quote, and body columns. Reads EditorialSkin tokens.
+
+import { Theme } from "@mobile-theme/theme.slint";
+import { EditorialSkin } from "@mobile-theme/skins.slint";
+import { ScrollView } from "std-widgets.slint";
+
+// A body paragraph in the reading serif.
+component BodyPara inherits Text {
+    color: EditorialSkin.text-secondary;
+    font-size: Theme.font-size-body-large;
+    wrap: word-wrap;
+    horizontal-alignment: left;
+}
+
+export component EditorialArticlePage inherits Window {
+    preferred-width: 412px;
+    preferred-height: 892px;
+    default-font-family: EditorialSkin.font-family;
+    background: EditorialSkin.page-background;
+
+    if EditorialSkin.has-background-image: Image {
+        x: 0; y: 0;
+        width: root.width;
+        height: root.height;
+        source: EditorialSkin.page-background-image;
+        image-fit: cover;
+    }
+
+    VerticalLayout {
+        spacing: 0;
+
+        // ---- Slim masthead ----
+        Rectangle {
+            background: EditorialSkin.bar-background;
+            height: 56px;
+            HorizontalLayout {
+                padding-left: Theme.spacing-lg;
+                padding-right: Theme.spacing-lg;
+                alignment: space-between;
+                Text {
+                    text: "THE MARGIN";
+                    color: EditorialSkin.text-primary;
+                    font-size: Theme.font-size-body;
+                    font-weight: 700;
+                    letter-spacing: 2px;
+                    vertical-alignment: center;
+                }
+                Text {
+                    text: "Aa";
+                    color: EditorialSkin.text-muted;
+                    font-size: Theme.font-size-body-large;
+                    vertical-alignment: center;
+                }
+            }
+        }
+        Rectangle { height: 1px; background: EditorialSkin.hairline; }
+
+        ScrollView {
+            vertical-stretch: 1;
+            VerticalLayout {
+                padding-left: Theme.spacing-lg;
+                padding-right: Theme.spacing-lg;
+                padding-top: Theme.spacing-lg;
+                padding-bottom: Theme.spacing-xl;
+                spacing: Theme.spacing-md;
+
+                // ---- Kicker ----
+                Text {
+                    text: "ESSAY · CRAFT";
+                    color: #7a1f2b;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                    letter-spacing: 3px;
+                }
+                // ---- Display headline ----
+                Text {
+                    text: "The Slow Return of the Long Sentence";
+                    color: EditorialSkin.text-primary;
+                    font-size: 38px;
+                    font-weight: 700;
+                    wrap: word-wrap;
+                }
+                Text {
+                    text: "On rhythm, patience, and the prose that refuses to hurry.";
+                    color: EditorialSkin.text-secondary;
+                    font-size: Theme.font-size-title;
+                    font-weight: 400;
+                    wrap: word-wrap;
+                }
+
+                // ---- Byline rule ----
+                Rectangle { height: 1px; background: EditorialSkin.hairline; }
+                HorizontalLayout {
+                    spacing: Theme.spacing-sm;
+                    Text {
+                        text: "By Eleanor Vance";
+                        color: EditorialSkin.text-primary;
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                    }
+                    Text {
+                        text: "·  12 min read";
+                        color: EditorialSkin.text-muted;
+                        font-size: Theme.font-size-caption;
+                        horizontal-stretch: 1;
+                    }
+                }
+                Rectangle { height: 1px; background: EditorialSkin.hairline; }
+
+                // ---- Drop-cap opener ----
+                HorizontalLayout {
+                    spacing: Theme.spacing-sm;
+                    Text {
+                        text: "T";
+                        color: #7a1f2b;
+                        font-size: 72px;
+                        font-weight: 700;
+                    }
+                    BodyPara {
+                        text: "here was a time when a sentence could wander, gathering clauses the way a river gathers tributaries, and no editor reached for the red pen.";
+                        horizontal-stretch: 1;
+                        vertical-alignment: center;
+                    }
+                }
+
+                BodyPara {
+                    text: "We mistook brevity for clarity and clarity for truth. But the long sentence has its own logic — it holds a thought open long enough for a second thought to arrive, and a third, until the whole shape of an idea stands revealed.";
+                }
+
+                // ---- Pull quote ----
+                Rectangle {
+                    background: EditorialSkin.glass-fill;
+                    border-radius: Theme.radius-md;
+                    clip: true;
+                    VerticalLayout {
+                        padding: Theme.spacing-lg;
+                        HorizontalLayout {
+                            spacing: Theme.spacing-md;
+                            Rectangle { width: 3px; background: #7a1f2b; }
+                            Text {
+                                text: "\"A paragraph is a small room; a sentence is the breath you take inside it.\"";
+                                color: EditorialSkin.text-primary;
+                                font-size: Theme.font-size-title;
+                                font-weight: 400;
+                                wrap: word-wrap;
+                                horizontal-stretch: 1;
+                            }
+                        }
+                    }
+                }
+
+                BodyPara {
+                    text: "To read slowly is not nostalgia. It is a wager that attention, given freely, returns something the scroll cannot: the sense of having been somewhere, of having stayed.";
+                }
+                BodyPara {
+                    text: "And so we begin again, mid-thought, trusting the reader to follow — because they always could.";
+                }
+            }
+        }
+    }
+}

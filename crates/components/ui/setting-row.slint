@@ -79,6 +79,17 @@ export component SettingRow inherits Rectangle {
     background: touch.pressed ? Theme.surface-pressed : transparent;
     animate background { duration: Theme.motion-fast; }
 
+    // TouchArea declared BEFORE the HorizontalLayout so it sits
+    // *beneath* the trailing-slot widgets in z-order. Without this,
+    // an outer TouchArea drawn on top intercepts every click in the
+    // row — including taps on the inner Switch, Slider, or
+    // SegmentedControl — and stops them from toggling. Children on
+    // top get first crack at events; only unclaimed events fall
+    // through to this row-level handler.
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+
     HorizontalLayout {
         padding-left: Theme.spacing-md;
         padding-right: Theme.spacing-md;
@@ -114,6 +125,14 @@ export component SettingRow inherits Rectangle {
                 color: Theme.muted;
                 font-size: Theme.font-size-caption;
                 wrap: word-wrap;
+                // `wrap: word-wrap` only wraps when the Text has a
+                // bounded width. `horizontal-stretch: 1` makes the
+                // outer VerticalLayout allocate the full column to
+                // it; without this, the Text takes its single-line
+                // preferred width and bleeds off the right edge
+                // (the "way." clipped at the end of "…the driver is
+                // already on the way." bug).
+                horizontal-stretch: 1;
             }
         }
 
@@ -122,9 +141,5 @@ export component SettingRow inherits Rectangle {
             spacing: Theme.spacing-xs;
             @children
         }
-    }
-
-    touch := TouchArea {
-        clicked => { root.clicked(); }
     }
 }

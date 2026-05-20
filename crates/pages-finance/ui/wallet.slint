@@ -20,6 +20,7 @@
 //   Section header: "RECENT"
 //   TransactionRow × N
 
+import { ScrollView } from "std-widgets.slint";
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
@@ -209,6 +210,15 @@ export component WalletPage inherits Window {
             trailing-pressed => { root.add-card-pressed(); }
         }
 
+        // Card stack + recent-transactions list overflow a single
+        // 892-px screen as the history grows, so everything below the
+        // pinned AppBar scrolls.
+        ScrollView {
+            vertical-stretch: 1;
+
+            VerticalLayout {
+                spacing: 0;
+
         // ----- Layered card stack -----
         //
         // The stack is rendered inside a fixed-height Rectangle so the
@@ -315,7 +325,7 @@ export component WalletPage inherits Window {
             credit: true;
             clicked => { root.transaction-pressed(self.merchant); }
         }
-
-        Rectangle { vertical-stretch: 1; }
+            }   // end inner VerticalLayout
+        }       // end ScrollView
     }
 }

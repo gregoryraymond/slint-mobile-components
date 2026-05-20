@@ -1,0 +1,255 @@
+// ControlPanelPage  —  BrutalistSkin demo
+// =====================================================================
+//
+// A brutalist device control panel: hard ink-on-paper slabs, a single
+// hot-yellow accent, thick hairlines, JetBrains Mono throughout. No
+// gradients, no soft shadows — every surface is an opaque rectangle with
+// a 1-px black edge. Shows a status hero, toggle slabs, and a metered
+// list. Reads BrutalistSkin tokens for type / colour / surfaces.
+
+import { Theme } from "@mobile-theme/theme.slint";
+import { BrutalistSkin } from "@mobile-theme/skins.slint";
+import { ScrollView } from "std-widgets.slint";
+
+// Hard-edged toggle slab: label + a draggable-looking square knob.
+component ToggleSlab inherits Rectangle {
+    in property <string> label;
+    in property <string> sub;
+    in property <bool> on;
+
+    background: BrutalistSkin.glass-fill;
+    border-width: 1px;
+    border-color: BrutalistSkin.hairline;
+    min-height: 64px;
+
+    HorizontalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: root.label;
+                color: BrutalistSkin.text-primary;
+                font-size: Theme.font-size-body-large;
+                font-weight: 700;
+            }
+            Text {
+                text: root.sub;
+                color: BrutalistSkin.text-muted;
+                font-size: Theme.font-size-caption;
+            }
+        }
+        // Square track with a hard square knob slammed to one side.
+        Rectangle {
+            width: 64px;
+            height: 32px;
+            background: root.on ? #ffd400 : transparent;
+            border-width: 1px;
+            border-color: BrutalistSkin.hairline;
+            VerticalLayout {
+                alignment: center;
+                HorizontalLayout {
+                    alignment: root.on ? end : start;
+                    padding: Theme.spacing-xs;
+                    Rectangle {
+                        width: 22px;
+                        height: 22px;
+                        background: #0a0a0a;
+                    }
+                }
+            }
+        }
+    }
+}
+
+// A labelled meter — value bar drawn as a hard fill against a hairline box.
+component MeterRow inherits Rectangle {
+    in property <string> label;
+    in property <string> value;
+    in property <float> fraction;
+
+    min-height: 52px;
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        VerticalLayout {
+            alignment: center;
+            width: 96px;
+            Text {
+                text: root.label;
+                color: BrutalistSkin.text-secondary;
+                font-size: Theme.font-size-caption;
+                font-weight: 700;
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            Rectangle {
+                height: 16px;
+                border-width: 1px;
+                border-color: BrutalistSkin.hairline;
+                clip: true;
+                Rectangle {
+                    x: 0;
+                    y: 0;
+                    height: parent.height;
+                    width: parent.width * root.fraction;
+                    background: #ffd400;
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            width: 56px;
+            Text {
+                text: root.value;
+                color: BrutalistSkin.text-primary;
+                font-size: Theme.font-size-caption;
+                font-weight: 700;
+                horizontal-alignment: right;
+            }
+        }
+    }
+}
+
+export component ControlPanelPage inherits Window {
+    preferred-width: 412px;
+    preferred-height: 892px;
+    default-font-family: BrutalistSkin.font-family;
+    background: BrutalistSkin.page-background;
+
+    if BrutalistSkin.has-background-image: Image {
+        x: 0; y: 0;
+        width: root.width;
+        height: root.height;
+        source: BrutalistSkin.page-background-image;
+        image-fit: cover;
+    }
+
+    VerticalLayout {
+        spacing: 0;
+
+        // ---- Ink masthead bar ----
+        Rectangle {
+            background: BrutalistSkin.bar-background;
+            height: 88px;
+            VerticalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                padding-bottom: Theme.spacing-sm;
+                alignment: end;
+                HorizontalLayout {
+                    alignment: space-between;
+                    Text {
+                        text: "SYSTEM/CTRL";
+                        color: #ffd400;
+                        font-size: Theme.font-size-title;
+                        font-weight: 700;
+                        letter-spacing: 1px;
+                    }
+                    Text {
+                        text: "[ ESC ]";
+                        color: #f4f1e8;
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+
+        ScrollView {
+            vertical-stretch: 1;
+            VerticalLayout {
+                spacing: 0;
+                padding-bottom: Theme.spacing-xl;
+
+                // ---- Hero status slab ----
+                Rectangle {
+                    background: #0a0a0a;
+                    height: 168px;
+                    VerticalLayout {
+                        padding: Theme.spacing-lg;
+                        spacing: Theme.spacing-xs;
+                        Text {
+                            text: "STATUS";
+                            color: #888078;
+                            font-size: Theme.font-size-caption;
+                            font-weight: 700;
+                            letter-spacing: 3px;
+                        }
+                        Text {
+                            text: "ALL SYSTEMS";
+                            color: #f4f1e8;
+                            font-size: 40px;
+                            font-weight: 700;
+                        }
+                        Text {
+                            text: "NOMINAL";
+                            color: #ffd400;
+                            font-size: 40px;
+                            font-weight: 700;
+                        }
+                    }
+                }
+
+                // ---- Section: TOGGLES ----
+                Rectangle {
+                    height: 40px;
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-md;
+                        alignment: start;
+                        Text {
+                            text: "// TOGGLES";
+                            color: BrutalistSkin.text-muted;
+                            font-size: Theme.font-size-caption;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    spacing: Theme.spacing-sm;
+                    ToggleSlab { label: "AIRGAP MODE"; sub: "isolate radios"; on: true; }
+                    ToggleSlab { label: "TELEMETRY"; sub: "phone home"; on: false; }
+                    ToggleSlab { label: "HARD MUTE"; sub: "kill all output"; on: true; }
+                }
+
+                // ---- Section: METERS ----
+                Rectangle {
+                    height: 48px;
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-md;
+                        alignment: start;
+                        Text {
+                            text: "// METERS";
+                            color: BrutalistSkin.text-muted;
+                            font-size: Theme.font-size-caption;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+                Rectangle {
+                    background: BrutalistSkin.glass-fill;
+                    border-width: 1px;
+                    border-color: BrutalistSkin.hairline;
+                    VerticalLayout {
+                        padding-top: Theme.spacing-sm;
+                        padding-bottom: Theme.spacing-sm;
+                        MeterRow { label: "CPU"; value: "41%"; fraction: 0.41; }
+                        MeterRow { label: "MEMORY"; value: "78%"; fraction: 0.78; }
+                        MeterRow { label: "DISK"; value: "23%"; fraction: 0.23; }
+                        MeterRow { label: "NET"; value: "9%"; fraction: 0.09; }
+                    }
+                }
+            }
+        }
+    }
+}
