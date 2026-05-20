@@ -7,19 +7,24 @@
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%234f8cff' d='M7 2h10a3 3 0 0 1 3 3v14a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V5a3 3 0 0 1 3-3zm5 17a1 1 0 1 0 0-2 1 1 0 0 0 0 2z'/%3E%3C/svg%3E">
 
     <!-- Trunk build directive: this is a rust crate at ../, target=web.
-         `data-import="none"` suppresses trunk's auto-init script —
-         trunk would inject it into <head>, which runs before <body>
-         parses, which means our <canvas> doesn't exist yet when
-         Slint's wasm init tries to attach to it. The script block in
-         <body> below does the init ourselves after the canvas is in
-         the DOM. The .github/workflows/pages.yml CI step also uses
+         `data-wasm-no-import` suppresses trunk's auto-injected
+         `import init; await init()` snippet (the earlier
+         `data-import="none"` was NOT a real trunk attribute and was
+         silently ignored — trunk kept injecting its own init, which
+         ran a SECOND `init()` and downloaded the 15 MB wasm twice).
+         With the import suppressed, only the custom <script> in <body>
+         below inits — and it fetches the wasm with a request that
+         matches trunk's `<link rel=preload>` so the preloaded bytes
+         are reused instead of re-fetched. Doing init ourselves also
+         lets us size the <canvas> before slint attaches to it.
+         The .github/workflows/pages.yml CI step also uses
          `trunk build`, so dev + prod produce identical artefacts.
          `data-wasm-opt="z"` runs `wasm-opt -Oz` on the post-link
          binary, which on top of the workspace's `[profile.release]`
          strip+lto+opt-z combo brings the artefact down further. -->
     <link data-trunk rel="rust" href="../Cargo.toml"
           data-bindgen-target="web"
-          data-import="none"
+          data-wasm-no-import
           data-wasm-opt="z"
           data-wasm-opt-params="--enable-bulk-memory --enable-nontrapping-float-to-int --enable-reference-types --enable-mutable-globals --enable-sign-ext">
 
@@ -132,6 +137,15 @@
             document.getElementById('loading')?.remove();
         };
 
+        // Single init, single download. `Trunk.toml` sets
+        // `inject_scripts = false`, so trunk emits NO init script and
+        // NO wasm preload — this hand-written init is the only one,
+        // and wasm-bindgen's default `init()` issues exactly one fetch
+        // for the _bg.wasm (URL derived from the JS module path, so it
+        // picks up the GitHub-Pages public-url prefix automatically).
+        // Previously trunk injected its own init + a CORS preload that
+        // its same-origin init couldn't reuse, downloading the 15 MB
+        // wasm twice.
         try {
             await init();
             onReady();

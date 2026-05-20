@@ -7,6 +7,16 @@
 
 [build]
 target = "index.html"
+# Don't let trunk inject its own init <script> or wasm <link
+# rel=preload>. For a "main" rust app trunk 0.21 ALWAYS emits an
+# `await init({module_or_path: '…wasm'})` snippet (no attribute
+# suppresses it) plus a `crossorigin="anonymous"` preload. Trunk's
+# init fetches same-origin while its preload is CORS, so they never
+# dedupe and the 15 MB wasm downloads twice. With `inject_scripts =
+# false` trunk emits neither — the hand-written <script> in
+# index.html does the single import + init itself, giving exactly one
+# download. Trunk still builds + emits the .js/.wasm artefacts.
+inject_scripts = false
 # Hashed filenames would break the explicit
 # `./slint-mobile-components-wasm-viewer.js` import path in
 # index.html. Disabling the hash means cache-busting falls to GitHub
