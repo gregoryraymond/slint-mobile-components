@@ -271,6 +271,11 @@ fn transcode_sample_tiles(dest_root: &Path) {
     fs::create_dir_all(dest_root).expect("create tiles/");
 
     let mut count = 0u32;
+    // Collect "z/x/y" keys for the runtime coverage manifest. The map
+    // tile source checks this before issuing an XHR so tiles outside
+    // the shipped bundle (prefetch overscan past the London edges)
+    // never hit the network — avoiding browser-logged 404s.
+    let mut manifest: Vec<String> = Vec::new();
     for entry in walkdir::WalkDir::new(&src_root)
         .into_iter()
         .filter_map(Result::ok)
@@ -303,8 +308,20 @@ fn transcode_sample_tiles(dest_root: &Path) {
                 image::ExtendedColorType::Rgb8,
             )
             .expect("encode jpeg");
+        // `rel` is `{z}/{x}/{y}.png`; record it as `z/x/y` (no ext).
+        if let Some(stem) = rel.with_extension("").to_str() {
+            // Normalise path separators to `/` (Windows safety).
+            manifest.push(stem.replace('\\', "/"));
+        }
         count += 1;
     }
+
+    // Write the coverage manifest to OUT_DIR; lib.rs `include_str!`s it.
+    let out_dir = PathBuf::from(std::env::var_os("OUT_DIR").expect("OUT_DIR"));
+    manifest.sort();
+    fs::write(out_dir.join("tile-manifest.txt"), manifest.join("\n"))
+        .expect("write tile-manifest.txt");
+
     println!("cargo:warning=wasm-viewer: transcoded {count} tiles to JPEG-Q70");
     // Re-run if the source bundle changes (e.g. slint-mapping bump).
     println!("cargo:rerun-if-changed={}", src_root.display());

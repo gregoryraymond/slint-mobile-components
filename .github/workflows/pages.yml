@@ -51,10 +51,17 @@ jobs:
 
       # Populate crates/wasm-viewer/tiles/ (via build.rs) before trunk
       # runs, so trunk's copy-dir pipeline ships a fully-built tile
-      # tree to dist/tiles/. Without this pre-step copy-dir can race
-      # the rust pipeline's build.rs and copy an empty/partial dir.
+      # tree to dist/tiles/. MUST use --release to match trunk's own
+      # `cargo build --release`: with a different profile the pre-step
+      # and trunk build into different target dirs, so build.rs RE-RUNS
+      # during trunk's build — and since build.rs `remove_dir_all`s the
+      # tile dir before rewriting it, trunk's concurrent copy-dir
+      # snapshots a half-written tree and only a partial tile set lands
+      # in the artifact (the cause of the z11 tile 404s on Pages).
+      # Matching the profile means build.rs is cached for trunk's
+      # build, so the dir is stable when copy-dir reads it.
       - name: Transcode map tiles
-        run: cargo build --target wasm32-unknown-unknown -p slint-mobile-components-wasm-viewer
+        run: cargo build --release --target wasm32-unknown-unknown -p slint-mobile-components-wasm-viewer
 
       - name: Build wasm-viewer
         working-directory: crates/wasm-viewer/web

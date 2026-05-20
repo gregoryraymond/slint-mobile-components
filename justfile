@@ -72,7 +72,7 @@ fmt-check:
 # where copy-dir reads a half-written tree. Cheap on a warm target.
 [private]
 tiles:
-    cargo build --target wasm32-unknown-unknown -p slint-mobile-components-wasm-viewer
+    cargo build --release --target wasm32-unknown-unknown -p slint-mobile-components-wasm-viewer
 
 # Build + serve the wasm-viewer via trunk on http://127.0.0.1:8081.
 # Trunk builds the wasm, copies index.html + the static tiles/, and

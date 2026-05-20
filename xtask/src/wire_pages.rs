@@ -58,15 +58,19 @@ fn write_cargo_toml(crate_dir: &Path, cat: &str) -> std::io::Result<()> {
          ] }}\n\
          slint-mobile-theme = {{ path = \"../theme\" }}\n\
          slint-mobile-components-widgets = {{ path = \"../components\" }}\n\
-         # Path dep on the sibling `slint-mapping` repo so map-using pages\n\
-         # can `import {{ MapEmbed }} from \"@mapping/map.slint\";`.\n\
-         slint-mapping = {{ path = \"../../../slint-mapping\" }}\n\
+         # Published crate (NOT a sibling path dep) so CI runners that\n\
+         # only check out this repo can resolve it. Map-using pages\n\
+         # `import {{ MapEmbed }} from \"@mapping/map.slint\";`.\n\
+         slint-mapping = \"0.1\"\n\
          \n\
          [build-dependencies]\n\
          slint-build = \"1\"\n\
          slint-mobile-theme = {{ path = \"../theme\" }}\n\
          slint-mobile-components-widgets = {{ path = \"../components\" }}\n\
-         slint-mapping = {{ path = \"../../../slint-mapping\" }}\n",
+         slint-mapping = \"0.1\"\n\
+         \n\
+         [lints]\n\
+         workspace = true\n",
     );
     fs::write(crate_dir.join("Cargo.toml"), body)
 }
