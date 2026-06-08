@@ -1257,10 +1257,7 @@ fn main() {
             Duration::from_millis(4000),
             move || {
                 if let Some(v) = weak3.upgrade() {
-                    eprintln!(
-                        "PROBE step=scrolled loaded={}",
-                        v.get_loaded(),
-                    );
+                    eprintln!("PROBE step=scrolled loaded={}", v.get_loaded(),);
                     save_snapshot(&v.window(), "02_scrolled");
                 }
                 let _ = slint::quit_event_loop();

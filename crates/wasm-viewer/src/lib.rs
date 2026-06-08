@@ -362,15 +362,7 @@ pub fn run() {
     // visitor sees content immediately (the showcase tier + the map
     // pages — the most polished cells), then drive the rest via a
     // Slint Timer that ticks between frames. Each tick compiles one
-    // page and appends it to the model, so the catalogue grows
-    // visibly under the user's scroll. ~25 ms per tick lands ~40
-    // pages/sec, which means the full 145-page catalogue finishes in
-    // ~3.5 s while keeping the canvas responsive.
-    // Visitor-facing pacing. 6 pages up-front fills the first row at
-    // most window widths. After that ~10 pages/sec is a deliberate
-    // "watch the catalogue grow" pace — fast enough to land the full
-    // 145-page catalogue in ~15 s but slow enough that a visitor sees
-    // it as a load-in animation rather than a flash of bare cells.
+    // page and appends it to the model.
     const INITIAL_BATCH: usize = 6;
     const TICK_MS: u64 = 100;
 
@@ -401,9 +393,6 @@ pub fn run() {
     });
 
     // ---- Timer-driven trickle for the remaining pages ----
-    // Store the timer somewhere it won't be dropped: a thread-local
-    // slot owned by the wasm module (single-threaded, so a TLS Cell is
-    // safe). Dropping the timer would cancel the trickle mid-load.
     let viewer_weak = viewer.as_weak();
     let timer = Timer::default();
     {

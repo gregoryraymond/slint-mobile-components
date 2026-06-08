@@ -299,39 +299,72 @@ export component WasmViewer inherits Window {
 
             // ----- Mobile catalogue (vertical scroll of full pages) -----
             //
-            // Vertical feed of slightly-scaled cells, with gutter
-            // either side for finger drag. Same Option C recipe as
-            // the desktop viewer — direct ComponentContainer sizing
-            // instead of transform-scale.
-            if root.mobile: ScrollView {
+            // Vertical feed of slightly-scaled cells with a TouchArea
+            // overlay driving the scroll explicitly. `ScrollView`'s
+            // built-in `mouse-drag-pan-enabled` loses the priority
+            // race against the embedded page's internal TouchAreas —
+            // every swipe gets eaten as a tap before the ScrollView
+            // sees it, so the feed doesn't scroll at all on a real
+            // touchscreen. The overlay below sits above the cells in
+            // stacking order, captures every pointer event, and
+            // updates `mobile-scroll.viewport-y` against the press
+            // anchor by hand. Trade-off: taps inside embedded
+            // page-content don't get through, so the mobile
+            // catalogue is browse-only.
+            if root.mobile: Rectangle {
                 width: parent.width;
                 height: parent.height;
-                mouse-drag-pan-enabled: true;
 
-                VerticalLayout {
-                    padding-top: root.mobile-gap;
-                    padding-bottom: root.mobile-gap;
-                    spacing: root.mobile-gap;
-                    alignment: start;
+                mobile-scroll := ScrollView {
+                    width: parent.width;
+                    height: parent.height;
 
-                    for cell[i] in root.cells: HorizontalLayout {
-                        alignment: center;
-                        PageCell {
-                            title: root.titles[i];
-                            page-factory: cell;
-                            scale: root.mobile-scale;
-                            show-header: false;
+                    VerticalLayout {
+                        padding-top: root.mobile-gap;
+                        padding-bottom: root.mobile-gap;
+                        spacing: root.mobile-gap;
+                        alignment: start;
+
+                        for cell[i] in root.cells: HorizontalLayout {
+                            alignment: center;
+                            PageCell {
+                                title: root.titles[i];
+                                page-factory: cell;
+                                scale: root.mobile-scale;
+                                show-header: false;
+                            }
+                        }
+
+                        if root.still-loading: HorizontalLayout {
+                            alignment: center;
+                            Text {
+                                text: "loading more pages…";
+                                color: Theme.muted;
+                                font-size: 15px;
+                                font-weight: 700;
+                            }
+                        }
+                    }
+                }
+
+                // viewport-y is 0 at the top and negative as content
+                // scrolls up. start-vy records the scroll position at
+                // press time so `moved` can apply a finger-relative
+                // delta and the user gets the standard touch-drag feel.
+                TouchArea {
+                    property <length> start-vy: 0px;
+
+                    pointer-event(e) => {
+                        if (e.kind == PointerEventKind.down) {
+                            self.start-vy = mobile-scroll.viewport-y;
                         }
                     }
 
-                    if root.still-loading: HorizontalLayout {
-                        alignment: center;
-                        Text {
-                            text: "loading more pages…";
-                            color: Theme.muted;
-                            font-size: 15px;
-                            font-weight: 700;
-                        }
+                    moved => {
+                        mobile-scroll.viewport-y = max(
+                            mobile-scroll.visible-height - mobile-scroll.viewport-height,
+                            min(0px, self.start-vy + (self.mouse-y - self.pressed-y))
+                        );
                     }
                 }
             }
