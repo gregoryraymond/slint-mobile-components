@@ -171,6 +171,13 @@ export component WasmViewer inherits Window {
     private property <float> mobile-scale: 0.85;
     private property <length> mobile-gap: 24px;
 
+    // Fixed slot height for the mobile virtualisation. Declared
+    // here at the root so both the slot placeholder and the
+    // rail's geometry can share it. Width math doesn't propagate
+    // up through this property because `mobile-scale` is a
+    // private float and `* length` keeps the result a length.
+    private property <length> mobile-cell-h: 892px * root.mobile-scale;
+
     // Explicit fill: without preferred-width / preferred-height on
     // Window (which would otherwise be treated as fixed render-size
     // and ignore the canvas), the inner VerticalLayout doesn't know
@@ -314,8 +321,44 @@ export component WasmViewer inherits Window {
             // through a separate widget keeps taps inside the cells
             // working (so embedded buttons stay interactive) while
             // giving touch users a clearly-marked drag target.
-            if root.mobile: HorizontalLayout {
+            if root.mobile: mobile-feed := HorizontalLayout {
                 spacing: 0;
+
+                // ---- Mobile virtualisation window ----
+                //
+                // Slint's `for` instantiates every model row up-front,
+                // so a 150-page feed means 150 live
+                // ComponentContainers each holding a fully
+                // interpreted slint page tree. That turns every
+                // scroll frame into a layout pass over the whole
+                // catalogue, which on a JIT-disabled browser stalls
+                // for seconds. Virtualise: each row is a
+                // fixed-height placeholder Rectangle that ALWAYS
+                // exists (so the scroll geometry doesn't jump), but
+                // the actual PageCell renders only for rows inside
+                // the visible window plus a small overscan. When a
+                // page scrolls off, its embedded instance is torn
+                // down; when it scrolls back, the factory creates a
+                // fresh one.
+                //
+                // Properties live on this layout (not the WasmViewer
+                // root) because they read `mobile-scroll`, which
+                // only exists in this `if root.mobile:` branch.
+                // `0px - x` instead of unary `-x` because slint
+                // parses `-mobile-scroll` as the identifier
+                // `-mobile` (which doesn't exist) rather than a
+                // negation.
+                property <length> cell-stride: root.mobile-cell-h + root.mobile-gap;
+                property <int> overscan: 3;
+                property <int> visible-start:
+                    max(0,
+                        floor((0px - mobile-scroll.viewport-y) / self.cell-stride)
+                            - self.overscan);
+                property <int> visible-end:
+                    min(root.cells.length - 1,
+                        ceil(((0px - mobile-scroll.viewport-y) + mobile-scroll.visible-height)
+                                / self.cell-stride)
+                            + self.overscan);
 
                 mobile-scroll := ScrollView {
                     horizontal-stretch: 1;
@@ -326,14 +369,24 @@ export component WasmViewer inherits Window {
                         spacing: root.mobile-gap;
                         alignment: start;
 
-                        for cell[i] in root.cells: HorizontalLayout {
-                            alignment: center;
-                            PageCell {
-                                title: root.titles[i];
-                                page-factory: cell;
-                                scale: root.mobile-scale;
-                                show-header: false;
-                            }
+                        for cell[i] in root.cells: Rectangle {
+                            // Fixed-height slot so the feed's total
+                            // height (and the rail thumb math) stays
+                            // the same whether or not we currently
+                            // render the PageCell into the slot.
+                            height: root.mobile-cell-h;
+
+                            if i >= mobile-feed.visible-start
+                                && i <= mobile-feed.visible-end:
+                                HorizontalLayout {
+                                    alignment: center;
+                                    PageCell {
+                                        title: root.titles[i];
+                                        page-factory: cell;
+                                        scale: root.mobile-scale;
+                                        show-header: false;
+                                    }
+                                }
                         }
 
                         if root.still-loading: HorizontalLayout {
