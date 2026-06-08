@@ -807,10 +807,137 @@ fn rgba_brush(argb: u32) -> slint::Brush {
     slint::Brush::SolidColor(slint::Color::from_argb_u8(a, r, g, b))
 }
 
+/// Tiny CLI parsed by hand — clap-the-crate would be overkill for the
+/// handful of flags the viewer exposes.
+///
+///   --width <px>         force initial window width (logical px)
+///   --height <px>        force initial window height (logical px)
+///   --probe-mobile       after 1500 ms, print `PROBE: mobile=<bool>
+///                        loaded=<n> window=<w>x<h>` and quit. Used
+///                        by the CI / "did the mobile branch engage"
+///                        check — pair with --width 400 --height 800
+///                        and grep stdout.
+///   --probe-rail         like --probe-mobile but additionally drives
+///                        synthetic pointer-press / pointer-release /
+///                        pointer-scroll events against the thumbnail
+///                        rail and reports the resulting `selected`
+///                        index after each step. Used to verify the
+///                        rail is clickable, scrollable, and routes
+///                        clicks to the matching cell.
+#[derive(Default)]
+struct CliArgs {
+    width: Option<f32>,
+    height: Option<f32>,
+    probe_mobile: bool,
+    probe_rail: bool,
+    probe_snap: bool,
+}
+
+fn parse_args() -> CliArgs {
+    let args: Vec<String> = std::env::args().collect();
+    let mut out = CliArgs::default();
+    let mut i = 1;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--width" => {
+                out.width = args.get(i + 1).and_then(|s| s.parse().ok());
+                i += 2;
+            }
+            "--height" => {
+                out.height = args.get(i + 1).and_then(|s| s.parse().ok());
+                i += 2;
+            }
+            "--probe-mobile" => {
+                out.probe_mobile = true;
+                i += 1;
+            }
+            "--probe-rail" => {
+                out.probe_rail = true;
+                i += 1;
+            }
+            "--probe-snap" => {
+                out.probe_snap = true;
+                i += 1;
+            }
+            _ => i += 1,
+        }
+    }
+    out
+}
+
+/// Synthesise a click at (x, y) by dispatching a Pressed + Released
+/// pair through the public `Window::dispatch_event` API. The events
+/// flow through Slint's hit-testing exactly like real winit input,
+/// so a TouchArea inside the thumbnail rail picks them up the same
+/// way it would for a real mouse.
+fn synth_click(window: &slint::Window, x: f32, y: f32) {
+    use slint::platform::{PointerEventButton, WindowEvent};
+    let pos = slint::LogicalPosition::new(x, y);
+    window.dispatch_event(WindowEvent::PointerMoved { position: pos });
+    window.dispatch_event(WindowEvent::PointerPressed {
+        position: pos,
+        button: PointerEventButton::Left,
+    });
+    window.dispatch_event(WindowEvent::PointerReleased {
+        position: pos,
+        button: PointerEventButton::Left,
+    });
+}
+
+/// Synthesise a scroll-wheel tick at (x, y). Slint follows the
+/// winit / Wayland convention where positive `delta_y` is "wheel
+/// forward / scroll up", so negative values are what you want to
+/// reveal lower-positioned content (e.g. later thumbnails in the
+/// rail). The unit is logical pixels.
+fn synth_wheel(window: &slint::Window, x: f32, y: f32, delta_y: f32) {
+    use slint::platform::WindowEvent;
+    let pos = slint::LogicalPosition::new(x, y);
+    window.dispatch_event(WindowEvent::PointerMoved { position: pos });
+    window.dispatch_event(WindowEvent::PointerScrolled {
+        position: pos,
+        delta_x: 0.0,
+        delta_y,
+    });
+}
+
+/// Pull a PNG snapshot of the window's current rendered contents to
+/// `target/probe-snaps/<label>.png`. Used by `--probe-rail` so each
+/// scripted step produces a visual artifact you can open and verify
+/// — not just a stdout state line.
+///
+/// Slint's `Window::take_snapshot` returns an Rgba8 buffer that's
+/// already in the layout the PNG encoder expects, so encoding is a
+/// one-liner via the `image` crate. The function logs whether the
+/// snapshot succeeded so a renderer that doesn't support snapshotting
+/// (some embedded backends) doesn't silently no-op.
+fn save_snapshot(window: &slint::Window, label: &str) {
+    let buf = match window.take_snapshot() {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("PROBE snap={label} err={e:?}");
+            return;
+        }
+    };
+    let dir = workspace_root().join("target/probe-snaps");
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        eprintln!("PROBE snap={label} mkdir-err={e:?}");
+        return;
+    }
+    let path = dir.join(format!("{label}.png"));
+    let (w, h) = (buf.width(), buf.height());
+    let img = image::RgbaImage::from_raw(w, h, buf.as_bytes().to_vec());
+    match img.and_then(|i| i.save(&path).ok().map(|_| ())) {
+        Some(()) => eprintln!("PROBE snap={label} path={} size={w}x{h}", path.display()),
+        None => eprintln!("PROBE snap={label} encode-err size={w}x{h}"),
+    }
+}
+
 fn main() {
     // `ComponentContainer` + `component-factory` are gated behind this
     // flag — same one set in build.rs for the chrome compile.
     std::env::set_var("SLINT_ENABLE_EXPERIMENTAL_FEATURES", "1");
+
+    let cli = parse_args();
 
     let root = workspace_root();
     let pages = discover_pages(&root);
@@ -982,8 +1109,172 @@ fn main() {
         });
     }
 
+    // Apply CLI size override by writing to the `canvas-w` /
+    // `canvas-h` in-props that drive Window.width / .height in the
+    // .slint chrome. Calling `window().set_size(...)` is the
+    // "natural" desktop API but it gets clamped by the inner
+    // layoutinfo min-width (the status-bar text demands ~685 dp),
+    // so a literal 400 dp request silently snaps back up. Writing
+    // through the bound property overrides layoutinfo and the
+    // window genuinely opens at the requested size — which is what
+    // we need for the mobile-branch probe.
+    if let Some(w) = cli.width {
+        viewer.set_canvas_w(w);
+    }
+    if let Some(h) = cli.height {
+        viewer.set_canvas_h(h);
+    }
+
+    // --probe-mobile: schedule a one-shot timer that, after layout
+    // has settled (including the resize above), prints the
+    // post-resize state and quits the event loop. The probe timer
+    // is held in the same outer scope as the loader timer so it's
+    // not dropped (and thus cancelled) when this block ends.
+    let probe_timer = Timer::default();
+    if cli.probe_mobile && !cli.probe_rail {
+        let weak = viewer.as_weak();
+        probe_timer.start(
+            TimerMode::SingleShot,
+            Duration::from_millis(1500),
+            move || {
+                if let Some(v) = weak.upgrade() {
+                    let s = v.window().size();
+                    eprintln!(
+                        "PROBE: mobile={} loaded={} window={}x{}",
+                        v.get_mobile(),
+                        v.get_loaded(),
+                        s.width,
+                        s.height,
+                    );
+                }
+                let _ = slint::quit_event_loop();
+            },
+        );
+    }
+
+    // --probe-rail: drives a multi-step interaction script against
+    // the mobile rail and prints what happened at each step.
+    //
+    // Layout at the canonical 400 × 800 probe size:
+    //   - status bar: y ∈ [0, 56]
+    //   - outer HorizontalLayout padding = 8
+    //   - thumbnail rail Rectangle: x ∈ [400 - 8 - 96, 400 - 8] = [296, 392]
+    //   - ScrollView inside, VerticalLayout padding = 8, spacing = 10
+    //   - each thumb row height = thumb-h (412 × 0.18 + 44-px-header ≈
+    //     168 dp at scale) + 22 dp label slot ≈ 190; stride ≈ 200 dp
+    //
+    // The rail centre x ≈ 344 hits the PageCell body of every thumb
+    // (the cell is ~74 dp wide, centred in the 96-dp rail). The
+    // y-stride between consecutive thumbnail rows is ~200 dp, so:
+    //   - y = 150  → thumb 0
+    //   - y = 350  → thumb 1
+    //   - y = 550  → thumb 2
+    //
+    // The probe:
+    //   t = 0      apply CLI size (already done above)
+    //   t = 1500   read baseline + click thumb at y=350 (expect
+    //              selected to land near index 1)
+    //   t = 1700   read after-click selected
+    //   t = 1900   send wheel +1000 over the rail (scrolls a few
+    //              rows down) and re-click the same y=350 — should
+    //              now be a higher-indexed page
+    //   t = 2100   read after-scroll-click selected and quit
+    let snap_timer = Timer::default();
+    if cli.probe_snap {
+        let weak = viewer.as_weak();
+        snap_timer.start(
+            TimerMode::SingleShot,
+            Duration::from_millis(2000),
+            move || {
+                if let Some(v) = weak.upgrade() {
+                    let s = v.window().size();
+                    eprintln!(
+                        "PROBE step=snap mobile={} loaded={} window={}x{}",
+                        v.get_mobile(),
+                        v.get_loaded(),
+                        s.width,
+                        s.height,
+                    );
+                    let label = if v.get_mobile() {
+                        "mobile_snap"
+                    } else {
+                        "desktop_snap"
+                    };
+                    save_snapshot(&v.window(), label);
+                }
+                let _ = slint::quit_event_loop();
+            },
+        );
+    }
+
+    // --probe-rail: with the side rail removed in favour of a
+    // vertical page-feed (Option C), this verifies the feed
+    // scrolls. Snap top, scroll a few wheel notches in the side
+    // gutter (where the page's internal touch areas don't
+    // intercept), snap again. The second snap should show
+    // different cells in the viewport.
+    let rail_timer1 = Timer::default();
+    let rail_timer2 = Timer::default();
+    let rail_timer3 = Timer::default();
+    if cli.probe_rail {
+        let weak = viewer.as_weak();
+        rail_timer1.start(
+            TimerMode::SingleShot,
+            Duration::from_millis(2000),
+            move || {
+                if let Some(v) = weak.upgrade() {
+                    let s = v.window().size();
+                    eprintln!(
+                        "PROBE step=top mobile={} loaded={} window={}x{}",
+                        v.get_mobile(),
+                        v.get_loaded(),
+                        s.width,
+                        s.height,
+                    );
+                    save_snapshot(&v.window(), "01_top");
+                }
+            },
+        );
+        let weak2 = viewer.as_weak();
+        rail_timer2.start(
+            TimerMode::SingleShot,
+            Duration::from_millis(2800),
+            move || {
+                if let Some(v) = weak2.upgrade() {
+                    // x=12 puts the pointer firmly in the left gutter
+                    // (well outside the centred ~350 dp PageCell), so
+                    // the wheel is consumed by the outer ScrollView
+                    // rather than any internal page-level scroll.
+                    for _ in 0..8 {
+                        synth_wheel(&v.window(), 12.0, 400.0, -120.0);
+                    }
+                }
+            },
+        );
+        let weak3 = viewer.as_weak();
+        rail_timer3.start(
+            TimerMode::SingleShot,
+            Duration::from_millis(4000),
+            move || {
+                if let Some(v) = weak3.upgrade() {
+                    eprintln!(
+                        "PROBE step=scrolled loaded={}",
+                        v.get_loaded(),
+                    );
+                    save_snapshot(&v.window(), "02_scrolled");
+                }
+                let _ = slint::quit_event_loop();
+            },
+        );
+    }
+
     viewer.run().expect("viewer event loop");
     drop(timer);
+    drop(probe_timer);
+    drop(snap_timer);
+    drop(rail_timer1);
+    drop(rail_timer2);
+    drop(rail_timer3);
 }
 
 #[cfg(test)]

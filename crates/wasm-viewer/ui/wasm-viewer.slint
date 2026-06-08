@@ -32,29 +32,39 @@ import "../../components/ui/fonts/jetbrains-mono/JetBrainsMono-Bold.ttf";
 component PageCell inherits Rectangle {
     in property <string> title;
     in property <component-factory> page-factory;
+    // 0.0 < scale ≤ 1.0. The embedded page reflows at the scaled
+    // size — see the desktop viewer's PageCell for the
+    // `transform-scale-x` rationale; the direct
+    // ComponentContainer sizing recipe sidesteps the slint 1.16
+    // percent-from-float promotion bug.
+    in property <float> scale: 1.0;
+    in property <bool> show-header: true;
+    // Selection ring used when a host wants to indicate the
+    // currently-focused cell.
+    in property <bool> highlight: false;
 
-    width: 412px;
-    height: 892px + 44px;  // 44 = title strip
+    width: 412px * root.scale;
+    height: 892px * root.scale + (root.show-header ? 44px * root.scale : 0px);
     background: Theme.surface-1;
     border-radius: Theme.radius-md;
-    border-width: 1px;
-    border-color: Theme.outline;
+    border-width: root.highlight ? 2px : 1px;
+    border-color: root.highlight ? Theme.primary : Theme.outline;
     clip: true;
 
     VerticalLayout {
         spacing: 0;
-        Rectangle {
-            height: 44px;
+        if root.show-header: Rectangle {
+            height: 44px * root.scale;
             background: Theme.surface-2;
             HorizontalLayout {
-                padding-left: 12px;
-                padding-right: 8px;
-                padding-top: 8px;
-                padding-bottom: 8px;
+                padding-left: 12px * root.scale;
+                padding-right: 8px * root.scale;
+                padding-top: 8px * root.scale;
+                padding-bottom: 8px * root.scale;
                 Text {
                     text: root.title;
                     color: Theme.on-surface;
-                    font-size: 13px;
+                    font-size: 13px * root.scale;
                     font-weight: 700;
                     vertical-alignment: center;
                     overflow: elide;
@@ -64,8 +74,8 @@ component PageCell inherits Rectangle {
         }
         ComponentContainer {
             component-factory: root.page-factory;
-            width: 412px;
-            height: 892px;
+            width: 412px * root.scale;
+            height: 892px * root.scale;
         }
     }
 }
@@ -139,6 +149,28 @@ export component WasmViewer inherits Window {
     private property <length> cell-h-stride: root.cell-h + root.min-gap;
     private property <bool> still-loading: root.loaded < root.total;
 
+    // ----- Mobile (single-page + thumbnail rail) layout state -----
+    //
+    // `mobile` is `in-out` so JS can override it explicitly (e.g.
+    // a user-agent or `matchMedia('(pointer: coarse)')` check) via
+    // the `set_mobile` wasm export. A `changed canvas-w` callback
+    // auto-derives it from the canvas width so the layout swaps
+    // when the visitor narrows the browser, without needing the JS
+    // hook. Using a `changed` side-effect rather than a binding
+    // (`mobile: canvas-w < 600px`) avoids the layout-info loop the
+    // desktop viewer hit — the `if root.mobile:` branch's existence
+    // feeds layoutinfo-h, which would feed back to root.width via
+    // the binding chain.
+    in-out property <bool> mobile: false;
+    changed canvas-w => { self.mobile = self.canvas-w < 600px; }
+
+    // Mobile catalogue scale + side gutter. At ~0.85 a cell is
+    // ~350 dp wide on a 400 dp phone, leaving ~25 dp gutter
+    // either side so the visitor can grab the outer ScrollView
+    // without the page's internal touch areas eating every drag.
+    private property <float> mobile-scale: 0.85;
+    private property <length> mobile-gap: 24px;
+
     // Explicit fill: without preferred-width / preferred-height on
     // Window (which would otherwise be treated as fixed render-size
     // and ignore the canvas), the inner VerticalLayout doesn't know
@@ -181,19 +213,20 @@ export component WasmViewer inherits Window {
             }
         }
 
-        // ----- Scrollable grid -----
-        // Wrapped in a FocusScope so the keyboard scroll keys work.
-        // The Window `forward-focus`es this scope on load (see the
-        // `forward-focus` binding on the root) so the catalogue is
-        // keyboard-scrollable without the user having to click first.
-        // PageUp/PageDown jump one viewport height; Home/End snap to
-        // the extremes. `viewport-y` is 0 at the top and goes negative
-        // as content scrolls up, so the bottom limit is
-        // (visible-height − viewport-height), which is ≤ 0.
+        // ----- Catalogue body -----
+        // The FocusScope wraps both branches so the root Window's
+        // `forward-focus: key-scope` always lands on something
+        // real, and `scroll` is always declared (whether or not
+        // the desktop grid is currently rendered) so the
+        // key-pressed handler's references type-check. On mobile
+        // the keyboard shortcuts are no-ops because there's no
+        // grid to PageDown through; the inner ScrollView still
+        // catches touch-drag for the vertical feed.
         key-scope := FocusScope {
             vertical-stretch: 1;
 
             key-pressed(event) => {
+                if (root.mobile) { return reject; }
                 if (event.text == Key.PageDown) {
                     scroll.viewport-y = max(
                         scroll.viewport-y - scroll.visible-height,
@@ -215,9 +248,11 @@ export component WasmViewer inherits Window {
                 return reject;
             }
 
+            // ----- Scrollable grid (desktop / wide viewport) -----
             scroll := ScrollView {
                 width: parent.width;
                 height: parent.height;
+                visible: !root.mobile;
                 // Touch-drag / flick scrolling for mobile: pan the whole
                 // viewport by dragging instead of relying on the scrollbar
                 // (which a touch user can't easily grab). Also enables
@@ -257,6 +292,45 @@ export component WasmViewer inherits Window {
                                 font-size: 15px;
                                 font-weight: 700;
                             }
+                        }
+                    }
+                }
+            }
+
+            // ----- Mobile catalogue (vertical scroll of full pages) -----
+            //
+            // Vertical feed of slightly-scaled cells, with gutter
+            // either side for finger drag. Same Option C recipe as
+            // the desktop viewer — direct ComponentContainer sizing
+            // instead of transform-scale.
+            if root.mobile: ScrollView {
+                width: parent.width;
+                height: parent.height;
+                mouse-drag-pan-enabled: true;
+
+                VerticalLayout {
+                    padding-top: root.mobile-gap;
+                    padding-bottom: root.mobile-gap;
+                    spacing: root.mobile-gap;
+                    alignment: start;
+
+                    for cell[i] in root.cells: HorizontalLayout {
+                        alignment: center;
+                        PageCell {
+                            title: root.titles[i];
+                            page-factory: cell;
+                            scale: root.mobile-scale;
+                            show-header: false;
+                        }
+                    }
+
+                    if root.still-loading: HorizontalLayout {
+                        alignment: center;
+                        Text {
+                            text: "loading more pages…";
+                            color: Theme.muted;
+                            font-size: 15px;
+                            font-weight: 700;
                         }
                     }
                 }

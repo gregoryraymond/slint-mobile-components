@@ -92,7 +92,7 @@
         // inserted into the filename, which keeps this import stable
         // across rebuilds). The base name comes from the crate name
         // with underscores preserved as dashes.
-        import init, { embedded_file_count, set_canvas_size }
+        import init, { embedded_file_count, set_canvas_size, set_mobile }
             from './slint-mobile-components-wasm-viewer.js';
 
         const canvas = document.getElementById('canvas');
@@ -141,11 +141,33 @@
         // overlay on top of a perfectly working canvas.
         const WINIT_CONTROL_FLOW = /Using exceptions for control flow/;
 
+        // Mobile detection. `(pointer: coarse)` is the canonical
+        // "this is a touch device" media query; combined with a
+        // viewport width cap it filters out desktops with a touch
+        // monitor while still catching tablets in landscape. The
+        // slint chrome ALSO auto-derives `mobile` from canvas-w
+        // inside the .slint file, so a desktop browser narrowed
+        // below 600px still gets the rail layout — this hook just
+        // adds the touch-device path for wider phones.
+        const mobileQuery = window.matchMedia('(pointer: coarse) and (max-width: 900px)');
+        const pushMobile = () => {
+            if (typeof set_mobile === 'function') {
+                try { set_mobile(mobileQuery.matches); } catch (e) { /* not yet ready */ }
+            }
+        };
+        if (mobileQuery.addEventListener) {
+            mobileQuery.addEventListener('change', pushMobile);
+        } else if (mobileQuery.addListener) {
+            // Safari < 14 fallback.
+            mobileQuery.addListener(pushMobile);
+        }
+
         const onReady = () => {
             // First sync once slint owns the canvas — feeds shell-frame
             // size to the chrome so the layout doesn't sit at the
             // 1200×800 default after init().
             sizeCanvas();
+            pushMobile();
             try {
                 console.log(`slint-mobile-components: embedded ${embedded_file_count()} .slint sources`);
             } catch (e) { /* probe optional */ }

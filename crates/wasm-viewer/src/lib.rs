@@ -275,6 +275,35 @@ pub fn set_canvas_size(_w: f32, _h: f32) {
     }
 }
 
+/// JS-driven mobile-layout override. The slint chrome auto-detects
+/// mobile from `canvas-w < 600px` already (a `changed canvas-w`
+/// callback inside the .slint file), so for a browser narrowed by
+/// the user this hook isn't needed. It exists for the case where
+/// the visitor is on a phone with a wide-ish viewport (modern
+/// Pro-sized phones, tablets in landscape) and the host JS wants
+/// to force the rail layout based on user-agent or `matchMedia
+/// ('(pointer: coarse)')` regardless of pixel width.
+///
+/// Like `set_canvas_size`, the property write is deferred to a
+/// fresh event-loop tick to avoid the winit-web reentrancy panic
+/// that bites when you write into a Slint property from inside a
+/// browser event handler.
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
+pub fn set_mobile(_mobile: bool) {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = slint::invoke_from_event_loop(move || {
+            VIEWER_HANDLE.with(|holder| {
+                if let Some(weak) = holder.borrow().as_ref() {
+                    if let Some(viewer) = weak.upgrade() {
+                        viewer.set_mobile(_mobile);
+                    }
+                }
+            });
+        });
+    }
+}
+
 /// Embedded source-count probe — wasm-bindgen exports this so a
 /// JS caller can read it (`init().then(() => embedded_file_count())`)
 /// to confirm the build embedded what build.rs produced. Also

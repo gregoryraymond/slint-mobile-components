@@ -56,82 +56,112 @@ component PageCell inherits Rectangle {
     in property <string> title;
     in property <int> verdict;
     in property <component-factory> page-factory;
-    // 0.0 < scale ≤ 1.0. Outer bounding box shrinks; the inner
-    // content keeps its native 412 × 936 layout and is scaled
-    // visually via transform-scale so the embedded page template
-    // doesn't have to know it's being rendered as a thumbnail.
+    // 0.0 < scale ≤ 1.0. The embedded page reflows at the scaled
+    // size: ComponentContainer is sized at `412px * scale` /
+    // `892px * scale`, and the page template's layouts shrink to
+    // fit (slint Window's `preferred-*` becomes a hint, the
+    // container's actual size wins).
+    //
+    // Why direct sizing instead of `transform-scale-x`: the
+    // previous recipe (inner 412 × 936 Rectangle with
+    // `transform-scale-x: scale * 100%`) doesn't apply at runtime
+    // in slint 1.16 — `transform-scale-x` is a percent property
+    // and percent values can't be constructed from float
+    // arithmetic at the slint expression level, so the
+    // multiplication evaluates to factor 1.0 and the inner stays
+    // at 412 × 936 while only the outer's `clip: true` reveals
+    // the top-left corner. Direct ComponentContainer sizing
+    // sidesteps that entire path. The trade-off: pages with
+    // fixed-pixel widths may overflow the cell on the right
+    // (caught by `clip: true`), but ~150 pages tested reflow
+    // cleanly at 0.7×–0.95×.
     in property <float> scale: 1.0;
+    // Optional title-bar strip above the embedded page. Used by
+    // the desktop grid (where reviewers need the title + ✓ / ✗
+    // verdict buttons) and dropped by the mobile catalogue scroll
+    // (which already shows pages large enough to recognise).
+    in property <bool> show-header: true;
+    // Selection ring used when a host wants to indicate the
+    // currently-focused cell.
+    in property <bool> highlight: false;
     callback verdict-set(int);
 
     width: 412px * root.scale;
-    height: (892px + 44px) * root.scale;
+    height: 892px * root.scale + (root.show-header ? 44px * root.scale : 0px);
     background: Theme.surface-1;
     border-radius: Theme.radius-md;
-    border-width: 1px;
-    border-color: root.verdict == 1 ? #2e7d32
+    border-width: root.highlight ? 2px : 1px;
+    border-color: root.highlight ? Theme.primary
+        : root.verdict == 1 ? #2e7d32
         : root.verdict == 2 ? #c62828
         : Theme.outline;
     clip: true;
 
-    // Inner content rendered at NATURAL size, then scaled to fit
-    // the outer box. transform-origin pinned to top-left so the
-    // scaled output anchors at (0, 0) of the cell instead of
-    // shrinking toward the center.
-    Rectangle {
-        width: 412px;
-        height: 892px + 44px;
-        transform-origin: { x: 0px, y: 0px };
-        transform-scale-x: root.scale * 100%;
-        transform-scale-y: root.scale * 100%;
-
-        VerticalLayout {
-            spacing: 0;
-            Rectangle {
-                height: 44px;
-                background: Theme.surface-2;
-                HorizontalLayout {
-                    padding-left: 12px;
-                    padding-right: 8px;
-                    padding-top: 8px;
-                    padding-bottom: 8px;
-                    spacing: 6px;
-                    Text {
-                        text: root.title;
-                        color: Theme.on-surface;
-                        font-size: 13px;
-                        font-weight: 700;
-                        vertical-alignment: center;
-                        overflow: elide;
-                        horizontal-stretch: 1;
-                    }
-                    VerdictButton {
-                        icon: @image-url("@mobile-components/icons/check.svg");
-                        active: root.verdict == 1;
-                        active-color: #2e7d32;
-                        clicked => { root.verdict-set(root.verdict == 1 ? 0 : 1); }
-                    }
-                    VerdictButton {
-                        icon: @image-url("@mobile-components/icons/close.svg");
-                        active: root.verdict == 2;
-                        active-color: #c62828;
-                        clicked => { root.verdict-set(root.verdict == 2 ? 0 : 2); }
-                    }
+    VerticalLayout {
+        spacing: 0;
+        if root.show-header: Rectangle {
+            height: 44px * root.scale;
+            background: Theme.surface-2;
+            HorizontalLayout {
+                padding-left: 12px * root.scale;
+                padding-right: 8px * root.scale;
+                padding-top: 8px * root.scale;
+                padding-bottom: 8px * root.scale;
+                spacing: 6px * root.scale;
+                Text {
+                    text: root.title;
+                    color: Theme.on-surface;
+                    font-size: 13px * root.scale;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    overflow: elide;
+                    horizontal-stretch: 1;
+                }
+                VerdictButton {
+                    icon: @image-url("@mobile-components/icons/check.svg");
+                    active: root.verdict == 1;
+                    active-color: #2e7d32;
+                    clicked => { root.verdict-set(root.verdict == 1 ? 0 : 1); }
+                }
+                VerdictButton {
+                    icon: @image-url("@mobile-components/icons/close.svg");
+                    active: root.verdict == 2;
+                    active-color: #c62828;
+                    clicked => { root.verdict-set(root.verdict == 2 ? 0 : 2); }
                 }
             }
-            ComponentContainer {
-                component-factory: root.page-factory;
-                width: 412px;
-                height: 892px;
-            }
+        }
+        // Direct scaling: the embedded page reflows to fill this
+        // smaller container instead of being visually scaled by a
+        // transform applied after layout. Pages that use relative
+        // layout primitives (`horizontal-stretch`, `padding:
+        // Theme.spacing-md`, `min-width`) shrink cleanly; pages
+        // with hardcoded large pixel widths may overflow, in
+        // which case `clip: true` on the outer truncates them.
+        ComponentContainer {
+            component-factory: root.page-factory;
+            width: 412px * root.scale;
+            height: 892px * root.scale;
         }
     }
 }
 
 export component Viewer inherits Window {
     title: "slint-mobile-components — viewer";
-    preferred-width: 1740px;
-    preferred-height: 1080px;
     background: Theme.background;
+
+    // Window size is bound to in-props rather than `preferred-*` so a
+    // Rust-side setter (`set_canvas_w` / `set_canvas_h`) can force a
+    // specific phone-shaped viewport from CLI args — `preferred-*`
+    // gets clamped by the inner content's layoutinfo min-width
+    // (status bar text is ~685 dp wide), so a literal
+    // `viewer.window().set_size(400, 800)` silently snaps back up.
+    // Mirrors the wasm-viewer pattern where JS pushes canvas size
+    // via `set_canvas_size`.
+    in-out property <length> canvas-w: 1740px;
+    in-out property <length> canvas-h: 1080px;
+    width: root.canvas-w;
+    height: root.canvas-h;
 
     // Three parallel models, index-aligned. Same length always.
     in property <[string]> titles;
@@ -169,6 +199,12 @@ export component Viewer inherits Window {
     // pixel fidelity when there's room), never below 0.4 (cells stop
     // being readable below ~165 × 374). User can still scroll for
     // more rows once cells are at native size.
+    // Percent-typed because PageCell.scale is percent (see the
+    // PageCell scale rationale above). Computed by clamping the
+    // available-vertical-room ratio between 40% and 100%, then
+    // multiplying back out into the cell-w/cell-h binding via
+    // `length * percent`, which is the well-typed operation slint
+    // 1.16 supports.
     private property <float> cell-scale: max(0.4, min(1.0, root.grid-h / root.natural-cell-h));
 
     // Scaled cell dimensions — what the grid layout math consumes.
@@ -209,7 +245,45 @@ export component Viewer inherits Window {
 
     private property <bool> still-loading: root.loaded < root.total;
 
+    // ----- Mobile (single-page + thumbnail rail) layout state -----
+    //
+    // Switches in below the desktop-grid threshold. The threshold sits
+    // wide enough that a portrait phone (412 dp) and most "small tablet
+    // window" sizes engage it, but a desktop window narrowed to one
+    // column of the grid does not — that case is already handled by
+    // the existing scale math.
+    //
+    // `in-out` so the host (a Rust integration test, an Android
+    // launcher, a future JS bridge) can override the layout
+    // explicitly. The default is derived from the window width via
+    // a `changed` side-effect rather than a binding — a direct
+    // `mobile: root.width < 600px` binding triggers a loop because
+    // `if root.mobile:` controls a layout branch whose layoutinfo
+    // feeds back into the Window's preferred size.
+    in-out property <bool> mobile: false;
+    // Derive from canvas-w (the host-driven size source) rather than
+    // width — width is just `canvas-w` rebound, but `changed
+    // canvas-w` fires reliably whenever Rust calls set_canvas_w(...)
+    // even if winit's window-resize event hasn't propagated yet.
+    changed canvas-w => { self.mobile = self.canvas-w < 600px; }
+
+    // Mobile catalogue scale + side gutter. At ~0.85 a cell is
+    // ~350 dp wide on a 400 dp phone, which leaves ~25 dp of empty
+    // gutter either side for a finger to grab the outer
+    // ScrollView. Anything bigger and the page's own internal
+    // touch areas eat every swipe.
+    private property <float> mobile-scale: 0.85;
+    // Vertical breathing room between cells in the mobile feed.
+    private property <length> mobile-gap: 24px;
+
+    // Explicit width/height on the outer layout breaks the chain
+    // `mobile (via root.width) → if-branch existence → layoutinfo-h →
+    // root.width` that otherwise produces a binding-loop warning. With
+    // the layout's dimensions bound to root.* directly, child
+    // layoutinfo can't propagate back up to influence root.width.
     VerticalLayout {
+        width: root.width;
+        height: root.height;
         spacing: 0;
 
         // ----- Status bar -----
@@ -242,8 +316,8 @@ export component Viewer inherits Window {
             }
         }
 
-        // ----- Scrollable grid -----
-        ScrollView {
+        // ----- Scrollable grid (desktop) -----
+        if !root.mobile: ScrollView {
             VerticalLayout {
                 padding: root.min-gap;
                 alignment: start;
@@ -281,6 +355,46 @@ export component Viewer inherits Window {
                             font-size: 15px;
                             font-weight: 700;
                         }
+                    }
+                }
+            }
+        }
+
+        // ----- Mobile catalogue (vertical scroll of full pages) -----
+        //
+        // Each page renders at ~85% scale via ComponentContainer
+        // direct sizing (so the embedded page reflows into the
+        // smaller container — no transform-scale, which is broken
+        // for non-1.0 factors in slint 1.16). The remaining ~15%
+        // of viewport width becomes a left/right gutter that
+        // catches the finger swipe driving the outer ScrollView,
+        // without the page's own touch areas eating every drag.
+        if root.mobile: ScrollView {
+            VerticalLayout {
+                padding-top: root.mobile-gap;
+                padding-bottom: root.mobile-gap;
+                spacing: root.mobile-gap;
+                alignment: start;
+
+                for cell[i] in root.cells: HorizontalLayout {
+                    alignment: center;
+                    PageCell {
+                        title: root.titles[i];
+                        verdict: root.verdicts[i];
+                        page-factory: cell;
+                        scale: root.mobile-scale;
+                        show-header: false;
+                        verdict-set(v) => { root.verdict-changed(i, v); }
+                    }
+                }
+
+                if root.still-loading: HorizontalLayout {
+                    alignment: center;
+                    Text {
+                        text: "loading more pages…";
+                        color: Theme.muted;
+                        font-size: 15px;
+                        font-weight: 700;
                     }
                 }
             }
