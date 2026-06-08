@@ -7,15 +7,24 @@
 //
 //   - Per-app header card: app icon disc + app name + version + open-
 //     in-store chevron.
-//   - Three tabs: "Permissions" (selected) / "Storage" / "Notifications".
-//   - Per-permission row: leading tone-tinted icon disc + permission
-//     name + access state caption (e.g. "Allowed only while in use"
-//     warning, "Allowed all the time" success, "Denied" danger,
-//     "Ask every time" info) + chevron-right.
-//   - Recent access strip beneath the toggles: tiny dot-chart per
-//     permission showing the last 24 h of access events.
-//   - Trailing destructive section: "Force stop" and "Clear data"
-//     rendered as danger-toned nav rows.
+//   - Three working tabs: tap "Permissions", "Storage", or
+//     "Notifications" to swap the panel below.
+//   - Per-permission row that LIVE-CYCLES through the four access
+//     states (Allowed always → While in use → Ask every time →
+//     Denied) on each tap — the icon disc tint, the state caption,
+//     and the recent-access strip all reflect the new state
+//     instantly without any host wiring.
+//   - "Force stop" and "Clear app data" use a two-tap-confirm
+//     pattern: first tap turns the row into a primed-confirm
+//     state, second tap actually performs the action and the row
+//     re-renders to show the result ("App force-stopped",
+//     "All data cleared", etc.).
+//   - Storage panel has a tap-to-clear cache row that visibly drops
+//     the cache MB to 0.
+//   - Notifications panel has channel toggles (push, sound, badges,
+//     in-app banners) that flip on every tap.
+//   - Persistent status banner under the AppBar reflects the last
+//     action so a catalogue visitor can see what they just did.
 
 import { ScrollView } from "std-widgets.slint";
 import { Theme, Tone } from "@mobile-theme/theme.slint";
@@ -24,6 +33,81 @@ import { SectionHeader } from "@mobile-components/section-header.slint";
 import { Divider } from "@mobile-components/divider.slint";
 import { TabBar, Tab } from "@mobile-components/tab-bar.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
+
+// One channel toggle row used by the Notifications tab. The whole
+// row is tappable and the host can observe `clicked` if it wants
+// to react; the row also mutates `value` in-place via `toggle()`
+// so the catalogue cell shows real on/off semantics on its own.
+component ToggleRow inherits Rectangle {
+    in property <string> name;
+    in property <string> subtitle;
+    in-out property <bool> value: false;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: root.name;
+    accessible-action-default => { root.toggle(); }
+
+    function toggle() {
+        root.value = !root.value;
+        root.clicked();
+    }
+
+    horizontal-stretch: 1;
+    min-height: 64px;
+    background: touch.pressed ? Theme.surface-pressed : transparent;
+    animate background { duration: Theme.motion-fast; }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: root.name;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+            if root.subtitle != "": Text {
+                text: root.subtitle;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+                font-weight: 600;
+            }
+        }
+        // Inline toggle pill — track colour reflects state, knob
+        // slides via the bound x position so the user sees a real
+        // mechanical-feeling on/off.
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 48px;
+                height: 28px;
+                border-radius: self.height / 2;
+                background: root.value ? Theme.primary : Theme.surface-variant;
+                animate background { duration: Theme.motion-fast; }
+
+                Rectangle {
+                    width: 22px;
+                    height: 22px;
+                    y: (parent.height - self.height) / 2;
+                    x: root.value ? parent.width - self.width - 3px : 3px;
+                    border-radius: self.height / 2;
+                    background: Theme.on-primary;
+                    animate x { duration: Theme.motion-fast; }
+                }
+            }
+        }
+    }
+    touch := TouchArea {
+        clicked => { root.toggle(); }
+    }
+}
 
 // One permission row.
 component PermissionRow inherits Rectangle {
@@ -151,7 +235,73 @@ export component AppPermissionsPage inherits Window {
     callback force-stop-pressed();
     callback clear-data-pressed();
 
+    // ---- Per-permission state (0=allowed-always, 1=while-in-use,
+    //      2=ask-every-time, 3=denied). Tapping a row cycles
+    //      through the four states.
+    private property <int> location-state: 1;
+    private property <int> notifications-state: 0;
+    private property <int> contacts-state: 0;
+    private property <int> camera-state: 2;
+    private property <int> microphone-state: 2;
+    private property <int> health-state: 3;
+    private property <int> sms-state: 3;
+
+    // ---- Storage tab live state ----
+    private property <int> app-mb: 65;
+    private property <int> data-mb: 184;
+    private property <int> cache-mb: 28;
+
+    // ---- Two-tap-confirm state for destructive actions ----
+    private property <int> stop-confirm: 0;
+    private property <bool> force-stopped: false;
+    private property <int> clear-confirm: 0;
+
+    // ---- Notifications tab toggle state ----
+    in-out property <bool> notif-push: true;
+    in-out property <bool> notif-sound: true;
+    in-out property <bool> notif-badges: false;
+    in-out property <bool> notif-banners: true;
+    in-out property <bool> notif-lockscreen: true;
+    in-out property <bool> notif-vibration: false;
+
+    // ---- Status banner ----
+    private property <string> status-msg: "Tap any permission to cycle through states";
+    private property <bool> status-is-warn: false;
+    private property <bool> status-is-danger: false;
+
     background: Theme.background;
+
+    // ---- Helpers: derive tone + label from the 0..3 state index.
+    function perm-tone(s: int) -> Tone {
+        return s == 0 ? Tone.success
+            : s == 1 ? Tone.warning
+            : s == 2 ? Tone.default
+            : Tone.danger;
+    }
+    function perm-label(s: int) -> string {
+        return s == 0 ? "Allowed all the time"
+            : s == 1 ? "Allowed only while in use"
+            : s == 2 ? "Ask every time"
+            : "Denied";
+    }
+    function perm-short(s: int) -> string {
+        return s == 0 ? "Allowed always"
+            : s == 1 ? "While in use"
+            : s == 2 ? "Ask every time"
+            : "Denied";
+    }
+    // After any non-confirm tap, reset the confirm primes so the
+    // user has to re-prime the destructive action with a fresh
+    // first tap.
+    function reset-confirms() {
+        root.stop-confirm = 0;
+        root.clear-confirm = 0;
+    }
+    function set-status(msg: string, warn: bool, danger: bool) {
+        root.status-msg = msg;
+        root.status-is-warn = warn;
+        root.status-is-danger = danger;
+    }
 
     VerticalLayout {
         spacing: 0;
@@ -243,129 +393,455 @@ export component AppPermissionsPage inherits Window {
             }
         }
 
-        // Tabs.
-        TabBar {
-            Tab { label: "Permissions"; active: true; }
-            Tab { label: "Storage"; }
-            Tab { label: "Notifications"; }
-        }
-
-        SectionHeader { text: "ALLOWED"; }
-        PermissionRow {
-            icon: @image-url("@mobile-components/icons/pin.svg");
-            name: "Location";
-            state-label: "Allowed only while in use · last 12 min";
-            tone: Tone.warning;
-            clicked => { root.row-pressed(self.name); }
-        }
-        Divider { }
-        PermissionRow {
-            icon: @image-url("@mobile-components/icons/bell.svg");
-            name: "Notifications";
-            state-label: "Allowed · interruptive";
-            tone: Tone.info;
-            clicked => { root.row-pressed(self.name); }
-        }
-        Divider { }
-        PermissionRow {
-            icon: @image-url("@mobile-components/icons/profile.svg");
-            name: "Contacts";
-            state-label: "Allowed all the time";
-            tone: Tone.success;
-            clicked => { root.row-pressed(self.name); }
-        }
-
-        SectionHeader { text: "ASK EVERY TIME"; }
-        PermissionRow {
-            icon: @image-url("@mobile-components/icons/star.svg");
-            name: "Camera";
-            state-label: "Ask every time";
-            tone: Tone.default;
-            clicked => { root.row-pressed(self.name); }
-        }
-        Divider { }
-        PermissionRow {
-            icon: @image-url("@mobile-components/icons/play.svg");
-            name: "Microphone";
-            state-label: "Ask every time";
-            tone: Tone.default;
-            clicked => { root.row-pressed(self.name); }
-        }
-
-        SectionHeader { text: "DENIED"; }
-        PermissionRow {
-            icon: @image-url("@mobile-components/icons/heart.svg");
-            name: "Health & body sensors";
-            state-label: "Denied";
-            tone: Tone.danger;
-            clicked => { root.row-pressed(self.name); }
-        }
-        Divider { }
-        PermissionRow {
-            icon: @image-url("@mobile-components/icons/inbox.svg");
-            name: "SMS & call history";
-            state-label: "Denied";
-            tone: Tone.danger;
-            clicked => { root.row-pressed(self.name); }
-        }
-
-        SectionHeader { text: "LOCATION · LAST 24 H"; }
-        VerticalLayout {
-            padding: Theme.spacing-md;
-            spacing: Theme.spacing-xs;
-            AccessStrip {
-                tone: Tone.warning;
-                hours: [
-                    false, false, false, false, false, false,
-                    false, true,  true,  false, true,  true,
-                    false, false, true,  false, false, false,
-                    false, false, false, false, false, false,
-                ];
-            }
+        // ---- Status banner ----
+        //
+        // Always-visible single-line surface that reflects the most
+        // recent action. Tinted warning/danger when appropriate so
+        // a quick glance tells the visitor what state they're in.
+        Rectangle {
+            background: root.status-is-danger ? Theme.accent-danger
+                : root.status-is-warn ? Theme.accent-warning
+                : Theme.surface-2;
+            height: 36px;
+            animate background { duration: Theme.motion-fast; }
             HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
                 Text {
-                    text: "00:00";
-                    color: Theme.muted;
-                    font-size: 10px;
+                    text: root.status-msg;
+                    color: (root.status-is-danger || root.status-is-warn)
+                        ? Theme.on-primary : Theme.on-surface;
+                    font-size: Theme.font-size-caption;
                     font-weight: 700;
+                    vertical-alignment: center;
                     horizontal-stretch: 1;
-                }
-                Text {
-                    text: "12:00";
-                    color: Theme.muted;
-                    font-size: 10px;
-                    font-weight: 700;
-                    horizontal-stretch: 1;
-                    horizontal-alignment: center;
-                }
-                Text {
-                    text: "now";
-                    color: Theme.muted;
-                    font-size: 10px;
-                    font-weight: 700;
-                    horizontal-stretch: 1;
-                    horizontal-alignment: right;
+                    overflow: elide;
                 }
             }
         }
 
-        Rectangle { vertical-stretch: 1; }
-
-        SectionHeader { text: "DANGER ZONE"; }
-        PermissionRow {
-            icon: @image-url("@mobile-components/icons/close.svg");
-            name: "Force stop";
-            state-label: "Closes the app immediately";
-            tone: Tone.danger;
-            clicked => { root.force-stop-pressed(); }
+        // ---- Working tabs ----
+        //
+        // The TabBar's child Tabs each fire `clicked` — we wire them
+        // to set `active-tab` and the panels below render
+        // conditionally. `active` binds to the comparison so the
+        // selected underline tracks taps.
+        TabBar {
+            Tab {
+                label: "Permissions";
+                active: root.active-tab == 0;
+                clicked => {
+                    root.active-tab = 0;
+                    root.reset-confirms();
+                    root.set-status("Permissions tab", false, false);
+                }
+            }
+            Tab {
+                label: "Storage";
+                active: root.active-tab == 1;
+                clicked => {
+                    root.active-tab = 1;
+                    root.reset-confirms();
+                    root.set-status("Storage tab — tap to manage", false, false);
+                }
+            }
+            Tab {
+                label: "Notifications";
+                active: root.active-tab == 2;
+                clicked => {
+                    root.active-tab = 2;
+                    root.reset-confirms();
+                    root.set-status("Notification channels — tap to toggle", false, false);
+                }
+            }
         }
-        Divider { }
-        PermissionRow {
-            icon: @image-url("@mobile-components/icons/queue.svg");
-            name: "Clear app data";
-            state-label: "Removes 184 MB of local data";
-            tone: Tone.danger;
-            clicked => { root.clear-data-pressed(); }
+
+        // ---- Tab 0: Permissions ----
+        if root.active-tab == 0: VerticalLayout {
+            spacing: 0;
+            SectionHeader { text: "ALLOWED"; }
+            PermissionRow {
+                icon: @image-url("@mobile-components/icons/pin.svg");
+                name: "Location";
+                state-label: root.perm-label(root.location-state);
+                tone: root.perm-tone(root.location-state);
+                clicked => {
+                    root.location-state = mod(root.location-state + 1, 4);
+                    root.reset-confirms();
+                    root.row-pressed(self.name);
+                    root.set-status("Location → " + root.perm-short(root.location-state),
+                        root.location-state == 1, root.location-state == 3);
+                }
+            }
+            Divider { }
+            PermissionRow {
+                icon: @image-url("@mobile-components/icons/bell.svg");
+                name: "Notifications";
+                state-label: root.perm-label(root.notifications-state);
+                tone: root.perm-tone(root.notifications-state);
+                clicked => {
+                    root.notifications-state = mod(root.notifications-state + 1, 4);
+                    root.reset-confirms();
+                    root.row-pressed(self.name);
+                    root.set-status("Notifications → " + root.perm-short(root.notifications-state),
+                        root.notifications-state == 1, root.notifications-state == 3);
+                }
+            }
+            Divider { }
+            PermissionRow {
+                icon: @image-url("@mobile-components/icons/profile.svg");
+                name: "Contacts";
+                state-label: root.perm-label(root.contacts-state);
+                tone: root.perm-tone(root.contacts-state);
+                clicked => {
+                    root.contacts-state = mod(root.contacts-state + 1, 4);
+                    root.reset-confirms();
+                    root.row-pressed(self.name);
+                    root.set-status("Contacts → " + root.perm-short(root.contacts-state),
+                        root.contacts-state == 1, root.contacts-state == 3);
+                }
+            }
+
+            SectionHeader { text: "ASK EVERY TIME"; }
+            PermissionRow {
+                icon: @image-url("@mobile-components/icons/star.svg");
+                name: "Camera";
+                state-label: root.perm-label(root.camera-state);
+                tone: root.perm-tone(root.camera-state);
+                clicked => {
+                    root.camera-state = mod(root.camera-state + 1, 4);
+                    root.reset-confirms();
+                    root.row-pressed(self.name);
+                    root.set-status("Camera → " + root.perm-short(root.camera-state),
+                        root.camera-state == 1, root.camera-state == 3);
+                }
+            }
+            Divider { }
+            PermissionRow {
+                icon: @image-url("@mobile-components/icons/play.svg");
+                name: "Microphone";
+                state-label: root.perm-label(root.microphone-state);
+                tone: root.perm-tone(root.microphone-state);
+                clicked => {
+                    root.microphone-state = mod(root.microphone-state + 1, 4);
+                    root.reset-confirms();
+                    root.row-pressed(self.name);
+                    root.set-status("Microphone → " + root.perm-short(root.microphone-state),
+                        root.microphone-state == 1, root.microphone-state == 3);
+                }
+            }
+
+            SectionHeader { text: "DENIED"; }
+            PermissionRow {
+                icon: @image-url("@mobile-components/icons/heart.svg");
+                name: "Health & body sensors";
+                state-label: root.perm-label(root.health-state);
+                tone: root.perm-tone(root.health-state);
+                clicked => {
+                    root.health-state = mod(root.health-state + 1, 4);
+                    root.reset-confirms();
+                    root.row-pressed(self.name);
+                    root.set-status("Health & body sensors → " + root.perm-short(root.health-state),
+                        root.health-state == 1, root.health-state == 3);
+                }
+            }
+            Divider { }
+            PermissionRow {
+                icon: @image-url("@mobile-components/icons/inbox.svg");
+                name: "SMS & call history";
+                state-label: root.perm-label(root.sms-state);
+                tone: root.perm-tone(root.sms-state);
+                clicked => {
+                    root.sms-state = mod(root.sms-state + 1, 4);
+                    root.reset-confirms();
+                    root.row-pressed(self.name);
+                    root.set-status("SMS & call history → " + root.perm-short(root.sms-state),
+                        root.sms-state == 1, root.sms-state == 3);
+                }
+            }
+
+            // Recent-access strip — re-derived from the current
+            // location state so the dot count + colour are live.
+            SectionHeader { text: "LOCATION · LAST 24 H"; }
+            VerticalLayout {
+                padding: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                AccessStrip {
+                    tone: root.perm-tone(root.location-state);
+                    hours: root.location-state == 3 ? [
+                        false, false, false, false, false, false,
+                        false, false, false, false, false, false,
+                        false, false, false, false, false, false,
+                        false, false, false, false, false, false,
+                    ] : root.location-state == 0 ? [
+                        true, true, true, true, true, true,
+                        true, true, true, true, true, true,
+                        true, true, true, true, true, true,
+                        true, true, true, true, true, true,
+                    ] : root.location-state == 1 ? [
+                        false, false, false, false, false, false,
+                        false, true,  true,  false, true,  true,
+                        false, false, true,  false, false, false,
+                        false, false, false, false, false, false,
+                    ] : [
+                        false, false, false, false, false, false,
+                        false, false, false, false, false, false,
+                        false, false, false, false, false, false,
+                        false, false, true,  false, false, false,
+                    ];
+                }
+                HorizontalLayout {
+                    Text {
+                        text: "00:00";
+                        color: Theme.muted;
+                        font-size: 10px;
+                        font-weight: 700;
+                        horizontal-stretch: 1;
+                    }
+                    Text {
+                        text: "12:00";
+                        color: Theme.muted;
+                        font-size: 10px;
+                        font-weight: 700;
+                        horizontal-stretch: 1;
+                        horizontal-alignment: center;
+                    }
+                    Text {
+                        text: "now";
+                        color: Theme.muted;
+                        font-size: 10px;
+                        font-weight: 700;
+                        horizontal-stretch: 1;
+                        horizontal-alignment: right;
+                    }
+                }
+            }
+
+            Rectangle { vertical-stretch: 1; }
+
+            // ---- Danger zone with two-tap confirm ----
+            SectionHeader { text: "DANGER ZONE"; }
+            PermissionRow {
+                icon: @image-url("@mobile-components/icons/close.svg");
+                name: "Force stop";
+                state-label: root.force-stopped
+                    ? "App force-stopped · tap to restart"
+                    : root.stop-confirm > 0
+                        ? "Tap again to confirm force-stop"
+                        : "Closes the app immediately";
+                tone: (root.force-stopped || root.stop-confirm > 0) ? Tone.danger : Tone.danger;
+                clicked => {
+                    root.clear-confirm = 0;
+                    if (root.force-stopped) {
+                        root.force-stopped = false;
+                        root.set-status("App restarted", false, false);
+                    } else if (root.stop-confirm > 0) {
+                        root.force-stopped = true;
+                        root.stop-confirm = 0;
+                        root.force-stop-pressed();
+                        root.set-status("App force-stopped", false, true);
+                    } else {
+                        root.stop-confirm = 1;
+                        root.set-status("Tap Force stop again to confirm", true, false);
+                    }
+                }
+            }
+            Divider { }
+            PermissionRow {
+                icon: @image-url("@mobile-components/icons/queue.svg");
+                name: "Clear app data";
+                state-label: root.data-mb == 0
+                    ? "All app data cleared"
+                    : root.clear-confirm > 0
+                        ? "Tap again — this can't be undone"
+                        : "Removes " + root.data-mb + " MB of local data";
+                tone: Tone.danger;
+                clicked => {
+                    root.stop-confirm = 0;
+                    if (root.data-mb == 0) {
+                        root.set-status("Nothing to clear", false, false);
+                    } else if (root.clear-confirm > 0) {
+                        root.set-status(root.data-mb + " MB of app data cleared", false, true);
+                        root.data-mb = 0;
+                        root.clear-confirm = 0;
+                        root.clear-data-pressed();
+                    } else {
+                        root.clear-confirm = 1;
+                        root.set-status("Tap Clear app data again to confirm", true, false);
+                    }
+                }
+            }
+        }
+
+        // ---- Tab 1: Storage ----
+        if root.active-tab == 1: VerticalLayout {
+            spacing: 0;
+
+            SectionHeader { text: "USAGE BREAKDOWN"; }
+            // App size — fixed (the install itself).
+            PermissionRow {
+                icon: @image-url("@mobile-components/icons/queue.svg");
+                name: "App";
+                state-label: root.app-mb + " MB · install size";
+                tone: Tone.info;
+                clicked => {
+                    root.reset-confirms();
+                    root.set-status("App install: " + root.app-mb + " MB", false, false);
+                }
+            }
+            Divider { }
+            PermissionRow {
+                icon: @image-url("@mobile-components/icons/inbox.svg");
+                name: "User data";
+                state-label: root.data-mb == 0
+                    ? "0 MB · cleared"
+                    : root.data-mb + " MB · documents, prefs, history";
+                tone: root.data-mb == 0 ? Tone.success : Tone.default;
+                clicked => {
+                    root.reset-confirms();
+                    root.set-status("User data: " + root.data-mb + " MB", false, false);
+                }
+            }
+            Divider { }
+            PermissionRow {
+                icon: @image-url("@mobile-components/icons/star.svg");
+                name: "Cache";
+                state-label: root.cache-mb == 0
+                    ? "Cache is empty"
+                    : root.cache-mb + " MB · tap to clear";
+                tone: root.cache-mb == 0 ? Tone.success : Tone.info;
+                clicked => {
+                    root.reset-confirms();
+                    if (root.cache-mb > 0) {
+                        root.set-status(root.cache-mb + " MB of cache cleared", false, false);
+                        root.cache-mb = 0;
+                    } else {
+                        root.set-status("Cache is already empty", false, false);
+                    }
+                }
+            }
+
+            SectionHeader { text: "TOTAL"; }
+            HorizontalLayout {
+                padding: Theme.spacing-md;
+                Text {
+                    text: "Storage used";
+                    color: Theme.on-surface;
+                    font-size: Theme.font-size-body;
+                    font-weight: 600;
+                    horizontal-stretch: 1;
+                }
+                Text {
+                    text: (root.app-mb + root.data-mb + root.cache-mb) + " MB";
+                    color: Theme.primary;
+                    font-family: "JetBrains Mono";
+                    font-size: Theme.font-size-body;
+                    font-weight: 700;
+                }
+            }
+
+            Rectangle { vertical-stretch: 1; }
+
+            SectionHeader { text: "DANGER ZONE"; }
+            PermissionRow {
+                icon: @image-url("@mobile-components/icons/queue.svg");
+                name: "Clear app data";
+                state-label: root.data-mb == 0
+                    ? "All app data cleared"
+                    : root.clear-confirm > 0
+                        ? "Tap again — this can't be undone"
+                        : "Removes " + root.data-mb + " MB of local data";
+                tone: Tone.danger;
+                clicked => {
+                    root.stop-confirm = 0;
+                    if (root.data-mb == 0) {
+                        root.set-status("Nothing to clear", false, false);
+                    } else if (root.clear-confirm > 0) {
+                        root.set-status(root.data-mb + " MB of app data cleared", false, true);
+                        root.data-mb = 0;
+                        root.clear-confirm = 0;
+                        root.clear-data-pressed();
+                    } else {
+                        root.clear-confirm = 1;
+                        root.set-status("Tap Clear app data again to confirm", true, false);
+                    }
+                }
+            }
+        }
+
+        // ---- Tab 2: Notifications ----
+        if root.active-tab == 2: VerticalLayout {
+            spacing: 0;
+
+            SectionHeader { text: "DELIVERY"; }
+            ToggleRow {
+                name: "Push notifications";
+                subtitle: "Receive alerts when you're not in the app";
+                value <=> root.notif-push;
+                clicked => {
+                    root.reset-confirms();
+                    root.set-status("Push notifications " + (root.notif-push ? "enabled" : "disabled"),
+                        false, false);
+                }
+            }
+            Divider { }
+            ToggleRow {
+                name: "In-app banners";
+                subtitle: "Show a banner at the top while inside the app";
+                value <=> root.notif-banners;
+                clicked => {
+                    root.reset-confirms();
+                    root.set-status("In-app banners " + (root.notif-banners ? "enabled" : "disabled"),
+                        false, false);
+                }
+            }
+            Divider { }
+            ToggleRow {
+                name: "Lock screen";
+                subtitle: "Surface notifications even when the screen is locked";
+                value <=> root.notif-lockscreen;
+                clicked => {
+                    root.reset-confirms();
+                    root.set-status("Lock screen " + (root.notif-lockscreen ? "enabled" : "disabled"),
+                        false, false);
+                }
+            }
+
+            SectionHeader { text: "FEEDBACK"; }
+            ToggleRow {
+                name: "Sound";
+                subtitle: "Default chime when a notification arrives";
+                value <=> root.notif-sound;
+                clicked => {
+                    root.reset-confirms();
+                    root.set-status("Sound " + (root.notif-sound ? "enabled" : "disabled"),
+                        false, false);
+                }
+            }
+            Divider { }
+            ToggleRow {
+                name: "Vibration";
+                subtitle: "Add a haptic on top of the sound";
+                value <=> root.notif-vibration;
+                clicked => {
+                    root.reset-confirms();
+                    root.set-status("Vibration " + (root.notif-vibration ? "enabled" : "disabled"),
+                        false, false);
+                }
+            }
+            Divider { }
+            ToggleRow {
+                name: "App icon badges";
+                subtitle: "Show unread counts on the home screen";
+                value <=> root.notif-badges;
+                clicked => {
+                    root.reset-confirms();
+                    root.set-status("Badges " + (root.notif-badges ? "enabled" : "disabled"),
+                        false, false);
+                }
+            }
+
+            Rectangle { vertical-stretch: 1; }
         }
             }   // end inner VerticalLayout
         }       // end ScrollView

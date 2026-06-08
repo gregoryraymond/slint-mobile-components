@@ -3,22 +3,127 @@
 //
 // PIN / passcode entry screen — iOS lock-screen / banking-app-style.
 // Distinct from `LoginPage` (full credential entry). Demonstrates a
-// single-purpose, no-AppBar surface:
+// single-purpose, no-AppBar surface with REAL working interactions
+// (the keypad actually enters a PIN, notifications can be tapped,
+// the recovery / biometric buttons fire visible banners) so the
+// catalogue cell behaves like a working app rather than a static
+// screenshot:
 //
-//   - Big time + date hero at the top, then a user-avatar + name +
-//     "Enter passcode" caption.
-//   - 4-dot passcode indicator: each dot is empty (outlined) when
-//     unfilled, primary-filled once tapped, danger-toned if the
-//     previous attempt failed.
+//   - Time + date hero, then a vertically-scrollable notifications
+//     stack (tap a card → "Opened <App>" banner).
+//   - User-avatar + name + "Enter passcode" caption, with a 4-dot
+//     indicator wired to the live entry state (empty when unfilled,
+//     primary-filled once tapped, danger-toned if the previous
+//     attempt failed).
 //   - 3 × 4 numeric keypad: 1–9, then "biometric" / 0 / "delete".
-//     Each digit cell is a round Rectangle with primary text and
-//     pressed-state surface tint.
-//   - Trailing affordance row: "Forgot passcode?" link + Face ID hint.
+//     Each digit appends to the entered PIN; reaching 4 digits
+//     auto-validates against `1234` and either unlocks (success
+//     banner) or rejects (dots flash danger and clear).
+//   - Trailing affordance row: "Forgot passcode?" → "Reset link
+//     sent…" banner; Face ID hint becomes the live status line.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
+import { ScrollView } from "std-widgets.slint";
 import { Avatar } from "@mobile-components/avatar.slint";
 import { TextButton } from "@mobile-components/button.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
+
+// One lock-screen notification card. Tap to surface the "open"
+// action via the host callback; doesn't dismiss itself so the
+// catalogue visitor can re-tap any number of times.
+struct NotifSpec {
+    app: string,
+    badge: string,
+    title: string,
+    body: string,
+    time: string,
+    tint: brush,
+}
+
+component NotifCard inherits Rectangle {
+    in property <NotifSpec> spec;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: root.spec.app + ": " + root.spec.title;
+    accessible-action-default => { root.clicked(); }
+
+    height: 72px;
+    background: touch.pressed ? Theme.surface-2 : Theme.surface-1;
+    border-radius: Theme.radius-md;
+    border-width: 1px;
+    border-color: Theme.outline;
+    animate background { duration: Theme.motion-fast; }
+
+    HorizontalLayout {
+        padding: Theme.spacing-sm;
+        spacing: Theme.spacing-sm;
+        alignment: stretch;
+
+        // App-icon disc, tinted per notification source.
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 36px;
+                height: 36px;
+                border-radius: self.width / 2;
+                background: root.spec.tint;
+                Text {
+                    text: root.spec.badge;
+                    color: Theme.on-primary;
+                    font-size: 14px;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    x: 0;
+                    y: 0;
+                    width: parent.width;
+                    height: parent.height;
+                }
+            }
+        }
+
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            HorizontalLayout {
+                spacing: Theme.spacing-xs;
+                Text {
+                    text: root.spec.app;
+                    color: Theme.muted;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                    letter-spacing: 0.5px;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+                Text {
+                    text: root.spec.time;
+                    color: Theme.muted;
+                    font-size: Theme.font-size-caption;
+                }
+            }
+            Text {
+                text: root.spec.title;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 700;
+                overflow: elide;
+            }
+            Text {
+                text: root.spec.body;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+                overflow: elide;
+            }
+        }
+    }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
 
 // One passcode dot.
 component PinDot inherits Rectangle {
@@ -109,24 +214,155 @@ export component AppLockScreen inherits Window {
     in property <string> time-now: "14:32";
     in property <string> date: "Wednesday, May 14";
     in property <string> user-name: "Greg Raymond";
-    in property <int> dot-state-0: 1;
-    in property <int> dot-state-1: 1;
-    in property <int> dot-state-2: 0;
-    in property <int> dot-state-3: 0;
+    // The correct PIN — exposed as `in` so a host (a tester, the
+    // catalogue, or a real app) can rebrand it. Defaults to a memorable
+    // catalogue-friendly value displayed in the "Wrong passcode" toast
+    // so visitors can recover from a failed attempt.
+    in property <string> correct-pin: "1234";
+    // Host hooks are kept (real apps will want to know when the user
+    // pressed digits / unlocked / asked for recovery) but the screen
+    // also drives all of these internally so the catalogue cell does
+    // something visible without any wiring.
     callback digit-pressed(int);
     callback delete-pressed();
     callback biometric-pressed();
     callback forgot-pressed();
     callback emergency-pressed();
+    callback unlocked();
+
+    // ----- Internal interaction state -----
+    //
+    // `entered-count` is the source of truth for how many PIN digits
+    // have been tapped; the four PinDots derive their fill state from
+    // it. `entered-pin` is the actual digit sequence (compared
+    // against `correct-pin` at length 4). `last-was-wrong` flashes the
+    // dots danger-toned until the next digit is pressed.
+    private property <string> entered-pin: "";
+    private property <int> entered-count: 0;
+    private property <bool> last-was-wrong: false;
+    private property <bool> unlocked-state: false;
+    // Single-line status that replaces the "Face ID will unlock when
+    // ready" footer so the user sees what each tap did.
+    private property <string> status-msg: "Face ID will unlock when ready";
+
+    // Demo notification stack. Tap any card to surface "Opened <App>"
+    // in the status line.
+    private property <[NotifSpec]> notifications: [
+        {
+            app: "Messages",
+            badge: "M",
+            title: "Sam",
+            body: "On my way — coffee in 5? ☕",
+            time: "now",
+            tint: #2e7d32,
+        },
+        {
+            app: "Calendar",
+            badge: "C",
+            title: "Team standup",
+            body: "Starts in 10 minutes · Bridge room",
+            time: "10:50",
+            tint: #c62828,
+        },
+        {
+            app: "GitHub",
+            badge: "G",
+            title: "PR #143 review",
+            body: "Alice requested changes on slint-mobile",
+            time: "10:42",
+            tint: #6d4ec1,
+        },
+        {
+            app: "Spotify",
+            badge: "S",
+            title: "Daily Mix 1",
+            body: "Fresh tracks just for you",
+            time: "09:30",
+            tint: #1db954,
+        },
+        {
+            app: "Weather",
+            badge: "W",
+            title: "Rain starting at 3pm",
+            body: "Bring a coat — 12°C, 80% humidity",
+            time: "08:15",
+            tint: #1976d2,
+        },
+    ];
 
     background: Theme.background;
+
+    // ----- Interaction handlers -----
+    //
+    // Every keypad button funnels through here so the catalogue cell
+    // shows real PIN-entry semantics (build, validate, flash, reset).
+    function press-digit(d: int) {
+        root.digit-pressed(d);
+        if (root.unlocked-state) {
+            // already unlocked — ignore further digit input until the
+            // user explicitly resets via the delete key
+            return;
+        }
+        if (root.entered-count >= 4) {
+            return;
+        }
+        root.last-was-wrong = false;
+        root.entered-pin = root.entered-pin + d;
+        root.entered-count = root.entered-count + 1;
+        root.status-msg = "Passcode " + root.entered-count + " of 4";
+        if (root.entered-count == 4) {
+            if (root.entered-pin == root.correct-pin) {
+                root.unlocked-state = true;
+                root.status-msg = "✓ Unlocked — welcome back, " + root.user-name;
+                root.unlocked();
+            } else {
+                root.last-was-wrong = true;
+                root.status-msg = "Wrong passcode — hint: " + root.correct-pin;
+                root.entered-pin = "";
+                root.entered-count = 0;
+            }
+        }
+    }
+
+    function press-delete() {
+        root.delete-pressed();
+        root.entered-pin = "";
+        root.entered-count = 0;
+        root.last-was-wrong = false;
+        root.unlocked-state = false;
+        root.status-msg = "Face ID will unlock when ready";
+    }
+
+    function press-biometric() {
+        root.biometric-pressed();
+        if (root.unlocked-state) {
+            root.status-msg = "Already unlocked";
+            return;
+        }
+        // Auto-fill the correct PIN, simulating a successful Face ID.
+        root.entered-pin = root.correct-pin;
+        root.entered-count = 4;
+        root.last-was-wrong = false;
+        root.unlocked-state = true;
+        root.status-msg = "✓ Face ID matched";
+        root.unlocked();
+    }
+
+    function press-forgot() {
+        root.forgot-pressed();
+        root.status-msg = "Reset link sent to gr@example.com";
+    }
+
+    function tap-notif(spec: NotifSpec) {
+        root.status-msg = "Opened " + spec.app + ": " + spec.title;
+    }
 
     VerticalLayout {
         spacing: 0;
 
         // ----- Time hero -----
         VerticalLayout {
-            padding-top: Theme.spacing-lg;
+            padding-top: Theme.spacing-md;
             spacing: Theme.spacing-xs;
             // Time hero — bespoke ultra-light Inter with tight tracking.
             // Lock-screen tradition is a very thin, large numeral.
@@ -136,9 +372,9 @@ export component AppLockScreen inherits Window {
                     text: root.time-now;
                     color: Theme.on-background;
                     font-family: "Inter";
-                    font-size: 96px;
+                    font-size: 72px;
                     font-weight: 400;
-                    letter-spacing: -4px;
+                    letter-spacing: -3px;
                 }
             }
             // Date — Inter 400, generously tracked, sits airily beneath
@@ -156,15 +392,41 @@ export component AppLockScreen inherits Window {
             }
         }
 
+        // ----- Scrollable notifications stack -----
+        //
+        // Fixed-height ScrollView so the lock screen layout stays
+        // stable as cards stream in. Each card is tap-interactive
+        // (host can wire `clicked` to a real "open this app" intent;
+        // here we surface the action via `status-msg`).
+        Rectangle {
+            height: 168px;
+            VerticalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                padding-top: Theme.spacing-sm;
+
+                ScrollView {
+                    VerticalLayout {
+                        spacing: Theme.spacing-sm;
+                        alignment: start;
+                        for n[i] in root.notifications: NotifCard {
+                            spec: n;
+                            clicked => { root.tap-notif(n); }
+                        }
+                    }
+                }
+            }
+        }
+
         // ----- Avatar + name + dots -----
         VerticalLayout {
-            padding-top: Theme.spacing-lg;
+            padding-top: Theme.spacing-md;
             spacing: Theme.spacing-sm;
             HorizontalLayout {
                 alignment: center;
                 Avatar {
                     fallback: "GR";
-                    size: 64px;
+                    size: 56px;
                 }
             }
             // User name — lowercase-soft preset; quiet, friendly, the
@@ -180,55 +442,76 @@ export component AppLockScreen inherits Window {
                 }
             }
             // Instruction — tight all-caps Space Grotesk, contrasts with
-            // the soft name above.
+            // the soft name above. Switches to "PASSCODE ACCEPTED"
+            // when the user successfully unlocks so the cell tells the
+            // catalogue visitor what just happened.
             HorizontalLayout {
                 alignment: center;
                 Text {
-                    text: "ENTER PASSCODE";
-                    color: Theme.muted;
+                    text: root.unlocked-state ? "PASSCODE ACCEPTED"
+                        : root.last-was-wrong ? "TRY AGAIN"
+                        : "ENTER PASSCODE";
+                    color: root.unlocked-state ? Theme.accent-success
+                        : root.last-was-wrong ? Theme.accent-danger
+                        : Theme.muted;
                     font-family: "Space Grotesk";
                     font-size: Theme.font-size-caption;
                     font-weight: 700;
                     letter-spacing: 2.5px;
                 }
             }
+            // Live-bound dots: state derives from `entered-count` and
+            // the `last-was-wrong` flash so each press updates the
+            // indicator without any host wiring.
             HorizontalLayout {
                 alignment: center;
                 spacing: Theme.spacing-md;
                 padding-top: Theme.spacing-sm;
-                PinDot { state: root.dot-state-0; }
-                PinDot { state: root.dot-state-1; }
-                PinDot { state: root.dot-state-2; }
-                PinDot { state: root.dot-state-3; }
+                PinDot {
+                    state: root.last-was-wrong ? 2
+                        : root.entered-count > 0 ? 1 : 0;
+                }
+                PinDot {
+                    state: root.last-was-wrong ? 2
+                        : root.entered-count > 1 ? 1 : 0;
+                }
+                PinDot {
+                    state: root.last-was-wrong ? 2
+                        : root.entered-count > 2 ? 1 : 0;
+                }
+                PinDot {
+                    state: root.last-was-wrong ? 2
+                        : root.entered-count > 3 ? 1 : 0;
+                }
             }
         }
 
         // ----- Keypad -----
         VerticalLayout {
-            padding-top: Theme.spacing-lg;
-            padding-bottom: Theme.spacing-md;
-            spacing: Theme.spacing-md;
+            padding-top: Theme.spacing-md;
+            padding-bottom: Theme.spacing-sm;
+            spacing: Theme.spacing-sm;
 
             HorizontalLayout {
                 alignment: center;
                 spacing: Theme.spacing-md;
-                KeypadDigit { digit: "1"; letters: ""; clicked => { root.digit-pressed(1); } }
-                KeypadDigit { digit: "2"; letters: "ABC"; clicked => { root.digit-pressed(2); } }
-                KeypadDigit { digit: "3"; letters: "DEF"; clicked => { root.digit-pressed(3); } }
+                KeypadDigit { digit: "1"; letters: ""; clicked => { root.press-digit(1); } }
+                KeypadDigit { digit: "2"; letters: "ABC"; clicked => { root.press-digit(2); } }
+                KeypadDigit { digit: "3"; letters: "DEF"; clicked => { root.press-digit(3); } }
             }
             HorizontalLayout {
                 alignment: center;
                 spacing: Theme.spacing-md;
-                KeypadDigit { digit: "4"; letters: "GHI"; clicked => { root.digit-pressed(4); } }
-                KeypadDigit { digit: "5"; letters: "JKL"; clicked => { root.digit-pressed(5); } }
-                KeypadDigit { digit: "6"; letters: "MNO"; clicked => { root.digit-pressed(6); } }
+                KeypadDigit { digit: "4"; letters: "GHI"; clicked => { root.press-digit(4); } }
+                KeypadDigit { digit: "5"; letters: "JKL"; clicked => { root.press-digit(5); } }
+                KeypadDigit { digit: "6"; letters: "MNO"; clicked => { root.press-digit(6); } }
             }
             HorizontalLayout {
                 alignment: center;
                 spacing: Theme.spacing-md;
-                KeypadDigit { digit: "7"; letters: "PQRS"; clicked => { root.digit-pressed(7); } }
-                KeypadDigit { digit: "8"; letters: "TUV"; clicked => { root.digit-pressed(8); } }
-                KeypadDigit { digit: "9"; letters: "WXYZ"; clicked => { root.digit-pressed(9); } }
+                KeypadDigit { digit: "7"; letters: "PQRS"; clicked => { root.press-digit(7); } }
+                KeypadDigit { digit: "8"; letters: "TUV"; clicked => { root.press-digit(8); } }
+                KeypadDigit { digit: "9"; letters: "WXYZ"; clicked => { root.press-digit(9); } }
             }
             HorizontalLayout {
                 alignment: center;
@@ -236,33 +519,45 @@ export component AppLockScreen inherits Window {
                 KeypadGlyph {
                     icon: @image-url("@mobile-components/icons/lock.svg");
                     tint: Theme.accent-info;
-                    clicked => { root.biometric-pressed(); }
+                    clicked => { root.press-biometric(); }
                 }
-                KeypadDigit { digit: "0"; letters: ""; clicked => { root.digit-pressed(0); } }
+                KeypadDigit { digit: "0"; letters: ""; clicked => { root.press-digit(0); } }
                 KeypadGlyph {
                     icon: @image-url("@mobile-components/icons/close.svg");
                     tint: Theme.muted;
-                    clicked => { root.delete-pressed(); }
+                    clicked => { root.press-delete(); }
                 }
             }
         }
 
         // ----- Footer affordances -----
+        //
+        // The static "Face ID will unlock when ready" line is replaced
+        // by a live `status-msg` updated by every handler — keypad,
+        // biometric, forgot, notification taps — so the cell narrates
+        // its state to a catalogue visitor without needing a console.
         VerticalLayout {
+            padding-bottom: Theme.spacing-md;
             spacing: Theme.spacing-xs;
             HorizontalLayout {
                 alignment: center;
                 TextButton {
                     text: "Forgot passcode?";
-                    clicked => { root.forgot-pressed(); }
+                    clicked => { root.press-forgot(); }
                 }
             }
             HorizontalLayout {
                 alignment: center;
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
                 Text {
-                    text: "Face ID will unlock when ready";
-                    color: Theme.muted;
+                    text: root.status-msg;
+                    color: root.unlocked-state ? Theme.accent-success
+                        : root.last-was-wrong ? Theme.accent-danger
+                        : Theme.muted;
                     font-size: Theme.font-size-caption;
+                    horizontal-alignment: center;
+                    overflow: elide;
                 }
             }
         }
