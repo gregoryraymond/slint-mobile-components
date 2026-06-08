@@ -324,22 +324,27 @@ export component WasmViewer inherits Window {
             if root.mobile: mobile-feed := HorizontalLayout {
                 spacing: 0;
 
-                // ---- Mobile virtualisation window ----
+                // ---- Mobile pagination + virtualisation ----
                 //
-                // Slint's `for` instantiates every model row up-front,
-                // so a 150-page feed means 150 live
-                // ComponentContainers each holding a fully
-                // interpreted slint page tree. That turns every
-                // scroll frame into a layout pass over the whole
-                // catalogue, which on a JIT-disabled browser stalls
-                // for seconds. Virtualise: each row is a
-                // fixed-height placeholder Rectangle that ALWAYS
-                // exists (so the scroll geometry doesn't jump), but
-                // the actual PageCell renders only for rows inside
-                // the visible window plus a small overscan. When a
-                // page scrolls off, its embedded instance is torn
-                // down; when it scrolls back, the factory creates a
-                // fresh one.
+                // Two cooperating mechanisms to keep the mobile feed
+                // responsive on JIT-disabled browsers:
+                //
+                //   * `shown-count` caps how many cells the feed
+                //     exposes at all. Default 15; the "Show more"
+                //     button below the feed bumps it by `page-size`
+                //     until every loaded cell is reachable. Limits
+                //     slint's per-frame for-loop walk to the cap
+                //     instead of the full ~150-entry model.
+                //
+                //   * `visible-start` / `visible-end` virtualise the
+                //     PageCell instantiation inside whatever the cap
+                //     allows: each row is a fixed-height placeholder
+                //     Rectangle so the scroll geometry stays stable,
+                //     but the embedded ComponentContainer is only
+                //     rendered for rows inside the visible window
+                //     plus a small overscan. Scroll-off pages get
+                //     torn down; scroll-back creates a fresh
+                //     instance from the factory.
                 //
                 // Properties live on this layout (not the WasmViewer
                 // root) because they read `mobile-scroll`, which
@@ -348,6 +353,8 @@ export component WasmViewer inherits Window {
                 // parses `-mobile-scroll` as the identifier
                 // `-mobile` (which doesn't exist) rather than a
                 // negation.
+                property <int> page-size: 15;
+                in-out property <int> shown-count: 15;
                 property <length> cell-stride: root.mobile-cell-h + root.mobile-gap;
                 property <int> overscan: 3;
                 property <int> visible-start:
@@ -355,7 +362,7 @@ export component WasmViewer inherits Window {
                         floor((0px - mobile-scroll.viewport-y) / self.cell-stride)
                             - self.overscan);
                 property <int> visible-end:
-                    min(root.cells.length - 1,
+                    min(self.shown-count - 1,
                         ceil(((0px - mobile-scroll.viewport-y) + mobile-scroll.visible-height)
                                 / self.cell-stride)
                             + self.overscan);
@@ -370,13 +377,23 @@ export component WasmViewer inherits Window {
                         alignment: start;
 
                         for cell[i] in root.cells: Rectangle {
-                            // Fixed-height slot so the feed's total
-                            // height (and the rail thumb math) stays
-                            // the same whether or not we currently
-                            // render the PageCell into the slot.
-                            height: root.mobile-cell-h;
+                            // Slot height collapses to 0 past
+                            // `shown-count` so the feed's total
+                            // height equals the visible page count
+                            // — the rail thumb shrinks/grows as
+                            // more pages are revealed, and unloaded
+                            // cells take no scroll real estate. For
+                            // rows up to `shown-count`, the slot
+                            // keeps the constant `mobile-cell-h` so
+                            // the visible-window math stays accurate
+                            // even when the PageCell isn't currently
+                            // rendered into the slot.
+                            height: i < mobile-feed.shown-count
+                                ? root.mobile-cell-h
+                                : 0px;
 
-                            if i >= mobile-feed.visible-start
+                            if i < mobile-feed.shown-count
+                                && i >= mobile-feed.visible-start
                                 && i <= mobile-feed.visible-end:
                                 HorizontalLayout {
                                     alignment: center;
@@ -389,15 +406,57 @@ export component WasmViewer inherits Window {
                                 }
                         }
 
-                        if root.still-loading: HorizontalLayout {
-                            alignment: center;
-                            Text {
-                                text: "loading more pages…";
-                                color: Theme.muted;
-                                font-size: 15px;
-                                font-weight: 700;
+                        // "Show more" button — visible whenever
+                        // there are revealed-but-unshown cells below
+                        // the cap. Tap bumps `shown-count` by
+                        // `page-size`. Once everything's revealed
+                        // the button hides itself.
+                        if mobile-feed.shown-count < root.cells.length:
+                            HorizontalLayout {
+                                alignment: center;
+                                padding-top: root.mobile-gap;
+                                Rectangle {
+                                    width: 220px;
+                                    height: 64px;
+                                    background: more-touch.pressed ? Theme.primary-pressed : Theme.primary;
+                                    border-radius: 32px;
+                                    animate background { duration: 120ms; }
+
+                                    HorizontalLayout {
+                                        alignment: center;
+                                        Text {
+                                            text: "Show "
+                                                + min(mobile-feed.page-size, root.cells.length - mobile-feed.shown-count)
+                                                + " more  ↓";
+                                            color: Theme.on-primary;
+                                            font-size: 16px;
+                                            font-weight: 700;
+                                            vertical-alignment: center;
+                                        }
+                                    }
+
+                                    more-touch := TouchArea {
+                                        clicked => {
+                                            mobile-feed.shown-count = min(
+                                                root.cells.length,
+                                                mobile-feed.shown-count + mobile-feed.page-size);
+                                        }
+                                    }
+                                }
                             }
-                        }
+
+                        if root.still-loading
+                            && mobile-feed.shown-count >= root.cells.length:
+                            HorizontalLayout {
+                                alignment: center;
+                                padding-top: root.mobile-gap;
+                                Text {
+                                    text: "loading more pages…";
+                                    color: Theme.muted;
+                                    font-size: 15px;
+                                    font-weight: 700;
+                                }
+                            }
                     }
                 }
 
