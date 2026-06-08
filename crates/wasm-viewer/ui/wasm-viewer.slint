@@ -299,25 +299,26 @@ export component WasmViewer inherits Window {
 
             // ----- Mobile catalogue (vertical scroll of full pages) -----
             //
-            // Vertical feed of slightly-scaled cells with a TouchArea
-            // overlay driving the scroll explicitly. `ScrollView`'s
-            // built-in `mouse-drag-pan-enabled` loses the priority
-            // race against the embedded page's internal TouchAreas —
-            // every swipe gets eaten as a tap before the ScrollView
-            // sees it, so the feed doesn't scroll at all on a real
-            // touchscreen. The overlay below sits above the cells in
-            // stacking order, captures every pointer event, and
-            // updates `mobile-scroll.viewport-y` against the press
-            // anchor by hand. Trade-off: taps inside embedded
-            // page-content don't get through, so the mobile
-            // catalogue is browse-only.
-            if root.mobile: Rectangle {
-                width: parent.width;
-                height: parent.height;
+            // Vertical feed of slightly-scaled cells plus a visible
+            // scroll rail on the right edge. The rail is the
+            // dedicated touch surface for outer-feed scrolling — it
+            // shows up/down arrow hints and a thumb whose height
+            // and position reflect the current viewport state, so
+            // it's discoverable as a scrollbar at a glance.
+            //
+            // Why a dedicated rail instead of `mouse-drag-pan-enabled`
+            // on the ScrollView: the embedded pages' own `TouchArea`s
+            // win the touch priority race in slint 1.16, so a swipe
+            // anywhere on a cell is eaten as a tap before the
+            // ScrollView's drag-pan can engage. Routing scroll
+            // through a separate widget keeps taps inside the cells
+            // working (so embedded buttons stay interactive) while
+            // giving touch users a clearly-marked drag target.
+            if root.mobile: HorizontalLayout {
+                spacing: 0;
 
                 mobile-scroll := ScrollView {
-                    width: parent.width;
-                    height: parent.height;
+                    horizontal-stretch: 1;
 
                     VerticalLayout {
                         padding-top: root.mobile-gap;
@@ -347,24 +348,91 @@ export component WasmViewer inherits Window {
                     }
                 }
 
-                // viewport-y is 0 at the top and negative as content
-                // scrolls up. start-vy records the scroll position at
-                // press time so `moved` can apply a finger-relative
-                // delta and the user gets the standard touch-drag feel.
-                TouchArea {
-                    property <length> start-vy: 0px;
+                Rectangle {
+                    width: 48px;
+                    background: Theme.surface-2;
 
-                    pointer-event(e) => {
-                        if (e.kind == PointerEventKind.down) {
-                            self.start-vy = mobile-scroll.viewport-y;
-                        }
+                    // Scroll geometry. `viewport-height` is the total
+                    // content extent and `visible-height` is what fits
+                    // in view; their difference is the maximum
+                    // (negative) viewport-y the ScrollView allows.
+                    property <length> max-scroll:
+                        max(0px, mobile-scroll.viewport-height - mobile-scroll.visible-height);
+                    property <length> track-h: parent.height - 56px;
+                    property <length> thumb-h:
+                        self.max-scroll <= 0px
+                            ? self.track-h
+                            : max(64px,
+                                self.track-h * mobile-scroll.visible-height
+                                / mobile-scroll.viewport-height);
+                    property <float> scroll-frac:
+                        self.max-scroll <= 0px
+                            ? 0
+                            : -mobile-scroll.viewport-y / self.max-scroll;
+
+                    // Up arrow hint at the top of the rail.
+                    Text {
+                        text: "↑";
+                        x: (parent.width - self.width) / 2;
+                        y: 6px;
+                        color: Theme.muted;
+                        font-size: 18px;
+                        font-weight: 700;
                     }
 
-                    moved => {
-                        mobile-scroll.viewport-y = max(
-                            mobile-scroll.visible-height - mobile-scroll.viewport-height,
-                            min(0px, self.start-vy + (self.mouse-y - self.pressed-y))
-                        );
+                    // Thumb showing both current position (vertical
+                    // offset) and how much of the catalogue fits in
+                    // view (height, vs the total feed height). On
+                    // press it brightens to make the active drag
+                    // target unambiguous.
+                    thumb := Rectangle {
+                        x: 8px;
+                        y: 28px + (parent.track-h - parent.thumb-h) * parent.scroll-frac;
+                        width: 32px;
+                        height: parent.thumb-h;
+                        background: rail-touch.pressed ? Theme.primary : Theme.muted;
+                        border-radius: self.width / 2;
+                        animate background { duration: 120ms; }
+                    }
+
+                    // Down arrow hint at the bottom of the rail.
+                    Text {
+                        text: "↓";
+                        x: (parent.width - self.width) / 2;
+                        y: parent.height - self.height - 6px;
+                        color: Theme.muted;
+                        font-size: 18px;
+                        font-weight: 700;
+                    }
+
+                    rail-touch := TouchArea {
+                        property <length> start-vy: 0px;
+
+                        pointer-event(e) => {
+                            if (e.kind == PointerEventKind.down) {
+                                self.start-vy = mobile-scroll.viewport-y;
+                            }
+                        }
+
+                        // Map drag-distance-on-the-rail to
+                        // scroll-distance-in-content: dragging the
+                        // thumb across its full travel scrolls the
+                        // feed across its full extent. The
+                        // `track-h - thumb-h` denominator keeps a
+                        // 1:1 finger-to-thumb feel — your finger
+                        // and the thumb track each other rather than
+                        // multiplying away from each other.
+                        moved => {
+                            if (parent.max-scroll > 0px) {
+                                mobile-scroll.viewport-y = max(
+                                    -parent.max-scroll,
+                                    min(0px,
+                                        self.start-vy
+                                        - (self.mouse-y - self.pressed-y)
+                                        * parent.max-scroll
+                                        / max(1px, parent.track-h - parent.thumb-h)));
+                            }
+                        }
                     }
                 }
             }
