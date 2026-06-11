@@ -7,18 +7,21 @@
 // Demonstrates a guided-amount payment surface:
 //
 //   - Cause hero: a banner image band + organisation name + a short
-//     campaign line + a raised/goal progress bar.
+//     campaign line + a raised/goal progress bar (raised total grows
+//     live as the user makes donations).
 //   - One-time / Monthly frequency toggle.
-//   - Preset amount chips in a grid, plus a "custom amount" row, with
-//     the active preset highlighted.
-//   - An impact statement that reflects the chosen amount.
-//   - Sticky Donate CTA showing the running total.
+//   - Preset amount chips in a grid, plus a "custom amount" row with
+//     an inline ± $5 stepper.
+//   - Cover-fee toggle (adds 5% to the total).
+//   - Impact statement that reflects the chosen amount + frequency.
+//   - Sticky Donate CTA with a two-tap confirm pattern.
 
 import { ScrollView } from "std-widgets.slint";
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
 import { MobileButton } from "@mobile-components/button.slint";
+import { MobileSwitch } from "@mobile-components/switch.slint";
 
 // One preset-amount chip.
 component AmountChip inherits Rectangle {
@@ -56,24 +59,169 @@ component AmountChip inherits Rectangle {
     }
 }
 
+// Square stepper button (used for the custom-amount ± buttons).
+component StepButton inherits Rectangle {
+    in property <string> label;
+    in property <bool> primary: false;
+    callback clicked();
+
+    width: 52px;
+    height: 52px;
+    border-radius: Theme.radius-md;
+    background: root.primary ? Theme.accent-info
+        : touch.pressed ? Theme.surface-pressed
+        : Theme.surface-1;
+    animate background { duration: Theme.motion-fast; }
+    border-width: 1px;
+    border-color: root.primary ? transparent : Theme.outline;
+
+    Text {
+        text: root.label;
+        color: root.primary ? Theme.on-primary : Theme.on-surface;
+        font-size: Theme.font-size-body;
+        font-weight: 800;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: parent.width;
+        height: parent.height;
+    }
+    touch := TouchArea { clicked => { root.clicked(); } }
+}
+
 export component DonationPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
     in property <string> org: "Tide & Pine Conservancy";
     in property <string> campaign: "Restore 500 acres of coastal wetland";
-    in property <string> raised: "$84,200 raised";
-    in property <string> goal: "of $120,000 goal";
-    in property <float> progress: 0.70;
     in-out property <bool> monthly: false;
     // selected-preset: 0..3 for chips, -1 for custom.
     in-out property <int> selected-preset: 1;
     callback back-pressed();
     callback custom-pressed();
     callback donate-pressed();
+    callback monthly-changed(bool);
+    callback fees-toggled(bool);
+    callback donation-confirmed(int, bool); // dollars, monthly
+
+    // ----- Interactive state -----
+    private property <int> raised-cents: 8420000; // $84,200 starting
+    private property <int> goal-cents: 12000000;  // $120,000
+    private property <int> custom-amount: 45;     // dollars
+    private property <bool> cover-fees: false;
+    private property <bool> confirming: false;
+    private property <int> processed-count: 0;
+    private property <string> status-msg: "Pick an amount, choose one-time or monthly, then Donate";
+    private property <bool> status-is-success: false;
+    private property <bool> status-is-danger: false;
 
     property <[string]> presets: ["$15", "$30", "$60", "$100"];
-    property <string> active-amount:
-        root.selected-preset >= 0 ? root.presets[root.selected-preset] : "$45";
+
+    // ----- Helpers -----
+    function active-dollars() -> int {
+        if (root.selected-preset == 0) { return 15; }
+        if (root.selected-preset == 1) { return 30; }
+        if (root.selected-preset == 2) { return 60; }
+        if (root.selected-preset == 3) { return 100; }
+        return root.custom-amount;
+    }
+    function fee-cents() -> int {
+        return root.cover-fees ? floor(root.active-dollars() * 100 * 5 / 100) : 0;
+    }
+    function total-cents() -> int {
+        return root.active-dollars() * 100 + root.fee-cents();
+    }
+    function zpad3(n: int) -> string {
+        return n < 10 ? "00" + n : n < 100 ? "0" + n : "" + n;
+    }
+    function add-commas(n: int) -> string {
+        return n < 1000 ? "" + n
+            : n < 1000000 ? floor(n / 1000) + "," + root.zpad3(mod(n, 1000))
+            : floor(n / 1000000) + ","
+                + root.zpad3(floor(mod(n, 1000000) / 1000)) + ","
+                + root.zpad3(mod(n, 1000));
+    }
+    function fmt-cents(c: int) -> string {
+        return "$" + root.add-commas(floor(c / 100));
+    }
+    function active-display() -> string {
+        return "$" + root.active-dollars() + (root.monthly ? "/mo" : "");
+    }
+    function total-display() -> string {
+        return root.fmt-cents(root.total-cents())
+            + (root.monthly ? "/mo" : "");
+    }
+    function progress() -> float {
+        return root.raised-cents * 1.0 / root.goal-cents;
+    }
+    function raised-display() -> string {
+        return root.fmt-cents(root.raised-cents) + " raised";
+    }
+    function goal-display() -> string {
+        return "of " + root.fmt-cents(root.goal-cents) + " goal";
+    }
+
+    // ----- Mutations -----
+    public function pick-preset(i: int) {
+        root.selected-preset = i;
+        root.confirming = false;
+        root.status-msg = "Amount: " + root.active-display()
+            + (root.cover-fees ? " (+fee = " + root.total-display() + ")" : "");
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function pick-custom() {
+        root.selected-preset = -1;
+        root.confirming = false;
+        root.custom-pressed();
+        root.status-msg = "Custom · $" + root.custom-amount
+            + (root.cover-fees ? " (+fee = " + root.total-display() + ")" : "");
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function adjust-custom(delta: int) {
+        root.custom-amount = max(1, root.custom-amount + delta);
+        root.selected-preset = -1;
+        root.confirming = false;
+        root.status-msg = "Custom · $" + root.custom-amount;
+        root.status-is-success = delta > 0;
+        root.status-is-danger = delta < 0;
+    }
+    public function set-monthly(v: bool) {
+        root.monthly = v;
+        root.confirming = false;
+        root.monthly-changed(v);
+        root.status-msg = v ? "Set to monthly recurring" : "Set to one-time";
+        root.status-is-success = v;
+        root.status-is-danger = false;
+    }
+    public function toggle-fees() {
+        root.cover-fees = !root.cover-fees;
+        root.confirming = false;
+        root.fees-toggled(root.cover-fees);
+        root.status-msg = root.cover-fees
+            ? "Covering processing fee (+" + root.fmt-cents(root.fee-cents()) + ")"
+            : "Fee not covered";
+        root.status-is-success = root.cover-fees;
+        root.status-is-danger = !root.cover-fees;
+    }
+    public function do-donate() {
+        if (!root.confirming) {
+            root.confirming = true;
+            root.status-msg = "Tap Donate again to confirm · " + root.total-display();
+            root.status-is-success = false;
+            root.status-is-danger = false;
+            return;
+        }
+        root.confirming = false;
+        root.raised-cents = root.raised-cents + root.total-cents();
+        root.processed-count = root.processed-count + 1;
+        root.donate-pressed();
+        root.donation-confirmed(root.active-dollars(), root.monthly);
+        root.status-msg = "Thanks! Donated " + root.total-display()
+            + " · fund at " + root.fmt-cents(root.raised-cents);
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
 
     background: Theme.background;
 
@@ -87,267 +235,358 @@ export component DonationPage inherits Window {
             leading-pressed => { root.back-pressed(); }
         }
 
-        // Cause hero + frequency toggle + amount chips + custom row +
-        // impact card overflow a single 892-px screen, so the middle
-        // region scrolls between the pinned AppBar and the sticky donate
-        // CTA below.
+        // ----- Status banner ---------------------------------------
+        Rectangle {
+            height: 32px;
+            background: root.status-is-danger ? Theme.accent-danger
+                : root.status-is-success ? Theme.accent-success
+                : Theme.surface-2;
+            animate background { duration: Theme.motion-fast; }
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                Text {
+                    text: root.status-msg;
+                    color: (root.status-is-danger || root.status-is-success)
+                        ? Theme.on-primary
+                        : Theme.on-surface;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+            }
+        }
+
         ScrollView {
             vertical-stretch: 1;
 
             VerticalLayout {
                 spacing: 0;
 
-        VerticalLayout {
-            padding: Theme.spacing-md;
-            spacing: Theme.spacing-md;
-            alignment: start;
-
-            // Cause hero.
-            Rectangle {
-                background: Theme.surface-1;
-                border-radius: Theme.radius-lg;
-                drop-shadow-blur: Theme.elevation-1-blur;
-                drop-shadow-color: Theme.elevation-1-color;
-                drop-shadow-offset-y: Theme.elevation-1-y;
-                clip: true;
                 VerticalLayout {
-                    spacing: 0;
-                    // Image band.
-                    Rectangle {
-                        height: 96px;
-                        background: @linear-gradient(135deg, #0e7490 0%, #065f46 100%);
-                        clip: true;
-                        Image {
-                            width: 120px;
-                            height: 120px;
-                            x: parent.width - 80px;
-                            y: -10px;
-                            source: @image-url("@mobile-components/icons/heart.svg");
-                            colorize: #ffffff;
-                            opacity: 0.12;
-                            image-fit: contain;
-                        }
-                        Text {
-                            x: Theme.spacing-md;
-                            y: parent.height - self.height - Theme.spacing-sm;
-                            text: "WETLAND FUND";
-                            color: #ffffffcc;
-                            font-size: 10px;
-                            font-weight: 800;
-                            letter-spacing: 1px;
-                        }
-                    }
-                    VerticalLayout {
-                        padding: Theme.spacing-md;
-                        spacing: Theme.spacing-sm;
-                        Heading {
-                            text: root.org;
-                            style: HeadingStyle.serif-light;
-                            color: Theme.on-surface;
-                            font-size: 22px;
-                        }
-                        Text {
-                            text: root.campaign;
-                            color: Theme.muted;
-                            font-size: Theme.font-size-body;
-                            wrap: word-wrap;
-                        }
-                        // Progress bar.
-                        Rectangle {
-                            height: 8px;
-                            border-radius: 4px;
-                            background: Theme.surface-variant;
-                            Rectangle {
-                                x: 0;
-                                width: parent.width * root.progress;
-                                height: parent.height;
-                                border-radius: 4px;
-                                background: Theme.accent-success;
-                            }
-                        }
-                        HorizontalLayout {
-                            Text {
-                                text: root.raised;
-                                color: Theme.accent-success;
-                                font-size: Theme.font-size-caption;
-                                font-weight: 800;
-                                horizontal-stretch: 1;
-                            }
-                            Text {
-                                text: root.goal;
-                                color: Theme.muted;
-                                font-size: Theme.font-size-caption;
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Frequency toggle.
-            Rectangle {
-                height: 48px;
-                border-radius: Theme.radius-md;
-                background: Theme.surface-2;
-                HorizontalLayout {
-                    padding: Theme.spacing-xs;
-                    spacing: Theme.spacing-xs;
-                    Rectangle {
-                        horizontal-stretch: 1;
-                        border-radius: Theme.radius-sm;
-                        background: !root.monthly ? Theme.surface-1 : transparent;
-                        drop-shadow-blur: !root.monthly ? Theme.elevation-1-blur : 0px;
-                        drop-shadow-color: Theme.elevation-1-color;
-                        drop-shadow-offset-y: !root.monthly ? Theme.elevation-1-y : 0px;
-                        Text {
-                            text: "One-time";
-                            color: !root.monthly ? Theme.on-surface : Theme.muted;
-                            font-size: Theme.font-size-body;
-                            font-weight: 700;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
-                            width: parent.width;
-                            height: parent.height;
-                        }
-                        TouchArea {
-                            clicked => { root.monthly = false; }
-                        }
-                    }
-                    Rectangle {
-                        horizontal-stretch: 1;
-                        border-radius: Theme.radius-sm;
-                        background: root.monthly ? Theme.surface-1 : transparent;
-                        drop-shadow-blur: root.monthly ? Theme.elevation-1-blur : 0px;
-                        drop-shadow-color: Theme.elevation-1-color;
-                        drop-shadow-offset-y: root.monthly ? Theme.elevation-1-y : 0px;
-                        Text {
-                            text: "Monthly";
-                            color: root.monthly ? Theme.on-surface : Theme.muted;
-                            font-size: Theme.font-size-body;
-                            font-weight: 700;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
-                            width: parent.width;
-                            height: parent.height;
-                        }
-                        TouchArea {
-                            clicked => { root.monthly = true; }
-                        }
-                    }
-                }
-            }
-
-            // Amount label.
-            Text {
-                text: "Choose an amount";
-                color: Theme.on-background;
-                font-size: Theme.font-size-body;
-                font-weight: 700;
-            }
-
-            // Preset chip grid (2 x 2).
-            HorizontalLayout {
-                spacing: Theme.spacing-sm;
-                AmountChip {
-                    amount: root.presets[0];
-                    selected: root.selected-preset == 0;
-                    clicked => { root.selected-preset = 0; }
-                }
-                AmountChip {
-                    amount: root.presets[1];
-                    selected: root.selected-preset == 1;
-                    clicked => { root.selected-preset = 1; }
-                }
-            }
-            HorizontalLayout {
-                spacing: Theme.spacing-sm;
-                AmountChip {
-                    amount: root.presets[2];
-                    selected: root.selected-preset == 2;
-                    clicked => { root.selected-preset = 2; }
-                }
-                AmountChip {
-                    amount: root.presets[3];
-                    selected: root.selected-preset == 3;
-                    clicked => { root.selected-preset = 3; }
-                }
-            }
-
-            // Custom amount row.
-            Rectangle {
-                height: 52px;
-                border-radius: Theme.radius-md;
-                background: root.selected-preset < 0 ? Theme.primary : Theme.surface-1;
-                border-width: root.selected-preset < 0 ? 0px : 1px;
-                border-color: Theme.surface-variant;
-                HorizontalLayout {
-                    padding-left: Theme.spacing-md;
-                    padding-right: Theme.spacing-md;
-                    spacing: Theme.spacing-sm;
-                    alignment: stretch;
-                    VerticalLayout {
-                        alignment: center;
-                        horizontal-stretch: 1;
-                        Text {
-                            text: "Custom amount";
-                            color: root.selected-preset < 0 ? Theme.on-primary : Theme.on-surface;
-                            font-size: Theme.font-size-body;
-                            font-weight: 700;
-                        }
-                    }
-                    VerticalLayout {
-                        alignment: center;
-                        Text {
-                            text: root.selected-preset < 0 ? "$45" : "Enter →";
-                            color: root.selected-preset < 0 ? Theme.on-primary : Theme.muted;
-                            font-size: Theme.font-size-body;
-                            font-weight: 700;
-                        }
-                    }
-                }
-                TouchArea {
-                    clicked => {
-                        root.selected-preset = -1;
-                        root.custom-pressed();
-                    }
-                }
-            }
-
-            // Impact statement.
-            Rectangle {
-                border-radius: Theme.radius-md;
-                background: Theme.accent-success.with-alpha(0.12);
-                HorizontalLayout {
                     padding: Theme.spacing-md;
-                    spacing: Theme.spacing-sm;
-                    alignment: stretch;
-                    VerticalLayout {
-                        alignment: start;
-                        Image {
-                            width: 18px;
-                            height: 18px;
-                            source: @image-url("@mobile-components/icons/heart.svg");
-                            colorize: Theme.accent-success;
-                            image-fit: contain;
+                    spacing: Theme.spacing-md;
+                    alignment: start;
+
+                    // Cause hero.
+                    Rectangle {
+                        background: Theme.surface-1;
+                        border-radius: Theme.radius-lg;
+                        drop-shadow-blur: Theme.elevation-1-blur;
+                        drop-shadow-color: Theme.elevation-1-color;
+                        drop-shadow-offset-y: Theme.elevation-1-y;
+                        clip: true;
+                        VerticalLayout {
+                            spacing: 0;
+                            // Image band.
+                            Rectangle {
+                                height: 96px;
+                                background: @linear-gradient(135deg, #0e7490 0%, #065f46 100%);
+                                clip: true;
+                                Image {
+                                    width: 120px;
+                                    height: 120px;
+                                    x: parent.width - 80px;
+                                    y: -10px;
+                                    source: @image-url("@mobile-components/icons/heart.svg");
+                                    colorize: #ffffff;
+                                    opacity: 0.12;
+                                    image-fit: contain;
+                                }
+                                Text {
+                                    x: Theme.spacing-md;
+                                    y: parent.height - self.height - Theme.spacing-sm;
+                                    text: "WETLAND FUND · " + root.processed-count + " gifts today";
+                                    color: #ffffffcc;
+                                    font-size: 10px;
+                                    font-weight: 800;
+                                    letter-spacing: 1px;
+                                }
+                            }
+                            VerticalLayout {
+                                padding: Theme.spacing-md;
+                                spacing: Theme.spacing-sm;
+                                Heading {
+                                    text: root.org;
+                                    style: HeadingStyle.serif-light;
+                                    color: Theme.on-surface;
+                                    font-size: 22px;
+                                }
+                                Text {
+                                    text: root.campaign;
+                                    color: Theme.muted;
+                                    font-size: Theme.font-size-body;
+                                    wrap: word-wrap;
+                                }
+                                // Progress bar (derives from state).
+                                Rectangle {
+                                    height: 8px;
+                                    border-radius: 4px;
+                                    background: Theme.surface-variant;
+                                    Rectangle {
+                                        x: 0;
+                                        width: parent.width * min(root.progress(), 1.0);
+                                        height: parent.height;
+                                        border-radius: 4px;
+                                        background: Theme.accent-success;
+                                    }
+                                }
+                                HorizontalLayout {
+                                    Text {
+                                        text: root.raised-display();
+                                        color: Theme.accent-success;
+                                        font-size: Theme.font-size-caption;
+                                        font-weight: 800;
+                                        horizontal-stretch: 1;
+                                    }
+                                    Text {
+                                        text: root.goal-display();
+                                        color: Theme.muted;
+                                        font-size: Theme.font-size-caption;
+                                    }
+                                }
+                            }
                         }
                     }
-                    VerticalLayout {
-                        horizontal-stretch: 1;
-                        Text {
-                            text: root.active-amount + (root.monthly ? "/mo" : "")
-                                + " plants native grasses across a quarter-acre of restored marsh.";
-                            color: Theme.on-surface;
-                            font-size: Theme.font-size-caption;
-                            font-weight: 600;
-                            wrap: word-wrap;
+
+                    // Frequency toggle.
+                    Rectangle {
+                        height: 48px;
+                        border-radius: Theme.radius-md;
+                        background: Theme.surface-2;
+                        HorizontalLayout {
+                            padding: Theme.spacing-xs;
+                            spacing: Theme.spacing-xs;
+                            Rectangle {
+                                horizontal-stretch: 1;
+                                border-radius: Theme.radius-sm;
+                                background: !root.monthly ? Theme.surface-1 : transparent;
+                                drop-shadow-blur: !root.monthly ? Theme.elevation-1-blur : 0px;
+                                drop-shadow-color: Theme.elevation-1-color;
+                                drop-shadow-offset-y: !root.monthly ? Theme.elevation-1-y : 0px;
+                                Text {
+                                    text: "One-time";
+                                    color: !root.monthly ? Theme.on-surface : Theme.muted;
+                                    font-size: Theme.font-size-body;
+                                    font-weight: 700;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                                TouchArea {
+                                    clicked => { root.set-monthly(false); }
+                                }
+                            }
+                            Rectangle {
+                                horizontal-stretch: 1;
+                                border-radius: Theme.radius-sm;
+                                background: root.monthly ? Theme.surface-1 : transparent;
+                                drop-shadow-blur: root.monthly ? Theme.elevation-1-blur : 0px;
+                                drop-shadow-color: Theme.elevation-1-color;
+                                drop-shadow-offset-y: root.monthly ? Theme.elevation-1-y : 0px;
+                                Text {
+                                    text: "Monthly";
+                                    color: root.monthly ? Theme.on-surface : Theme.muted;
+                                    font-size: Theme.font-size-body;
+                                    font-weight: 700;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                                TouchArea {
+                                    clicked => { root.set-monthly(true); }
+                                }
+                            }
+                        }
+                    }
+
+                    // Amount label.
+                    Text {
+                        text: "Choose an amount";
+                        color: Theme.on-background;
+                        font-size: Theme.font-size-body;
+                        font-weight: 700;
+                    }
+
+                    // Preset chip grid (2 x 2).
+                    HorizontalLayout {
+                        spacing: Theme.spacing-sm;
+                        AmountChip {
+                            amount: root.presets[0];
+                            selected: root.selected-preset == 0;
+                            clicked => { root.pick-preset(0); }
+                        }
+                        AmountChip {
+                            amount: root.presets[1];
+                            selected: root.selected-preset == 1;
+                            clicked => { root.pick-preset(1); }
+                        }
+                    }
+                    HorizontalLayout {
+                        spacing: Theme.spacing-sm;
+                        AmountChip {
+                            amount: root.presets[2];
+                            selected: root.selected-preset == 2;
+                            clicked => { root.pick-preset(2); }
+                        }
+                        AmountChip {
+                            amount: root.presets[3];
+                            selected: root.selected-preset == 3;
+                            clicked => { root.pick-preset(3); }
+                        }
+                    }
+
+                    // Custom amount row.
+                    Rectangle {
+                        height: 52px;
+                        border-radius: Theme.radius-md;
+                        background: root.selected-preset < 0 ? Theme.primary : Theme.surface-1;
+                        border-width: root.selected-preset < 0 ? 0px : 1px;
+                        border-color: Theme.surface-variant;
+                        HorizontalLayout {
+                            padding-left: Theme.spacing-md;
+                            padding-right: Theme.spacing-md;
+                            spacing: Theme.spacing-sm;
+                            alignment: stretch;
+                            VerticalLayout {
+                                alignment: center;
+                                horizontal-stretch: 1;
+                                Text {
+                                    text: "Custom amount";
+                                    color: root.selected-preset < 0 ? Theme.on-primary : Theme.on-surface;
+                                    font-size: Theme.font-size-body;
+                                    font-weight: 700;
+                                }
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                Text {
+                                    text: root.selected-preset < 0
+                                        ? "$" + root.custom-amount
+                                        : "Tap to use $" + root.custom-amount + " →";
+                                    color: root.selected-preset < 0 ? Theme.on-primary : Theme.muted;
+                                    font-size: Theme.font-size-body;
+                                    font-weight: 700;
+                                }
+                            }
+                        }
+                        TouchArea {
+                            clicked => { root.pick-custom(); }
+                        }
+                    }
+
+                    // Custom ± stepper — visible only when custom is active.
+                    if root.selected-preset < 0: HorizontalLayout {
+                        spacing: Theme.spacing-sm;
+                        alignment: stretch;
+                        StepButton {
+                            label: "− $5";
+                            clicked => { root.adjust-custom(-5); }
+                        }
+                        Rectangle {
+                            horizontal-stretch: 1;
+                            height: 52px;
+                            border-radius: Theme.radius-md;
+                            background: Theme.surface-1;
+                            border-width: 1px;
+                            border-color: Theme.outline;
+                            Text {
+                                text: "$" + root.custom-amount;
+                                color: Theme.on-surface;
+                                font-size: 22px;
+                                font-weight: 800;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                width: parent.width;
+                                height: parent.height;
+                            }
+                        }
+                        StepButton {
+                            label: "+ $5";
+                            primary: true;
+                            clicked => { root.adjust-custom(5); }
+                        }
+                    }
+
+                    // Cover processing fee toggle row.
+                    Rectangle {
+                        height: 60px;
+                        border-radius: Theme.radius-md;
+                        background: Theme.surface-1;
+                        border-width: 1px;
+                        border-color: Theme.outline;
+                        HorizontalLayout {
+                            padding-left: Theme.spacing-md;
+                            padding-right: Theme.spacing-md;
+                            spacing: Theme.spacing-md;
+                            alignment: stretch;
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                alignment: center;
+                                spacing: 2px;
+                                Text {
+                                    text: "Cover the processing fee";
+                                    color: Theme.on-surface;
+                                    font-size: Theme.font-size-body;
+                                    font-weight: 700;
+                                }
+                                Text {
+                                    text: "Adds 5% so 100% reaches the cause"
+                                        + (root.cover-fees ? " · +" + root.fmt-cents(root.fee-cents()) : "");
+                                    color: Theme.muted;
+                                    font-size: Theme.font-size-caption;
+                                }
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                MobileSwitch {
+                                    checked: root.cover-fees;
+                                    toggled => { root.toggle-fees(); }
+                                }
+                            }
+                        }
+                    }
+
+                    // Impact statement.
+                    Rectangle {
+                        border-radius: Theme.radius-md;
+                        background: Theme.accent-success.with-alpha(0.12);
+                        HorizontalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-sm;
+                            alignment: stretch;
+                            VerticalLayout {
+                                alignment: start;
+                                Image {
+                                    width: 18px;
+                                    height: 18px;
+                                    source: @image-url("@mobile-components/icons/heart.svg");
+                                    colorize: Theme.accent-success;
+                                    image-fit: contain;
+                                }
+                            }
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                Text {
+                                    text: root.active-display()
+                                        + " plants native grasses across a quarter-acre of restored marsh.";
+                                    color: Theme.on-surface;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 600;
+                                    wrap: word-wrap;
+                                }
+                            }
                         }
                     }
                 }
             }
         }
-            }   // end inner VerticalLayout
-        }       // end ScrollView
 
-        // Sticky donate CTA.
+        // Sticky donate CTA with two-tap confirm.
         Rectangle {
             background: Theme.surface-1;
             drop-shadow-blur: Theme.elevation-2-blur;
@@ -357,9 +596,12 @@ export component DonationPage inherits Window {
             HorizontalLayout {
                 padding: Theme.spacing-md;
                 MobileButton {
-                    text: "Donate " + root.active-amount + (root.monthly ? " / month" : "");
+                    text: root.confirming
+                        ? "Tap again to confirm · " + root.total-display()
+                        : "Donate " + root.total-display();
                     primary: true;
-                    clicked => { root.donate-pressed(); }
+                    tone: root.confirming ? Tone.success : Tone.default;
+                    clicked => { root.do-donate(); }
                 }
             }
         }

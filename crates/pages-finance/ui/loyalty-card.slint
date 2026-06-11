@@ -7,12 +7,16 @@
 // billing). Demonstrates a progress-by-collection surface:
 //
 //   - Branded card hero with the shop name + the user's name.
-//   - Stamp grid: a 5x2 grid of disc slots, filled discs show a cup
-//     glyph, the next-to-fill slot is highlighted, empties are faint.
-//   - "Reward available" success banner once the card is full, or a
-//     "N more to go" progress line otherwise.
-//   - Redeem-history rows.
-//   - Sticky "Show code at till" CTA.
+//   - Stamp grid: a 5x2 grid of disc slots; tap any slot to set the
+//     stamps count to that index+1 (or tap the newest filled slot to
+//     give it back). Filled discs show a heart glyph, the next-to-fill
+//     slot is highlighted with a star, empties are faint.
+//   - Status / progress strip — "N more to go" while filling,
+//     "Free drink ready" when full.
+//   - Sticky CTA flips between "Show code at till" (opens a bottom
+//     sheet with a faux QR + simulate-scan button) and "Redeem free
+//     drink ★" (resets stamps and prepends a new reward-history row).
+//   - Reward-history rows tappable.
 
 import { ScrollView } from "std-widgets.slint";
 import { Theme, Tone } from "@mobile-theme/theme.slint";
@@ -25,6 +29,7 @@ import { MobileButton } from "@mobile-components/button.slint";
 // One stamp slot. `state`: 0 empty, 1 filled, 2 next-to-fill.
 component StampSlot inherits Rectangle {
     in property <int> state: 0;
+    callback clicked();
 
     width: 52px;
     height: 52px;
@@ -36,6 +41,8 @@ component StampSlot inherits Rectangle {
     border-width: root.state == 2 ? 2px : 0px;
     border-color: Theme.primary;
     opacity: root.state == 0 ? 0.45 : 1.0;
+    animate background { duration: Theme.motion-fast; }
+    animate opacity { duration: Theme.motion-fast; }
 
     Image {
         width: 24px;
@@ -57,6 +64,34 @@ component StampSlot inherits Rectangle {
         width: parent.width;
         height: parent.height;
     }
+    TouchArea { clicked => { root.clicked(); } }
+}
+
+// Faux QR square for the bottom sheet.
+component FauxQR inherits Rectangle {
+    width: 160px;
+    height: 160px;
+    background: #ffffff;
+    border-radius: 8px;
+    clip: true;
+    VerticalLayout {
+        spacing: 0;
+        padding: Theme.spacing-sm;
+        for row-index in 16 : HorizontalLayout {
+            spacing: 0;
+            for col-index in 16 : Rectangle {
+                width: 9px;
+                height: 9px;
+                background:
+                      (row-index < 3 && col-index < 3) ? #000000
+                    : (row-index < 3 && col-index >= 13) ? #000000
+                    : (row-index >= 13 && col-index < 3) ? #000000
+                    : (mod(row-index * 7 + col-index * 5, 3) == 0) ? #000000
+                    : (mod(row-index * 3 + col-index * 11, 5) == 0) ? #000000
+                    : #ffffff;
+            }
+        }
+    }
 }
 
 // One redeem-history row.
@@ -64,9 +99,15 @@ component HistoryRow inherits Rectangle {
     in property <string> label;
     in property <string> date;
     in property <string> detail;
+    in property <bool> fresh: false;
+    callback clicked();
 
     horizontal-stretch: 1;
     min-height: 56px;
+    background: root.fresh ? Theme.accent-success.with-alpha(0.12)
+        : touch.pressed ? Theme.surface-pressed
+        : transparent;
+    animate background { duration: Theme.motion-fast; }
 
     HorizontalLayout {
         padding-left: Theme.spacing-md;
@@ -95,11 +136,32 @@ component HistoryRow inherits Rectangle {
             horizontal-stretch: 1;
             alignment: center;
             spacing: 2px;
-            Text {
-                text: root.label;
-                color: Theme.on-surface;
-                font-size: Theme.font-size-body;
-                font-weight: 600;
+            HorizontalLayout {
+                spacing: Theme.spacing-xs;
+                Text {
+                    text: root.label;
+                    color: Theme.on-surface;
+                    font-size: Theme.font-size-body;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                }
+                if root.fresh: Rectangle {
+                    width: nm.preferred-width + 12px;
+                    height: 18px;
+                    border-radius: 4px;
+                    background: Theme.accent-success;
+                    nm := Text {
+                        text: "NEW";
+                        color: Theme.on-primary;
+                        font-size: 9px;
+                        font-weight: 800;
+                        letter-spacing: 0.5px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                }
             }
             Text {
                 text: root.date;
@@ -117,6 +179,7 @@ component HistoryRow inherits Rectangle {
             }
         }
     }
+    touch := TouchArea { clicked => { root.clicked(); } }
 }
 
 export component LoyaltyCardPage inherits Window {
@@ -124,13 +187,101 @@ export component LoyaltyCardPage inherits Window {
     preferred-height: 892px;
     in property <string> shop: "Foundry Coffee";
     in property <string> holder: "Greg Raymond";
-    in property <int> stamps: 7;
+    in-out property <int> stamps: 7;
     in property <int> total: 10;
     callback back-pressed();
     callback show-code-pressed();
     callback find-store-pressed();
+    callback redeem-pressed(int); // total drinks earned now
+    callback stamps-changed(int);
+    callback history-pressed(string);
+
+    // ----- Interactive state -----
+    private property <bool> code-sheet-open: false;
+    private property <int> nhist-count: 0;
+    private property <string> status-msg: "Tap a slot to fill · tap the CTA to show your code at the till";
+    private property <bool> status-is-success: false;
+    private property <bool> status-is-danger: false;
 
     property <bool> full: root.stamps >= root.total;
+
+    // ----- Mutations -----
+    public function tap-slot(idx: int) {
+        // Tapping the just-filled slot un-fills it; tapping an empty
+        // slot fills up to that slot (idx+1 stamps).
+        if (idx == root.stamps - 1) {
+            root.stamps = idx;
+            root.status-msg = "Removed stamp #" + (idx + 1) + " · "
+                + root.stamps + "/" + root.total;
+            root.status-is-success = false;
+            root.status-is-danger = true;
+        } else {
+            root.stamps = idx + 1;
+            root.status-msg = "Stamp added · " + root.stamps + "/" + root.total
+                + (root.full ? " · free drink ready!" : "");
+            root.status-is-success = true;
+            root.status-is-danger = false;
+        }
+        root.stamps-changed(root.stamps);
+    }
+    public function open-code-sheet() {
+        root.code-sheet-open = true;
+        root.show-code-pressed();
+        root.status-msg = "Showing scan code at till";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function close-code-sheet() { root.code-sheet-open = false; }
+    public function simulate-scan() {
+        if (root.full) {
+            root.status-msg = "Card is full · redeem first";
+            root.status-is-success = false;
+            root.status-is-danger = true;
+            return;
+        }
+        root.stamps = root.stamps + 1;
+        root.stamps-changed(root.stamps);
+        root.status-msg = "Scanned · stamp added (" + root.stamps + "/" + root.total + ")"
+            + (root.full ? " · free drink ready!" : "");
+        root.status-is-success = true;
+        root.status-is-danger = false;
+        root.code-sheet-open = false;
+    }
+    public function do-redeem() {
+        if (!root.full) {
+            root.status-msg = "Card not full · " + (root.total - root.stamps)
+                + " more to go";
+            root.status-is-success = false;
+            root.status-is-danger = true;
+            return;
+        }
+        root.stamps = 0;
+        root.nhist-count = min(root.nhist-count + 1, 3);
+        root.redeem-pressed(root.nhist-count);
+        root.stamps-changed(0);
+        root.status-msg = "Redeemed · free drink #" + root.nhist-count;
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    public function reset-card() {
+        root.stamps = 0;
+        root.stamps-changed(0);
+        root.status-msg = "Card reset · 0/" + root.total;
+        root.status-is-success = false;
+        root.status-is-danger = true;
+    }
+    public function tap-find-store() {
+        root.find-store-pressed();
+        root.status-msg = "Opening store finder…";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function tap-history(name: string) {
+        root.history-pressed(name);
+        root.status-msg = "Reward · " + name;
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
 
     background: Theme.background;
 
@@ -144,184 +295,263 @@ export component LoyaltyCardPage inherits Window {
             leading-pressed => { root.back-pressed(); }
         }
 
-        // Card hero + status banner + stamp grid + reward history can
-        // overflow a single 892-px screen, so the middle region scrolls
-        // between the pinned AppBar and the sticky CTA below.
+        // ----- Status banner ---------------------------------------
+        Rectangle {
+            height: 32px;
+            background: root.status-is-danger ? Theme.accent-danger
+                : root.status-is-success ? Theme.accent-success
+                : Theme.surface-2;
+            animate background { duration: Theme.motion-fast; }
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                Text {
+                    text: root.status-msg;
+                    color: (root.status-is-danger || root.status-is-success)
+                        ? Theme.on-primary
+                        : Theme.on-surface;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+            }
+        }
+
         ScrollView {
             vertical-stretch: 1;
 
             VerticalLayout {
                 spacing: 0;
 
-        VerticalLayout {
-            padding: Theme.spacing-md;
-            spacing: Theme.spacing-md;
-            alignment: start;
-
-            // Branded card hero.
-            Rectangle {
-                height: 132px;
-                border-radius: Theme.radius-lg;
-                background: @linear-gradient(135deg, #6f4e37 0%, #2d1b0e 100%);
-                drop-shadow-blur: Theme.elevation-2-blur;
-                drop-shadow-color: Theme.elevation-2-color;
-                drop-shadow-offset-y: Theme.elevation-2-y;
-                clip: true;
-                // Faint oversized glyph in the corner.
-                Image {
-                    width: 140px;
-                    height: 140px;
-                    x: parent.width - 70px;
-                    y: -30px;
-                    source: @image-url("@mobile-components/icons/heart.svg");
-                    colorize: #ffffff;
-                    opacity: 0.08;
-                    image-fit: contain;
-                }
-                VerticalLayout {
-                    padding: Theme.spacing-md;
-                    alignment: space-between;
-                    HorizontalLayout {
-                        Heading {
-                            text: root.shop;
-                            style: HeadingStyle.bold-impact;
-                            color: Theme.on-primary;
-                            font-size: 26px;
-                            horizontal-stretch: 1;
-                        }
-                        Text {
-                            text: "REWARDS";
-                            color: #ffffff99;
-                            font-size: 10px;
-                            font-weight: 800;
-                            letter-spacing: 1px;
-                        }
-                    }
-                    VerticalLayout {
-                        spacing: 2px;
-                        Text {
-                            text: root.holder;
-                            color: Theme.on-primary;
-                            font-size: Theme.font-size-body;
-                            font-weight: 700;
-                        }
-                        Text {
-                            text: root.stamps + " / " + root.total + " stamps";
-                            color: #ffffffcc;
-                            font-size: Theme.font-size-caption;
-                            font-weight: 600;
-                        }
-                    }
-                }
-            }
-
-            // Status banner / progress line.
-            Rectangle {
-                height: 48px;
-                border-radius: Theme.radius-md;
-                background: root.full ? Theme.accent-success : Theme.surface-1;
-                drop-shadow-blur: Theme.elevation-1-blur;
-                drop-shadow-color: Theme.elevation-1-color;
-                drop-shadow-offset-y: Theme.elevation-1-y;
-                HorizontalLayout {
-                    padding-left: Theme.spacing-md;
-                    padding-right: Theme.spacing-md;
-                    spacing: Theme.spacing-sm;
-                    alignment: stretch;
-                    VerticalLayout {
-                        alignment: center;
-                        Image {
-                            width: 18px;
-                            height: 18px;
-                            source: root.full
-                                ? @image-url("@mobile-components/icons/check.svg")
-                                : @image-url("@mobile-components/icons/heart.svg");
-                            colorize: root.full ? Theme.on-primary : Theme.primary;
-                            image-fit: contain;
-                        }
-                    }
-                    VerticalLayout {
-                        horizontal-stretch: 1;
-                        alignment: center;
-                        Text {
-                            text: root.full
-                                ? "Free drink ready — redeem at the till!"
-                                : (root.total - root.stamps) + " more to go for a free drink";
-                            color: root.full ? Theme.on-primary : Theme.on-surface;
-                            font-size: Theme.font-size-body;
-                            font-weight: 700;
-                        }
-                    }
-                }
-            }
-
-            // Stamp grid (5 x 2).
-            Rectangle {
-                background: Theme.surface-1;
-                border-radius: Theme.radius-md;
-                drop-shadow-blur: Theme.elevation-1-blur;
-                drop-shadow-color: Theme.elevation-1-color;
-                drop-shadow-offset-y: Theme.elevation-1-y;
                 VerticalLayout {
                     padding: Theme.spacing-md;
                     spacing: Theme.spacing-md;
-                    for row in 2: HorizontalLayout {
-                        spacing: Theme.spacing-sm;
-                        alignment: space-between;
-                        for col in 5: StampSlot {
-                            property <int> idx: row * 5 + col;
-                            state:
-                                  idx < root.stamps ? 1
-                                : idx == root.stamps ? 2
-                                : 0;
+                    alignment: start;
+
+                    // Branded card hero.
+                    Rectangle {
+                        height: 132px;
+                        border-radius: Theme.radius-lg;
+                        background: @linear-gradient(135deg, #6f4e37 0%, #2d1b0e 100%);
+                        drop-shadow-blur: Theme.elevation-2-blur;
+                        drop-shadow-color: Theme.elevation-2-color;
+                        drop-shadow-offset-y: Theme.elevation-2-y;
+                        clip: true;
+                        Image {
+                            width: 140px;
+                            height: 140px;
+                            x: parent.width - 70px;
+                            y: -30px;
+                            source: @image-url("@mobile-components/icons/heart.svg");
+                            colorize: #ffffff;
+                            opacity: 0.08;
+                            image-fit: contain;
+                        }
+                        VerticalLayout {
+                            padding: Theme.spacing-md;
+                            alignment: space-between;
+                            HorizontalLayout {
+                                Heading {
+                                    text: root.shop;
+                                    style: HeadingStyle.bold-impact;
+                                    color: Theme.on-primary;
+                                    font-size: 26px;
+                                    horizontal-stretch: 1;
+                                }
+                                Text {
+                                    text: "REWARDS";
+                                    color: #ffffff99;
+                                    font-size: 10px;
+                                    font-weight: 800;
+                                    letter-spacing: 1px;
+                                }
+                            }
+                            VerticalLayout {
+                                spacing: 2px;
+                                Text {
+                                    text: root.holder;
+                                    color: Theme.on-primary;
+                                    font-size: Theme.font-size-body;
+                                    font-weight: 700;
+                                }
+                                Text {
+                                    text: root.stamps + " / " + root.total + " stamps"
+                                        + " · " + root.nhist-count + " drinks earned";
+                                    color: #ffffffcc;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 600;
+                                }
+                            }
+                        }
+                    }
+
+                    // Progress / "ready to redeem" banner.
+                    Rectangle {
+                        height: 48px;
+                        border-radius: Theme.radius-md;
+                        background: root.full ? Theme.accent-success : Theme.surface-1;
+                        animate background { duration: Theme.motion-fast; }
+                        drop-shadow-blur: Theme.elevation-1-blur;
+                        drop-shadow-color: Theme.elevation-1-color;
+                        drop-shadow-offset-y: Theme.elevation-1-y;
+                        HorizontalLayout {
+                            padding-left: Theme.spacing-md;
+                            padding-right: Theme.spacing-md;
+                            spacing: Theme.spacing-sm;
+                            alignment: stretch;
+                            VerticalLayout {
+                                alignment: center;
+                                Image {
+                                    width: 18px;
+                                    height: 18px;
+                                    source: root.full
+                                        ? @image-url("@mobile-components/icons/check.svg")
+                                        : @image-url("@mobile-components/icons/heart.svg");
+                                    colorize: root.full ? Theme.on-primary : Theme.primary;
+                                    image-fit: contain;
+                                }
+                            }
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                alignment: center;
+                                Text {
+                                    text: root.full
+                                        ? "Free drink ready — redeem at the till!"
+                                        : (root.total - root.stamps) + " more to go for a free drink";
+                                    color: root.full ? Theme.on-primary : Theme.on-surface;
+                                    font-size: Theme.font-size-body;
+                                    font-weight: 700;
+                                }
+                            }
+                        }
+                    }
+
+                    // Stamp grid (5 x 2). Each slot is tappable.
+                    Rectangle {
+                        background: Theme.surface-1;
+                        border-radius: Theme.radius-md;
+                        drop-shadow-blur: Theme.elevation-1-blur;
+                        drop-shadow-color: Theme.elevation-1-color;
+                        drop-shadow-offset-y: Theme.elevation-1-y;
+                        VerticalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-md;
+                            for row in 2: HorizontalLayout {
+                                spacing: Theme.spacing-sm;
+                                alignment: space-between;
+                                for col in 5: StampSlot {
+                                    property <int> idx: row * 5 + col;
+                                    state: idx < root.stamps ? 1
+                                        : idx == root.stamps ? 2
+                                        : 0;
+                                    clicked => { root.tap-slot(self.idx); }
+                                }
+                            }
+                        }
+                    }
+
+                    // Tappable utility row: reset + find store.
+                    HorizontalLayout {
+                        spacing: Theme.spacing-md;
+                        Rectangle {
+                            horizontal-stretch: 1;
+                            background: reset-touch.pressed
+                                ? Theme.surface-pressed
+                                : transparent;
+                            animate background { duration: Theme.motion-fast; }
+                            Text {
+                                text: "↺ Clear all stamps";
+                                color: Theme.accent-danger;
+                                font-size: Theme.font-size-body;
+                                font-weight: 700;
+                                horizontal-alignment: left;
+                                vertical-alignment: center;
+                                width: parent.width;
+                                height: 32px;
+                            }
+                            reset-touch := TouchArea {
+                                clicked => { root.reset-card(); }
+                            }
+                        }
+                        Rectangle {
+                            horizontal-stretch: 1;
+                            background: find-touch.pressed
+                                ? Theme.surface-pressed
+                                : transparent;
+                            animate background { duration: Theme.motion-fast; }
+                            Text {
+                                text: "Find a store →";
+                                color: Theme.accent-info;
+                                font-size: Theme.font-size-body;
+                                font-weight: 700;
+                                horizontal-alignment: right;
+                                vertical-alignment: center;
+                                width: parent.width;
+                                height: 32px;
+                            }
+                            find-touch := TouchArea {
+                                clicked => { root.tap-find-store(); }
+                            }
                         }
                     }
                 }
-            }
-        }
 
-        SectionHeader { text: "REWARD  HISTORY"; }
-        HistoryRow {
-            label: "Free flat white";
-            date: "Redeemed · 28 Apr 2026";
-            detail: "−10";
-        }
-        Divider { }
-        HistoryRow {
-            label: "Free cappuccino";
-            date: "Redeemed · 2 Mar 2026";
-            detail: "−10";
-        }
-        Divider { }
-        HistoryRow {
-            label: "Free cortado";
-            date: "Redeemed · 14 Jan 2026";
-            detail: "−10";
-        }
+                SectionHeader {
+                    text: "REWARD  HISTORY · " + (root.nhist-count + 3) + " TOTAL";
+                }
 
-        Rectangle {
-            min-height: Theme.spacing-md;
-            HorizontalLayout {
-                padding-left: Theme.spacing-md;
-                padding-right: Theme.spacing-md;
-                Rectangle {
-                    background: transparent;
-                    Text {
-                        text: "Find a store near you";
-                        color: Theme.accent-info;
-                        font-size: Theme.font-size-body;
-                        font-weight: 700;
-                    }
-                    TouchArea {
-                        clicked => { root.find-store-pressed(); }
-                    }
+                // Fresh redemptions first, then the static history.
+                if root.nhist-count >= 3: HistoryRow {
+                    label: "Free drink #3";
+                    date: "Just redeemed";
+                    detail: "−10";
+                    fresh: true;
+                    clicked => { root.tap-history("Free drink #3"); }
+                }
+                if root.nhist-count >= 3: Divider { }
+                if root.nhist-count >= 2: HistoryRow {
+                    label: "Free drink #2";
+                    date: "Just redeemed";
+                    detail: "−10";
+                    fresh: true;
+                    clicked => { root.tap-history("Free drink #2"); }
+                }
+                if root.nhist-count >= 2: Divider { }
+                if root.nhist-count >= 1: HistoryRow {
+                    label: "Free drink #1";
+                    date: "Just redeemed";
+                    detail: "−10";
+                    fresh: true;
+                    clicked => { root.tap-history("Free drink #1"); }
+                }
+                if root.nhist-count >= 1: Divider { }
+
+                HistoryRow {
+                    label: "Free flat white";
+                    date: "Redeemed · 28 Apr 2026";
+                    detail: "−10";
+                    clicked => { root.tap-history("Free flat white"); }
+                }
+                Divider { }
+                HistoryRow {
+                    label: "Free cappuccino";
+                    date: "Redeemed · 2 Mar 2026";
+                    detail: "−10";
+                    clicked => { root.tap-history("Free cappuccino"); }
+                }
+                Divider { }
+                HistoryRow {
+                    label: "Free cortado";
+                    date: "Redeemed · 14 Jan 2026";
+                    detail: "−10";
+                    clicked => { root.tap-history("Free cortado"); }
                 }
             }
         }
-            }   // end inner VerticalLayout
-        }       // end ScrollView
 
-        // Sticky CTA.
+        // Sticky CTA — flips between Show code and Redeem.
         Rectangle {
             background: Theme.surface-1;
             drop-shadow-blur: Theme.elevation-2-blur;
@@ -331,9 +561,89 @@ export component LoyaltyCardPage inherits Window {
             HorizontalLayout {
                 padding: Theme.spacing-md;
                 MobileButton {
-                    text: "Show code at till";
+                    text: root.full
+                        ? "Redeem free drink ★"
+                        : "Show code at till";
                     primary: true;
-                    clicked => { root.show-code-pressed(); }
+                    tone: root.full ? Tone.success : Tone.default;
+                    clicked => {
+                        if (root.full) {
+                            root.do-redeem();
+                        } else {
+                            root.open-code-sheet();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ----- Show-code bottom sheet -----------------------------------
+    if root.code-sheet-open: Rectangle {
+        Rectangle {
+            background: #00000099;
+            TouchArea {
+                clicked => { root.close-code-sheet(); }
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            height: 400px;
+            background: Theme.surface-1;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding: Theme.spacing-lg;
+                spacing: Theme.spacing-md;
+                alignment: center;
+
+                Rectangle {
+                    width: 40px;
+                    height: 4px;
+                    border-radius: 2px;
+                    background: Theme.muted;
+                }
+
+                Heading {
+                    text: "Show at the till";
+                    style: HeadingStyle.grotesk-bold;
+                    font-size: Theme.font-size-title;
+                    horizontal-alignment: center;
+                }
+                Text {
+                    text: "Hand the phone to the barista — they'll scan this code.";
+                    color: Theme.muted;
+                    font-size: Theme.font-size-caption;
+                    horizontal-alignment: center;
+                }
+
+                HorizontalLayout {
+                    alignment: center;
+                    FauxQR { }
+                }
+
+                Text {
+                    text: "Stamps " + root.stamps + " / " + root.total;
+                    color: Theme.on-surface;
+                    font-size: Theme.font-size-body;
+                    font-weight: 700;
+                    horizontal-alignment: center;
+                }
+
+                MobileButton {
+                    text: "Simulate scan (+1 stamp)";
+                    tone: Tone.success;
+                    clicked => { root.simulate-scan(); }
+                }
+                MobileButton {
+                    text: "Close";
+                    primary: false;
+                    clicked => { root.close-code-sheet(); }
                 }
             }
         }

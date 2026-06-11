@@ -1,28 +1,445 @@
 // GroupChatListPage
 // =====================================================================
-//
-// List of group conversations. Search field at the top, then two
-// FormSection groups (PINNED, ALL CHATS), each row a SettingRow with
-// a trailing unread-count Chip — guaranteed to align across rows.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
-import { FormField } from "@mobile-components/form-field.slint";
 import { FormSection } from "@mobile-components/form-section.slint";
-import { SettingRow } from "@mobile-components/setting-row.slint";
-import { TextField } from "@mobile-components/text-field.slint";
-import { Chip } from "@mobile-components/chip.slint";
 import { Divider } from "@mobile-components/divider.slint";
 import { ScrollView } from "std-widgets.slint";
+
+component GroupRow inherits Rectangle {
+    in property <string> title;
+    in property <string> subtitle;
+    in property <int> tone-i: 0;
+    in property <int> unread: 0;
+    in property <bool> pinned: false;
+    in property <bool> muted: false;
+    in property <bool> archived: false;
+    callback row-clicked();
+    callback pin-clicked();
+    callback mute-clicked();
+    callback mark-read-clicked();
+
+    horizontal-stretch: 1;
+    min-height: 72px;
+    opacity: root.archived ? 0.55 : 1.0;
+    background: ta.has-hover ? Theme.surface-2 : (root.pinned ? Theme.accent-warning.with-alpha(0.08) : transparent);
+
+    ta := TouchArea {
+        clicked => {
+            root.row-clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 40px;
+                height: 40px;
+                border-radius: 20px;
+                background: root.tone-i == 1 ? Theme.accent-info.with-alpha(0.22) : (root.tone-i == 2 ? Theme.accent-success.with-alpha(0.22) : (root.tone-i == 3 ? Theme.accent-warning.with-alpha(0.22) : (root.tone-i == 4 ? Theme.accent-danger.with-alpha(0.22) : Theme.surface-2)));
+                Image {
+                    width: 20px;
+                    height: 20px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: @image-url("@mobile-components/icons/profile.svg");
+                    colorize: root.tone-i == 1 ? Theme.accent-info : (root.tone-i == 2 ? Theme.accent-success : (root.tone-i == 3 ? Theme.accent-warning : (root.tone-i == 4 ? Theme.accent-danger : Theme.muted)));
+                    image-fit: contain;
+                }
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            HorizontalLayout {
+                spacing: 4px;
+                alignment: start;
+                if root.unread > 0: Rectangle {
+                    width: 8px;
+                    height: 8px;
+                    border-radius: 4px;
+                    background: Theme.accent-info;
+                    y: 6px;
+                }
+                Text {
+                    text: (root.pinned ? "📌 " : "") + (root.muted ? "🔕 " : "") + root.title + (root.archived ? " · archived" : "");
+                    color: Theme.on-surface;
+                    font-size: Theme.font-size-body;
+                    font-weight: root.unread > 0 ? 800 : 600;
+                    overflow: elide;
+                }
+            }
+            Text {
+                text: root.subtitle;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+                overflow: elide;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 4px;
+            if root.unread > 0: Rectangle {
+                horizontal-stretch: 0;
+                height: 22px;
+                border-radius: 11px;
+                background: Theme.accent-info;
+                HorizontalLayout {
+                    padding-left: Theme.spacing-sm;
+                    padding-right: Theme.spacing-sm;
+                    VerticalLayout {
+                        alignment: center;
+                        Text {
+                            text: "" + root.unread;
+                            color: Theme.on-primary;
+                            font-size: 11px;
+                            font-weight: 800;
+                        }
+                    }
+                }
+                TouchArea {
+                    clicked => {
+                        root.mark-read-clicked();
+                    }
+                }
+            }
+            HorizontalLayout {
+                spacing: 4px;
+                Rectangle {
+                    width: 26px;
+                    height: 22px;
+                    border-radius: 11px;
+                    background: root.pinned ? Theme.accent-warning.with-alpha(0.22) : Theme.surface-2;
+                    Text {
+                        text: "📌";
+                        color: root.pinned ? Theme.accent-warning : Theme.muted;
+                        font-size: 11px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                    TouchArea {
+                        clicked => {
+                            root.pin-clicked();
+                        }
+                    }
+                }
+                Rectangle {
+                    width: 26px;
+                    height: 22px;
+                    border-radius: 11px;
+                    background: root.muted ? Theme.accent-danger.with-alpha(0.22) : Theme.surface-2;
+                    Text {
+                        text: root.muted ? "🔕" : "🔔";
+                        color: root.muted ? Theme.accent-danger : Theme.muted;
+                        font-size: 11px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                    TouchArea {
+                        clicked => {
+                            root.mute-clicked();
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+component Chip2 inherits Rectangle {
+    in property <string> label;
+    in property <bool> active: false;
+    callback clicked();
+
+    horizontal-stretch: 0;
+    height: 28px;
+    border-radius: 14px;
+    background: root.active ? Theme.primary : Theme.surface-2;
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: center;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.active ? Theme.on-primary : Theme.on-surface;
+                font-size: Theme.font-size-caption;
+                font-weight: 700;
+            }
+        }
+    }
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.destructive ? Theme.accent-danger : Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+        }
+    }
+}
 
 export component GroupChatListPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
 
-    in-out property <string> query;
+    in-out property <int> filter: 0; // 0 All 1 Unread 2 Pinned 3 Muted 4 Archive
+    in-out property <int> u0: 3;
+    in-out property <int> u1: 1;
+    in-out property <int> u2: 12;
+    in-out property <int> u3: 2;
+    in-out property <int> u4: 5;
+    in-out property <int> u5: 1;
+    in-out property <int> u6: 8;
+    in-out property <int> u7: 4;
+    in-out property <bool> p0: true;
+    in-out property <bool> p1: true;
+    in-out property <bool> p2: false;
+    in-out property <bool> p3: false;
+    in-out property <bool> p4: false;
+    in-out property <bool> p5: false;
+    in-out property <bool> p6: false;
+    in-out property <bool> p7: false;
+    in-out property <bool> m0: false;
+    in-out property <bool> m1: false;
+    in-out property <bool> m2: false;
+    in-out property <bool> m3: false;
+    in-out property <bool> m4: false;
+    in-out property <bool> m5: true;
+    in-out property <bool> m6: false;
+    in-out property <bool> m7: false;
+    in-out property <bool> a0: false;
+    in-out property <bool> a1: false;
+    in-out property <bool> a2: false;
+    in-out property <bool> a3: false;
+    in-out property <bool> a4: false;
+    in-out property <bool> a5: false;
+    in-out property <bool> a6: false;
+    in-out property <bool> a7: false;
+    in-out property <int> new-groups: 0;
+    in-out property <bool> sheet-open: false;
+    in-out property <bool> confirm-clear: false;
+    in-out property <string> status-msg: "";
+    in-out property <bool> status-success: false;
+    in-out property <bool> status-danger: false;
+
     callback back-pressed();
     callback new-pressed();
-    callback chat-pressed(string);
+    callback chat-pressed(int);
+
+    function unread-total() -> int {
+        return root.u0 + root.u1 + root.u2 + root.u3 + root.u4 + root.u5 + root.u6 + root.u7;
+    }
+    function pinned-count() -> int {
+        return (root.p0 ? 1 : 0) + (root.p1 ? 1 : 0) + (root.p2 ? 1 : 0) + (root.p3 ? 1 : 0) + (root.p4 ? 1 : 0) + (root.p5 ? 1 : 0) + (root.p6 ? 1 : 0) + (root.p7 ? 1 : 0);
+    }
+    function muted-count() -> int {
+        return (root.m0 ? 1 : 0) + (root.m1 ? 1 : 0) + (root.m2 ? 1 : 0) + (root.m3 ? 1 : 0) + (root.m4 ? 1 : 0) + (root.m5 ? 1 : 0) + (root.m6 ? 1 : 0) + (root.m7 ? 1 : 0);
+    }
+    function arch-count() -> int {
+        return (root.a0 ? 1 : 0) + (root.a1 ? 1 : 0) + (root.a2 ? 1 : 0) + (root.a3 ? 1 : 0) + (root.a4 ? 1 : 0) + (root.a5 ? 1 : 0) + (root.a6 ? 1 : 0) + (root.a7 ? 1 : 0);
+    }
+    function show-pinned(i: int) -> bool {
+        return i == 0 ? root.p0 : (i == 1 ? root.p1 : (i == 2 ? root.p2 : (i == 3 ? root.p3 : (i == 4 ? root.p4 : (i == 5 ? root.p5 : (i == 6 ? root.p6 : root.p7))))));
+    }
+    function show-muted(i: int) -> bool {
+        return i == 0 ? root.m0 : (i == 1 ? root.m1 : (i == 2 ? root.m2 : (i == 3 ? root.m3 : (i == 4 ? root.m4 : (i == 5 ? root.m5 : (i == 6 ? root.m6 : root.m7))))));
+    }
+    function show-arch(i: int) -> bool {
+        return i == 0 ? root.a0 : (i == 1 ? root.a1 : (i == 2 ? root.a2 : (i == 3 ? root.a3 : (i == 4 ? root.a4 : (i == 5 ? root.a5 : (i == 6 ? root.a6 : root.a7))))));
+    }
+    function show-unread(i: int) -> int {
+        return i == 0 ? root.u0 : (i == 1 ? root.u1 : (i == 2 ? root.u2 : (i == 3 ? root.u3 : (i == 4 ? root.u4 : (i == 5 ? root.u5 : (i == 6 ? root.u6 : root.u7))))));
+    }
+    function pinned-visible(i: int) -> bool {
+        if (root.show-arch(i)) {
+            return root.filter == 4;
+        }
+        if (!root.show-pinned(i)) {
+            return false;
+        }
+        if (root.filter == 0 || root.filter == 2) {
+            return true;
+        }
+        if (root.filter == 1) {
+            return root.show-unread(i) > 0;
+        }
+        if (root.filter == 3) {
+            return root.show-muted(i);
+        }
+        return false;
+    }
+    function all-visible(i: int) -> bool {
+        if (root.show-arch(i)) {
+            return root.filter == 4;
+        }
+        if (root.show-pinned(i)) {
+            return false;
+        }
+        if (root.filter == 0) {
+            return true;
+        }
+        if (root.filter == 1) {
+            return root.show-unread(i) > 0;
+        }
+        if (root.filter == 2) {
+            return false;
+        }
+        if (root.filter == 3) {
+            return root.show-muted(i);
+        }
+        return false;
+    }
+    function set-status(m: string, ok: bool, bad: bool) {
+        root.status-msg = m;
+        root.status-success = ok;
+        root.status-danger = bad;
+    }
+    function clear-unread(i: int) {
+        if (i == 0) {
+            root.u0 = 0;
+        }
+        if (i == 1) {
+            root.u1 = 0;
+        }
+        if (i == 2) {
+            root.u2 = 0;
+        }
+        if (i == 3) {
+            root.u3 = 0;
+        }
+        if (i == 4) {
+            root.u4 = 0;
+        }
+        if (i == 5) {
+            root.u5 = 0;
+        }
+        if (i == 6) {
+            root.u6 = 0;
+        }
+        if (i == 7) {
+            root.u7 = 0;
+        }
+        root.set-status("Marked read", true, false);
+    }
+    function toggle-pin(i: int) {
+        if (i == 0) {
+            root.p0 = !root.p0;
+        }
+        if (i == 1) {
+            root.p1 = !root.p1;
+        }
+        if (i == 2) {
+            root.p2 = !root.p2;
+        }
+        if (i == 3) {
+            root.p3 = !root.p3;
+        }
+        if (i == 4) {
+            root.p4 = !root.p4;
+        }
+        if (i == 5) {
+            root.p5 = !root.p5;
+        }
+        if (i == 6) {
+            root.p6 = !root.p6;
+        }
+        if (i == 7) {
+            root.p7 = !root.p7;
+        }
+        root.set-status(root.show-pinned(i) ? "📌 Pinned" : "Unpinned", root.show-pinned(i), false);
+    }
+    function toggle-mute(i: int) {
+        if (i == 0) {
+            root.m0 = !root.m0;
+        }
+        if (i == 1) {
+            root.m1 = !root.m1;
+        }
+        if (i == 2) {
+            root.m2 = !root.m2;
+        }
+        if (i == 3) {
+            root.m3 = !root.m3;
+        }
+        if (i == 4) {
+            root.m4 = !root.m4;
+        }
+        if (i == 5) {
+            root.m5 = !root.m5;
+        }
+        if (i == 6) {
+            root.m6 = !root.m6;
+        }
+        if (i == 7) {
+            root.m7 = !root.m7;
+        }
+        root.set-status(root.show-muted(i) ? "Muted" : "Unmuted", !root.show-muted(i), root.show-muted(i));
+    }
+    function toggle-arch(i: int) {
+        if (i == 0) {
+            root.a0 = !root.a0;
+        }
+        if (i == 1) {
+            root.a1 = !root.a1;
+        }
+        if (i == 2) {
+            root.a2 = !root.a2;
+        }
+        if (i == 3) {
+            root.a3 = !root.a3;
+        }
+        if (i == 4) {
+            root.a4 = !root.a4;
+        }
+        if (i == 5) {
+            root.a5 = !root.a5;
+        }
+        if (i == 6) {
+            root.a6 = !root.a6;
+        }
+        if (i == 7) {
+            root.a7 = !root.a7;
+        }
+    }
 
     background: Theme.background;
 
@@ -30,103 +447,337 @@ export component GroupChatListPage inherits Window {
         spacing: 0;
 
         AppBar {
-            title: "Groups";
+            title: "Groups · " + root.unread-total() + " new";
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
-            trailing-icon: @image-url("@mobile-components/icons/plus.svg");
-            leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.new-pressed(); }
+            trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
+            leading-pressed => {
+                root.back-pressed();
+            }
+            trailing-pressed => {
+                root.sheet-open = true;
+            }
+        }
+
+        if !root.status-msg.is-empty: Rectangle {
+            height: 28px;
+            background: root.status-success ? Theme.accent-success.with-alpha(0.16) : (root.status-danger ? Theme.accent-danger.with-alpha(0.16) : Theme.surface-2);
+            HorizontalLayout {
+                alignment: center;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.status-msg;
+                        color: root.status-success ? Theme.accent-success : (root.status-danger ? Theme.accent-danger : Theme.on-surface);
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                    }
+                }
+            }
+        }
+
+        // Filter chips + new.
+        HorizontalLayout {
+            padding-left: Theme.spacing-md;
+            padding-right: Theme.spacing-md;
+            padding-top: Theme.spacing-sm;
+            padding-bottom: Theme.spacing-sm;
+            spacing: Theme.spacing-sm;
+            Chip2 {
+                label: "All · " + (8 + root.new-groups);
+                active: root.filter == 0;
+                clicked => {
+                    root.filter = 0;
+                }
+            }
+            Chip2 {
+                label: "Unread · " + root.unread-total();
+                active: root.filter == 1;
+                clicked => {
+                    root.filter = 1;
+                }
+            }
+            Chip2 {
+                label: "📌 " + root.pinned-count();
+                active: root.filter == 2;
+                clicked => {
+                    root.filter = 2;
+                }
+            }
+            Chip2 {
+                label: "🔕 " + root.muted-count();
+                active: root.filter == 3;
+                clicked => {
+                    root.filter = 3;
+                }
+            }
+            Chip2 {
+                label: "Archive " + root.arch-count();
+                active: root.filter == 4;
+                clicked => {
+                    root.filter = 4;
+                }
+            }
+            Rectangle {
+                horizontal-stretch: 1;
+            }
+            Rectangle {
+                horizontal-stretch: 0;
+                width: 32px;
+                height: 28px;
+                border-radius: 14px;
+                background: Theme.accent-success;
+                Text {
+                    text: "+";
+                    color: Theme.on-primary;
+                    font-size: 16px;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+                TouchArea {
+                    clicked => {
+                        root.new-groups = root.new-groups + 1;
+                        root.set-status("New group created (+" + root.new-groups + ")", true, false);
+                        root.new-pressed();
+                    }
+                }
+            }
         }
 
         ScrollView {
             vertical-stretch: 1;
 
             VerticalLayout {
-                padding-top: Theme.spacing-md;
                 padding-bottom: Theme.spacing-xl;
                 spacing: Theme.spacing-md;
                 alignment: start;
 
-                FormField {
-                    label: "";
-                    TextField {
-                        placeholder: "Search groups";
-                        text <=> root.query;
+                if (root.pinned-visible(0) || root.pinned-visible(1) || root.pinned-visible(2) || root.pinned-visible(3) || root.pinned-visible(4) || root.pinned-visible(5) || root.pinned-visible(6) || root.pinned-visible(7)) && root.filter != 4: FormSection {
+                    title: "PINNED · " + root.pinned-count();
+
+                    for r[i] in [
+                        { idx: 0, title: "Family group", sub: "Sarah: see you Sunday! · 12:42", tone: 3 },
+                        { idx: 1, title: "Saturday hikers", sub: "Bao: trail starts at 08:00 sharp · 11:08", tone: 3 },
+                        { idx: 2, title: "Slint design crew", sub: "Petra: pushed the Tone enum branch · 10:34", tone: 1 },
+                        { idx: 3, title: "Brussels marathon 2026", sub: "Camille: registration opens Monday · 09:12", tone: 2 },
+                        { idx: 4, title: "Vinyl swap", sub: "Chen: photo of the Ryo Fukui original · Yest", tone: 0 },
+                        { idx: 5, title: "Office logistics", sub: "Anika: coffee machine is on the blink · Mon", tone: 1 },
+                        { idx: 6, title: "Book club — autumn", sub: "Cosmin: chapter 12 by Friday · Sun", tone: 2 },
+                        { idx: 7, title: "Apartment building", sub: "Beatriz: lift maintenance Wednesday · Sat", tone: 4 },
+                    ]: VerticalLayout {
+                        spacing: 0;
+                        if root.pinned-visible(r.idx): GroupRow {
+                            title: r.title;
+                            subtitle: r.sub;
+                            tone-i: r.tone;
+                            unread: root.show-unread(r.idx);
+                            pinned: root.show-pinned(r.idx);
+                            muted: root.show-muted(r.idx);
+                            archived: root.show-arch(r.idx);
+                            row-clicked => {
+                                root.clear-unread(r.idx);
+                                root.set-status("Opened " + r.title, true, false);
+                                root.chat-pressed(r.idx);
+                            }
+                            pin-clicked => {
+                                root.toggle-pin(r.idx);
+                            }
+                            mute-clicked => {
+                                root.toggle-mute(r.idx);
+                            }
+                            mark-read-clicked => {
+                                root.clear-unread(r.idx);
+                            }
+                        }
+                        if root.pinned-visible(r.idx): Divider { }
                     }
                 }
 
-                // ----- PINNED -----------------------------------------------
                 FormSection {
-                    title: "PINNED";
+                    title: root.filter == 4 ? "ARCHIVED" : "ALL CHATS";
 
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/profile.svg");
-                        tone: Tone.warning;
-                        title: "Family group";
-                        subtitle: "Sarah: see you Sunday! · 12:42";
-                        clicked => { root.chat-pressed("family"); }
-                        Chip { label: "3"; }
-                    }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/profile.svg");
-                        tone: Tone.warning;
-                        title: "Saturday hikers";
-                        subtitle: "Bao: trail starts at 08:00 sharp · 11:08";
-                        clicked => { root.chat-pressed("hikers"); }
-                        Chip { label: "1"; }
+                    for r[i] in [
+                        { idx: 0, title: "Family group", sub: "Sarah: see you Sunday! · 12:42", tone: 3 },
+                        { idx: 1, title: "Saturday hikers", sub: "Bao: trail starts at 08:00 sharp · 11:08", tone: 3 },
+                        { idx: 2, title: "Slint design crew", sub: "Petra: pushed the Tone enum branch · 10:34", tone: 1 },
+                        { idx: 3, title: "Brussels marathon 2026", sub: "Camille: registration opens Monday · 09:12", tone: 2 },
+                        { idx: 4, title: "Vinyl swap", sub: "Chen: photo of the Ryo Fukui original · Yest", tone: 0 },
+                        { idx: 5, title: "Office logistics", sub: "Anika: coffee machine is on the blink · Mon", tone: 1 },
+                        { idx: 6, title: "Book club — autumn", sub: "Cosmin: chapter 12 by Friday · Sun", tone: 2 },
+                        { idx: 7, title: "Apartment building", sub: "Beatriz: lift maintenance Wednesday · Sat", tone: 4 },
+                    ]: VerticalLayout {
+                        spacing: 0;
+                        if root.all-visible(r.idx): GroupRow {
+                            title: r.title;
+                            subtitle: r.sub;
+                            tone-i: r.tone;
+                            unread: root.show-unread(r.idx);
+                            pinned: root.show-pinned(r.idx);
+                            muted: root.show-muted(r.idx);
+                            archived: root.show-arch(r.idx);
+                            row-clicked => {
+                                root.clear-unread(r.idx);
+                                root.set-status("Opened " + r.title, true, false);
+                                root.chat-pressed(r.idx);
+                            }
+                            pin-clicked => {
+                                root.toggle-pin(r.idx);
+                            }
+                            mute-clicked => {
+                                root.toggle-mute(r.idx);
+                            }
+                            mark-read-clicked => {
+                                root.clear-unread(r.idx);
+                            }
+                        }
+                        if root.all-visible(r.idx): Divider { }
                     }
                 }
 
-                // ----- ALL CHATS --------------------------------------------
-                FormSection {
-                    title: "ALL CHATS";
+                if root.new-groups > 0 && root.filter != 4: FormSection {
+                    title: "NEW THIS SESSION · " + root.new-groups;
+                    for nt[i] in [{ idx: 1 }, { idx: 2 }, { idx: 3 }]: VerticalLayout {
+                        spacing: 0;
+                        if nt.idx <= root.new-groups: GroupRow {
+                            title: "Untitled group " + nt.idx;
+                            subtitle: "@you · created just now";
+                            tone-i: 0;
+                            unread: 0;
+                            pinned: false;
+                            muted: false;
+                            archived: false;
+                            row-clicked => {
+                                root.set-status("Opened new group", true, false);
+                            }
+                            pin-clicked => { }
+                            mute-clicked => { }
+                            mark-read-clicked => { }
+                        }
+                        if nt.idx <= root.new-groups && nt.idx < root.new-groups: Divider { }
+                    }
+                }
+            }
+        }
+    }
 
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/profile.svg");
-                        title: "Slint design crew";
-                        subtitle: "Petra: pushed the Tone enum branch · 10:34";
-                        clicked => { root.chat-pressed("design"); }
-                        Chip { label: "12"; }
+    // ===================== Bottom sheet =====================
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+                root.confirm-clear = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: Theme.surface-2;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.muted;
                     }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/profile.svg");
-                        title: "Brussels marathon 2026";
-                        subtitle: "Camille: registration opens Monday · 09:12";
-                        clicked => { root.chat-pressed("marathon"); }
-                        Chip { label: "2"; }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: "Groups menu";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 700;
                     }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/profile.svg");
-                        title: "Vinyl swap";
-                        subtitle: "Chen: photo of the Ryo Fukui original · Yest";
-                        clicked => { root.chat-pressed("vinyl"); }
-                        Chip { label: "5"; }
+                }
+                SheetRow {
+                    label: "Mark all read";
+                    clicked => {
+                        root.u0 = 0;
+                        root.u1 = 0;
+                        root.u2 = 0;
+                        root.u3 = 0;
+                        root.u4 = 0;
+                        root.u5 = 0;
+                        root.u6 = 0;
+                        root.u7 = 0;
+                        root.set-status("All marked read", true, false);
+                        root.sheet-open = false;
                     }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/profile.svg");
-                        title: "Office logistics";
-                        subtitle: "Anika: coffee machine is on the blink · Mon";
-                        clicked => { root.chat-pressed("office"); }
-                        Chip { label: "1"; }
+                }
+                SheetRow {
+                    label: "Mute everything";
+                    clicked => {
+                        root.m0 = true;
+                        root.m1 = true;
+                        root.m2 = true;
+                        root.m3 = true;
+                        root.m4 = true;
+                        root.m5 = true;
+                        root.m6 = true;
+                        root.m7 = true;
+                        root.set-status("All muted", false, true);
+                        root.sheet-open = false;
                     }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/profile.svg");
-                        title: "Book club — autumn";
-                        subtitle: "Cosmin: chapter 12 by Friday · Sun";
-                        clicked => { root.chat-pressed("book"); }
-                        Chip { label: "8"; }
+                }
+                SheetRow {
+                    label: "Restore from archive";
+                    clicked => {
+                        root.a0 = false;
+                        root.a1 = false;
+                        root.a2 = false;
+                        root.a3 = false;
+                        root.a4 = false;
+                        root.a5 = false;
+                        root.a6 = false;
+                        root.a7 = false;
+                        root.set-status("Archive restored", true, false);
+                        root.sheet-open = false;
                     }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/profile.svg");
-                        title: "Apartment building";
-                        subtitle: "Beatriz: lift maintenance Wednesday · Sat";
-                        clicked => { root.chat-pressed("apartment"); }
-                        Chip { label: "4"; }
+                }
+                Divider { }
+
+                SheetRow {
+                    label: root.confirm-clear ? "Confirm: archive all" : "Archive all chats";
+                    destructive: true;
+                    clicked => {
+                        if (root.confirm-clear) {
+                            root.a0 = true;
+                            root.a1 = true;
+                            root.a2 = true;
+                            root.a3 = true;
+                            root.a4 = true;
+                            root.a5 = true;
+                            root.a6 = true;
+                            root.a7 = true;
+                            root.set-status("All archived", false, true);
+                            root.sheet-open = false;
+                            root.confirm-clear = false;
+                        } else {
+                            root.confirm-clear = true;
+                        }
+                    }
+                }
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.sheet-open = false;
+                        root.confirm-clear = false;
                     }
                 }
             }

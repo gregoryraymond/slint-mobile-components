@@ -1,16 +1,18 @@
 // EqualizerPage
 // =====================================================================
 //
-// An audio equalizer — the "tune the sound" screen of a music app.
-// Distinct from `AudiobookPlayerPage` / `PodcastPage` (playback) and
-// `AppearanceSettingsPage` (theme). Demonstrates a multi-slider
-// control surface:
+// An audio equalizer with live state.
 //
-//   - An on/off master toggle card.
-//   - A preset chip row (Flat / Bass / Vocal / Rock / Custom).
-//   - A row of vertical frequency-band sliders — each a track with a
-//     filled lower portion, a thumb, and a Hz label + dB readout.
-//   - A bass / treble pair of horizontal mini-sliders beneath.
+//   - Master toggle (`enabled`) wired via `changed`.
+//   - Preset chips apply concrete values to the 7 bands + bass/treble.
+//   - Each band slider is tappable: top half bumps the value +0.1,
+//     bottom half −0.1 (clamped 0..1). Any manual tap switches the
+//     active preset to "Custom".
+//   - Tone sliders (Bass / Treble) are tappable similarly (left = down,
+//     right = up).
+//   - dB readouts derive live from band values via `round((v − 0.5) ×
+//     20)`.
+//   - "Reset to flat" link at the bottom snaps everything back to 0.5.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
@@ -18,16 +20,15 @@ import { SectionHeader } from "@mobile-components/section-header.slint";
 import { MobileSwitch } from "@mobile-components/switch.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
 
-// One vertical EQ band. `value` is 0..1 (bottom..top).
 component EqBand inherits VerticalLayout {
     in property <string> hz;
     in property <string> db;
     in property <float> value: 0.5;
     in property <bool> enabled: true;
+    callback clicked(float); // 0 = top, 1 = bottom
 
     horizontal-stretch: 1;
     spacing: 6px;
-    // dB readout.
     Text {
         text: root.db;
         color: root.enabled ? Theme.accent-info : Theme.muted;
@@ -36,37 +37,47 @@ component EqBand inherits VerticalLayout {
         font-weight: 700;
         horizontal-alignment: center;
     }
-    // Vertical track.
     HorizontalLayout {
         alignment: center;
         vertical-stretch: 1;
         Rectangle {
-            width: 6px;
-            border-radius: 3px;
-            background: Theme.surface-variant;
-            // Filled lower portion.
-            Rectangle {
-                x: 0;
-                width: parent.width;
-                height: parent.height * root.value;
-                y: parent.height - self.height;
-                border-radius: 3px;
-                background: root.enabled ? Theme.primary : Theme.muted;
-            }
-            // Thumb.
+            width: 24px;
+            background: transparent;
+            // Track.
             Rectangle {
                 x: (parent.width - self.width) / 2;
-                y: parent.height * (1.0 - root.value) - self.height / 2;
-                width: 18px;
-                height: 18px;
-                border-radius: 9px;
-                background: root.enabled ? Theme.primary : Theme.muted;
-                border-width: 3px;
-                border-color: Theme.background;
+                width: 6px;
+                height: parent.height;
+                border-radius: 3px;
+                background: Theme.surface-variant;
+                Rectangle {
+                    x: 0;
+                    width: parent.width;
+                    height: parent.height * root.value;
+                    y: parent.height - self.height;
+                    border-radius: 3px;
+                    background: root.enabled ? Theme.primary : Theme.muted;
+                    animate height { duration: Theme.motion-fast; }
+                }
+                Rectangle {
+                    x: (parent.width - self.width) / 2;
+                    y: parent.height * (1.0 - root.value) - self.height / 2;
+                    width: 18px;
+                    height: 18px;
+                    border-radius: 9px;
+                    background: root.enabled ? Theme.primary : Theme.muted;
+                    border-width: 3px;
+                    border-color: Theme.background;
+                    animate y { duration: Theme.motion-fast; }
+                }
+            }
+            TouchArea {
+                clicked => {
+                    root.clicked(self.pressed-y / self.height);
+                }
             }
         }
     }
-    // Hz label.
     Text {
         text: root.hz;
         color: Theme.muted;
@@ -77,7 +88,6 @@ component EqBand inherits VerticalLayout {
     }
 }
 
-// One preset chip.
 component PresetChip inherits Rectangle {
     in property <string> label;
     in property <bool> selected: false;
@@ -103,16 +113,14 @@ component PresetChip inherits Rectangle {
             vertical-alignment: center;
         }
     }
-    touch := TouchArea {
-        clicked => { root.clicked(); }
-    }
+    touch := TouchArea { clicked => { root.clicked(); } }
 }
 
-// One horizontal bass/treble mini-slider.
 component ToneSlider inherits VerticalLayout {
     in property <string> label;
     in property <float> value: 0.5;
     in property <bool> enabled: true;
+    callback clicked(float); // 0 = left, 1 = right
 
     horizontal-stretch: 1;
     spacing: Theme.spacing-sm;
@@ -125,32 +133,48 @@ component ToneSlider inherits VerticalLayout {
             horizontal-stretch: 1;
         }
         Text {
-            text: root.value > 0.5 ? "+" : "";
+            text: root.value > 0.5
+                ? "+" + round((root.value - 0.5) * 20)
+                : root.value == 0.5 ? "0" : "" + round((root.value - 0.5) * 20);
             color: Theme.muted;
             font-size: Theme.font-size-caption;
             font-weight: 700;
         }
     }
     Rectangle {
-        height: 6px;
-        border-radius: 3px;
-        background: Theme.surface-variant;
+        height: 24px;
+        background: transparent;
         Rectangle {
             x: 0;
-            width: parent.width * root.value;
-            height: parent.height;
-            border-radius: 3px;
-            background: root.enabled ? Theme.primary : Theme.muted;
-        }
-        Rectangle {
-            x: parent.width * root.value - self.width / 2;
             y: (parent.height - self.height) / 2;
-            width: 16px;
-            height: 16px;
-            border-radius: 8px;
-            background: root.enabled ? Theme.primary : Theme.muted;
-            border-width: 3px;
-            border-color: Theme.surface-1;
+            height: 6px;
+            width: parent.width;
+            border-radius: 3px;
+            background: Theme.surface-variant;
+            Rectangle {
+                x: 0;
+                width: parent.width * root.value;
+                height: parent.height;
+                border-radius: 3px;
+                background: root.enabled ? Theme.primary : Theme.muted;
+                animate width { duration: Theme.motion-fast; }
+            }
+            Rectangle {
+                x: parent.width * root.value - self.width / 2;
+                y: (parent.height - self.height) / 2;
+                width: 16px;
+                height: 16px;
+                border-radius: 8px;
+                background: root.enabled ? Theme.primary : Theme.muted;
+                border-width: 3px;
+                border-color: Theme.surface-1;
+                animate x { duration: Theme.motion-fast; }
+            }
+        }
+        TouchArea {
+            clicked => {
+                root.clicked(self.pressed-x / self.width);
+            }
         }
     }
 }
@@ -159,9 +183,161 @@ export component EqualizerPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
     in-out property <bool> enabled: true;
-    in-out property <int> preset: 3;
     callback back-pressed();
     callback preset-pressed(int);
+    callback enabled-changed(bool);
+    callback band-changed(int, int); // band-idx, new-db
+
+    // ----- Interactive state -----
+    private property <int> preset: 3; // 0=Flat 1=Bass 2=Vocal 3=Rock 4=Custom
+    // 7 band values + bass + treble, all 0..1.
+    private property <float> b0: 0.72;
+    private property <float> b1: 0.62;
+    private property <float> b2: 0.5;
+    private property <float> b3: 0.44;
+    private property <float> b4: 0.56;
+    private property <float> b5: 0.68;
+    private property <float> b6: 0.8;
+    private property <float> bass-val: 0.68;
+    private property <float> treble-val: 0.74;
+    private property <string> status-msg: "Tap a preset or nudge any band · top half = up, bottom half = down";
+    private property <bool> status-is-success: false;
+    private property <bool> status-is-danger: false;
+
+    // ----- Helpers -----
+    function db-for(v: float) -> string {
+        return v > 0.5
+            ? "+" + round((v - 0.5) * 20)
+            : v == 0.5 ? "0" : "" + round((v - 0.5) * 20);
+    }
+    function preset-name(p: int) -> string {
+        if (p == 0) { return "Flat"; }
+        if (p == 1) { return "Bass"; }
+        if (p == 2) { return "Vocal"; }
+        if (p == 3) { return "Rock"; }
+        return "Custom";
+    }
+
+    // ----- Mutations -----
+    public function set-preset(p: int) {
+        root.preset = p;
+        if (p == 0) {
+            // Flat
+            root.b0 = 0.5;
+            root.b1 = 0.5;
+            root.b2 = 0.5;
+            root.b3 = 0.5;
+            root.b4 = 0.5;
+            root.b5 = 0.5;
+            root.b6 = 0.5;
+            root.bass-val = 0.5;
+            root.treble-val = 0.5;
+        }
+        if (p == 1) {
+            // Bass
+            root.b0 = 0.85;
+            root.b1 = 0.78;
+            root.b2 = 0.6;
+            root.b3 = 0.45;
+            root.b4 = 0.4;
+            root.b5 = 0.4;
+            root.b6 = 0.4;
+            root.bass-val = 0.85;
+            root.treble-val = 0.4;
+        }
+        if (p == 2) {
+            // Vocal
+            root.b0 = 0.4;
+            root.b1 = 0.4;
+            root.b2 = 0.6;
+            root.b3 = 0.75;
+            root.b4 = 0.7;
+            root.b5 = 0.5;
+            root.b6 = 0.4;
+            root.bass-val = 0.4;
+            root.treble-val = 0.55;
+        }
+        if (p == 3) {
+            // Rock
+            root.b0 = 0.72;
+            root.b1 = 0.62;
+            root.b2 = 0.5;
+            root.b3 = 0.44;
+            root.b4 = 0.56;
+            root.b5 = 0.68;
+            root.b6 = 0.8;
+            root.bass-val = 0.68;
+            root.treble-val = 0.74;
+        }
+        // Custom (4) keeps current values.
+        root.preset-pressed(p);
+        root.status-msg = "Preset · " + root.preset-name(p);
+        root.status-is-success = p != 4;
+        root.status-is-danger = false;
+    }
+    public function adjust-band(i: int, frac-y: float) {
+        // frac-y < 0.5 means top half → bump up.
+        if (i == 0) {
+            root.b0 = max(0, min(1, root.b0 + (frac-y < 0.5 ? 0.05 : -0.05)));
+        }
+        if (i == 1) {
+            root.b1 = max(0, min(1, root.b1 + (frac-y < 0.5 ? 0.05 : -0.05)));
+        }
+        if (i == 2) {
+            root.b2 = max(0, min(1, root.b2 + (frac-y < 0.5 ? 0.05 : -0.05)));
+        }
+        if (i == 3) {
+            root.b3 = max(0, min(1, root.b3 + (frac-y < 0.5 ? 0.05 : -0.05)));
+        }
+        if (i == 4) {
+            root.b4 = max(0, min(1, root.b4 + (frac-y < 0.5 ? 0.05 : -0.05)));
+        }
+        if (i == 5) {
+            root.b5 = max(0, min(1, root.b5 + (frac-y < 0.5 ? 0.05 : -0.05)));
+        }
+        if (i == 6) {
+            root.b6 = max(0, min(1, root.b6 + (frac-y < 0.5 ? 0.05 : -0.05)));
+        }
+        root.preset = 4;
+        root.band-changed(i, round(((i == 0 ? root.b0
+            : i == 1 ? root.b1
+            : i == 2 ? root.b2
+            : i == 3 ? root.b3
+            : i == 4 ? root.b4
+            : i == 5 ? root.b5
+            : root.b6) - 0.5) * 20));
+        root.status-msg = "Band " + i + " · " + (frac-y < 0.5 ? "+" : "−")
+            + " · Custom preset";
+        root.status-is-success = frac-y < 0.5;
+        root.status-is-danger = frac-y >= 0.5;
+    }
+    public function adjust-tone(which: int, frac-x: float) {
+        let delta = frac-x > 0.5 ? 0.05 : -0.05;
+        if (which == 0) {
+            root.bass-val = max(0, min(1, root.bass-val + delta));
+        } else {
+            root.treble-val = max(0, min(1, root.treble-val + delta));
+        }
+        root.preset = 4;
+        root.status-msg = (which == 0 ? "Bass · " : "Treble · ")
+            + (frac-x > 0.5 ? "+" : "−") + " · Custom preset";
+        root.status-is-success = frac-x > 0.5;
+        root.status-is-danger = frac-x <= 0.5;
+    }
+    public function reset-flat() {
+        root.set-preset(0);
+        root.status-msg = "Reset · all bands at 0 dB";
+        root.status-is-success = false;
+        root.status-is-danger = true;
+    }
+    changed enabled => {
+        root.enabled-changed(root.enabled);
+        root.status-msg = root.enabled
+            ? "EQ on · " + root.preset-name(root.preset)
+            : "EQ off · using default sound";
+        root.status-is-success = root.enabled;
+        root.status-is-danger = !root.enabled;
+    }
 
     background: Theme.background;
 
@@ -173,6 +349,30 @@ export component EqualizerPage inherits Window {
             title-style: HeadingStyle.mono;
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             leading-pressed => { root.back-pressed(); }
+        }
+
+        // ----- Status banner ---------------------------------------
+        Rectangle {
+            height: 32px;
+            background: root.status-is-danger ? Theme.accent-danger
+                : root.status-is-success ? Theme.accent-success
+                : Theme.surface-2;
+            animate background { duration: Theme.motion-fast; }
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                Text {
+                    text: root.status-msg;
+                    color: (root.status-is-danger || root.status-is-success)
+                        ? Theme.on-primary
+                        : Theme.on-surface;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+            }
         }
 
         VerticalLayout {
@@ -205,7 +405,9 @@ export component EqualizerPage inherits Window {
                             letter-spacing: 0.5px;
                         }
                         Text {
-                            text: root.enabled ? "Custom tuning is active" : "Using the default sound";
+                            text: root.enabled
+                                ? root.preset-name(root.preset) + " tuning is active"
+                                : "Using the default sound";
                             color: Theme.muted;
                             font-size: Theme.font-size-caption;
                         }
@@ -225,27 +427,27 @@ export component EqualizerPage inherits Window {
                 PresetChip {
                     label: "Flat";
                     selected: root.preset == 0;
-                    clicked => { root.preset = 0; root.preset-pressed(0); }
+                    clicked => { root.set-preset(0); }
                 }
                 PresetChip {
                     label: "Bass";
                     selected: root.preset == 1;
-                    clicked => { root.preset = 1; root.preset-pressed(1); }
+                    clicked => { root.set-preset(1); }
                 }
                 PresetChip {
                     label: "Vocal";
                     selected: root.preset == 2;
-                    clicked => { root.preset = 2; root.preset-pressed(2); }
+                    clicked => { root.set-preset(2); }
                 }
                 PresetChip {
                     label: "Rock";
                     selected: root.preset == 3;
-                    clicked => { root.preset = 3; root.preset-pressed(3); }
+                    clicked => { root.set-preset(3); }
                 }
                 PresetChip {
                     label: "Custom";
                     selected: root.preset == 4;
-                    clicked => { root.preset = 4; root.preset-pressed(4); }
+                    clicked => { root.set-preset(4); }
                 }
             }
         }
@@ -269,19 +471,60 @@ export component EqualizerPage inherits Window {
             }
         }
 
-        // Band sliders.
         Rectangle {
             height: 280px;
             HorizontalLayout {
                 padding: Theme.spacing-md;
                 spacing: Theme.spacing-sm;
-                EqBand { hz: "60"; db: "+4"; value: 0.72; enabled: root.enabled; }
-                EqBand { hz: "150"; db: "+2"; value: 0.62; enabled: root.enabled; }
-                EqBand { hz: "400"; db: "0"; value: 0.5; enabled: root.enabled; }
-                EqBand { hz: "1k"; db: "-1"; value: 0.44; enabled: root.enabled; }
-                EqBand { hz: "2.4k"; db: "+1"; value: 0.56; enabled: root.enabled; }
-                EqBand { hz: "6k"; db: "+3"; value: 0.68; enabled: root.enabled; }
-                EqBand { hz: "16k"; db: "+5"; value: 0.8; enabled: root.enabled; }
+                EqBand {
+                    hz: "60";
+                    db: root.db-for(root.b0);
+                    value: root.b0;
+                    enabled: root.enabled;
+                    clicked(fy) => { root.adjust-band(0, fy); }
+                }
+                EqBand {
+                    hz: "150";
+                    db: root.db-for(root.b1);
+                    value: root.b1;
+                    enabled: root.enabled;
+                    clicked(fy) => { root.adjust-band(1, fy); }
+                }
+                EqBand {
+                    hz: "400";
+                    db: root.db-for(root.b2);
+                    value: root.b2;
+                    enabled: root.enabled;
+                    clicked(fy) => { root.adjust-band(2, fy); }
+                }
+                EqBand {
+                    hz: "1k";
+                    db: root.db-for(root.b3);
+                    value: root.b3;
+                    enabled: root.enabled;
+                    clicked(fy) => { root.adjust-band(3, fy); }
+                }
+                EqBand {
+                    hz: "2.4k";
+                    db: root.db-for(root.b4);
+                    value: root.b4;
+                    enabled: root.enabled;
+                    clicked(fy) => { root.adjust-band(4, fy); }
+                }
+                EqBand {
+                    hz: "6k";
+                    db: root.db-for(root.b5);
+                    value: root.b5;
+                    enabled: root.enabled;
+                    clicked(fy) => { root.adjust-band(5, fy); }
+                }
+                EqBand {
+                    hz: "16k";
+                    db: root.db-for(root.b6);
+                    value: root.b6;
+                    enabled: root.enabled;
+                    clicked(fy) => { root.adjust-band(6, fy); }
+                }
             }
         }
 
@@ -307,8 +550,49 @@ export component EqualizerPage inherits Window {
             padding: Theme.spacing-md;
             spacing: Theme.spacing-lg;
             alignment: start;
-            ToneSlider { label: "Bass"; value: 0.68; enabled: root.enabled; }
-            ToneSlider { label: "Treble"; value: 0.74; enabled: root.enabled; }
+            ToneSlider {
+                label: "Bass";
+                value: root.bass-val;
+                enabled: root.enabled;
+                clicked(fx) => { root.adjust-tone(0, fx); }
+            }
+            ToneSlider {
+                label: "Treble";
+                value: root.treble-val;
+                enabled: root.enabled;
+                clicked(fx) => { root.adjust-tone(1, fx); }
+            }
+        }
+
+        // Reset to flat.
+        HorizontalLayout {
+            padding-left: Theme.spacing-md;
+            padding-right: Theme.spacing-md;
+            alignment: center;
+            Rectangle {
+                width: rs.preferred-width + 24px;
+                height: 36px;
+                border-radius: 18px;
+                background: reset-touch.pressed
+                    ? Theme.accent-danger.with-alpha(0.12)
+                    : transparent;
+                border-width: 1px;
+                border-color: Theme.outline;
+                animate background { duration: Theme.motion-fast; }
+                rs := Text {
+                    text: "↺ Reset to flat";
+                    color: Theme.accent-danger;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+                reset-touch := TouchArea {
+                    clicked => { root.reset-flat(); }
+                }
+            }
         }
 
         Rectangle { vertical-stretch: 1; }

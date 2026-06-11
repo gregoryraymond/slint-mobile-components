@@ -1,27 +1,15 @@
 // MultiSelectListPage
 // =====================================================================
-//
-// Contextual selection mode. AppBar shows "N selected" instead of the
-// usual title, with a close (cancel selection) leading and overflow
-// trailing. Each row is a SettingRow with a `Checkbox` dropped into the
-// trailing slot so the boxes line up at a single shared right margin.
-// A bottom action bar holds archive / star / delete.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { HeadingStyle } from "@mobile-components/heading.slint";
 import { FormSection } from "@mobile-components/form-section.slint";
-import { SettingRow } from "@mobile-components/setting-row.slint";
-import { Checkbox } from "@mobile-components/checkbox.slint";
 import { Divider } from "@mobile-components/divider.slint";
 import { ScrollView } from "std-widgets.slint";
 
-// A bare check-box square (no label, no row min-height) — used in the
-// SettingRow trailing slot. The full Checkbox component is a 48-px row;
-// here we want JUST the indicator.
 component CheckSquare inherits Rectangle {
-    in-out property <bool> checked: false;
-    callback toggled(bool);
+    in property <bool> checked: false;
 
     width: 22px;
     height: 22px;
@@ -41,30 +29,74 @@ component CheckSquare inherits Rectangle {
         colorize: Theme.on-primary;
         image-fit: contain;
     }
+}
 
-    touch := TouchArea {
+component MsgRow inherits Rectangle {
+    in property <string> title;
+    in property <string> subtitle;
+    in property <bool> selected: false;
+    in property <bool> starred: false;
+    in property <bool> archived: false;
+    in property <bool> deleted: false;
+    callback row-clicked();
+
+    horizontal-stretch: 1;
+    min-height: 64px;
+    opacity: root.deleted ? 0.45 : 1.0;
+    background: root.selected ? Theme.accent-info.with-alpha(0.10) : (ta.has-hover ? Theme.surface-2 : transparent);
+
+    ta := TouchArea {
         clicked => {
-            root.checked = !root.checked;
-            root.toggled(root.checked);
+            root.row-clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+        VerticalLayout {
+            alignment: center;
+            CheckSquare {
+                checked: root.selected;
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            HorizontalLayout {
+                spacing: 6px;
+                Text {
+                    text: (root.starred ? "★ " : "") + root.title + (root.archived ? " · archived" : "") + (root.deleted ? " · deleted" : "");
+                    color: Theme.on-surface;
+                    font-size: Theme.font-size-body;
+                    font-weight: root.selected ? 800 : 600;
+                    overflow: elide;
+                }
+            }
+            Text {
+                text: root.subtitle;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+            }
         }
     }
 }
 
-// Bottom action button — icon-over-label, full-width stretch cell.
 component ActionCell inherits Rectangle {
     in property <string> label;
     in property <image> icon;
-    in property <Tone> tone: Tone.default;
+    in property <int> tone-i: 0;
+    in property <bool> enabled: true;
     callback clicked();
 
     horizontal-stretch: 1;
     min-height: Theme.touch-target;
     background: touch.pressed ? Theme.surface-pressed : transparent;
+    opacity: root.enabled ? 1.0 : 0.4;
 
-    property <color> tint:
-          root.tone == Tone.danger ? Theme.accent-danger
-        : root.tone == Tone.info   ? Theme.accent-info
-        : Theme.on-surface;
+    property <color> tint: root.tone-i == 4 ? Theme.accent-danger : (root.tone-i == 1 ? Theme.accent-info : (root.tone-i == 3 ? Theme.accent-warning : Theme.on-surface));
 
     VerticalLayout {
         padding-top: Theme.spacing-xs;
@@ -88,19 +120,122 @@ component ActionCell inherits Rectangle {
                 text: root.label;
                 color: tint;
                 font-size: Theme.font-size-caption;
-                font-weight: 600;
+                font-weight: 700;
             }
         }
     }
 
-    touch := TouchArea { clicked => { root.clicked(); } }
+    touch := TouchArea {
+        enabled: root.enabled;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component Chip2 inherits Rectangle {
+    in property <string> label;
+    in property <bool> active: false;
+    callback clicked();
+
+    horizontal-stretch: 0;
+    height: 28px;
+    border-radius: 14px;
+    background: root.active ? Theme.primary : Theme.surface-2;
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: center;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.active ? Theme.on-primary : Theme.on-surface;
+                font-size: Theme.font-size-caption;
+                font-weight: 700;
+            }
+        }
+    }
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.destructive ? Theme.accent-danger : Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+        }
+    }
 }
 
 export component MultiSelectListPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
 
-    in-out property <int> selected-count: 3;
+    in-out property <bool> sel0: true;
+    in-out property <bool> sel1: true;
+    in-out property <bool> sel2: false;
+    in-out property <bool> sel3: true;
+    in-out property <bool> sel4: false;
+    in-out property <bool> sel5: false;
+    in-out property <bool> sel6: false;
+    in-out property <bool> sel7: false;
+    in-out property <bool> star0: false;
+    in-out property <bool> star1: false;
+    in-out property <bool> star2: true;
+    in-out property <bool> star3: false;
+    in-out property <bool> star4: false;
+    in-out property <bool> star5: false;
+    in-out property <bool> star6: false;
+    in-out property <bool> star7: false;
+    in-out property <bool> arch0: false;
+    in-out property <bool> arch1: false;
+    in-out property <bool> arch2: false;
+    in-out property <bool> arch3: false;
+    in-out property <bool> arch4: false;
+    in-out property <bool> arch5: false;
+    in-out property <bool> arch6: false;
+    in-out property <bool> arch7: false;
+    in-out property <bool> del0: false;
+    in-out property <bool> del1: false;
+    in-out property <bool> del2: false;
+    in-out property <bool> del3: false;
+    in-out property <bool> del4: false;
+    in-out property <bool> del5: false;
+    in-out property <bool> del6: false;
+    in-out property <bool> del7: false;
+    in-out property <int> filter: 0; // 0 All 1 Starred 2 Archived 3 Trash
+    in-out property <bool> sheet-open: false;
+    in-out property <bool> confirm-bulk: false;
+    in-out property <string> status-msg: "";
+    in-out property <bool> status-success: false;
+    in-out property <bool> status-danger: false;
 
     callback close-pressed();
     callback overflow-pressed();
@@ -108,78 +243,317 @@ export component MultiSelectListPage inherits Window {
     callback star-pressed();
     callback delete-pressed();
 
+    function selected-count() -> int {
+        return (root.sel0 ? 1 : 0) + (root.sel1 ? 1 : 0) + (root.sel2 ? 1 : 0) + (root.sel3 ? 1 : 0) + (root.sel4 ? 1 : 0) + (root.sel5 ? 1 : 0) + (root.sel6 ? 1 : 0) + (root.sel7 ? 1 : 0);
+    }
+    function starred-count() -> int {
+        return (root.star0 ? 1 : 0) + (root.star1 ? 1 : 0) + (root.star2 ? 1 : 0) + (root.star3 ? 1 : 0) + (root.star4 ? 1 : 0) + (root.star5 ? 1 : 0) + (root.star6 ? 1 : 0) + (root.star7 ? 1 : 0);
+    }
+    function archived-count() -> int {
+        return (root.arch0 ? 1 : 0) + (root.arch1 ? 1 : 0) + (root.arch2 ? 1 : 0) + (root.arch3 ? 1 : 0) + (root.arch4 ? 1 : 0) + (root.arch5 ? 1 : 0) + (root.arch6 ? 1 : 0) + (root.arch7 ? 1 : 0);
+    }
+    function trash-count() -> int {
+        return (root.del0 ? 1 : 0) + (root.del1 ? 1 : 0) + (root.del2 ? 1 : 0) + (root.del3 ? 1 : 0) + (root.del4 ? 1 : 0) + (root.del5 ? 1 : 0) + (root.del6 ? 1 : 0) + (root.del7 ? 1 : 0);
+    }
+    function filter-label() -> string {
+        return root.filter == 0 ? "Inbox" : (root.filter == 1 ? "Starred" : (root.filter == 2 ? "Archived" : "Trash"));
+    }
+    function row-visible(idx: int) -> bool {
+        if (root.filter == 0) {
+            return true;
+        }
+        if (root.filter == 1) {
+            return idx == 0 ? root.star0 : (idx == 1 ? root.star1 : (idx == 2 ? root.star2 : (idx == 3 ? root.star3 : (idx == 4 ? root.star4 : (idx == 5 ? root.star5 : (idx == 6 ? root.star6 : root.star7))))));
+        }
+        if (root.filter == 2) {
+            return idx == 0 ? root.arch0 : (idx == 1 ? root.arch1 : (idx == 2 ? root.arch2 : (idx == 3 ? root.arch3 : (idx == 4 ? root.arch4 : (idx == 5 ? root.arch5 : (idx == 6 ? root.arch6 : root.arch7))))));
+        }
+        return idx == 0 ? root.del0 : (idx == 1 ? root.del1 : (idx == 2 ? root.del2 : (idx == 3 ? root.del3 : (idx == 4 ? root.del4 : (idx == 5 ? root.del5 : (idx == 6 ? root.del6 : root.del7))))));
+    }
+    function set-status(m: string, ok: bool, bad: bool) {
+        root.status-msg = m;
+        root.status-success = ok;
+        root.status-danger = bad;
+    }
+    function toggle-sel(i: int) {
+        if (i == 0) {
+            root.sel0 = !root.sel0;
+        }
+        if (i == 1) {
+            root.sel1 = !root.sel1;
+        }
+        if (i == 2) {
+            root.sel2 = !root.sel2;
+        }
+        if (i == 3) {
+            root.sel3 = !root.sel3;
+        }
+        if (i == 4) {
+            root.sel4 = !root.sel4;
+        }
+        if (i == 5) {
+            root.sel5 = !root.sel5;
+        }
+        if (i == 6) {
+            root.sel6 = !root.sel6;
+        }
+        if (i == 7) {
+            root.sel7 = !root.sel7;
+        }
+    }
+    function clear-sel() {
+        root.sel0 = false;
+        root.sel1 = false;
+        root.sel2 = false;
+        root.sel3 = false;
+        root.sel4 = false;
+        root.sel5 = false;
+        root.sel6 = false;
+        root.sel7 = false;
+    }
+    function archive-selected() {
+        if (root.sel0) {
+            root.arch0 = !root.arch0;
+        }
+        if (root.sel1) {
+            root.arch1 = !root.arch1;
+        }
+        if (root.sel2) {
+            root.arch2 = !root.arch2;
+        }
+        if (root.sel3) {
+            root.arch3 = !root.arch3;
+        }
+        if (root.sel4) {
+            root.arch4 = !root.arch4;
+        }
+        if (root.sel5) {
+            root.arch5 = !root.arch5;
+        }
+        if (root.sel6) {
+            root.arch6 = !root.arch6;
+        }
+        if (root.sel7) {
+            root.arch7 = !root.arch7;
+        }
+        root.set-status("Archived selection", true, false);
+        root.clear-sel();
+        root.archive-pressed();
+    }
+    function star-selected() {
+        if (root.sel0) {
+            root.star0 = !root.star0;
+        }
+        if (root.sel1) {
+            root.star1 = !root.star1;
+        }
+        if (root.sel2) {
+            root.star2 = !root.star2;
+        }
+        if (root.sel3) {
+            root.star3 = !root.star3;
+        }
+        if (root.sel4) {
+            root.star4 = !root.star4;
+        }
+        if (root.sel5) {
+            root.star5 = !root.star5;
+        }
+        if (root.sel6) {
+            root.star6 = !root.star6;
+        }
+        if (root.sel7) {
+            root.star7 = !root.star7;
+        }
+        root.set-status("Starred selection", true, false);
+        root.star-pressed();
+    }
+    function delete-selected() {
+        if (root.sel0) {
+            root.del0 = true;
+        }
+        if (root.sel1) {
+            root.del1 = true;
+        }
+        if (root.sel2) {
+            root.del2 = true;
+        }
+        if (root.sel3) {
+            root.del3 = true;
+        }
+        if (root.sel4) {
+            root.del4 = true;
+        }
+        if (root.sel5) {
+            root.del5 = true;
+        }
+        if (root.sel6) {
+            root.del6 = true;
+        }
+        if (root.sel7) {
+            root.del7 = true;
+        }
+        root.set-status("Moved to trash", false, true);
+        root.clear-sel();
+        root.delete-pressed();
+    }
+    function select-all() {
+        if (root.selected-count() == 8) {
+            root.clear-sel();
+        } else {
+            root.sel0 = true;
+            root.sel1 = true;
+            root.sel2 = true;
+            root.sel3 = true;
+            root.sel4 = true;
+            root.sel5 = true;
+            root.sel6 = true;
+            root.sel7 = true;
+        }
+    }
+
     background: Theme.background;
 
     VerticalLayout {
         spacing: 0;
 
         AppBar {
-            title: root.selected-count + " selected";
+            title: root.selected-count() == 0 ? root.filter-label() : root.selected-count() + " selected";
             title-style: HeadingStyle.plex-medium;
-            leading-icon: @image-url("@mobile-components/icons/close.svg");
+            leading-icon: root.selected-count() > 0 ? @image-url("@mobile-components/icons/close.svg") : @image-url("@mobile-components/icons/arrow-left.svg");
             trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
-            leading-pressed => { root.close-pressed(); }
-            trailing-pressed => { root.overflow-pressed(); }
+            leading-pressed => {
+                if (root.selected-count() > 0) {
+                    root.clear-sel();
+                    root.set-status("Selection cleared", false, false);
+                } else {
+                    root.close-pressed();
+                }
+            }
+            trailing-pressed => {
+                root.sheet-open = true;
+            }
+        }
+
+        // Status banner.
+        if !root.status-msg.is-empty: Rectangle {
+            height: 28px;
+            background: root.status-success ? Theme.accent-success.with-alpha(0.16) : (root.status-danger ? Theme.accent-danger.with-alpha(0.16) : Theme.surface-2);
+            HorizontalLayout {
+                alignment: center;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.status-msg;
+                        color: root.status-success ? Theme.accent-success : (root.status-danger ? Theme.accent-danger : Theme.on-surface);
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                    }
+                }
+            }
+        }
+
+        // Filter chips + select all.
+        HorizontalLayout {
+            padding-left: Theme.spacing-md;
+            padding-right: Theme.spacing-md;
+            padding-top: Theme.spacing-sm;
+            padding-bottom: Theme.spacing-sm;
+            spacing: Theme.spacing-sm;
+            alignment: stretch;
+            Chip2 {
+                label: "Inbox (8)";
+                active: root.filter == 0;
+                clicked => {
+                    root.filter = 0;
+                }
+            }
+            Chip2 {
+                label: "Starred (" + root.starred-count() + ")";
+                active: root.filter == 1;
+                clicked => {
+                    root.filter = 1;
+                }
+            }
+            Chip2 {
+                label: "Archive (" + root.archived-count() + ")";
+                active: root.filter == 2;
+                clicked => {
+                    root.filter = 2;
+                }
+            }
+            Chip2 {
+                label: "Trash (" + root.trash-count() + ")";
+                active: root.filter == 3;
+                clicked => {
+                    root.filter = 3;
+                }
+            }
+            Rectangle {
+                horizontal-stretch: 1;
+            }
+            Rectangle {
+                horizontal-stretch: 0;
+                height: 28px;
+                border-radius: 14px;
+                background: Theme.surface-2;
+                HorizontalLayout {
+                    padding-left: Theme.spacing-sm;
+                    padding-right: Theme.spacing-sm;
+                    alignment: center;
+                    VerticalLayout {
+                        alignment: center;
+                        Text {
+                            text: root.selected-count() == 8 ? "Clear" : "All";
+                            color: Theme.on-surface;
+                            font-size: Theme.font-size-caption;
+                            font-weight: 700;
+                        }
+                    }
+                }
+                TouchArea {
+                    clicked => {
+                        root.select-all();
+                        root.set-status(root.selected-count() == 0 ? "Selection cleared" : "All selected", root.selected-count() > 0, false);
+                    }
+                }
+            }
         }
 
         ScrollView {
             vertical-stretch: 1;
 
             VerticalLayout {
-                padding-top: Theme.spacing-md;
                 padding-bottom: Theme.spacing-md;
-                spacing: Theme.spacing-md;
+                spacing: 0;
                 alignment: start;
 
                 FormSection {
-                    title: "INBOX";
+                    title: root.filter-label() + " · " + root.selected-count() + " selected";
 
-                    SettingRow {
-                        title: "Iteration 14 review notes";
-                        subtitle: "Atlas · 2 days ago";
-                        CheckSquare { checked: true; }
-                    }
-                    Divider { }
-                    SettingRow {
-                        title: "Q3 OKR proposal";
-                        subtitle: "Planning · 2 days ago";
-                        CheckSquare { checked: true; }
-                    }
-                    Divider { }
-                    SettingRow {
-                        title: "Field test report";
-                        subtitle: "Mobile · 3 days ago";
-                        CheckSquare { }
-                    }
-                    Divider { }
-                    SettingRow {
-                        title: "API redesign draft";
-                        subtitle: "Backend · 3 days ago";
-                        CheckSquare { checked: true; }
-                    }
-                    Divider { }
-                    SettingRow {
-                        title: "Calendar invite — Brussels offsite";
-                        subtitle: "Travel · 4 days ago";
-                        CheckSquare { }
-                    }
-                    Divider { }
-                    SettingRow {
-                        title: "Slint 2.0 launch checklist";
-                        subtitle: "Release · 5 days ago";
-                        CheckSquare { }
-                    }
-                    Divider { }
-                    SettingRow {
-                        title: "Tax document upload";
-                        subtitle: "Admin · 6 days ago";
-                        CheckSquare { }
-                    }
-                    Divider { }
-                    SettingRow {
-                        title: "Team retro notes";
-                        subtitle: "People · 7 days ago";
-                        CheckSquare { }
+                    for r[i] in [
+                        { title: "Iteration 14 review notes", sub: "Atlas · 2 days ago" },
+                        { title: "Q3 OKR proposal", sub: "Planning · 2 days ago" },
+                        { title: "Field test report", sub: "Mobile · 3 days ago" },
+                        { title: "API redesign draft", sub: "Backend · 3 days ago" },
+                        { title: "Calendar invite — Brussels offsite", sub: "Travel · 4 days ago" },
+                        { title: "Slint 2.0 launch checklist", sub: "Release · 5 days ago" },
+                        { title: "Tax document upload", sub: "Admin · 6 days ago" },
+                        { title: "Team retro notes", sub: "People · 7 days ago" },
+                    ]: VerticalLayout {
+                        spacing: 0;
+                        if root.row-visible(i): MsgRow {
+                            title: r.title;
+                            subtitle: r.sub;
+                            selected: i == 0 ? root.sel0 : (i == 1 ? root.sel1 : (i == 2 ? root.sel2 : (i == 3 ? root.sel3 : (i == 4 ? root.sel4 : (i == 5 ? root.sel5 : (i == 6 ? root.sel6 : root.sel7))))));
+                            starred: i == 0 ? root.star0 : (i == 1 ? root.star1 : (i == 2 ? root.star2 : (i == 3 ? root.star3 : (i == 4 ? root.star4 : (i == 5 ? root.star5 : (i == 6 ? root.star6 : root.star7))))));
+                            archived: i == 0 ? root.arch0 : (i == 1 ? root.arch1 : (i == 2 ? root.arch2 : (i == 3 ? root.arch3 : (i == 4 ? root.arch4 : (i == 5 ? root.arch5 : (i == 6 ? root.arch6 : root.arch7))))));
+                            deleted: i == 0 ? root.del0 : (i == 1 ? root.del1 : (i == 2 ? root.del2 : (i == 3 ? root.del3 : (i == 4 ? root.del4 : (i == 5 ? root.del5 : (i == 6 ? root.del6 : root.del7))))));
+                            row-clicked => {
+                                root.toggle-sel(i);
+                            }
+                        }
+                        if root.row-visible(i): Divider { }
                     }
                 }
             }
@@ -197,19 +571,143 @@ export component MultiSelectListPage inherits Window {
                 ActionCell {
                     label: "Archive";
                     icon: @image-url("@mobile-components/icons/menu.svg");
-                    tone: Tone.info;
-                    clicked => { root.archive-pressed(); }
+                    tone-i: 1;
+                    enabled: root.selected-count() > 0;
+                    clicked => {
+                        root.archive-selected();
+                    }
                 }
                 ActionCell {
                     label: "Star";
                     icon: @image-url("@mobile-components/icons/star.svg");
-                    clicked => { root.star-pressed(); }
+                    tone-i: 3;
+                    enabled: root.selected-count() > 0;
+                    clicked => {
+                        root.star-selected();
+                    }
                 }
                 ActionCell {
                     label: "Delete";
                     icon: @image-url("@mobile-components/icons/close.svg");
-                    tone: Tone.danger;
-                    clicked => { root.delete-pressed(); }
+                    tone-i: 4;
+                    enabled: root.selected-count() > 0;
+                    clicked => {
+                        root.delete-selected();
+                    }
+                }
+            }
+        }
+    }
+
+    // ===================== Bottom sheet =====================
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+                root.confirm-bulk = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: Theme.surface-2;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.muted;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: root.filter-label() + " menu";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 700;
+                    }
+                }
+                SheetRow {
+                    label: "Select all · 8";
+                    clicked => {
+                        root.sel0 = true;
+                        root.sel1 = true;
+                        root.sel2 = true;
+                        root.sel3 = true;
+                        root.sel4 = true;
+                        root.sel5 = true;
+                        root.sel6 = true;
+                        root.sel7 = true;
+                        root.set-status("All selected", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Restore all archived";
+                    clicked => {
+                        root.arch0 = false;
+                        root.arch1 = false;
+                        root.arch2 = false;
+                        root.arch3 = false;
+                        root.arch4 = false;
+                        root.arch5 = false;
+                        root.arch6 = false;
+                        root.arch7 = false;
+                        root.set-status("Archive cleared", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Restore all deleted";
+                    clicked => {
+                        root.del0 = false;
+                        root.del1 = false;
+                        root.del2 = false;
+                        root.del3 = false;
+                        root.del4 = false;
+                        root.del5 = false;
+                        root.del6 = false;
+                        root.del7 = false;
+                        root.set-status("Trash restored", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                Divider { }
+
+                SheetRow {
+                    label: root.confirm-bulk ? "Confirm: empty trash" : "Empty trash (" + root.trash-count() + ")";
+                    destructive: true;
+                    clicked => {
+                        if (root.confirm-bulk) {
+                            root.set-status("Trash emptied", false, true);
+                            root.sheet-open = false;
+                            root.confirm-bulk = false;
+                        } else {
+                            root.confirm-bulk = true;
+                        }
+                    }
+                }
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.sheet-open = false;
+                        root.confirm-bulk = false;
+                    }
                 }
             }
         }

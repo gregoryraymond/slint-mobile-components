@@ -1,17 +1,5 @@
 // PollResultsPage
 // =====================================================================
-//
-// Voting poll results — the screen you land on after voting in a
-// community / Slack / Loomio / X-style poll. Demonstrates:
-//
-//   - The poll question as a big headline + author + closing-in meta.
-//   - Option rows where each option is a horizontal bar whose fill is
-//     the percentage of votes. The leading edge of the bar carries the
-//     option label + (your vote) chip if applicable, the trailing edge
-//     shows the percentage and raw count. Tone tints (warning for
-//     leader, default for others) make the leading option pop.
-//   - A small "summary" footer below the options: total votes + a CTA
-//     to share the poll.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
@@ -19,19 +7,16 @@ import { SectionHeader } from "@mobile-components/section-header.slint";
 import { Divider } from "@mobile-components/divider.slint";
 import { MobileButton, TextButton } from "@mobile-components/button.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
+import { ScrollView } from "std-widgets.slint";
 
-// One option row.
-//
-// The bar fill is a Rectangle anchored to the left with `width =
-// parent.width * pct`. The option label is layered ON TOP of the bar
-// (left-aligned). This means the label always sits at the left edge of
-// the row regardless of the fill ratio.
 component PollOption inherits Rectangle {
     in property <string> label;
     in property <int> votes: 0;
-    in property <float> percent: 0.0;
+    in property <int> percent: 0;
     in property <bool> your-vote: false;
-    in property <Tone> tone: Tone.default;
+    in property <bool> leader: false;
+    in property <int> tone-i: 0; // 0 default 1 info 2 success 3 warning 4 danger
+    callback clicked();
 
     horizontal-stretch: 1;
     height: 56px;
@@ -44,20 +29,18 @@ component PollOption inherits Rectangle {
         background: Theme.surface-1;
         border-radius: Theme.radius-md;
         clip: true;
+        border-width: root.your-vote ? 2px : 0px;
+        border-color: Theme.on-primary;
 
         // Filled portion behind the text.
         Rectangle {
             x: 0;
             y: 0;
-            width: parent.width * root.percent;
+            width: parent.width * root.percent / 100;
             height: parent.height;
-            background:
-                  root.tone == Tone.warning ? Theme.accent-warning
-                : root.tone == Tone.success ? Theme.accent-success
-                : root.tone == Tone.danger  ? Theme.accent-danger
-                : root.tone == Tone.info    ? Theme.accent-info
-                : Theme.primary;
+            background: root.tone-i == 1 ? Theme.accent-info : (root.tone-i == 2 ? Theme.accent-success : (root.tone-i == 3 ? Theme.accent-warning : (root.tone-i == 4 ? Theme.accent-danger : Theme.primary)));
             opacity: 0.85;
+            animate width { duration: Theme.motion-fast; }
         }
 
         HorizontalLayout {
@@ -78,22 +61,46 @@ component PollOption inherits Rectangle {
                         font-size: Theme.font-size-body;
                         font-weight: 700;
                         vertical-alignment: center;
+                        overflow: elide;
                     }
-                    if root.your-vote: Rectangle {
-                        width: yv-text.preferred-width + 12px;
+                    if root.leader: Rectangle {
+                        horizontal-stretch: 0;
                         height: 18px;
                         border-radius: 4px;
-                        background: #ffffff44;
-                        yv-text := Text {
-                            text: "YOUR VOTE";
-                            color: Theme.on-primary;
-                            font-size: 9px;
-                            font-weight: 700;
-                            letter-spacing: 0.5px;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
-                            width: parent.width;
-                            height: parent.height;
+                        background: Theme.accent-warning;
+                        HorizontalLayout {
+                            padding-left: 6px;
+                            padding-right: 6px;
+                            VerticalLayout {
+                                alignment: center;
+                                Text {
+                                    text: "LEAD";
+                                    color: Theme.on-primary;
+                                    font-size: 9px;
+                                    font-weight: 800;
+                                    letter-spacing: 0.5px;
+                                }
+                            }
+                        }
+                    }
+                    if root.your-vote: Rectangle {
+                        horizontal-stretch: 0;
+                        height: 18px;
+                        border-radius: 4px;
+                        background: #ffffff55;
+                        HorizontalLayout {
+                            padding-left: 6px;
+                            padding-right: 6px;
+                            VerticalLayout {
+                                alignment: center;
+                                Text {
+                                    text: "YOUR VOTE";
+                                    color: Theme.on-primary;
+                                    font-size: 9px;
+                                    font-weight: 800;
+                                    letter-spacing: 0.5px;
+                                }
+                            }
                         }
                     }
                 }
@@ -102,7 +109,7 @@ component PollOption inherits Rectangle {
                 alignment: center;
                 spacing: 2px;
                 Text {
-                    text: (100 * root.percent) + "%";
+                    text: root.percent + "%";
                     color: Theme.on-primary;
                     font-size: Theme.font-size-body;
                     font-weight: 700;
@@ -118,18 +125,211 @@ component PollOption inherits Rectangle {
             }
         }
     }
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component CommentRow inherits Rectangle {
+    in property <string> who;
+    in property <string> body;
+    in property <int> likes;
+    in property <bool> liked: false;
+    callback like-clicked();
+
+    horizontal-stretch: 1;
+    min-height: 64px;
+
+    HorizontalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+        VerticalLayout {
+            alignment: start;
+            Rectangle {
+                width: 32px;
+                height: 32px;
+                border-radius: 16px;
+                background: Theme.surface-3;
+                Text {
+                    text: root.who;
+                    color: Theme.on-surface;
+                    font-size: 11px;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: "@" + root.who;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+                font-weight: 700;
+            }
+            Text {
+                text: root.body;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-caption;
+                wrap: word-wrap;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            Rectangle {
+                width: 28px;
+                height: 28px;
+                Image {
+                    width: 18px;
+                    height: 18px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: @image-url("@mobile-components/icons/heart.svg");
+                    colorize: root.liked ? Theme.accent-danger : Theme.muted;
+                    image-fit: contain;
+                }
+                TouchArea {
+                    clicked => {
+                        root.like-clicked();
+                    }
+                }
+            }
+            Text {
+                text: "" + root.likes;
+                color: Theme.muted;
+                font-size: 11px;
+                horizontal-alignment: center;
+            }
+        }
+    }
+}
+
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.destructive ? Theme.accent-danger : Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+        }
+    }
 }
 
 export component PollResultsPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
-    in property <string> question:
-        "Which iteration should we ship the Tone enum migration in?";
+    in property <string> question: "Which iteration should we ship the Tone enum migration in?";
     in property <string> author: "Posted by Anika · 2 days ago";
-    in property <string> closes-in: "Closes in 14 hours · 218 votes";
+
+    in-out property <int> vote-idx: 0; // -1 none, 0..3
+    in-out property <int> o0: 96;
+    in-out property <int> o1: 68;
+    in-out property <int> o2: 38;
+    in-out property <int> o3: 16;
+    in-out property <int> closes-secs: 50400; // 14h
+    in-out property <bool> watching: false;
+    in-out property <int> share-mode: 0; // 0 share 1 copied 2 messaged 3 emailed
+    in-out property <int> total-comments: 12;
+    in-out property <bool> c1-liked: false;
+    in-out property <bool> c2-liked: false;
+    in-out property <bool> c3-liked: false;
+    in-out property <bool> c4-liked: false;
+    in-out property <int> c1-likes: 8;
+    in-out property <int> c2-likes: 3;
+    in-out property <int> c3-likes: 14;
+    in-out property <int> c4-likes: 2;
+    in-out property <bool> comments-open: false;
+    in-out property <bool> sheet-open: false;
+    in-out property <bool> confirm-hide: false;
+    in-out property <string> status-msg: "";
+    in-out property <bool> status-success: false;
+    in-out property <bool> status-danger: false;
+
     callback back-pressed();
     callback share-pressed();
     callback comment-pressed();
+
+    function total-votes() -> int {
+        return root.o0 + root.o1 + root.o2 + root.o3;
+    }
+    function pct(v: int) -> int {
+        return floor(v * 100 / root.total-votes());
+    }
+    function leader-idx() -> int {
+        return root.o0 >= root.o1 && root.o0 >= root.o2 && root.o0 >= root.o3 ? 0 : (root.o1 >= root.o2 && root.o1 >= root.o3 ? 1 : (root.o2 >= root.o3 ? 2 : 3));
+    }
+    function closes-text() -> string {
+        return "Closes in " + floor(root.closes-secs / 3600) + "h · " + root.total-votes() + " votes";
+    }
+    function share-label() -> string {
+        return root.share-mode == 0 ? "Share" : (root.share-mode == 1 ? "Copied" : (root.share-mode == 2 ? "Sent" : "Emailed"));
+    }
+    function set-status(m: string, ok: bool, bad: bool) {
+        root.status-msg = m;
+        root.status-success = ok;
+        root.status-danger = bad;
+    }
+    function cast-vote(i: int) {
+        // Subtract old.
+        if (root.vote-idx == 0) {
+            root.o0 = root.o0 - 1;
+        } else if (root.vote-idx == 1) {
+            root.o1 = root.o1 - 1;
+        } else if (root.vote-idx == 2) {
+            root.o2 = root.o2 - 1;
+        } else if (root.vote-idx == 3) {
+            root.o3 = root.o3 - 1;
+        }
+        if (root.vote-idx == i) {
+            // Tapping current vote = withdraw.
+            root.vote-idx = -1;
+            root.set-status("Vote withdrawn", false, true);
+        } else {
+            root.vote-idx = i;
+            if (i == 0) {
+                root.o0 = root.o0 + 1;
+            }
+            if (i == 1) {
+                root.o1 = root.o1 + 1;
+            }
+            if (i == 2) {
+                root.o2 = root.o2 + 1;
+            }
+            if (i == 3) {
+                root.o3 = root.o3 + 1;
+            }
+            root.set-status("Vote moved to option " + (i + 1), true, false);
+        }
+    }
 
     background: Theme.background;
 
@@ -140,104 +340,480 @@ export component PollResultsPage inherits Window {
             title: "Poll";
             title-style: HeadingStyle.serif-light;
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
-            trailing-icon: @image-url("@mobile-components/icons/send.svg");
-            leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.share-pressed(); }
+            trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
+            leading-pressed => {
+                root.back-pressed();
+            }
+            trailing-pressed => {
+                root.sheet-open = true;
+            }
         }
 
-        VerticalLayout {
-            padding: Theme.spacing-md;
-            spacing: Theme.spacing-md;
-            alignment: start;
-
-            // Question + author. Editorial Fraunces gives the poll a
-            // long-form / op-ed feel that matches the serif-light AppBar.
-            Heading {
-                text: root.question;
-                style: HeadingStyle.serif-display;
-                color: Theme.on-background;
-                wrap: word-wrap;
-            }
+        // Status banner.
+        if !root.status-msg.is-empty: Rectangle {
+            height: 28px;
+            background: root.status-success ? Theme.accent-success.with-alpha(0.16) : (root.status-danger ? Theme.accent-danger.with-alpha(0.16) : Theme.surface-2);
             HorizontalLayout {
-                spacing: Theme.spacing-sm;
-                Text {
-                    text: root.author;
-                    color: Theme.muted;
-                    font-size: Theme.font-size-caption;
-                    horizontal-stretch: 1;
-                }
-                Text {
-                    text: root.closes-in;
-                    color: Theme.accent-warning;
-                    font-size: Theme.font-size-caption;
-                    font-weight: 600;
-                    horizontal-alignment: right;
-                }
-            }
-
-            // ----- Options -----
-            VerticalLayout {
-                spacing: Theme.spacing-sm;
-                padding-top: Theme.spacing-sm;
-
-                PollOption {
-                    label: "Ship now — iteration 17 is the right gate";
-                    votes: 96;
-                    percent: 0.44;
-                    your-vote: true;
-                    tone: Tone.warning;
-                }
-                PollOption {
-                    label: "Wait one iteration, add tests";
-                    votes: 68;
-                    percent: 0.31;
-                    tone: Tone.default;
-                }
-                PollOption {
-                    label: "Ship behind a feature flag";
-                    votes: 38;
-                    percent: 0.17;
-                    tone: Tone.info;
-                }
-                PollOption {
-                    label: "Roll back the refactor — too risky";
-                    votes: 16;
-                    percent: 0.08;
-                    tone: Tone.danger;
-                }
-            }
-
-            Divider { }
-
-            // ----- Summary + CTAs -----
-            HorizontalLayout {
-                spacing: Theme.spacing-md;
-                alignment: stretch;
+                alignment: center;
                 VerticalLayout {
-                    horizontal-stretch: 1;
-                    spacing: 2px;
+                    alignment: center;
                     Text {
-                        text: "218 votes";
-                        color: Theme.on-surface;
-                        font-size: Theme.font-size-body;
+                        text: root.status-msg;
+                        color: root.status-success ? Theme.accent-success : (root.status-danger ? Theme.accent-danger : Theme.on-surface);
+                        font-size: Theme.font-size-caption;
                         font-weight: 700;
                     }
-                    Text {
-                        text: "12 comments";
-                        color: Theme.muted;
-                        font-size: Theme.font-size-caption;
-                    }
-                }
-                MobileButton {
-                    text: "Comment";
-                    primary: false;
-                    horizontal-stretch: 0;
-                    min-width: 120px;
-                    clicked => { root.comment-pressed(); }
                 }
             }
         }
 
-        Rectangle { vertical-stretch: 1; }
+        ScrollView {
+            vertical-stretch: 1;
+            VerticalLayout {
+                padding: Theme.spacing-md;
+                spacing: Theme.spacing-md;
+                alignment: start;
+
+                Heading {
+                    text: root.question;
+                    style: HeadingStyle.serif-display;
+                    color: Theme.on-background;
+                    wrap: word-wrap;
+                }
+                HorizontalLayout {
+                    spacing: Theme.spacing-sm;
+                    Text {
+                        text: root.author;
+                        color: Theme.muted;
+                        font-size: Theme.font-size-caption;
+                        horizontal-stretch: 1;
+                    }
+                    Text {
+                        text: root.closes-text();
+                        color: Theme.accent-warning;
+                        font-size: Theme.font-size-caption;
+                        font-weight: 600;
+                        horizontal-alignment: right;
+                    }
+                }
+
+                // ----- Options -----
+                VerticalLayout {
+                    spacing: Theme.spacing-sm;
+                    padding-top: Theme.spacing-sm;
+
+                    PollOption {
+                        label: "Ship now — iteration 17 is the right gate";
+                        votes: root.o0;
+                        percent: root.pct(root.o0);
+                        your-vote: root.vote-idx == 0;
+                        leader: root.leader-idx() == 0;
+                        tone-i: 3;
+                        clicked => {
+                            root.cast-vote(0);
+                        }
+                    }
+                    PollOption {
+                        label: "Wait one iteration, add tests";
+                        votes: root.o1;
+                        percent: root.pct(root.o1);
+                        your-vote: root.vote-idx == 1;
+                        leader: root.leader-idx() == 1;
+                        tone-i: 0;
+                        clicked => {
+                            root.cast-vote(1);
+                        }
+                    }
+                    PollOption {
+                        label: "Ship behind a feature flag";
+                        votes: root.o2;
+                        percent: root.pct(root.o2);
+                        your-vote: root.vote-idx == 2;
+                        leader: root.leader-idx() == 2;
+                        tone-i: 1;
+                        clicked => {
+                            root.cast-vote(2);
+                        }
+                    }
+                    PollOption {
+                        label: "Roll back the refactor — too risky";
+                        votes: root.o3;
+                        percent: root.pct(root.o3);
+                        your-vote: root.vote-idx == 3;
+                        leader: root.leader-idx() == 3;
+                        tone-i: 4;
+                        clicked => {
+                            root.cast-vote(3);
+                        }
+                    }
+                }
+
+                Divider { }
+
+                // ----- Quick action chips -----
+                HorizontalLayout {
+                    spacing: Theme.spacing-sm;
+                    alignment: start;
+                    Rectangle {
+                        horizontal-stretch: 0;
+                        height: 32px;
+                        border-radius: 16px;
+                        background: root.watching ? Theme.accent-info.with-alpha(0.22) : Theme.surface-2;
+                        HorizontalLayout {
+                            padding-left: Theme.spacing-sm;
+                            padding-right: Theme.spacing-sm;
+                            alignment: center;
+                            VerticalLayout {
+                                alignment: center;
+                                Text {
+                                    text: root.watching ? "🔔 Watching" : "🔕 Watch";
+                                    color: root.watching ? Theme.accent-info : Theme.on-surface;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 700;
+                                }
+                            }
+                        }
+                        TouchArea {
+                            clicked => {
+                                root.watching = !root.watching;
+                                root.set-status(root.watching ? "Watching for close" : "Notifications off", root.watching, !root.watching);
+                            }
+                        }
+                    }
+                    Rectangle {
+                        horizontal-stretch: 0;
+                        height: 32px;
+                        border-radius: 16px;
+                        background: root.share-mode != 0 ? Theme.accent-info.with-alpha(0.22) : Theme.surface-2;
+                        HorizontalLayout {
+                            padding-left: Theme.spacing-sm;
+                            padding-right: Theme.spacing-sm;
+                            alignment: center;
+                            VerticalLayout {
+                                alignment: center;
+                                Text {
+                                    text: root.share-label();
+                                    color: root.share-mode != 0 ? Theme.accent-info : Theme.on-surface;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 700;
+                                }
+                            }
+                        }
+                        TouchArea {
+                            clicked => {
+                                root.share-mode = mod(root.share-mode + 1, 4);
+                                root.set-status(root.share-label(), root.share-mode != 0, false);
+                                root.share-pressed();
+                            }
+                        }
+                    }
+                    Rectangle {
+                        horizontal-stretch: 0;
+                        height: 32px;
+                        border-radius: 16px;
+                        background: Theme.surface-2;
+                        HorizontalLayout {
+                            padding-left: Theme.spacing-sm;
+                            padding-right: Theme.spacing-sm;
+                            alignment: center;
+                            VerticalLayout {
+                                alignment: center;
+                                Text {
+                                    text: "Reset votes";
+                                    color: Theme.accent-warning;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 700;
+                                }
+                            }
+                        }
+                        TouchArea {
+                            clicked => {
+                                root.o0 = 96;
+                                root.o1 = 68;
+                                root.o2 = 38;
+                                root.o3 = 16;
+                                root.vote-idx = -1;
+                                root.set-status("Votes reset", false, true);
+                            }
+                        }
+                    }
+                }
+
+                Divider { }
+
+                // ----- Summary + CTA -----
+                HorizontalLayout {
+                    spacing: Theme.spacing-md;
+                    alignment: stretch;
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        spacing: 2px;
+                        Text {
+                            text: root.total-votes() + " votes";
+                            color: Theme.on-surface;
+                            font-size: Theme.font-size-body;
+                            font-weight: 700;
+                        }
+                        Text {
+                            text: root.total-comments + " comments";
+                            color: Theme.muted;
+                            font-size: Theme.font-size-caption;
+                        }
+                    }
+                    MobileButton {
+                        text: "Comment";
+                        primary: false;
+                        horizontal-stretch: 0;
+                        min-width: 120px;
+                        clicked => {
+                            root.comments-open = true;
+                            root.comment-pressed();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ===================== Comments sheet =====================
+    if root.comments-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.comments-open = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            height: 480px;
+            background: Theme.background;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                spacing: 0;
+                Rectangle {
+                    height: 48px;
+                    background: Theme.surface-2;
+                    VerticalLayout {
+                        alignment: center;
+                        HorizontalLayout {
+                            alignment: center;
+                            Rectangle {
+                                width: 36px;
+                                height: 4px;
+                                border-radius: 2px;
+                                background: Theme.muted;
+                            }
+                        }
+                        Text {
+                            text: "Comments · " + root.total-comments;
+                            color: Theme.on-surface;
+                            font-size: Theme.font-size-body;
+                            font-weight: 700;
+                            horizontal-alignment: center;
+                        }
+                    }
+                }
+                ScrollView {
+                    vertical-stretch: 1;
+                    VerticalLayout {
+                        spacing: 0;
+                        CommentRow {
+                            who: "AL";
+                            body: "Iteration 17 is way too aggressive — devs need a feature flag.";
+                            likes: root.c1-likes;
+                            liked: root.c1-liked;
+                            like-clicked => {
+                                root.c1-liked = !root.c1-liked;
+                                root.c1-likes = root.c1-liked ? root.c1-likes + 1 : root.c1-likes - 1;
+                            }
+                        }
+                        Divider { }
+
+                        CommentRow {
+                            who: "GR";
+                            body: "Tests cover this — I think we can ship. The Tone enum migration is the smaller half of this PR.";
+                            likes: root.c2-likes;
+                            liked: root.c2-liked;
+                            like-clicked => {
+                                root.c2-liked = !root.c2-liked;
+                                root.c2-likes = root.c2-liked ? root.c2-likes + 1 : root.c2-likes - 1;
+                            }
+                        }
+                        Divider { }
+
+                        CommentRow {
+                            who: "PL";
+                            body: "Ship behind a flag, ramp 1% → 10% → 100% over a week. Standard.";
+                            likes: root.c3-likes;
+                            liked: root.c3-liked;
+                            like-clicked => {
+                                root.c3-liked = !root.c3-liked;
+                                root.c3-likes = root.c3-liked ? root.c3-likes + 1 : root.c3-likes - 1;
+                            }
+                        }
+                        Divider { }
+
+                        CommentRow {
+                            who: "DS";
+                            body: "Rolling back means we lose 3 weeks of momentum. Not great.";
+                            likes: root.c4-likes;
+                            liked: root.c4-liked;
+                            like-clicked => {
+                                root.c4-liked = !root.c4-liked;
+                                root.c4-likes = root.c4-liked ? root.c4-likes + 1 : root.c4-likes - 1;
+                            }
+                        }
+                        Rectangle {
+                            height: Theme.spacing-xl;
+                        }
+                    }
+                }
+                Rectangle {
+                    height: 56px;
+                    background: Theme.surface-2;
+                    HorizontalLayout {
+                        padding: Theme.spacing-sm;
+                        spacing: Theme.spacing-sm;
+                        Rectangle {
+                            horizontal-stretch: 1;
+                            background: Theme.surface-1;
+                            border-radius: 16px;
+                            VerticalLayout {
+                                alignment: center;
+                                padding-left: Theme.spacing-md;
+                                Text {
+                                    text: "Write a comment…";
+                                    color: Theme.muted;
+                                    font-size: Theme.font-size-body;
+                                }
+                            }
+                        }
+                        Rectangle {
+                            horizontal-stretch: 0;
+                            width: 88px;
+                            border-radius: 16px;
+                            background: Theme.primary;
+                            HorizontalLayout {
+                                alignment: center;
+                                VerticalLayout {
+                                    alignment: center;
+                                    Text {
+                                        text: "Send";
+                                        color: Theme.on-primary;
+                                        font-size: Theme.font-size-body;
+                                        font-weight: 700;
+                                    }
+                                }
+                            }
+                            TouchArea {
+                                clicked => {
+                                    root.total-comments = root.total-comments + 1;
+                                    root.set-status("Comment posted", true, false);
+                                    root.comments-open = false;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ===================== Bottom sheet =====================
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+                root.confirm-hide = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: Theme.surface-2;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.muted;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: "Poll actions";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 700;
+                    }
+                }
+                SheetRow {
+                    label: root.watching ? "Stop watching" : "Watch for results";
+                    clicked => {
+                        root.watching = !root.watching;
+                        root.set-status(root.watching ? "Watching" : "Not watching", root.watching, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Cycle share (" + root.share-label() + ")";
+                    clicked => {
+                        root.share-mode = mod(root.share-mode + 1, 4);
+                        root.set-status(root.share-label(), root.share-mode != 0, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "View " + root.total-comments + " comments";
+                    clicked => {
+                        root.comments-open = true;
+                        root.sheet-open = false;
+                    }
+                }
+                Divider { }
+
+                SheetRow {
+                    label: root.confirm-hide ? "Confirm: hide poll" : "Hide poll";
+                    destructive: true;
+                    clicked => {
+                        if (root.confirm-hide) {
+                            root.set-status("Poll hidden", false, true);
+                            root.sheet-open = false;
+                            root.confirm-hide = false;
+                        } else {
+                            root.confirm-hide = true;
+                        }
+                    }
+                }
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.sheet-open = false;
+                        root.confirm-hide = false;
+                    }
+                }
+            }
+        }
     }
 }

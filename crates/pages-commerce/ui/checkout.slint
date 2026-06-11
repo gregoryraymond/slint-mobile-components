@@ -31,11 +31,12 @@ import { Theme } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
 import { BottomBar } from "@mobile-components/bottom-bar.slint";
-import { MobileButton } from "@mobile-components/button.slint";
+import { MobileButton, TextButton } from "@mobile-components/button.slint";
 import { Card } from "@mobile-components/card.slint";
 import { Divider } from "@mobile-components/divider.slint";
 import { ListItem } from "@mobile-components/list-item.slint";
 import { SectionHeader } from "@mobile-components/section-header.slint";
+import { TextField } from "@mobile-components/text-field.slint";
 import { ScrollView } from "std-widgets.slint";
 
 export struct OrderLineItem {
@@ -142,17 +143,234 @@ export component CheckoutPage inherits Window {
         { name: "Source access pack",      detail: "+ private fork",  qty: 1, price: "$49.00"  },
         { name: "Annual support",          detail: "Up to 5 seats",   qty: 1, price: "$99.00"  },
     ];
-    in property <string> ship-name: "Petra Lindquist";
-    in property <string> ship-address: "Vasagatan 12, 113 20 Stockholm";
-    in property <string> payment-card: "Visa · ending 4242";
-    in property <string> subtotal: "$347.00";
-    in property <string> shipping-cost: "$8.00";
-    in property <string> tax: "$28.40";
-    in property <string> total: "$383.40";
     callback back-pressed();
     callback edit-shipping-pressed();
     callback change-payment-pressed();
     callback place-order-pressed();
+    callback order-placed(string /* order-number */);
+
+    // ----- Subtotal is fixed by the items property; the rest of the
+    //       money is computed in cents and formatted on the fly so
+    //       the visitor sees real numbers change when they pick a
+    //       different shipping speed or apply a gift card. -----
+    private property <int> subtotal-cents: 34700; // matches the items above
+
+    // ----- Address picker -----
+    private property <int> shipping-index: 0;
+    private property <bool> shipping-expanded: false;
+    private property <[string]> shipping-names: [
+        "Petra Lindquist",
+        "Sam Whittaker",
+        "Maria Lopez",
+        "Yui Tanaka",
+    ];
+    private property <[string]> shipping-addresses: [
+        "Vasagatan 12, 113 20 Stockholm",
+        "84 High Street, Bristol BS1 4PB",
+        "Calle Velazquez 23, 28001 Madrid",
+        "1-2-3 Shibuya, Shibuya City, Tokyo",
+    ];
+
+    // ----- Payment picker -----
+    private property <int> payment-index: 0;
+    private property <bool> payment-expanded: false;
+    private property <[string]> payment-methods: [
+        "Visa · ending 4242",
+        "Mastercard · ending 5151",
+        "Apple Pay · iPhone 16",
+        "PayPal · petra@example.com",
+    ];
+
+    // ----- Delivery speed (0 = Standard free, 1 = Tomorrow +$5, 2 = Today +$15) -----
+    private property <int> delivery-speed: 0;
+
+    // ----- Gift card -----
+    in-out property <string> gift-input: "";
+    private property <string> applied-gift: "";
+    private property <int> applied-gift-cents: 0;
+
+    // ----- Notes for the seller -----
+    in-out property <string> notes-input: "";
+    private property <bool> notes-expanded: false;
+
+    // ----- Checkout state machine -----
+    // 0 = editing, 1 = processing, 2 = placed
+    private property <int> checkout-state: 0;
+    private property <string> order-number: "C-9182-44210";
+
+    // ----- Status banner -----
+    private property <string> status-msg: "Pick shipping, payment, and delivery -- totals update live";
+    private property <bool> status-is-success: false;
+    private property <bool> status-is-danger: false;
+
+    // ----- Helpers -----
+    function shipping-cents() -> int {
+        if (root.delivery-speed == 1) {
+            return 500;
+        }
+        if (root.delivery-speed == 2) {
+            return 1500;
+        }
+        return 0;
+    }
+    function tax-cents() -> int {
+        return root.subtotal-cents * 8 / 100;
+    }
+    function gift-cents() -> int {
+        return root.applied-gift-cents;
+    }
+    function total-cents() -> int {
+        return max(0,
+            root.subtotal-cents
+                + root.shipping-cents()
+                + root.tax-cents()
+                - root.gift-cents());
+    }
+    function format-cents(c: int) -> string {
+        return "$" + (c / 100)
+            + "."
+            + (mod(c, 100) < 10 ? "0" : "")
+            + mod(c, 100);
+    }
+    function delivery-label(s: int) -> string {
+        return s == 0 ? "Standard (3-5 days, free)"
+            : s == 1 ? "Tomorrow (+$5.00)"
+            : "Today (+$15.00)";
+    }
+    function checkout-progress() -> int {
+        // Loose checklist for the inline progress bar above the
+        // place-order button.
+        return (root.shipping-index >= 0 ? 1 : 0)
+            + (root.payment-index >= 0 ? 1 : 0)
+            + 1; // items always present
+    }
+
+    // ----- Handlers -----
+    function toggle-shipping() {
+        root.shipping-expanded = !root.shipping-expanded;
+        if (root.shipping-expanded) {
+            root.payment-expanded = false;
+            root.status-msg = "Pick a saved address";
+            root.status-is-success = false;
+            root.status-is-danger = false;
+        }
+        root.edit-shipping-pressed();
+    }
+    function pick-address(i: int) {
+        root.shipping-index = i;
+        root.shipping-expanded = false;
+        root.status-msg = "Shipping to " + root.shipping-names[i];
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    function add-new-address() {
+        // Stub: in a real app this would route to a form. Here we
+        // surface the action in the banner.
+        root.shipping-expanded = false;
+        root.status-msg = "Add-new-address sheet (host implements)";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    function toggle-payment() {
+        root.payment-expanded = !root.payment-expanded;
+        if (root.payment-expanded) {
+            root.shipping-expanded = false;
+            root.status-msg = "Pick a payment method";
+            root.status-is-success = false;
+            root.status-is-danger = false;
+        }
+        root.change-payment-pressed();
+    }
+    function pick-payment(i: int) {
+        root.payment-index = i;
+        root.payment-expanded = false;
+        root.status-msg = "Paying with " + root.payment-methods[i];
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    function add-new-payment() {
+        root.payment-expanded = false;
+        root.status-msg = "Add-new-card sheet (host implements)";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    function set-delivery(d: int) {
+        root.delivery-speed = d;
+        root.status-msg = "Delivery: " + root.delivery-label(d);
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    function apply-gift() {
+        if (root.gift-input == "GIFT50") {
+            root.applied-gift = "GIFT50";
+            root.applied-gift-cents = 5000;
+            root.status-msg = "Gift card GIFT50 applied (-$50.00)";
+            root.status-is-success = true;
+            root.status-is-danger = false;
+        } else if (root.gift-input == "GIFT100") {
+            root.applied-gift = "GIFT100";
+            root.applied-gift-cents = 10000;
+            root.status-msg = "Gift card GIFT100 applied (-$100.00)";
+            root.status-is-success = true;
+            root.status-is-danger = false;
+        } else {
+            root.applied-gift = "";
+            root.applied-gift-cents = 0;
+            root.status-msg = "Gift card " + root.gift-input + " not recognised";
+            root.status-is-success = false;
+            root.status-is-danger = true;
+        }
+    }
+    function clear-gift() {
+        root.applied-gift = "";
+        root.applied-gift-cents = 0;
+        root.gift-input = "";
+        root.status-msg = "Gift card cleared";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    function toggle-notes() {
+        root.notes-expanded = !root.notes-expanded;
+    }
+    // Brief "processing" beat so the visitor sees something happen
+    // before the success card swaps in.
+    Timer {
+        interval: 700ms;
+        running: root.checkout-state == 1;
+        triggered => {
+            root.checkout-state = 2;
+            root.status-msg = "Order placed -- confirmation #" + root.order-number;
+            root.status-is-success = true;
+            root.status-is-danger = false;
+            root.order-placed(root.order-number);
+        }
+    }
+    function press-place-order() {
+        root.place-order-pressed();
+        if (root.checkout-state != 0) {
+            return;
+        }
+        root.checkout-state = 1;
+        root.status-msg = "Processing your order...";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    function press-reset() {
+        root.checkout-state = 0;
+        root.shipping-index = 0;
+        root.shipping-expanded = false;
+        root.payment-index = 0;
+        root.payment-expanded = false;
+        root.delivery-speed = 0;
+        root.applied-gift = "";
+        root.applied-gift-cents = 0;
+        root.gift-input = "";
+        root.notes-input = "";
+        root.notes-expanded = false;
+        root.status-msg = "Ready -- pick shipping, payment, and delivery";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
 
     background: Theme.background;
 
@@ -160,13 +378,93 @@ export component CheckoutPage inherits Window {
         spacing: 0;
 
         AppBar {
-            title: "CHECKOUT";
+            title: root.checkout-state == 2 ? "ORDER PLACED" : "CHECKOUT";
             title-style: HeadingStyle.uppercase-spaced;
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             leading-pressed => { root.back-pressed(); }
         }
 
-        ScrollView {
+        // ----- Status banner -----
+        Rectangle {
+            background: root.status-is-danger ? Theme.accent-danger
+                : root.status-is-success ? Theme.accent-success
+                : Theme.surface-2;
+            height: 32px;
+            animate background { duration: Theme.motion-fast; }
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                Text {
+                    text: root.status-msg;
+                    color: (root.status-is-danger || root.status-is-success)
+                        ? Theme.on-primary
+                        : Theme.on-surface;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+            }
+        }
+
+        // ----- Success state -----
+        if root.checkout-state == 2: VerticalLayout {
+            vertical-stretch: 1;
+            padding: Theme.spacing-lg;
+            spacing: Theme.spacing-md;
+            alignment: center;
+
+            HorizontalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 96px;
+                    height: 96px;
+                    border-radius: self.width / 2;
+                    background: @linear-gradient(135deg, Theme.accent-success 0%, #1a8a4a 100%);
+                    Text {
+                        text: "✓";
+                        color: Theme.on-primary;
+                        font-size: 48px;
+                        font-weight: 800;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        x: 0;
+                        y: 0;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                }
+            }
+            Heading {
+                text: "Thanks, " + root.shipping-names[root.shipping-index];
+                style: HeadingStyle.serif-display;
+                color: Theme.on-background;
+                horizontal-alignment: center;
+            }
+            Text {
+                text: "Confirmation #" + root.order-number + "\n" + root.format-cents(root.total-cents()) + " charged to " + root.payment-methods[root.payment-index] + ".";
+                color: Theme.muted;
+                font-size: Theme.font-size-body;
+                horizontal-alignment: center;
+                wrap: word-wrap;
+            }
+            Text {
+                text: "Shipping to " + root.shipping-names[root.shipping-index] + " by " + root.delivery-label(root.delivery-speed);
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+                horizontal-alignment: center;
+                wrap: word-wrap;
+            }
+            MobileButton {
+                text: "Start a new order";
+                primary: true;
+                clicked => { root.press-reset(); }
+            }
+        }
+
+        // ----- Editing state (default) -----
+        if root.checkout-state != 2: ScrollView {
             vertical-stretch: 1;
 
             VerticalLayout {
@@ -175,7 +473,7 @@ export component CheckoutPage inherits Window {
                 padding-bottom: Theme.spacing-md;
                 spacing: Theme.spacing-md;
 
-                SectionHeader { text: "ITEMS"; }
+                SectionHeader { text: "ITEMS · " + root.items.length; }
                 Rectangle {
                     horizontal-stretch: 1;
                     HorizontalLayout {
@@ -194,21 +492,452 @@ export component CheckoutPage inherits Window {
                     }
                 }
 
-                SectionHeader { text: "SHIPPING TO"; }
-                ListItem {
-                    title: root.ship-name;
-                    subtitle: root.ship-address;
-                    trailing-icon: @image-url("@mobile-components/icons/chevron-right.svg");
-                    clicked => { root.edit-shipping-pressed(); }
+                // ---- Shipping section ----
+                SectionHeader { text: "SHIPPING TO · TAP TO CHANGE"; }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    spacing: Theme.spacing-sm;
+
+                    Rectangle {
+                        background: Theme.surface-1;
+                        border-radius: Theme.radius-md;
+                        border-width: 1px;
+                        border-color: root.shipping-expanded ? Theme.primary : Theme.outline;
+                        animate border-color { duration: Theme.motion-fast; }
+                        HorizontalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-md;
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                spacing: 2px;
+                                Text {
+                                    text: root.shipping-names[root.shipping-index];
+                                    color: Theme.on-surface;
+                                    font-size: Theme.font-size-body;
+                                    font-weight: 700;
+                                }
+                                Text {
+                                    text: root.shipping-addresses[root.shipping-index];
+                                    color: Theme.muted;
+                                    font-size: Theme.font-size-caption;
+                                }
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                Text {
+                                    text: root.shipping-expanded ? "Hide" : "Change";
+                                    color: Theme.primary;
+                                    font-size: 11px;
+                                    font-weight: 800;
+                                    letter-spacing: 0.5px;
+                                }
+                            }
+                        }
+                        TouchArea {
+                            clicked => { root.toggle-shipping(); }
+                        }
+                    }
+
+                    // Expanded address list (scrollable inside the page).
+                    if root.shipping-expanded: Rectangle {
+                        background: Theme.surface-1;
+                        border-radius: Theme.radius-md;
+                        height: 220px;
+                        clip: true;
+                        ScrollView {
+                            VerticalLayout {
+                                padding: Theme.spacing-sm;
+                                spacing: Theme.spacing-xs;
+                                for n[i] in root.shipping-names: Rectangle {
+                                    height: 64px;
+                                    background: i == root.shipping-index
+                                        ? Theme.surface-2
+                                        : transparent;
+                                    border-radius: Theme.radius-sm;
+                                    border-width: i == root.shipping-index ? 2px : 1px;
+                                    border-color: i == root.shipping-index
+                                        ? Theme.primary
+                                        : Theme.outline;
+                                    animate background, border-color { duration: Theme.motion-fast; }
+
+                                    HorizontalLayout {
+                                        padding-left: Theme.spacing-md;
+                                        padding-right: Theme.spacing-md;
+                                        Rectangle {
+                                            width: 22px;
+                                            height: 22px;
+                                            border-radius: self.width / 2;
+                                            background: i == root.shipping-index
+                                                ? Theme.primary
+                                                : transparent;
+                                            border-width: 1px;
+                                            border-color: i == root.shipping-index
+                                                ? Theme.primary
+                                                : Theme.outline;
+                                            Text {
+                                                text: i == root.shipping-index ? "•" : "";
+                                                color: Theme.on-primary;
+                                                font-size: 14px;
+                                                font-weight: 800;
+                                                horizontal-alignment: center;
+                                                vertical-alignment: center;
+                                                x: 0;
+                                                y: 0;
+                                                width: parent.width;
+                                                height: parent.height;
+                                            }
+                                        }
+                                        VerticalLayout {
+                                            padding-left: Theme.spacing-sm;
+                                            horizontal-stretch: 1;
+                                            alignment: center;
+                                            Text {
+                                                text: n;
+                                                color: Theme.on-surface;
+                                                font-size: Theme.font-size-body;
+                                                font-weight: 700;
+                                            }
+                                            Text {
+                                                text: root.shipping-addresses[i];
+                                                color: Theme.muted;
+                                                font-size: Theme.font-size-caption;
+                                                overflow: elide;
+                                            }
+                                        }
+                                    }
+                                    TouchArea {
+                                        clicked => { root.pick-address(i); }
+                                    }
+                                }
+                                // Add-new
+                                Rectangle {
+                                    height: 48px;
+                                    background: addr-add-touch.pressed
+                                        ? Theme.surface-pressed
+                                        : transparent;
+                                    border-width: 1px;
+                                    border-color: Theme.primary;
+                                    border-radius: Theme.radius-sm;
+                                    Text {
+                                        text: "+ Add new address";
+                                        color: Theme.primary;
+                                        font-size: Theme.font-size-body;
+                                        font-weight: 800;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                        x: 0;
+                                        y: 0;
+                                        width: parent.width;
+                                        height: parent.height;
+                                    }
+                                    addr-add-touch := TouchArea {
+                                        clicked => { root.add-new-address(); }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
 
-                SectionHeader { text: "PAYMENT"; }
-                ListItem {
-                    title: root.payment-card;
-                    trailing-icon: @image-url("@mobile-components/icons/chevron-right.svg");
-                    clicked => { root.change-payment-pressed(); }
+                // ---- Payment section ----
+                SectionHeader { text: "PAYMENT · TAP TO CHANGE"; }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    spacing: Theme.spacing-sm;
+
+                    Rectangle {
+                        background: Theme.surface-1;
+                        border-radius: Theme.radius-md;
+                        border-width: 1px;
+                        border-color: root.payment-expanded ? Theme.primary : Theme.outline;
+                        animate border-color { duration: Theme.motion-fast; }
+                        HorizontalLayout {
+                            padding: Theme.spacing-md;
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                spacing: 2px;
+                                Text {
+                                    text: root.payment-methods[root.payment-index];
+                                    color: Theme.on-surface;
+                                    font-size: Theme.font-size-body;
+                                    font-weight: 700;
+                                }
+                                Text {
+                                    text: "Auto-fills CVC at confirmation";
+                                    color: Theme.muted;
+                                    font-size: Theme.font-size-caption;
+                                }
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                Text {
+                                    text: root.payment-expanded ? "Hide" : "Change";
+                                    color: Theme.primary;
+                                    font-size: 11px;
+                                    font-weight: 800;
+                                    letter-spacing: 0.5px;
+                                }
+                            }
+                        }
+                        TouchArea {
+                            clicked => { root.toggle-payment(); }
+                        }
+                    }
+
+                    if root.payment-expanded: Rectangle {
+                        background: Theme.surface-1;
+                        border-radius: Theme.radius-md;
+                        height: 220px;
+                        clip: true;
+                        ScrollView {
+                            VerticalLayout {
+                                padding: Theme.spacing-sm;
+                                spacing: Theme.spacing-xs;
+                                for m[i] in root.payment-methods: Rectangle {
+                                    height: 56px;
+                                    background: i == root.payment-index
+                                        ? Theme.surface-2
+                                        : transparent;
+                                    border-radius: Theme.radius-sm;
+                                    border-width: i == root.payment-index ? 2px : 1px;
+                                    border-color: i == root.payment-index
+                                        ? Theme.primary
+                                        : Theme.outline;
+                                    animate background, border-color { duration: Theme.motion-fast; }
+
+                                    HorizontalLayout {
+                                        padding-left: Theme.spacing-md;
+                                        padding-right: Theme.spacing-md;
+                                        Rectangle {
+                                            width: 22px;
+                                            height: 22px;
+                                            border-radius: self.width / 2;
+                                            background: i == root.payment-index
+                                                ? Theme.primary
+                                                : transparent;
+                                            border-width: 1px;
+                                            border-color: i == root.payment-index
+                                                ? Theme.primary
+                                                : Theme.outline;
+                                            Text {
+                                                text: i == root.payment-index ? "•" : "";
+                                                color: Theme.on-primary;
+                                                font-size: 14px;
+                                                font-weight: 800;
+                                                horizontal-alignment: center;
+                                                vertical-alignment: center;
+                                                x: 0;
+                                                y: 0;
+                                                width: parent.width;
+                                                height: parent.height;
+                                            }
+                                        }
+                                        VerticalLayout {
+                                            padding-left: Theme.spacing-sm;
+                                            horizontal-stretch: 1;
+                                            alignment: center;
+                                            Text {
+                                                text: m;
+                                                color: Theme.on-surface;
+                                                font-size: Theme.font-size-body;
+                                                font-weight: 700;
+                                            }
+                                        }
+                                    }
+                                    TouchArea {
+                                        clicked => { root.pick-payment(i); }
+                                    }
+                                }
+                                Rectangle {
+                                    height: 48px;
+                                    background: pm-add-touch.pressed
+                                        ? Theme.surface-pressed
+                                        : transparent;
+                                    border-width: 1px;
+                                    border-color: Theme.primary;
+                                    border-radius: Theme.radius-sm;
+                                    Text {
+                                        text: "+ Add new card";
+                                        color: Theme.primary;
+                                        font-size: Theme.font-size-body;
+                                        font-weight: 800;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                        x: 0;
+                                        y: 0;
+                                        width: parent.width;
+                                        height: parent.height;
+                                    }
+                                    pm-add-touch := TouchArea {
+                                        clicked => { root.add-new-payment(); }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
 
+                // ---- Delivery speed ----
+                SectionHeader { text: "DELIVERY"; }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    spacing: Theme.spacing-sm;
+
+                    HorizontalLayout {
+                        spacing: 0;
+                        Rectangle {
+                            horizontal-stretch: 1;
+                            height: 44px;
+                            border-top-left-radius: Theme.radius-md;
+                            border-bottom-left-radius: Theme.radius-md;
+                            background: root.delivery-speed == 0
+                                ? Theme.primary
+                                : (std-touch.pressed ? Theme.surface-pressed : Theme.surface-2);
+                            border-width: 1px;
+                            border-color: Theme.outline;
+                            animate background { duration: Theme.motion-fast; }
+                            Text {
+                                text: "Standard\nFree";
+                                color: root.delivery-speed == 0
+                                    ? Theme.on-primary
+                                    : Theme.on-surface;
+                                font-size: Theme.font-size-caption;
+                                font-weight: 700;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                wrap: word-wrap;
+                                x: 0;
+                                y: 0;
+                                width: parent.width;
+                                height: parent.height;
+                            }
+                            std-touch := TouchArea {
+                                clicked => { root.set-delivery(0); }
+                            }
+                        }
+                        Rectangle {
+                            horizontal-stretch: 1;
+                            height: 44px;
+                            background: root.delivery-speed == 1
+                                ? Theme.primary
+                                : (tom-touch.pressed ? Theme.surface-pressed : Theme.surface-2);
+                            border-width: 1px;
+                            border-color: Theme.outline;
+                            animate background { duration: Theme.motion-fast; }
+                            Text {
+                                text: "Tomorrow\n+$5";
+                                color: root.delivery-speed == 1
+                                    ? Theme.on-primary
+                                    : Theme.on-surface;
+                                font-size: Theme.font-size-caption;
+                                font-weight: 700;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                wrap: word-wrap;
+                                x: 0;
+                                y: 0;
+                                width: parent.width;
+                                height: parent.height;
+                            }
+                            tom-touch := TouchArea {
+                                clicked => { root.set-delivery(1); }
+                            }
+                        }
+                        Rectangle {
+                            horizontal-stretch: 1;
+                            height: 44px;
+                            border-top-right-radius: Theme.radius-md;
+                            border-bottom-right-radius: Theme.radius-md;
+                            background: root.delivery-speed == 2
+                                ? Theme.primary
+                                : (today-touch.pressed ? Theme.surface-pressed : Theme.surface-2);
+                            border-width: 1px;
+                            border-color: Theme.outline;
+                            animate background { duration: Theme.motion-fast; }
+                            Text {
+                                text: "Today\n+$15";
+                                color: root.delivery-speed == 2
+                                    ? Theme.on-primary
+                                    : Theme.on-surface;
+                                font-size: Theme.font-size-caption;
+                                font-weight: 700;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                wrap: word-wrap;
+                                x: 0;
+                                y: 0;
+                                width: parent.width;
+                                height: parent.height;
+                            }
+                            today-touch := TouchArea {
+                                clicked => { root.set-delivery(2); }
+                            }
+                        }
+                    }
+                }
+
+                // ---- Gift card ----
+                SectionHeader { text: "GIFT CARD"; }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    HorizontalLayout {
+                        spacing: Theme.spacing-sm;
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            alignment: center;
+                            TextField {
+                                label: "";
+                                placeholder: "GIFT50 · GIFT100";
+                                text <=> root.gift-input;
+                            }
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            MobileButton {
+                                text: root.applied-gift != "" ? "Clear" : "Apply";
+                                primary: false;
+                                min-width: 84px;
+                                clicked => {
+                                    if (root.applied-gift != "") {
+                                        root.clear-gift();
+                                    } else {
+                                        root.apply-gift();
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ---- Notes ----
+                SectionHeader { text: "NOTES FOR THE SELLER"; }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    spacing: Theme.spacing-sm;
+                    HorizontalLayout {
+                        alignment: start;
+                        TextButton {
+                            text: root.notes-expanded
+                                ? "Hide notes"
+                                : (root.notes-input != ""
+                                    ? "Edit notes (" + root.notes-input.character-count + " chars)"
+                                    : "+ Add notes");
+                            clicked => { root.toggle-notes(); }
+                        }
+                    }
+                    if root.notes-expanded: TextField {
+                        label: "";
+                        placeholder: "Leave at the front desk if I'm out...";
+                        text <=> root.notes-input;
+                    }
+                }
+
+                // ---- Totals card (live) ----
                 SectionHeader { text: "TOTAL"; }
                 Rectangle {
                     horizontal-stretch: 1;
@@ -218,11 +947,30 @@ export component CheckoutPage inherits Window {
                         Card {
                             VerticalLayout {
                                 spacing: Theme.spacing-xs;
-                                TotalRow { label: "Subtotal"; amount: root.subtotal; }
-                                TotalRow { label: "Shipping"; amount: root.shipping-cost; }
-                                TotalRow { label: "Tax";      amount: root.tax; }
+                                TotalRow {
+                                    label: "Subtotal";
+                                    amount: root.format-cents(root.subtotal-cents);
+                                }
+                                TotalRow {
+                                    label: "Shipping · " + root.delivery-label(root.delivery-speed);
+                                    amount: root.shipping-cents() == 0
+                                        ? "FREE"
+                                        : root.format-cents(root.shipping-cents());
+                                }
+                                TotalRow {
+                                    label: "Tax (8%)";
+                                    amount: root.format-cents(root.tax-cents());
+                                }
+                                if root.gift-cents() > 0: TotalRow {
+                                    label: "Gift card · " + root.applied-gift;
+                                    amount: "-" + root.format-cents(root.gift-cents());
+                                }
                                 Divider { }
-                                TotalRow { label: "Total"; amount: root.total; emphasized: true; }
+                                TotalRow {
+                                    label: "Total";
+                                    amount: root.format-cents(root.total-cents());
+                                    emphasized: true;
+                                }
                             }
                         }
                     }
@@ -230,13 +978,17 @@ export component CheckoutPage inherits Window {
             }
         }
 
-        BottomBar {
+        // ----- Sticky checkout footer (only while editing) -----
+        if root.checkout-state != 2: BottomBar {
             HorizontalLayout {
                 padding: Theme.spacing-md;
                 MobileButton {
-                    text: "Place order · " + root.total;
+                    text: root.checkout-state == 1
+                        ? "Processing..."
+                        : "Place order · " + root.format-cents(root.total-cents());
                     primary: true;
-                    clicked => { root.place-order-pressed(); }
+                    enabled: root.checkout-state == 0;
+                    clicked => { root.press-place-order(); }
                 }
             }
         }

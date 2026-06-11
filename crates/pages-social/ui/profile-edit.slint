@@ -1,19 +1,5 @@
 // ProfileEditPage
 // =====================================================================
-//
-// Edit-your-profile form — the screen behind "Edit profile" on
-// `ProfilePage`. Distinct from `AccountSettingsPage` (account-level
-// prefs) and `FormWizardPage` (multi-step onboarding). Demonstrates a
-// single-screen editable form:
-//
-//   - Avatar block: the current avatar with a "Change photo" pill
-//     overlapping its lower edge.
-//   - TextFields for display name, username (with an availability
-//     tone-cue), and a multi-line bio with a character counter.
-//   - "Links" rows — website + social handles, each a tappable nav
-//     row with a tone-tinted icon disc.
-//   - Public-profile visibility toggle.
-//   - Sticky Save CTA.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
@@ -24,23 +10,26 @@ import { MobileSwitch } from "@mobile-components/switch.slint";
 import { Divider } from "@mobile-components/divider.slint";
 import { MobileButton } from "@mobile-components/button.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
+import { ScrollView } from "std-widgets.slint";
 
-// One editable "link" nav row.
 component LinkRow inherits Rectangle {
     in property <image> icon;
     in property <string> label;
     in property <string> value;
-    in property <Tone> tone: Tone.default;
-    callback clicked();
-
-    accessible-role: button;
-    accessible-label: root.label;
-    accessible-action-default => { root.clicked(); }
+    in property <int> tone-i: 0;
+    in property <bool> editing: false;
+    callback row-clicked();
+    callback save-clicked();
 
     horizontal-stretch: 1;
     min-height: 56px;
-    background: touch.pressed ? Theme.surface-pressed : transparent;
-    animate background { duration: Theme.motion-fast; }
+    background: root.editing ? Theme.accent-info.with-alpha(0.10) : (ta.has-hover ? Theme.surface-2 : transparent);
+
+    ta := TouchArea {
+        clicked => {
+            root.row-clicked();
+        }
+    }
 
     HorizontalLayout {
         padding-left: Theme.spacing-md;
@@ -53,19 +42,14 @@ component LinkRow inherits Rectangle {
                 width: 32px;
                 height: 32px;
                 border-radius: 8px;
-                background:
-                      root.tone == Tone.success ? Theme.accent-success
-                    : root.tone == Tone.warning ? Theme.accent-warning
-                    : root.tone == Tone.danger  ? Theme.accent-danger
-                    : root.tone == Tone.info    ? Theme.accent-info
-                    : Theme.surface-variant;
+                background: root.tone-i == 1 ? Theme.accent-info : (root.tone-i == 2 ? Theme.accent-success : (root.tone-i == 3 ? Theme.accent-warning : (root.tone-i == 4 ? Theme.accent-danger : Theme.surface-variant)));
                 Image {
                     width: 16px;
                     height: 16px;
                     x: (parent.width - self.width) / 2;
                     y: (parent.height - self.height) / 2;
                     source: root.icon;
-                    colorize: root.tone == Tone.default ? Theme.on-surface : Theme.on-primary;
+                    colorize: root.tone-i == 0 ? Theme.on-surface : Theme.on-primary;
                     image-fit: contain;
                 }
             }
@@ -82,41 +66,134 @@ component LinkRow inherits Rectangle {
                 letter-spacing: 0.5px;
             }
             Text {
-                text: root.value;
+                text: root.value + (root.editing ? " ✎" : "");
                 color: Theme.on-surface;
                 font-size: Theme.font-size-body;
-                font-weight: 600;
+                font-weight: 700;
                 overflow: elide;
             }
         }
         VerticalLayout {
             alignment: center;
-            Image {
-                width: 16px;
-                height: 16px;
-                source: @image-url("@mobile-components/icons/chevron-right.svg");
-                colorize: Theme.muted;
-                image-fit: contain;
+            Rectangle {
+                width: 32px;
+                height: 32px;
+                border-radius: 16px;
+                background: root.editing ? Theme.accent-info : Theme.surface-2;
+                Text {
+                    text: root.editing ? "✓" : "✎";
+                    color: root.editing ? Theme.on-primary : Theme.muted;
+                    font-size: 14px;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+                TouchArea {
+                    clicked => {
+                        root.save-clicked();
+                    }
+                }
             }
         }
     }
-    touch := TouchArea {
-        clicked => { root.clicked(); }
+}
+
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.destructive ? Theme.accent-danger : Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+        }
     }
 }
 
 export component ProfileEditPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
-    in property <string> display-name: "Greg Raymond";
-    in property <string> username: "graymond";
-    in property <string> bio:
-        "Building the Slint mobile-components catalogue in pure Rust. Ex-web, recovering. Lisbon ↔ SF.";
+
+    in-out property <string> display-name: "Greg Raymond";
+    in-out property <string> username: "graymond";
+    in-out property <string> bio: "Building the Slint mobile-components catalogue in pure Rust. Ex-web, recovering. Lisbon ↔ SF.";
     in-out property <bool> public-profile: true;
+    in-out property <int> avatar-idx: 0;
+    in-out property <int> editing-link: -1; // -1 none, 0 website, 1 twitter, 2 github
+    in-out property <bool> saved: false;
+    in-out property <bool> sheet-open: false;
+    in-out property <bool> confirm-delete: false;
+    in-out property <string> status-msg: "";
+    in-out property <bool> status-success: false;
+    in-out property <bool> status-danger: false;
+
     callback back-pressed();
     callback change-photo-pressed();
     callback link-pressed(string);
     callback save-pressed();
+
+    function avatar-fallback() -> string {
+        return root.avatar-idx == 0 ? "GR" : (root.avatar-idx == 1 ? "🦊" : (root.avatar-idx == 2 ? "🌊" : "🚀"));
+    }
+    function username-status() -> string {
+        if (root.username.is-empty) {
+            return "× Username required";
+        }
+        if (root.username.character-count < 3) {
+            return "× Too short";
+        }
+        if (root.username == "admin" || root.username == "root") {
+            return "× Reserved name";
+        }
+        return "✓ @" + root.username + " is available";
+    }
+    function username-ok() -> bool {
+        return !root.username.is-empty && root.username.character-count >= 3 && root.username != "admin" && root.username != "root";
+    }
+    function bio-status() -> string {
+        return root.bio.character-count + " / 160" + (root.bio.character-count > 160 ? " · over!" : "");
+    }
+    function bio-ok() -> bool {
+        return root.bio.character-count <= 160;
+    }
+    function can-save() -> bool {
+        return root.username-ok() && root.bio-ok() && !root.display-name.is-empty;
+    }
+    function set-status(m: string, ok: bool, bad: bool) {
+        root.status-msg = m;
+        root.status-success = ok;
+        root.status-danger = bad;
+    }
+    function do-save() {
+        if (!root.can-save()) {
+            root.set-status("Fix errors before saving", false, true);
+            return;
+        }
+        root.saved = true;
+        root.set-status("Profile saved ✓", true, false);
+        root.save-pressed();
+    }
 
     background: Theme.background;
 
@@ -124,181 +201,249 @@ export component ProfileEditPage inherits Window {
         spacing: 0;
 
         AppBar {
-            title: "EDIT PROFILE";
+            title: root.saved ? "PROFILE SAVED" : "EDIT PROFILE";
             title-style: HeadingStyle.caps-tight;
             leading-icon: @image-url("@mobile-components/icons/close.svg");
-            leading-pressed => { root.back-pressed(); }
+            trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
+            leading-pressed => {
+                root.back-pressed();
+            }
+            trailing-pressed => {
+                root.sheet-open = true;
+            }
         }
 
-        VerticalLayout {
-            padding: Theme.spacing-md;
-            spacing: Theme.spacing-md;
-            alignment: start;
-
-            // Avatar + change-photo.
+        if !root.status-msg.is-empty: Rectangle {
+            height: 28px;
+            background: root.status-success ? Theme.accent-success.with-alpha(0.16) : (root.status-danger ? Theme.accent-danger.with-alpha(0.16) : Theme.surface-2);
             HorizontalLayout {
                 alignment: center;
-                Rectangle {
-                    width: 96px;
-                    height: 116px;
-                    Avatar {
-                        x: (parent.width - self.width) / 2;
-                        y: 0;
-                        width: 96px;
-                        height: 96px;
-                        fallback: "GR";
-                        size: 96px;
-                    }
-                    Rectangle {
-                        x: (parent.width - self.width) / 2;
-                        y: parent.height - self.height;
-                        width: change-text.preferred-width + 24px;
-                        height: 28px;
-                        border-radius: 14px;
-                        background: Theme.accent-info;
-                        drop-shadow-blur: Theme.elevation-2-blur;
-                        drop-shadow-color: Theme.elevation-2-color;
-                        drop-shadow-offset-y: Theme.elevation-2-y;
-                        change-text := Text {
-                            text: "Change photo";
-                            color: Theme.on-primary;
-                            font-size: 11px;
-                            font-weight: 800;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
-                            width: parent.width;
-                            height: parent.height;
-                        }
-                        TouchArea {
-                            clicked => { root.change-photo-pressed(); }
-                        }
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.status-msg;
+                        color: root.status-success ? Theme.accent-success : (root.status-danger ? Theme.accent-danger : Theme.on-surface);
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
                     }
                 }
             }
+        }
 
-            // Fields.
-            TextField {
-                label: "Display name";
-                placeholder: "Your name";
-                text: root.display-name;
-            }
-            TextField {
-                label: "Username";
-                placeholder: "username";
-                text: "@" + root.username;
-            }
-            HorizontalLayout {
-                Text {
-                    text: "✓ @" + root.username + " is available";
-                    color: Theme.accent-success;
-                    font-size: Theme.font-size-caption;
-                    font-weight: 600;
-                    horizontal-stretch: 1;
-                }
-            }
+        ScrollView {
+            vertical-stretch: 1;
 
-            // Bio.
-            Text {
-                text: "BIO";
-                color: Theme.on-background;
-                font-family: "Space Grotesk";
-                font-size: Theme.font-size-body;
-                font-weight: 700;
-                letter-spacing: 1.5px;
-            }
-            Rectangle {
-                background: Theme.surface-1;
-                border-radius: Theme.radius-md;
-                drop-shadow-blur: Theme.elevation-1-blur;
-                drop-shadow-color: Theme.elevation-1-color;
-                drop-shadow-offset-y: Theme.elevation-1-y;
-                height: 100px;
+            VerticalLayout {
+                spacing: 0;
+                padding-bottom: Theme.spacing-xl;
+
                 VerticalLayout {
                     padding: Theme.spacing-md;
+                    spacing: Theme.spacing-md;
+                    alignment: start;
+
+                    HorizontalLayout {
+                        alignment: center;
+                        Rectangle {
+                            width: 96px;
+                            height: 116px;
+                            Rectangle {
+                                x: (parent.width - self.width) / 2;
+                                y: 0;
+                                width: 96px;
+                                height: 96px;
+                                border-radius: 48px;
+                                background: root.avatar-idx == 0 ? Theme.accent-info : (root.avatar-idx == 1 ? Theme.accent-warning : (root.avatar-idx == 2 ? Theme.accent-success : Theme.accent-danger));
+                                Text {
+                                    text: root.avatar-fallback();
+                                    color: Theme.on-primary;
+                                    font-size: root.avatar-idx == 0 ? 32px : 48px;
+                                    font-weight: 800;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                                TouchArea {
+                                    clicked => {
+                                        root.avatar-idx = mod(root.avatar-idx + 1, 4);
+                                        root.set-status("Avatar " + (root.avatar-idx + 1) + "/4", true, false);
+                                    }
+                                }
+                            }
+                            Rectangle {
+                                x: (parent.width - self.width) / 2;
+                                y: parent.height - self.height;
+                                width: 128px;
+                                height: 28px;
+                                border-radius: 14px;
+                                background: Theme.accent-info;
+                                drop-shadow-blur: Theme.elevation-2-blur;
+                                drop-shadow-color: Theme.elevation-2-color;
+                                drop-shadow-offset-y: Theme.elevation-2-y;
+                                Text {
+                                    text: "Change avatar (" + (root.avatar-idx + 1) + "/4)";
+                                    color: Theme.on-primary;
+                                    font-size: 11px;
+                                    font-weight: 800;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                                TouchArea {
+                                    clicked => {
+                                        root.avatar-idx = mod(root.avatar-idx + 1, 4);
+                                        root.set-status("Avatar " + (root.avatar-idx + 1) + "/4", true, false);
+                                        root.change-photo-pressed();
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    TextField {
+                        placeholder: "Display name";
+                        text <=> root.display-name;
+                    }
+                    TextField {
+                        placeholder: "username";
+                        text <=> root.username;
+                    }
+                    HorizontalLayout {
+                        Text {
+                            text: root.username-status();
+                            color: root.username-ok() ? Theme.accent-success : Theme.accent-danger;
+                            font-size: Theme.font-size-caption;
+                            font-weight: 700;
+                            horizontal-stretch: 1;
+                        }
+                    }
+
                     Text {
-                        text: root.bio;
-                        color: Theme.on-surface;
+                        text: "BIO";
+                        color: Theme.on-background;
+                        font-family: "Space Grotesk";
                         font-size: Theme.font-size-body;
-                        wrap: word-wrap;
+                        font-weight: 700;
+                        letter-spacing: 1.5px;
+                    }
+                    TextField {
+                        placeholder: "Tell people about yourself";
+                        text <=> root.bio;
+                    }
+                    HorizontalLayout {
+                        Text {
+                            text: "Keep it under 160 characters";
+                            color: Theme.muted;
+                            font-size: 10px;
+                            horizontal-stretch: 1;
+                        }
+                        Text {
+                            text: root.bio-status();
+                            color: root.bio-ok() ? (root.bio.character-count > 130 ? Theme.accent-warning : Theme.accent-success) : Theme.accent-danger;
+                            font-size: 10px;
+                            font-weight: 700;
+                        }
+                    }
+                }
+
+                SectionHeader {
+                    text: "LINKS";
+                }
+                LinkRow {
+                    icon: @image-url("@mobile-components/icons/send.svg");
+                    label: "WEBSITE";
+                    value: "slint.studio";
+                    tone-i: 1;
+                    editing: root.editing-link == 0;
+                    row-clicked => {
+                        root.editing-link = root.editing-link == 0 ? -1 : 0;
+                        root.set-status(root.editing-link == 0 ? "Editing website" : "Closed", root.editing-link == 0, false);
+                        root.link-pressed("website");
+                    }
+                    save-clicked => {
+                        root.editing-link = root.editing-link == 0 ? -1 : 0;
+                        if (root.editing-link == -1) {
+                            root.set-status("Website saved", true, false);
+                        }
+                    }
+                }
+                Divider { }
+
+                LinkRow {
+                    icon: @image-url("@mobile-components/icons/heart.svg");
+                    label: "X / TWITTER";
+                    value: "@graymond";
+                    tone-i: 0;
+                    editing: root.editing-link == 1;
+                    row-clicked => {
+                        root.editing-link = root.editing-link == 1 ? -1 : 1;
+                        root.link-pressed("twitter");
+                    }
+                    save-clicked => {
+                        root.editing-link = root.editing-link == 1 ? -1 : 1;
+                        if (root.editing-link == -1) {
+                            root.set-status("Twitter saved", true, false);
+                        }
+                    }
+                }
+                Divider { }
+
+                LinkRow {
+                    icon: @image-url("@mobile-components/icons/menu.svg");
+                    label: "GITHUB";
+                    value: "github.com/graymond2007";
+                    tone-i: 0;
+                    editing: root.editing-link == 2;
+                    row-clicked => {
+                        root.editing-link = root.editing-link == 2 ? -1 : 2;
+                        root.link-pressed("github");
+                    }
+                    save-clicked => {
+                        root.editing-link = root.editing-link == 2 ? -1 : 2;
+                        if (root.editing-link == -1) {
+                            root.set-status("GitHub saved", true, false);
+                        }
+                    }
+                }
+
+                SectionHeader {
+                    text: "VISIBILITY";
+                }
+                Rectangle {
+                    min-height: 64px;
+                    HorizontalLayout {
+                        padding: Theme.spacing-md;
+                        spacing: Theme.spacing-md;
+                        alignment: stretch;
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            alignment: center;
+                            spacing: 2px;
+                            Text {
+                                text: "Public profile";
+                                color: Theme.on-surface;
+                                font-size: Theme.font-size-body;
+                                font-weight: 700;
+                            }
+                            Text {
+                                text: root.public-profile ? "Anyone can find and view your profile." : "Profile is private to followers.";
+                                color: Theme.muted;
+                                font-size: Theme.font-size-caption;
+                            }
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            MobileSwitch {
+                                checked <=> root.public-profile;
+                            }
+                        }
                     }
                 }
             }
-            HorizontalLayout {
-                Text {
-                    text: "Keep it under 160 characters";
-                    color: Theme.muted;
-                    font-size: 10px;
-                    horizontal-stretch: 1;
-                }
-                Text {
-                    text: "98 / 160";
-                    color: Theme.accent-success;
-                    font-size: 10px;
-                    font-weight: 700;
-                }
-            }
         }
 
-        SectionHeader { text: "LINKS"; }
-        LinkRow {
-            icon: @image-url("@mobile-components/icons/send.svg");
-            label: "WEBSITE";
-            value: "slint.studio";
-            tone: Tone.info;
-            clicked => { root.link-pressed("website"); }
-        }
-        Divider { }
-        LinkRow {
-            icon: @image-url("@mobile-components/icons/heart.svg");
-            label: "X / TWITTER";
-            value: "@graymond";
-            tone: Tone.default;
-            clicked => { root.link-pressed("twitter"); }
-        }
-        Divider { }
-        LinkRow {
-            icon: @image-url("@mobile-components/icons/menu.svg");
-            label: "GITHUB";
-            value: "github.com/graymond2007";
-            tone: Tone.default;
-            clicked => { root.link-pressed("github"); }
-        }
-
-        SectionHeader { text: "VISIBILITY"; }
-        Rectangle {
-            min-height: 64px;
-            HorizontalLayout {
-                padding: Theme.spacing-md;
-                spacing: Theme.spacing-md;
-                alignment: stretch;
-                VerticalLayout {
-                    horizontal-stretch: 1;
-                    alignment: center;
-                    spacing: 2px;
-                    Text {
-                        text: "Public profile";
-                        color: Theme.on-surface;
-                        font-size: Theme.font-size-body;
-                        font-weight: 600;
-                    }
-                    Text {
-                        text: "Anyone can find and view your profile.";
-                        color: Theme.muted;
-                        font-size: Theme.font-size-caption;
-                    }
-                }
-                VerticalLayout {
-                    alignment: center;
-                    MobileSwitch {
-                        checked <=> root.public-profile;
-                    }
-                }
-            }
-        }
-
-        Rectangle { vertical-stretch: 1; }
-
-        // Sticky save.
         Rectangle {
             background: Theme.surface-1;
             drop-shadow-blur: Theme.elevation-2-blur;
@@ -307,10 +452,128 @@ export component ProfileEditPage inherits Window {
             height: 80px;
             HorizontalLayout {
                 padding: Theme.spacing-md;
+                spacing: Theme.spacing-sm;
                 MobileButton {
-                    text: "Save changes";
-                    tone: Tone.info;
-                    clicked => { root.save-pressed(); }
+                    text: "Discard";
+                    primary: false;
+                    horizontal-stretch: 0;
+                    min-width: 100px;
+                    clicked => {
+                        root.display-name = "Greg Raymond";
+                        root.username = "graymond";
+                        root.bio = "Building the Slint mobile-components catalogue in pure Rust. Ex-web, recovering. Lisbon ↔ SF.";
+                        root.avatar-idx = 0;
+                        root.public-profile = true;
+                        root.saved = false;
+                        root.set-status("Reverted", false, true);
+                    }
+                }
+                MobileButton {
+                    text: root.saved ? "Saved ✓" : "Save changes";
+                    tone: root.saved ? Tone.success : Tone.info;
+                    clicked => {
+                        if (root.saved) {
+                            root.saved = false;
+                            root.set-status("Re-editing", false, false);
+                        } else {
+                            root.do-save();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+                root.confirm-delete = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: Theme.surface-2;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.muted;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: "Profile menu";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 700;
+                    }
+                }
+                SheetRow {
+                    label: "Generate suggested bio";
+                    clicked => {
+                        root.bio = "Ceramicist, runner, coffee snob. Shipping Slint mobile-components 0.4 with the most beautiful Tone enum migration of all time.";
+                        root.set-status("Suggested bio loaded", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Clear all links";
+                    clicked => {
+                        root.editing-link = -1;
+                        root.set-status("Links cleared", false, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: root.public-profile ? "Make profile private" : "Make profile public";
+                    clicked => {
+                        root.public-profile = !root.public-profile;
+                        root.set-status(root.public-profile ? "Public" : "Private", root.public-profile, !root.public-profile);
+                        root.sheet-open = false;
+                    }
+                }
+                Divider { }
+
+                SheetRow {
+                    label: root.confirm-delete ? "Confirm: delete account" : "Delete account";
+                    destructive: true;
+                    clicked => {
+                        if (root.confirm-delete) {
+                            root.display-name = "";
+                            root.username = "";
+                            root.bio = "";
+                            root.set-status("Account deleted", false, true);
+                            root.sheet-open = false;
+                            root.confirm-delete = false;
+                        } else {
+                            root.confirm-delete = true;
+                        }
+                    }
+                }
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.sheet-open = false;
+                        root.confirm-delete = false;
+                    }
                 }
             }
         }

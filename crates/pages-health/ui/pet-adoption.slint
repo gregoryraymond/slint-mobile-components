@@ -1,19 +1,19 @@
 // PetAdoptionPage
 // =====================================================================
 //
-// Petfinder / RescueGroups-style adoptable pet card. Distinct from
-// `ProductDetailPage` (product e-commerce) and `HotelBookingPage`
-// (room reservation). Demonstrates an emotional-product detail
-// surface where the trait chips do the heavy lifting:
+// Petfinder / RescueGroups-style adoptable pet card.
 //
-//   - Cover gradient hero with translucent back + share + heart, plus
-//     a 2-letter species tag pinned to the lower-left.
-//   - Title row (name + meta) + 4-chip trait strip (Age / Sex / Weight
-//     / Energy).
-//   - "About" prose + "Likes / dislikes" two-column list of bullet
-//     points.
-//   - Shelter card with location, contact, distance.
-//   - Sticky Apply-to-adopt CTA + secondary "Meet at the shelter".
+// Interactive behaviour
+//   - Hero gradient cycles through 3 "photos" (tap the body); dot
+//     indicator at the bottom of the hero updates.
+//   - Heart button in the hero header toggles saved; background flips
+//     to red and a SAVED ♥ pill appears next to the pet name.
+//   - Share button opens a bottom-sheet with 4 targets.
+//   - Status banner sits under the hero and narrates every action.
+//   - Trait chips are tappable; tap reports the value via the banner.
+//   - Like / dislike bullets are tappable.
+//   - Shelter card is tappable (directions status).
+//   - Apply CTA uses two-tap confirm; Meet button toggles scheduled.
 
 import { ScrollView } from "std-widgets.slint";
 import { Theme, Tone } from "@mobile-theme/theme.slint";
@@ -21,19 +21,24 @@ import { Divider } from "@mobile-components/divider.slint";
 import { MobileButton, TextButton } from "@mobile-components/button.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
 
-// One trait chip.
+// One trait chip — tappable.
 component TraitChip inherits Rectangle {
     in property <string> label;
     in property <string> value;
     in property <Tone> tone: Tone.default;
+    in property <bool> highlighted: false;
+    callback clicked();
 
     horizontal-stretch: 1;
     height: 64px;
-    background: Theme.surface-1;
+    background: root.highlighted ? Theme.surface-2 : Theme.surface-1;
+    animate background { duration: Theme.motion-fast; }
     border-radius: Theme.radius-md;
     drop-shadow-blur: Theme.elevation-1-blur;
     drop-shadow-color: Theme.elevation-1-color;
     drop-shadow-offset-y: Theme.elevation-1-y;
+    border-width: root.highlighted ? 2px : 0px;
+    border-color: Theme.accent-info;
 
     VerticalLayout {
         padding: Theme.spacing-sm;
@@ -52,22 +57,26 @@ component TraitChip inherits Rectangle {
             color:
                   root.tone == Tone.success ? Theme.accent-success
                 : root.tone == Tone.warning ? Theme.accent-warning
-                : root.tone == Tone.danger  ? Theme.accent-danger
-                : root.tone == Tone.info    ? Theme.accent-info
+                : root.tone == Tone.danger ? Theme.accent-danger
+                : root.tone == Tone.info ? Theme.accent-info
                 : Theme.on-surface;
             font-size: Theme.font-size-body;
             font-weight: 800;
             horizontal-alignment: center;
         }
     }
+    TouchArea { clicked => { root.clicked(); } }
 }
 
-// One bullet in likes/dislikes.
+// One bullet in likes/dislikes — tappable.
 component PetBullet inherits Rectangle {
     in property <string> text;
     in property <Tone> tone: Tone.success;
+    callback clicked();
 
     min-height: 28px;
+    background: touch.pressed ? Theme.surface-pressed : transparent;
+    animate background { duration: Theme.motion-fast; }
     HorizontalLayout {
         spacing: Theme.spacing-xs;
         alignment: start;
@@ -81,8 +90,8 @@ component PetBullet inherits Rectangle {
                 background:
                       root.tone == Tone.success ? Theme.accent-success
                     : root.tone == Tone.warning ? Theme.accent-warning
-                    : root.tone == Tone.danger  ? Theme.accent-danger
-                    : root.tone == Tone.info    ? Theme.accent-info
+                    : root.tone == Tone.danger ? Theme.accent-danger
+                    : root.tone == Tone.info ? Theme.accent-info
                     : Theme.primary;
             }
         }
@@ -94,6 +103,7 @@ component PetBullet inherits Rectangle {
             horizontal-stretch: 1;
         }
     }
+    touch := TouchArea { clicked => { root.clicked(); } }
 }
 
 export component PetAdoptionPage inherits Window {
@@ -108,259 +118,521 @@ export component PetAdoptionPage inherits Window {
     callback heart-pressed();
     callback apply-pressed();
     callback meet-pressed();
+    callback saved-changed(bool);
+    callback application-submitted(int);
+
+    // ----- Interactive state -----
+    private property <bool> saved: false;
+    private property <int> hero-idx: 0; // 0..2
+    private property <bool> apply-confirming: false;
+    private property <int> applied-count: 0;
+    private property <bool> meet-scheduled: false;
+    private property <bool> share-sheet-open: false;
+    private property <int> highlighted-trait: -1;
+    private property <int> share-channel: -1; // -1 / 0..3
+    private property <string> status-msg: "Tap the photo to cycle · heart saves · trait chips are tappable";
+    private property <bool> status-is-success: false;
+    private property <bool> status-is-danger: false;
+
+    // ----- Helpers -----
+    function trait-name(i: int) -> string {
+        if (i == 0) { return "Age"; }
+        if (i == 1) { return "Sex"; }
+        if (i == 2) { return "Weight"; }
+        return "Energy";
+    }
+    function trait-value(i: int) -> string {
+        if (i == 0) { return "2 years"; }
+        if (i == 1) { return "Female"; }
+        if (i == 2) { return "14 kg (~31 lb)"; }
+        return "Medium · daily walks";
+    }
+    function share-channel-name(i: int) -> string {
+        if (i == 0) { return "Message"; }
+        if (i == 1) { return "Email"; }
+        if (i == 2) { return "Twitter / X"; }
+        return "Copy link";
+    }
+
+    // ----- Mutations -----
+    public function cycle-hero() {
+        root.hero-idx = mod(root.hero-idx + 1, 3);
+        root.status-msg = "Photo " + (root.hero-idx + 1) + " / 3";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function toggle-save() {
+        root.saved = !root.saved;
+        root.heart-pressed();
+        root.saved-changed(root.saved);
+        root.status-msg = root.saved
+            ? "Saved " + root.pet-name + " to favourites"
+            : "Removed " + root.pet-name + " from favourites";
+        root.status-is-success = root.saved;
+        root.status-is-danger = !root.saved;
+    }
+    public function open-share() {
+        root.share-sheet-open = true;
+        root.share-pressed();
+        root.status-msg = "Share " + root.pet-name + " · pick a target";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function close-share() { root.share-sheet-open = false; }
+    public function pick-share(i: int) {
+        root.share-channel = i;
+        root.status-msg = "Shared via " + root.share-channel-name(i);
+        root.status-is-success = true;
+        root.status-is-danger = false;
+        root.share-sheet-open = false;
+    }
+    public function tap-trait(i: int) {
+        root.highlighted-trait = root.highlighted-trait == i ? -1 : i;
+        if (root.highlighted-trait == i) {
+            root.status-msg = root.trait-name(i) + " · " + root.trait-value(i);
+            root.status-is-success = true;
+            root.status-is-danger = false;
+        } else {
+            root.status-msg = "Cleared highlight";
+            root.status-is-success = false;
+            root.status-is-danger = false;
+        }
+    }
+    public function tap-bullet(text: string, like: bool) {
+        root.status-msg = (like ? "Like · " : "Watch out · ") + text;
+        root.status-is-success = like;
+        root.status-is-danger = !like;
+    }
+    public function tap-shelter() {
+        root.status-msg = "Directions to " + root.shelter
+            + " · " + root.distance;
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    public function do-apply() {
+        if (!root.apply-confirming) {
+            root.apply-confirming = true;
+            root.status-msg = "Tap Apply again to confirm";
+            root.status-is-success = false;
+            root.status-is-danger = false;
+            return;
+        }
+        root.apply-confirming = false;
+        root.applied-count = root.applied-count + 1;
+        root.apply-pressed();
+        root.application-submitted(root.applied-count);
+        root.status-msg = "Application sent (#" + root.applied-count
+            + ") · check email";
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    public function toggle-meet() {
+        root.meet-scheduled = !root.meet-scheduled;
+        root.meet-pressed();
+        root.status-msg = root.meet-scheduled
+            ? "Visit scheduled · tap again to cancel"
+            : "Visit cancelled";
+        root.status-is-success = root.meet-scheduled;
+        root.status-is-danger = !root.meet-scheduled;
+    }
 
     background: Theme.background;
 
     VerticalLayout {
         spacing: 0;
 
-        // Hero + traits + about + likes/dislikes + shelter card overflow
-        // a single 892-px screen, so the whole upper region scrolls above
-        // the pinned Apply/Meet CTA pair at the bottom.
         ScrollView {
             vertical-stretch: 1;
 
             VerticalLayout {
                 spacing: 0;
 
-        // Gradient hero.
-        Rectangle {
-            height: 240px;
-            background: @linear-gradient(135deg, #6b8e50 0%, #1a2d12 100%);
-            clip: true;
-
-            // Translucent back / share / heart.
-            HorizontalLayout {
-                x: 0;
-                y: 0;
-                width: parent.width;
-                height: 64px;
-                padding: Theme.spacing-md;
-                spacing: Theme.spacing-sm;
-                alignment: stretch;
+                // Gradient hero — tappable body cycles 3 "photos".
                 Rectangle {
-                    width: 36px;
-                    height: 36px;
-                    border-radius: self.width / 2;
-                    background: #00000066;
-                    Image {
-                        width: 18px;
-                        height: 18px;
-                        x: (parent.width - self.width) / 2;
-                        y: (parent.height - self.height) / 2;
-                        source: @image-url("@mobile-components/icons/arrow-left.svg");
-                        colorize: #ffffff;
-                        image-fit: contain;
-                    }
+                    height: 240px;
+                    background: root.hero-idx == 0
+                        ? @linear-gradient(135deg, #6b8e50 0%, #1a2d12 100%)
+                        : root.hero-idx == 1
+                            ? @linear-gradient(135deg, #4f8cff 0%, #1f4eaa 100%)
+                            : @linear-gradient(135deg, #c084fc 0%, #581c87 100%);
+                    animate background { duration: Theme.motion-fast; }
+                    clip: true;
+
+                    // Tap-area on the lower hero body to cycle photos.
                     TouchArea {
-                        clicked => { root.back-pressed(); }
+                        x: 0;
+                        y: 64px;
+                        width: parent.width;
+                        height: parent.height - 64px;
+                        clicked => { root.cycle-hero(); }
                     }
-                }
-                Rectangle { horizontal-stretch: 1; }
-                Rectangle {
-                    width: 36px;
-                    height: 36px;
-                    border-radius: self.width / 2;
-                    background: #00000066;
-                    Image {
-                        width: 18px;
-                        height: 18px;
-                        x: (parent.width - self.width) / 2;
-                        y: (parent.height - self.height) / 2;
-                        source: @image-url("@mobile-components/icons/send.svg");
-                        colorize: #ffffff;
-                        image-fit: contain;
-                    }
-                    TouchArea {
-                        clicked => { root.share-pressed(); }
-                    }
-                }
-                Rectangle {
-                    width: 36px;
-                    height: 36px;
-                    border-radius: self.width / 2;
-                    background: #00000066;
-                    Image {
-                        width: 18px;
-                        height: 18px;
-                        x: (parent.width - self.width) / 2;
-                        y: (parent.height - self.height) / 2;
-                        source: @image-url("@mobile-components/icons/heart.svg");
-                        colorize: #ffffff;
-                        image-fit: contain;
-                    }
-                    TouchArea {
-                        clicked => { root.heart-pressed(); }
-                    }
-                }
-            }
 
-            // Species tag bottom-left.
-            Rectangle {
-                x: Theme.spacing-md;
-                y: parent.height - 48px;
-                width: 48px;
-                height: 32px;
-                border-radius: 8px;
-                background: Theme.accent-success;
-                Text {
-                    text: "DOG";
-                    color: Theme.on-primary;
-                    font-size: 11px;
-                    font-weight: 800;
-                    letter-spacing: 0.5px;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
-                    width: parent.width;
-                    height: parent.height;
-                }
-            }
-        }
-
-        VerticalLayout {
-            padding: Theme.spacing-md;
-            spacing: Theme.spacing-md;
-            alignment: start;
-
-            // Title + meta.
-            VerticalLayout {
-                spacing: 2px;
-                Heading {
-                    text: root.pet-name;
-                    style: HeadingStyle.serif-display;
-                    color: Theme.on-background;
-                    font-size: 36px;
-                }
-                Text {
-                    text: root.pet-meta;
-                    color: Theme.muted;
-                    font-size: Theme.font-size-body;
-                }
-            }
-
-            // Trait chips.
-            HorizontalLayout {
-                spacing: Theme.spacing-sm;
-                TraitChip { label: "AGE"; value: "2 yr"; }
-                TraitChip { label: "SEX"; value: "Female"; tone: Tone.info; }
-                TraitChip { label: "WEIGHT"; value: "14 kg"; }
-                TraitChip { label: "ENERGY"; value: "Medium"; tone: Tone.warning; }
-            }
-
-            Divider { }
-
-            // About.
-            Heading {
-                text: "About Mira";
-                style: HeadingStyle.serif-light;
-                color: Theme.on-background;
-            }
-            Text {
-                text: "Mira came to us in February as a foster transfer from a rural shelter in Sonoma. She's a smart, sensitive Border Collie mix who blossoms with a confident handler. Good leash manners and crate-trained.";
-                color: Theme.on-surface;
-                font-size: Theme.font-size-body;
-                wrap: word-wrap;
-            }
-
-            // Likes / dislikes two-column list.
-            HorizontalLayout {
-                spacing: Theme.spacing-md;
-                alignment: stretch;
-                VerticalLayout {
-                    horizontal-stretch: 1;
-                    spacing: Theme.spacing-xs;
-                    Text {
-                        text: "Likes";
-                        color: Theme.accent-success;
-                        font-size: 10px;
-                        font-weight: 800;
-                        letter-spacing: 0.5px;
-                    }
-                    PetBullet { text: "Long walks, off-leash hikes."; tone: Tone.success; }
-                    PetBullet { text: "Puzzle toys + treat-finding."; tone: Tone.success; }
-                    PetBullet { text: "Older kids (8+)."; tone: Tone.success; }
-                }
-                VerticalLayout {
-                    horizontal-stretch: 1;
-                    spacing: Theme.spacing-xs;
-                    Text {
-                        text: "Not great with";
-                        color: Theme.accent-danger;
-                        font-size: 10px;
-                        font-weight: 800;
-                        letter-spacing: 0.5px;
-                    }
-                    PetBullet { text: "Loud noises + crowds."; tone: Tone.danger; }
-                    PetBullet { text: "Cats + small dogs."; tone: Tone.danger; }
-                    PetBullet { text: "Long alone times (>5 h)."; tone: Tone.warning; }
-                }
-            }
-
-            Divider { }
-
-            // Shelter card.
-            Rectangle {
-                background: Theme.surface-1;
-                border-radius: Theme.radius-md;
-                drop-shadow-blur: Theme.elevation-1-blur;
-                drop-shadow-color: Theme.elevation-1-color;
-                drop-shadow-offset-y: Theme.elevation-1-y;
-                height: 88px;
-                HorizontalLayout {
-                    padding: Theme.spacing-md;
-                    spacing: Theme.spacing-md;
-                    alignment: stretch;
-                    VerticalLayout {
-                        alignment: center;
+                    // Header row: back / share / heart.
+                    HorizontalLayout {
+                        x: 0;
+                        y: 0;
+                        width: parent.width;
+                        height: 64px;
+                        padding: Theme.spacing-md;
+                        spacing: Theme.spacing-sm;
+                        alignment: stretch;
                         Rectangle {
-                            width: 44px;
-                            height: 44px;
-                            border-radius: 10px;
-                            background: Theme.accent-info;
+                            width: 36px;
+                            height: 36px;
+                            border-radius: self.width / 2;
+                            background: #00000066;
                             Image {
-                                width: 22px;
-                                height: 22px;
+                                width: 18px;
+                                height: 18px;
                                 x: (parent.width - self.width) / 2;
                                 y: (parent.height - self.height) / 2;
-                                source: @image-url("@mobile-components/icons/home.svg");
-                                colorize: Theme.on-primary;
+                                source: @image-url("@mobile-components/icons/arrow-left.svg");
+                                colorize: #ffffff;
                                 image-fit: contain;
+                            }
+                            TouchArea { clicked => { root.back-pressed(); } }
+                        }
+                        Rectangle { horizontal-stretch: 1; }
+                        Rectangle {
+                            width: 36px;
+                            height: 36px;
+                            border-radius: self.width / 2;
+                            background: #00000066;
+                            Image {
+                                width: 18px;
+                                height: 18px;
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+                                source: @image-url("@mobile-components/icons/send.svg");
+                                colorize: #ffffff;
+                                image-fit: contain;
+                            }
+                            TouchArea { clicked => { root.open-share(); } }
+                        }
+                        Rectangle {
+                            width: 36px;
+                            height: 36px;
+                            border-radius: self.width / 2;
+                            background: root.saved ? Theme.accent-danger : #00000066;
+                            animate background { duration: Theme.motion-fast; }
+                            Image {
+                                width: 18px;
+                                height: 18px;
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+                                source: @image-url("@mobile-components/icons/heart.svg");
+                                colorize: #ffffff;
+                                image-fit: contain;
+                            }
+                            TouchArea { clicked => { root.toggle-save(); } }
+                        }
+                    }
+
+                    Rectangle {
+                        x: Theme.spacing-md;
+                        y: parent.height - 48px;
+                        width: 48px;
+                        height: 32px;
+                        border-radius: 8px;
+                        background: Theme.accent-success;
+                        Text {
+                            text: "DOG";
+                            color: Theme.on-primary;
+                            font-size: 11px;
+                            font-weight: 800;
+                            letter-spacing: 0.5px;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
+                        }
+                    }
+
+                    // Photo dot indicator — bottom centre.
+                    HorizontalLayout {
+                        x: 0;
+                        y: parent.height - 14px;
+                        width: parent.width;
+                        height: 8px;
+                        spacing: 4px;
+                        alignment: center;
+                        Rectangle {
+                            width: 8px;
+                            height: 8px;
+                            border-radius: 4px;
+                            background: root.hero-idx == 0 ? #ffffff : #ffffff66;
+                            animate background { duration: Theme.motion-fast; }
+                        }
+                        Rectangle {
+                            width: 8px;
+                            height: 8px;
+                            border-radius: 4px;
+                            background: root.hero-idx == 1 ? #ffffff : #ffffff66;
+                            animate background { duration: Theme.motion-fast; }
+                        }
+                        Rectangle {
+                            width: 8px;
+                            height: 8px;
+                            border-radius: 4px;
+                            background: root.hero-idx == 2 ? #ffffff : #ffffff66;
+                            animate background { duration: Theme.motion-fast; }
+                        }
+                    }
+                }
+
+                // ----- Status banner -------------------------------
+                Rectangle {
+                    height: 32px;
+                    background: root.status-is-danger ? Theme.accent-danger
+                        : root.status-is-success ? Theme.accent-success
+                        : Theme.surface-2;
+                    animate background { duration: Theme.motion-fast; }
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-md;
+                        padding-right: Theme.spacing-md;
+                        Text {
+                            text: root.status-msg;
+                            color: (root.status-is-danger || root.status-is-success)
+                                ? Theme.on-primary
+                                : Theme.on-surface;
+                            font-size: Theme.font-size-caption;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                            overflow: elide;
+                        }
+                    }
+                }
+
+                VerticalLayout {
+                    padding: Theme.spacing-md;
+                    spacing: Theme.spacing-md;
+                    alignment: start;
+
+                    // Title + meta with optional SAVED pill.
+                    VerticalLayout {
+                        spacing: 2px;
+                        HorizontalLayout {
+                            spacing: Theme.spacing-sm;
+                            Heading {
+                                text: root.pet-name;
+                                style: HeadingStyle.serif-display;
+                                color: Theme.on-background;
+                                font-size: 36px;
+                            }
+                            if root.saved: Rectangle {
+                                width: sv.preferred-width + 14px;
+                                height: 22px;
+                                border-radius: 11px;
+                                background: Theme.accent-danger;
+                                y: 14px;
+                                sv := Text {
+                                    text: "SAVED ♥";
+                                    color: Theme.on-primary;
+                                    font-size: 10px;
+                                    font-weight: 800;
+                                    letter-spacing: 0.5px;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                            }
+                        }
+                        Text {
+                            text: root.pet-meta;
+                            color: Theme.muted;
+                            font-size: Theme.font-size-body;
+                        }
+                    }
+
+                    // Trait chips.
+                    HorizontalLayout {
+                        spacing: Theme.spacing-sm;
+                        TraitChip {
+                            label: "AGE";
+                            value: "2 yr";
+                            highlighted: root.highlighted-trait == 0;
+                            clicked => { root.tap-trait(0); }
+                        }
+                        TraitChip {
+                            label: "SEX";
+                            value: "Female";
+                            tone: Tone.info;
+                            highlighted: root.highlighted-trait == 1;
+                            clicked => { root.tap-trait(1); }
+                        }
+                        TraitChip {
+                            label: "WEIGHT";
+                            value: "14 kg";
+                            highlighted: root.highlighted-trait == 2;
+                            clicked => { root.tap-trait(2); }
+                        }
+                        TraitChip {
+                            label: "ENERGY";
+                            value: "Medium";
+                            tone: Tone.warning;
+                            highlighted: root.highlighted-trait == 3;
+                            clicked => { root.tap-trait(3); }
+                        }
+                    }
+
+                    Divider { }
+
+                    // About.
+                    Heading {
+                        text: "About " + root.pet-name;
+                        style: HeadingStyle.serif-light;
+                        color: Theme.on-background;
+                    }
+                    Text {
+                        text: "Mira came to us in February as a foster transfer from a rural shelter in Sonoma. She's a smart, sensitive Border Collie mix who blossoms with a confident handler. Good leash manners and crate-trained.";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-body;
+                        wrap: word-wrap;
+                    }
+
+                    // Likes / dislikes.
+                    HorizontalLayout {
+                        spacing: Theme.spacing-md;
+                        alignment: stretch;
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            spacing: Theme.spacing-xs;
+                            Text {
+                                text: "Likes";
+                                color: Theme.accent-success;
+                                font-size: 10px;
+                                font-weight: 800;
+                                letter-spacing: 0.5px;
+                            }
+                            PetBullet {
+                                text: "Long walks, off-leash hikes.";
+                                tone: Tone.success;
+                                clicked => {
+                                    root.tap-bullet("Long walks, off-leash hikes", true);
+                                }
+                            }
+                            PetBullet {
+                                text: "Puzzle toys + treat-finding.";
+                                tone: Tone.success;
+                                clicked => {
+                                    root.tap-bullet("Puzzle toys + treat-finding", true);
+                                }
+                            }
+                            PetBullet {
+                                text: "Older kids (8+).";
+                                tone: Tone.success;
+                                clicked => {
+                                    root.tap-bullet("Older kids (8+)", true);
+                                }
+                            }
+                        }
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            spacing: Theme.spacing-xs;
+                            Text {
+                                text: "Not great with";
+                                color: Theme.accent-danger;
+                                font-size: 10px;
+                                font-weight: 800;
+                                letter-spacing: 0.5px;
+                            }
+                            PetBullet {
+                                text: "Loud noises + crowds.";
+                                tone: Tone.danger;
+                                clicked => {
+                                    root.tap-bullet("Loud noises + crowds", false);
+                                }
+                            }
+                            PetBullet {
+                                text: "Cats + small dogs.";
+                                tone: Tone.danger;
+                                clicked => {
+                                    root.tap-bullet("Cats + small dogs", false);
+                                }
+                            }
+                            PetBullet {
+                                text: "Long alone times (>5 h).";
+                                tone: Tone.warning;
+                                clicked => {
+                                    root.tap-bullet("Long alone times (>5 h)", false);
+                                }
                             }
                         }
                     }
-                    VerticalLayout {
-                        horizontal-stretch: 1;
-                        alignment: center;
-                        spacing: 2px;
-                        Text {
-                            text: root.shelter;
-                            color: Theme.on-surface;
-                            font-size: Theme.font-size-body;
-                            font-weight: 700;
-                            wrap: word-wrap;
+
+                    Divider { }
+
+                    // Shelter card.
+                    Rectangle {
+                        background: shelter-touch.pressed
+                            ? Theme.surface-pressed
+                            : Theme.surface-1;
+                        animate background { duration: Theme.motion-fast; }
+                        border-radius: Theme.radius-md;
+                        drop-shadow-blur: Theme.elevation-1-blur;
+                        drop-shadow-color: Theme.elevation-1-color;
+                        drop-shadow-offset-y: Theme.elevation-1-y;
+                        height: 88px;
+                        HorizontalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-md;
+                            alignment: stretch;
+                            VerticalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: 44px;
+                                    height: 44px;
+                                    border-radius: 10px;
+                                    background: Theme.accent-info;
+                                    Image {
+                                        width: 22px;
+                                        height: 22px;
+                                        x: (parent.width - self.width) / 2;
+                                        y: (parent.height - self.height) / 2;
+                                        source: @image-url("@mobile-components/icons/home.svg");
+                                        colorize: Theme.on-primary;
+                                        image-fit: contain;
+                                    }
+                                }
+                            }
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                alignment: center;
+                                spacing: 2px;
+                                Text {
+                                    text: root.shelter;
+                                    color: Theme.on-surface;
+                                    font-size: Theme.font-size-body;
+                                    font-weight: 700;
+                                    wrap: word-wrap;
+                                }
+                                Text {
+                                    text: root.distance + " · tap for directions";
+                                    color: Theme.accent-success;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 600;
+                                }
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                Image {
+                                    width: 16px;
+                                    height: 16px;
+                                    source: @image-url("@mobile-components/icons/chevron-right.svg");
+                                    colorize: Theme.muted;
+                                    image-fit: contain;
+                                }
+                            }
                         }
-                        Text {
-                            text: root.distance;
-                            color: Theme.accent-success;
-                            font-size: Theme.font-size-caption;
-                            font-weight: 600;
-                        }
-                    }
-                    VerticalLayout {
-                        alignment: center;
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
+                        shelter-touch := TouchArea {
+                            clicked => { root.tap-shelter(); }
                         }
                     }
                 }
             }
         }
-            }   // end inner VerticalLayout
-        }       // end ScrollView
 
         // Sticky CTA pair.
         Rectangle {
@@ -373,14 +645,103 @@ export component PetAdoptionPage inherits Window {
                 padding: Theme.spacing-md;
                 spacing: Theme.spacing-sm;
                 MobileButton {
-                    text: "Apply to adopt Mira";
-                    tone: Tone.success;
-                    clicked => { root.apply-pressed(); }
+                    text: root.applied-count > 0
+                        ? "Apply again (#" + (root.applied-count + 1) + ")"
+                        : root.apply-confirming
+                            ? "Tap again to confirm application"
+                            : "Apply to adopt " + root.pet-name;
+                    tone: root.apply-confirming
+                        ? Tone.success
+                        : root.applied-count > 0
+                            ? Tone.info
+                            : Tone.success;
+                    clicked => { root.do-apply(); }
                 }
                 MobileButton {
-                    text: "Meet at the shelter first";
+                    text: root.meet-scheduled
+                        ? "✓ Visit scheduled · tap to cancel"
+                        : "Meet at the shelter first";
                     primary: false;
-                    clicked => { root.meet-pressed(); }
+                    tone: root.meet-scheduled ? Tone.success : Tone.default;
+                    clicked => { root.toggle-meet(); }
+                }
+            }
+        }
+    }
+
+    // ----- Share bottom sheet ----------------------------------------
+    if root.share-sheet-open: Rectangle {
+        Rectangle {
+            background: #00000099;
+            TouchArea {
+                clicked => { root.close-share(); }
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            height: 360px;
+            background: Theme.surface-1;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding: Theme.spacing-lg;
+                spacing: Theme.spacing-md;
+
+                Rectangle {
+                    width: 40px;
+                    height: 4px;
+                    border-radius: 2px;
+                    background: Theme.muted;
+                }
+
+                Heading {
+                    text: "Share " + root.pet-name;
+                    style: HeadingStyle.grotesk-bold;
+                    font-size: Theme.font-size-title;
+                }
+
+                for kind-i in 4 : Rectangle {
+                    height: 52px;
+                    border-radius: Theme.radius-md;
+                    background: pick-touch.pressed
+                        ? Theme.surface-pressed
+                        : Theme.surface-2;
+                    animate background { duration: Theme.motion-fast; }
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-md;
+                        padding-right: Theme.spacing-md;
+                        Text {
+                            text: root.share-channel-name(kind-i);
+                            color: Theme.on-surface;
+                            font-size: Theme.font-size-body;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                        }
+                        Text {
+                            text: "→";
+                            color: Theme.muted;
+                            font-size: Theme.font-size-body;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                        }
+                    }
+                    pick-touch := TouchArea {
+                        clicked => { root.pick-share(kind-i); }
+                    }
+                }
+
+                Rectangle { vertical-stretch: 1; }
+
+                MobileButton {
+                    text: "Cancel";
+                    tone: Tone.danger;
+                    clicked => { root.close-share(); }
                 }
             }
         }

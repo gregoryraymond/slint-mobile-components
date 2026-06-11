@@ -1,26 +1,15 @@
 // PodcastPage
 // =====================================================================
 //
-// Now-playing screen for a podcast / audio player. Showcases how the
-// component catalogue composes into a real product surface:
-//
-//   - AppBar with back arrow + overflow
-//   - Hero album-art square (caller-supplied `cover` image)
-//   - Title + show / artist meta
-//   - `Slider` driving playback position with mm:ss labels either side
-//   - Transport row: prev, large play / pause, next
-//   - Action row: like (heart), queue, share-via-more
-//
-// Like the other pages in this directory, `PodcastPage` is a Window
-// component so it's instantiable as a Slint preview AND can be embedded
-// at full-screen by any host with `width: 100%; height: 100%;` inside
-// its own Window.
+// Now-playing screen for a podcast / audio player.
 
 import { Theme } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { IconButton } from "@mobile-components/icon-button.slint";
 import { Slider } from "@mobile-components/slider.slint";
 import { HeadingStyle } from "@mobile-components/heading.slint";
+import { Divider } from "@mobile-components/divider.slint";
+import { ScrollView } from "std-widgets.slint";
 
 component CircleIconButton inherits Rectangle {
     in property <image> icon;
@@ -34,14 +23,14 @@ component CircleIconButton inherits Rectangle {
     accessible-role: button;
     accessible-label: root.a11y-label;
     accessible-enabled: root.enabled;
-    accessible-action-default => { root.clicked(); }
+    accessible-action-default => {
+        root.clicked();
+    }
 
     width: root.size;
     height: root.size;
     border-radius: self.width / 2;
-    background: root.filled
-        ? (touch.pressed ? Theme.primary-pressed : Theme.primary)
-        : (touch.pressed ? Theme.surface-pressed : transparent);
+    background: root.filled ? (touch.pressed ? Theme.primary-pressed : Theme.primary) : (touch.pressed ? Theme.surface-pressed : transparent);
     opacity: root.enabled ? 1.0 : 0.5;
 
     animate background { duration: Theme.motion-fast; }
@@ -59,7 +48,127 @@ component CircleIconButton inherits Rectangle {
     touch := TouchArea {
         enabled: root.enabled;
         mouse-cursor: pointer;
-        clicked => { root.clicked(); }
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component Chip inherits Rectangle {
+    in property <string> label;
+    in property <bool> active: false;
+    callback clicked();
+
+    horizontal-stretch: 0;
+    height: 28px;
+    border-radius: 14px;
+    background: root.active ? Theme.accent-success.with-alpha(0.22) : Theme.surface-2;
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: center;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.active ? Theme.accent-success : Theme.on-surface;
+                font-size: Theme.font-size-caption;
+                font-weight: 700;
+            }
+        }
+    }
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component ChapterRow inherits Rectangle {
+    in property <int> idx: 0;
+    in property <string> title;
+    in property <string> stamp;
+    in property <bool> current: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 52px;
+    background: ta.has-hover ? Theme.surface-2 : (root.current ? Theme.accent-success.with-alpha(0.10) : transparent);
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+        VerticalLayout {
+            alignment: center;
+            width: 24px;
+            Text {
+                text: root.idx + 1;
+                color: root.current ? Theme.accent-success : Theme.muted;
+                font-size: Theme.font-size-body;
+                font-weight: 700;
+                horizontal-alignment: right;
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            Text {
+                text: root.title;
+                color: root.current ? Theme.accent-success : Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: root.current ? 700 : 500;
+                overflow: elide;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.stamp;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+                font-weight: 600;
+            }
+        }
+    }
+}
+
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.destructive ? Theme.accent-danger : Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+        }
     }
 }
 
@@ -69,11 +178,20 @@ export component PodcastPage inherits Window {
     in property <string> page-title: "The Tail-Recursive Hour";
     in property <string> show-name: "Functional Coffee · Episode 47";
     in property <image> cover: @image-url("@mobile-components/icons/podcast-cover.svg");
-    in property <string> current-time: "12:34";
-    in property <string> total-time: "48:12";
+
     in-out property <float> progress: 0.26;
     in-out property <bool> playing: false;
     in-out property <bool> liked: false;
+    in-out property <bool> queued: false;
+    in-out property <int> speed-mode: 1; // 0:0.75x 1:1.0x 2:1.25x 3:1.5x 4:2.0x
+    in-out property <int> sleep-mode: 0; // 0:Off 1:5m 2:15m 3:30m
+    in-out property <int> share-mode: 0; // 0:Share 1:Copy 2:Email 3:Message
+    in-out property <int> chapter-idx: 1;
+    in-out property <bool> sheet-open: false;
+    in-out property <string> status-msg: "";
+    in-out property <bool> status-success: false;
+    in-out property <bool> status-danger: false;
+
     callback back-pressed();
     callback more-pressed();
     callback play-pause-pressed();
@@ -82,6 +200,54 @@ export component PodcastPage inherits Window {
     callback like-toggled();
     callback queue-pressed();
     callback share-pressed();
+    callback chapter-pressed(int);
+    callback speed-pressed();
+    callback sleep-pressed();
+
+    function total-secs() -> int {
+        return 2892;
+    }
+    function cur-secs() -> int {
+        return floor(root.progress * 2892);
+    }
+    function pad2(n: int) -> string {
+        return n < 10 ? "0" + n : "" + n;
+    }
+    function mmss(s: int) -> string {
+        return floor(s / 60) + ":" + root.pad2(mod(s, 60));
+    }
+    function speed-label() -> string {
+        return root.speed-mode == 0 ? "0.75×" : (root.speed-mode == 1 ? "1.0×" : (root.speed-mode == 2 ? "1.25×" : (root.speed-mode == 3 ? "1.5×" : "2.0×")));
+    }
+    function speed-step() -> float {
+        return root.speed-mode == 0 ? 0.75 : (root.speed-mode == 1 ? 1.0 : (root.speed-mode == 2 ? 1.25 : (root.speed-mode == 3 ? 1.5 : 2.0)));
+    }
+    function sleep-label() -> string {
+        return root.sleep-mode == 0 ? "Sleep: off" : (root.sleep-mode == 1 ? "Sleep 5m" : (root.sleep-mode == 2 ? "Sleep 15m" : "Sleep 30m"));
+    }
+    function share-label() -> string {
+        return root.share-mode == 0 ? "Share" : (root.share-mode == 1 ? "Copied" : (root.share-mode == 2 ? "Emailed" : "Messaged"));
+    }
+    function set-status(m: string, ok: bool, bad: bool) {
+        root.status-msg = m;
+        root.status-success = ok;
+        root.status-danger = bad;
+    }
+
+    // Drive playback when running.
+    tick := Timer {
+        interval: 1s;
+        running: root.playing;
+        triggered => {
+            // 1 tick = speed-step seconds against total of total-secs.
+            root.progress = root.progress + root.speed-step() / root.total-secs();
+            if (root.progress >= 1.0) {
+                root.progress = 0;
+                root.playing = false;
+                root.set-status("Episode complete", true, false);
+            }
+        }
+    }
 
     background: Theme.background;
 
@@ -93,149 +259,404 @@ export component PodcastPage inherits Window {
             title-style: HeadingStyle.grotesk-bold;
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
-            leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.more-pressed(); }
+            leading-pressed => {
+                root.back-pressed();
+            }
+            trailing-pressed => {
+                root.sheet-open = true;
+                root.more-pressed();
+            }
         }
 
-        VerticalLayout {
-            padding: Theme.spacing-lg;
-            spacing: Theme.spacing-lg;
-            vertical-stretch: 1;
-
-            // ----- Cover art -----
-            Rectangle {
-                height: min(self.width, 320px);
-                Rectangle {
-                    // Fixed square — a `min(parent.width, …)` here would make
-                    // the cover's width depend on the centring layout's width
-                    // while also feeding that layout's size info, a binding
-                    // loop. 320px fits the 412px mobile target with margin.
-                    width: 320px;
-                    height: 320px;
-                    border-radius: Theme.radius-lg;
-                    clip: true;
-                    drop-shadow-blur: Theme.elevation-2-blur;
-                    drop-shadow-color: Theme.elevation-2-color;
-                    drop-shadow-offset-y: Theme.elevation-2-y;
-                    Image {
-                        width: parent.width;
-                        height: parent.height;
-                        source: root.cover;
-                        image-fit: ImageFit.cover;
-                    }
-                }
-            }
-
-            // ----- Title + show name -----
-            VerticalLayout {
-                spacing: Theme.spacing-xs;
-                HorizontalLayout {
-                    alignment: center;
-                    Text {
-                        text: root.page-title;
-                        color: Theme.on-background;
-                        font-family: "Space Grotesk";
-                        font-size: 24px;
-                        font-weight: 700;
-                        letter-spacing: -0.4px;
-                        horizontal-alignment: center;
-                        overflow: elide;
-                    }
-                }
-                HorizontalLayout {
-                    alignment: center;
-                    Text {
-                        text: root.show-name;
-                        color: Theme.muted;
-                        font-family: "Fraunces 9pt";
-                        font-size: Theme.font-size-body;
-                        font-italic: true;
-                        horizontal-alignment: center;
-                        overflow: elide;
-                    }
-                }
-            }
-
-            // ----- Progress slider + time labels -----
-            VerticalLayout {
-                spacing: Theme.spacing-xs;
-                Slider {
-                    value <=> root.progress;
-                }
-                HorizontalLayout {
-                    Text {
-                        text: root.current-time;
-                        color: Theme.muted;
-                        font-size: Theme.font-size-caption;
-                        horizontal-stretch: 1;
-                        horizontal-alignment: left;
-                    }
-                    Text {
-                        text: root.total-time;
-                        color: Theme.muted;
-                        font-size: Theme.font-size-caption;
-                        horizontal-alignment: right;
-                    }
-                }
-            }
-
-            // ----- Transport row -----
+        // ----- Status banner -----
+        if !root.status-msg.is-empty: Rectangle {
+            height: 28px;
+            background: root.status-success ? Theme.accent-success.with-alpha(0.16) : (root.status-danger ? Theme.accent-danger.with-alpha(0.16) : Theme.surface-2);
             HorizontalLayout {
                 alignment: center;
-                spacing: Theme.spacing-md;
-                CircleIconButton {
-                    icon: @image-url("@mobile-components/icons/skip-back.svg");
-                    size: 56px;
-                    icon-size: 28px;
-                    a11y-label: "Previous";
-                    clicked => { root.prev-pressed(); }
-                }
-                CircleIconButton {
-                    icon: root.playing
-                        ? @image-url("@mobile-components/icons/pause.svg")
-                        : @image-url("@mobile-components/icons/play.svg");
-                    size: 72px;
-                    icon-size: 36px;
-                    filled: true;
-                    a11y-label: root.playing ? "Pause" : "Play";
-                    clicked => {
-                        root.playing = !root.playing;
-                        root.play-pause-pressed();
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.status-msg;
+                        color: root.status-success ? Theme.accent-success : (root.status-danger ? Theme.accent-danger : Theme.on-surface);
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
                     }
-                }
-                CircleIconButton {
-                    icon: @image-url("@mobile-components/icons/skip-forward.svg");
-                    size: 56px;
-                    icon-size: 28px;
-                    a11y-label: "Next";
-                    clicked => { root.next-pressed(); }
                 }
             }
+        }
 
-            // ----- Action row -----
-            HorizontalLayout {
-                alignment: space-around;
-                IconButton {
-                    label: root.liked ? "Liked" : "Like";
-                    icon: @image-url("@mobile-components/icons/heart.svg");
-                    active: root.liked;
-                    size: 64px;
-                    clicked => {
-                        root.liked = !root.liked;
-                        root.like-toggled();
+        ScrollView {
+            vertical-stretch: 1;
+            VerticalLayout {
+                padding: Theme.spacing-lg;
+                spacing: Theme.spacing-lg;
+
+                // ----- Cover art -----
+                Rectangle {
+                    height: min(self.width, 320px);
+                    Rectangle {
+                        width: 320px;
+                        height: 320px;
+                        border-radius: Theme.radius-lg;
+                        clip: true;
+                        drop-shadow-blur: Theme.elevation-2-blur;
+                        drop-shadow-color: Theme.elevation-2-color;
+                        drop-shadow-offset-y: Theme.elevation-2-y;
+                        Image {
+                            width: parent.width;
+                            height: parent.height;
+                            source: root.cover;
+                            image-fit: ImageFit.cover;
+                        }
+                        TouchArea {
+                            clicked => {
+                                root.playing = !root.playing;
+                                root.set-status(root.playing ? "Playing" : "Paused", root.playing, !root.playing);
+                                root.play-pause-pressed();
+                            }
+                        }
                     }
                 }
-                IconButton {
-                    label: "Queue";
-                    icon: @image-url("@mobile-components/icons/queue.svg");
-                    size: 64px;
-                    clicked => { root.queue-pressed(); }
+
+                // ----- Title + show name -----
+                VerticalLayout {
+                    spacing: Theme.spacing-xs;
+                    HorizontalLayout {
+                        alignment: center;
+                        Text {
+                            text: root.page-title;
+                            color: Theme.on-background;
+                            font-family: "Space Grotesk";
+                            font-size: 24px;
+                            font-weight: 700;
+                            letter-spacing: -0.4px;
+                            horizontal-alignment: center;
+                            overflow: elide;
+                        }
+                    }
+                    HorizontalLayout {
+                        alignment: center;
+                        Text {
+                            text: root.show-name;
+                            color: Theme.muted;
+                            font-family: "Fraunces 9pt";
+                            font-size: Theme.font-size-body;
+                            font-italic: true;
+                            horizontal-alignment: center;
+                            overflow: elide;
+                        }
+                    }
                 }
-                IconButton {
-                    label: "Share";
-                    icon: @image-url("@mobile-components/icons/more-vertical.svg");
-                    size: 64px;
-                    clicked => { root.share-pressed(); }
+
+                // ----- Chips row: speed / sleep / queue -----
+                HorizontalLayout {
+                    spacing: Theme.spacing-sm;
+                    alignment: center;
+                    Chip {
+                        label: root.speed-label();
+                        active: root.speed-mode != 1;
+                        clicked => {
+                            root.speed-mode = mod(root.speed-mode + 1, 5);
+                            root.set-status("Speed " + root.speed-label(), true, false);
+                            root.speed-pressed();
+                        }
+                    }
+                    Chip {
+                        label: root.sleep-label();
+                        active: root.sleep-mode != 0;
+                        clicked => {
+                            root.sleep-mode = mod(root.sleep-mode + 1, 4);
+                            root.set-status(root.sleep-label(), root.sleep-mode != 0, false);
+                            root.sleep-pressed();
+                        }
+                    }
+                    Chip {
+                        label: root.queued ? "Queued" : "Queue";
+                        active: root.queued;
+                        clicked => {
+                            root.queued = !root.queued;
+                            root.set-status(root.queued ? "Added to queue" : "Removed from queue", root.queued, !root.queued);
+                            root.queue-pressed();
+                        }
+                    }
+                }
+
+                // ----- Progress slider + time labels -----
+                VerticalLayout {
+                    spacing: Theme.spacing-xs;
+                    Slider {
+                        value <=> root.progress;
+                    }
+                    HorizontalLayout {
+                        Text {
+                            text: root.mmss(root.cur-secs());
+                            color: Theme.muted;
+                            font-size: Theme.font-size-caption;
+                            horizontal-stretch: 1;
+                            horizontal-alignment: left;
+                        }
+                        Text {
+                            text: "-" + root.mmss(root.total-secs() - root.cur-secs());
+                            color: Theme.muted;
+                            font-size: Theme.font-size-caption;
+                            horizontal-alignment: right;
+                        }
+                    }
+                }
+
+                // ----- Transport row -----
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: Theme.spacing-md;
+                    CircleIconButton {
+                        icon: @image-url("@mobile-components/icons/skip-back.svg");
+                        size: 56px;
+                        icon-size: 28px;
+                        a11y-label: "Back 15s";
+                        clicked => {
+                            root.progress = max(0, root.progress - 15.0 / root.total-secs());
+                            root.set-status("Skip back 15s", true, false);
+                            root.prev-pressed();
+                        }
+                    }
+                    CircleIconButton {
+                        icon: root.playing ? @image-url("@mobile-components/icons/pause.svg") : @image-url("@mobile-components/icons/play.svg");
+                        size: 72px;
+                        icon-size: 36px;
+                        filled: true;
+                        a11y-label: root.playing ? "Pause" : "Play";
+                        clicked => {
+                            root.playing = !root.playing;
+                            root.set-status(root.playing ? "Playing" : "Paused", root.playing, !root.playing);
+                            root.play-pause-pressed();
+                        }
+                    }
+                    CircleIconButton {
+                        icon: @image-url("@mobile-components/icons/skip-forward.svg");
+                        size: 56px;
+                        icon-size: 28px;
+                        a11y-label: "Forward 30s";
+                        clicked => {
+                            root.progress = min(1.0, root.progress + 30.0 / root.total-secs());
+                            root.set-status("Skip ahead 30s", true, false);
+                            root.next-pressed();
+                        }
+                    }
+                }
+
+                // ----- Action row -----
+                HorizontalLayout {
+                    alignment: space-around;
+                    IconButton {
+                        label: root.liked ? "Liked" : "Like";
+                        icon: @image-url("@mobile-components/icons/heart.svg");
+                        active: root.liked;
+                        size: 64px;
+                        clicked => {
+                            root.liked = !root.liked;
+                            root.set-status(root.liked ? "Liked" : "Unliked", root.liked, !root.liked);
+                            root.like-toggled();
+                        }
+                    }
+                    IconButton {
+                        label: root.queued ? "Queued" : "Queue";
+                        icon: @image-url("@mobile-components/icons/queue.svg");
+                        active: root.queued;
+                        size: 64px;
+                        clicked => {
+                            root.queued = !root.queued;
+                            root.set-status(root.queued ? "Added to queue" : "Removed from queue", root.queued, !root.queued);
+                            root.queue-pressed();
+                        }
+                    }
+                    IconButton {
+                        label: root.share-label();
+                        icon: @image-url("@mobile-components/icons/more-vertical.svg");
+                        active: root.share-mode != 0;
+                        size: 64px;
+                        clicked => {
+                            root.share-mode = mod(root.share-mode + 1, 4);
+                            root.set-status(root.share-label(), root.share-mode != 0, false);
+                            root.share-pressed();
+                        }
+                    }
+                }
+
+                // ----- Chapters -----
+                VerticalLayout {
+                    spacing: 0;
+                    Rectangle {
+                        height: 32px;
+                        HorizontalLayout {
+                            alignment: start;
+                            VerticalLayout {
+                                alignment: center;
+                                Text {
+                                    text: "Chapters";
+                                    color: Theme.muted;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 700;
+                                }
+                            }
+                        }
+                    }
+                    ChapterRow {
+                        idx: 0;
+                        title: "Cold open";
+                        stamp: "0:00";
+                        current: root.chapter-idx == 0;
+                        clicked => {
+                            root.chapter-idx = 0;
+                            root.progress = 0;
+                            root.set-status("Jumped to Cold open", true, false);
+                            root.chapter-pressed(0);
+                        }
+                    }
+                    Divider { }
+
+                    ChapterRow {
+                        idx: 1;
+                        title: "Why fold beats map";
+                        stamp: "5:12";
+                        current: root.chapter-idx == 1;
+                        clicked => {
+                            root.chapter-idx = 1;
+                            root.progress = 5.0 * 60 / root.total-secs() + 12.0 / root.total-secs();
+                            root.set-status("Jumped to Why fold beats map", true, false);
+                            root.chapter-pressed(1);
+                        }
+                    }
+                    Divider { }
+
+                    ChapterRow {
+                        idx: 2;
+                        title: "Listener question";
+                        stamp: "18:40";
+                        current: root.chapter-idx == 2;
+                        clicked => {
+                            root.chapter-idx = 2;
+                            root.progress = 18.0 * 60 / root.total-secs() + 40.0 / root.total-secs();
+                            root.set-status("Jumped to Listener question", true, false);
+                            root.chapter-pressed(2);
+                        }
+                    }
+                    Divider { }
+
+                    ChapterRow {
+                        idx: 3;
+                        title: "Pattern matching deep dive";
+                        stamp: "27:05";
+                        current: root.chapter-idx == 3;
+                        clicked => {
+                            root.chapter-idx = 3;
+                            root.progress = 27.0 * 60 / root.total-secs() + 5.0 / root.total-secs();
+                            root.set-status("Jumped to Pattern matching deep dive", true, false);
+                            root.chapter-pressed(3);
+                        }
+                    }
+                    Divider { }
+
+                    ChapterRow {
+                        idx: 4;
+                        title: "Outro and credits";
+                        stamp: "44:50";
+                        current: root.chapter-idx == 4;
+                        clicked => {
+                            root.chapter-idx = 4;
+                            root.progress = 44.0 * 60 / root.total-secs() + 50.0 / root.total-secs();
+                            root.set-status("Jumped to Outro", true, false);
+                            root.chapter-pressed(4);
+                        }
+                    }
+                }
+
+                Rectangle {
+                    height: Theme.spacing-xl;
+                }
+            }
+        }
+    }
+
+    // ===================== Bottom sheet =====================
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+            }
+        }
+
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: Theme.surface-2;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.muted;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: "Episode actions";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 700;
+                    }
+                }
+
+                SheetRow {
+                    label: "Mark as played";
+                    clicked => {
+                        root.progress = 1.0;
+                        root.playing = false;
+                        root.set-status("Marked as played", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Restart from beginning";
+                    clicked => {
+                        root.progress = 0;
+                        root.chapter-idx = 0;
+                        root.set-status("Restarted", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Toggle queue";
+                    clicked => {
+                        root.queued = !root.queued;
+                        root.set-status(root.queued ? "Queued" : "Removed", root.queued, !root.queued);
+                        root.sheet-open = false;
+                    }
+                }
+                Divider { }
+
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.sheet-open = false;
+                    }
                 }
             }
         }

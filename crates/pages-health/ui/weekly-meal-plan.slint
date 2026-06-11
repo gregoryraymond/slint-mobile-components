@@ -2,16 +2,17 @@
 // =====================================================================
 //
 // 7-day meal plan grid — Plan to Eat / Mealime / Eat This Much style.
-// Demonstrates a heterogenous 2D grid layout: day rows × meal columns,
-// with each cell a compact "meal pill" carrying:
+// Demonstrates a heterogenous 2D grid layout with live state:
 //
-//   - dish name (single line, elided)
-//   - calorie count
-//   - tone-tinted leading bar (success = on plan, warning = swapped,
-//     danger = skipped)
-//
-// The page header carries a Week-picker chip strip; the footer shows
-// the rolled-up weekly stats (total kcal + protein avg + meals planned).
+//   - Each meal pill is tappable and cycles default → on plan → swapped
+//     → skipped → default. Skipped pills show `—` and drop out of the
+//     totals.
+//   - Filter chips actually hide columns (All / Breakfast / Lunch /
+//     Dinner). Column headers and pill widths adapt.
+//   - Week prev/next buttons cycle through 4 hardcoded week labels.
+//   - Footer rolls up WEEKLY KCAL (sum of non-skipped meals), AVG
+//     PROTEIN (derived per-day), and MEALS PLANNED (count of meals
+//     that aren't skipped).
 
 import { ScrollView } from "std-widgets.slint";
 import { Theme, Tone } from "@mobile-theme/theme.slint";
@@ -20,32 +21,32 @@ import { SectionHeader } from "@mobile-components/section-header.slint";
 import { Chip } from "@mobile-components/chip.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
 
-// One meal pill — the unit cell of the grid.
+// Tappable meal pill.
 component MealPill inherits Rectangle {
     in property <string> name;
     in property <string> kcal;
-    in property <Tone> tone: Tone.default;
+    in property <int> state: 0; // 0=default 1=success 2=warning 3=danger
+    callback clicked();
 
     horizontal-stretch: 1;
     height: 56px;
-    background: Theme.surface-1;
+    background: touch.pressed ? Theme.surface-pressed : Theme.surface-1;
+    animate background { duration: Theme.motion-fast; }
     border-radius: Theme.radius-sm;
     clip: true;
     drop-shadow-blur: Theme.elevation-1-blur;
     drop-shadow-color: Theme.elevation-1-color;
     drop-shadow-offset-y: Theme.elevation-1-y;
 
-    // Leading tone bar.
     Rectangle {
         x: 0;
         y: 0;
         width: 3px;
         height: parent.height;
         background:
-              root.tone == Tone.success ? Theme.accent-success
-            : root.tone == Tone.warning ? Theme.accent-warning
-            : root.tone == Tone.danger  ? Theme.accent-danger
-            : root.tone == Tone.info    ? Theme.accent-info
+              root.state == 1 ? Theme.accent-success
+            : root.state == 2 ? Theme.accent-warning
+            : root.state == 3 ? Theme.accent-danger
             : transparent;
     }
 
@@ -56,21 +57,21 @@ component MealPill inherits Rectangle {
         padding-bottom: Theme.spacing-xs;
         spacing: 2px;
         Text {
-            text: root.name;
-            color: Theme.on-surface;
+            text: root.state == 3 ? "Skipped" : root.name;
+            color: root.state == 3 ? Theme.muted : Theme.on-surface;
             font-size: 11px;
             font-weight: 600;
             overflow: elide;
         }
         Text {
-            text: root.kcal;
+            text: root.state == 3 ? "—" : root.kcal;
             color: Theme.muted;
             font-size: 10px;
         }
     }
+    touch := TouchArea { clicked => { root.clicked(); } }
 }
 
-// One day row — day label on the left + three meal pills.
 component DayRow inherits Rectangle {
     in property <string> day;
     in property <string> when;
@@ -87,7 +88,6 @@ component DayRow inherits Rectangle {
         spacing: Theme.spacing-sm;
         alignment: stretch;
 
-        // Day label column.
         VerticalLayout {
             alignment: center;
             width: 40px;
@@ -108,7 +108,6 @@ component DayRow inherits Rectangle {
             }
         }
 
-        // The 3 meal pills.
         @children
     }
 }
@@ -116,11 +115,231 @@ component DayRow inherits Rectangle {
 export component WeeklyMealPlanPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
-    in property <string> week-label: "May 12 – 18";
     callback back-pressed();
     callback prev-week-pressed();
     callback next-week-pressed();
     callback meal-pressed(string);
+    callback meal-state-changed(int, int); // index, new state
+    callback grocery-pressed(int); // planned-count
+
+    // ----- Interactive state -----
+    // 7 days × 3 meals = 21 cells. Index = day*3 + meal.
+    // 0=neutral 1=on plan 2=swapped 3=skipped
+    private property <int> m0: 1; // MON breakfast
+    private property <int> m1: 1; // MON lunch
+    private property <int> m2: 1; // MON dinner
+    private property <int> m3: 1;
+    private property <int> m4: 2;
+    private property <int> m5: 1;
+    private property <int> m6: 1;
+    private property <int> m7: 1;
+    private property <int> m8: 0;
+    private property <int> m9: 0;
+    private property <int> m10: 0;
+    private property <int> m11: 0;
+    private property <int> m12: 0;
+    private property <int> m13: 0;
+    private property <int> m14: 2;
+    private property <int> m15: 0;
+    private property <int> m16: 0;
+    private property <int> m17: 0;
+    private property <int> m18: 3; // SUN brunch out
+    private property <int> m19: 0;
+    private property <int> m20: 0;
+    // 0=all 1=breakfast 2=lunch 3=dinner
+    private property <int> filter-mode: 0;
+    private property <int> week-idx: 1; // 0..3
+    private property <string> status-msg: "Tap a meal to cycle state · pick a column filter · prev/next cycles weeks";
+    private property <bool> status-is-success: false;
+    private property <bool> status-is-danger: false;
+
+    // ----- Per-meal metadata -----
+    function meal-kcal(idx: int) -> int {
+        // Breakfast values (col 0): 245, 180, 245, 210, 245, 420, 0
+        // Lunch (col 1): 542, 620, 542, 480, 510, 380, 400
+        // Dinner (col 2): 412, 380, 352, 560, 0, 640, 350
+        if (idx == 0) { return 245; }
+        if (idx == 1) { return 542; }
+        if (idx == 2) { return 412; }
+        if (idx == 3) { return 180; }
+        if (idx == 4) { return 620; }
+        if (idx == 5) { return 380; }
+        if (idx == 6) { return 245; }
+        if (idx == 7) { return 542; }
+        if (idx == 8) { return 352; }
+        if (idx == 9) { return 210; }
+        if (idx == 10) { return 480; }
+        if (idx == 11) { return 560; }
+        if (idx == 12) { return 245; }
+        if (idx == 13) { return 510; }
+        if (idx == 14) { return 0; } // FRI takeaway
+        if (idx == 15) { return 420; }
+        if (idx == 16) { return 380; }
+        if (idx == 17) { return 640; }
+        if (idx == 18) { return 0; } // SUN brunch
+        if (idx == 19) { return 400; }
+        return 350;
+    }
+    function meal-name(idx: int) -> string {
+        if (idx == 0) { return "Oats + berries"; }
+        if (idx == 1) { return "Chicken-rice bowl"; }
+        if (idx == 2) { return "Salmon salad"; }
+        if (idx == 3) { return "Greek yogurt"; }
+        if (idx == 4) { return "Bento — sushi"; }
+        if (idx == 5) { return "Tofu stir-fry"; }
+        if (idx == 6) { return "Oats + berries"; }
+        if (idx == 7) { return "Chicken-rice bowl"; }
+        if (idx == 8) { return "Salmon + quinoa"; }
+        if (idx == 9) { return "Smoothie"; }
+        if (idx == 10) { return "Wrap — chicken"; }
+        if (idx == 11) { return "Pasta — pesto"; }
+        if (idx == 12) { return "Oats + berries"; }
+        if (idx == 13) { return "Buddha bowl"; }
+        if (idx == 14) { return "Takeaway"; }
+        if (idx == 15) { return "Eggs + toast"; }
+        if (idx == 16) { return "Salad + bread"; }
+        if (idx == 17) { return "Steak + greens"; }
+        if (idx == 18) { return "Brunch out"; }
+        if (idx == 19) { return "Leftovers"; }
+        return "Soup + bread";
+    }
+    function state-for(i: int) -> int {
+        if (i == 0) { return root.m0; }
+        if (i == 1) { return root.m1; }
+        if (i == 2) { return root.m2; }
+        if (i == 3) { return root.m3; }
+        if (i == 4) { return root.m4; }
+        if (i == 5) { return root.m5; }
+        if (i == 6) { return root.m6; }
+        if (i == 7) { return root.m7; }
+        if (i == 8) { return root.m8; }
+        if (i == 9) { return root.m9; }
+        if (i == 10) { return root.m10; }
+        if (i == 11) { return root.m11; }
+        if (i == 12) { return root.m12; }
+        if (i == 13) { return root.m13; }
+        if (i == 14) { return root.m14; }
+        if (i == 15) { return root.m15; }
+        if (i == 16) { return root.m16; }
+        if (i == 17) { return root.m17; }
+        if (i == 18) { return root.m18; }
+        if (i == 19) { return root.m19; }
+        return root.m20;
+    }
+    function state-label(s: int) -> string {
+        if (s == 0) { return "default"; }
+        if (s == 1) { return "on plan"; }
+        if (s == 2) { return "swapped"; }
+        return "skipped";
+    }
+    function show-col(c: int) -> bool {
+        return root.filter-mode == 0 || root.filter-mode == c + 1;
+    }
+    function week-label() -> string {
+        if (root.week-idx == 0) { return "May 5 – 11"; }
+        if (root.week-idx == 1) { return "May 12 – 18"; }
+        if (root.week-idx == 2) { return "May 19 – 25"; }
+        return "May 26 – Jun 1";
+    }
+    function meal-kcal-contrib(i: int) -> int {
+        return root.state-for(i) == 3 ? 0 : root.meal-kcal(i);
+    }
+    function planned-count() -> int {
+        return (root.state-for(0) != 3 ? 1 : 0) + (root.state-for(1) != 3 ? 1 : 0)
+            + (root.state-for(2) != 3 ? 1 : 0) + (root.state-for(3) != 3 ? 1 : 0)
+            + (root.state-for(4) != 3 ? 1 : 0) + (root.state-for(5) != 3 ? 1 : 0)
+            + (root.state-for(6) != 3 ? 1 : 0) + (root.state-for(7) != 3 ? 1 : 0)
+            + (root.state-for(8) != 3 ? 1 : 0) + (root.state-for(9) != 3 ? 1 : 0)
+            + (root.state-for(10) != 3 ? 1 : 0) + (root.state-for(11) != 3 ? 1 : 0)
+            + (root.state-for(12) != 3 ? 1 : 0) + (root.state-for(13) != 3 ? 1 : 0)
+            + (root.state-for(14) != 3 ? 1 : 0) + (root.state-for(15) != 3 ? 1 : 0)
+            + (root.state-for(16) != 3 ? 1 : 0) + (root.state-for(17) != 3 ? 1 : 0)
+            + (root.state-for(18) != 3 ? 1 : 0) + (root.state-for(19) != 3 ? 1 : 0)
+            + (root.state-for(20) != 3 ? 1 : 0);
+    }
+    function weekly-kcal() -> int {
+        return root.meal-kcal-contrib(0) + root.meal-kcal-contrib(1)
+            + root.meal-kcal-contrib(2) + root.meal-kcal-contrib(3)
+            + root.meal-kcal-contrib(4) + root.meal-kcal-contrib(5)
+            + root.meal-kcal-contrib(6) + root.meal-kcal-contrib(7)
+            + root.meal-kcal-contrib(8) + root.meal-kcal-contrib(9)
+            + root.meal-kcal-contrib(10) + root.meal-kcal-contrib(11)
+            + root.meal-kcal-contrib(12) + root.meal-kcal-contrib(13)
+            + root.meal-kcal-contrib(14) + root.meal-kcal-contrib(15)
+            + root.meal-kcal-contrib(16) + root.meal-kcal-contrib(17)
+            + root.meal-kcal-contrib(18) + root.meal-kcal-contrib(19)
+            + root.meal-kcal-contrib(20);
+    }
+    function avg-protein-per-day() -> int {
+        // Loose estimate: 25 g protein per planned meal, divided by 7.
+        return floor(root.planned-count() * 25 / 7);
+    }
+    function add-commas(n: int) -> string {
+        return n < 1000 ? "" + n
+            : floor(n / 1000) + "," + (mod(n, 1000) < 10 ? "00" + mod(n, 1000)
+                : mod(n, 1000) < 100 ? "0" + mod(n, 1000)
+                : "" + mod(n, 1000));
+    }
+
+    // ----- Mutations -----
+    public function tap-meal(i: int) {
+        if (i == 0) { root.m0 = mod(root.m0 + 1, 4); }
+        if (i == 1) { root.m1 = mod(root.m1 + 1, 4); }
+        if (i == 2) { root.m2 = mod(root.m2 + 1, 4); }
+        if (i == 3) { root.m3 = mod(root.m3 + 1, 4); }
+        if (i == 4) { root.m4 = mod(root.m4 + 1, 4); }
+        if (i == 5) { root.m5 = mod(root.m5 + 1, 4); }
+        if (i == 6) { root.m6 = mod(root.m6 + 1, 4); }
+        if (i == 7) { root.m7 = mod(root.m7 + 1, 4); }
+        if (i == 8) { root.m8 = mod(root.m8 + 1, 4); }
+        if (i == 9) { root.m9 = mod(root.m9 + 1, 4); }
+        if (i == 10) { root.m10 = mod(root.m10 + 1, 4); }
+        if (i == 11) { root.m11 = mod(root.m11 + 1, 4); }
+        if (i == 12) { root.m12 = mod(root.m12 + 1, 4); }
+        if (i == 13) { root.m13 = mod(root.m13 + 1, 4); }
+        if (i == 14) { root.m14 = mod(root.m14 + 1, 4); }
+        if (i == 15) { root.m15 = mod(root.m15 + 1, 4); }
+        if (i == 16) { root.m16 = mod(root.m16 + 1, 4); }
+        if (i == 17) { root.m17 = mod(root.m17 + 1, 4); }
+        if (i == 18) { root.m18 = mod(root.m18 + 1, 4); }
+        if (i == 19) { root.m19 = mod(root.m19 + 1, 4); }
+        if (i == 20) { root.m20 = mod(root.m20 + 1, 4); }
+        root.meal-state-changed(i, root.state-for(i));
+        root.meal-pressed(root.meal-name(i));
+        root.status-msg = root.meal-name(i) + " · " + root.state-label(root.state-for(i));
+        root.status-is-success = root.state-for(i) == 1;
+        root.status-is-danger = root.state-for(i) == 3;
+    }
+    public function set-filter(m: int) {
+        root.filter-mode = m;
+        root.status-msg = "Filter · "
+            + (m == 0 ? "All meals"
+                : m == 1 ? "Breakfast only"
+                : m == 2 ? "Lunch only"
+                : "Dinner only");
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function tap-prev() {
+        root.week-idx = mod(root.week-idx + 3, 4);
+        root.prev-week-pressed();
+        root.status-msg = "Week · " + root.week-label();
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function tap-next() {
+        root.week-idx = mod(root.week-idx + 1, 4);
+        root.next-week-pressed();
+        root.status-msg = "Week · " + root.week-label();
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function tap-grocery() {
+        root.grocery-pressed(root.planned-count());
+        root.status-msg = "Grocery list · " + root.planned-count() + " meals";
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
 
     background: Theme.background;
 
@@ -133,160 +352,327 @@ export component WeeklyMealPlanPage inherits Window {
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             trailing-icon: @image-url("@mobile-components/icons/queue.svg");
             leading-pressed => { root.back-pressed(); }
+            trailing-pressed => { root.tap-grocery(); }
         }
 
-        // Week picker + column headers + 7 day rows overflow a single
-        // 892-px screen, so the middle region scrolls between the pinned
-        // AppBar and the footer stats below.
+        // ----- Status banner ---------------------------------------
+        Rectangle {
+            height: 32px;
+            background: root.status-is-danger ? Theme.accent-danger
+                : root.status-is-success ? Theme.accent-success
+                : Theme.surface-2;
+            animate background { duration: Theme.motion-fast; }
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                Text {
+                    text: root.status-msg;
+                    color: (root.status-is-danger || root.status-is-success)
+                        ? Theme.on-primary
+                        : Theme.on-surface;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+            }
+        }
+
         ScrollView {
             vertical-stretch: 1;
 
             VerticalLayout {
                 spacing: 0;
 
-        // Week picker + label.
-        VerticalLayout {
-            padding-left: Theme.spacing-md;
-            padding-right: Theme.spacing-md;
-            padding-top: Theme.spacing-sm;
-            padding-bottom: Theme.spacing-sm;
-            spacing: Theme.spacing-sm;
-            HorizontalLayout {
-                spacing: Theme.spacing-sm;
-                alignment: stretch;
+                // Week picker + label.
                 VerticalLayout {
-                    alignment: center;
-                    horizontal-stretch: 1;
-                    Heading {
-                        text: root.week-label;
-                        style: HeadingStyle.grotesk-bold;
-                        color: Theme.on-background;
-                        font-size: 22px;
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    padding-bottom: Theme.spacing-sm;
+                    spacing: Theme.spacing-sm;
+                    HorizontalLayout {
+                        spacing: Theme.spacing-sm;
+                        alignment: stretch;
+                        VerticalLayout {
+                            alignment: center;
+                            horizontal-stretch: 1;
+                            Heading {
+                                text: root.week-label();
+                                style: HeadingStyle.grotesk-bold;
+                                color: Theme.on-background;
+                                font-size: 22px;
+                            }
+                        }
+                        HorizontalLayout {
+                            spacing: Theme.spacing-xs;
+                            Rectangle {
+                                width: 36px;
+                                height: 36px;
+                                border-radius: self.width / 2;
+                                background: prev-touch.pressed
+                                    ? Theme.surface-pressed
+                                    : Theme.surface-1;
+                                animate background { duration: Theme.motion-fast; }
+                                Image {
+                                    width: 14px;
+                                    height: 14px;
+                                    x: (parent.width - self.width) / 2;
+                                    y: (parent.height - self.height) / 2;
+                                    source: @image-url("@mobile-components/icons/arrow-left.svg");
+                                    colorize: Theme.on-surface;
+                                    image-fit: contain;
+                                }
+                                prev-touch := TouchArea {
+                                    clicked => { root.tap-prev(); }
+                                }
+                            }
+                            Rectangle {
+                                width: 36px;
+                                height: 36px;
+                                border-radius: self.width / 2;
+                                background: next-touch.pressed
+                                    ? Theme.surface-pressed
+                                    : Theme.surface-1;
+                                animate background { duration: Theme.motion-fast; }
+                                Image {
+                                    width: 14px;
+                                    height: 14px;
+                                    x: (parent.width - self.width) / 2;
+                                    y: (parent.height - self.height) / 2;
+                                    source: @image-url("@mobile-components/icons/chevron-right.svg");
+                                    colorize: Theme.on-surface;
+                                    image-fit: contain;
+                                }
+                                next-touch := TouchArea {
+                                    clicked => { root.tap-next(); }
+                                }
+                            }
+                        }
+                    }
+                    HorizontalLayout {
+                        spacing: Theme.spacing-sm;
+                        Rectangle {
+                            Chip { label: "All meals"; selected: root.filter-mode == 0; }
+                            TouchArea { clicked => { root.set-filter(0); } }
+                        }
+                        Rectangle {
+                            Chip { label: "Breakfast"; selected: root.filter-mode == 1; }
+                            TouchArea { clicked => { root.set-filter(1); } }
+                        }
+                        Rectangle {
+                            Chip { label: "Lunch"; selected: root.filter-mode == 2; }
+                            TouchArea { clicked => { root.set-filter(2); } }
+                        }
+                        Rectangle {
+                            Chip { label: "Dinner"; selected: root.filter-mode == 3; }
+                            TouchArea { clicked => { root.set-filter(3); } }
+                        }
                     }
                 }
+
+                // Column headers — only visible ones render.
                 HorizontalLayout {
-                    spacing: Theme.spacing-xs;
-                    Rectangle {
-                        width: 36px;
-                        height: 36px;
-                        border-radius: self.width / 2;
-                        background: Theme.surface-1;
-                        Image {
-                            width: 14px;
-                            height: 14px;
-                            x: (parent.width - self.width) / 2;
-                            y: (parent.height - self.height) / 2;
-                            source: @image-url("@mobile-components/icons/arrow-left.svg");
-                            colorize: Theme.on-surface;
-                            image-fit: contain;
-                        }
-                        TouchArea {
-                            clicked => { root.prev-week-pressed(); }
+                    padding-left: Theme.spacing-md + 40px + Theme.spacing-sm;
+                    padding-right: Theme.spacing-md;
+                    padding-bottom: 2px;
+                    spacing: Theme.spacing-sm;
+                    if root.show-col(0): VerticalLayout {
+                        horizontal-stretch: 1;
+                        Text {
+                            text: "BREAKFAST";
+                            color: Theme.muted;
+                            font-size: 10px;
+                            font-weight: 700;
+                            letter-spacing: 0.5px;
+                            horizontal-alignment: left;
                         }
                     }
-                    Rectangle {
-                        width: 36px;
-                        height: 36px;
-                        border-radius: self.width / 2;
-                        background: Theme.surface-1;
-                        Image {
-                            width: 14px;
-                            height: 14px;
-                            x: (parent.width - self.width) / 2;
-                            y: (parent.height - self.height) / 2;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.on-surface;
-                            image-fit: contain;
+                    if root.show-col(1): VerticalLayout {
+                        horizontal-stretch: 1;
+                        Text {
+                            text: "LUNCH";
+                            color: Theme.muted;
+                            font-size: 10px;
+                            font-weight: 700;
+                            letter-spacing: 0.5px;
+                            horizontal-alignment: left;
                         }
-                        TouchArea {
-                            clicked => { root.next-week-pressed(); }
+                    }
+                    if root.show-col(2): VerticalLayout {
+                        horizontal-stretch: 1;
+                        Text {
+                            text: "DINNER";
+                            color: Theme.muted;
+                            font-size: 10px;
+                            font-weight: 700;
+                            letter-spacing: 0.5px;
+                            horizontal-alignment: left;
                         }
                     }
                 }
-            }
-            HorizontalLayout {
-                spacing: Theme.spacing-sm;
-                Chip { label: "All meals"; selected: true; }
-                Chip { label: "Breakfast"; }
-                Chip { label: "Lunch"; }
-                Chip { label: "Dinner"; }
-            }
-        }
 
-        // Column headers (Breakfast / Lunch / Dinner).
-        HorizontalLayout {
-            padding-left: Theme.spacing-md + 40px + Theme.spacing-sm;
-            padding-right: Theme.spacing-md;
-            padding-bottom: 2px;
-            spacing: Theme.spacing-sm;
-            for col in ["BREAKFAST", "LUNCH", "DINNER"] : VerticalLayout {
-                horizontal-stretch: 1;
-                Text {
-                    text: col;
-                    color: Theme.muted;
-                    font-size: 10px;
-                    font-weight: 700;
-                    letter-spacing: 0.5px;
-                    horizontal-alignment: left;
+                // Day rows — 7 rows × up to 3 conditional pills each.
+                DayRow {
+                    day: "MON";
+                    when: "12";
+                    if root.show-col(0): MealPill {
+                        name: "Oats + berries";
+                        kcal: "245 kcal";
+                        state: root.m0;
+                        clicked => { root.tap-meal(0); }
+                    }
+                    if root.show-col(1): MealPill {
+                        name: "Chicken-rice bowl";
+                        kcal: "542 kcal";
+                        state: root.m1;
+                        clicked => { root.tap-meal(1); }
+                    }
+                    if root.show-col(2): MealPill {
+                        name: "Salmon salad";
+                        kcal: "412 kcal";
+                        state: root.m2;
+                        clicked => { root.tap-meal(2); }
+                    }
+                }
+                DayRow {
+                    day: "TUE";
+                    when: "13";
+                    if root.show-col(0): MealPill {
+                        name: "Greek yogurt";
+                        kcal: "180 kcal";
+                        state: root.m3;
+                        clicked => { root.tap-meal(3); }
+                    }
+                    if root.show-col(1): MealPill {
+                        name: "Bento — sushi";
+                        kcal: "620 kcal";
+                        state: root.m4;
+                        clicked => { root.tap-meal(4); }
+                    }
+                    if root.show-col(2): MealPill {
+                        name: "Tofu stir-fry";
+                        kcal: "380 kcal";
+                        state: root.m5;
+                        clicked => { root.tap-meal(5); }
+                    }
+                }
+                DayRow {
+                    day: "WED";
+                    when: "14";
+                    today: true;
+                    if root.show-col(0): MealPill {
+                        name: "Oats + berries";
+                        kcal: "245 kcal";
+                        state: root.m6;
+                        clicked => { root.tap-meal(6); }
+                    }
+                    if root.show-col(1): MealPill {
+                        name: "Chicken-rice bowl";
+                        kcal: "542 kcal";
+                        state: root.m7;
+                        clicked => { root.tap-meal(7); }
+                    }
+                    if root.show-col(2): MealPill {
+                        name: "Salmon + quinoa";
+                        kcal: "352 kcal";
+                        state: root.m8;
+                        clicked => { root.tap-meal(8); }
+                    }
+                }
+                DayRow {
+                    day: "THU";
+                    when: "15";
+                    if root.show-col(0): MealPill {
+                        name: "Smoothie";
+                        kcal: "210 kcal";
+                        state: root.m9;
+                        clicked => { root.tap-meal(9); }
+                    }
+                    if root.show-col(1): MealPill {
+                        name: "Wrap — chicken";
+                        kcal: "480 kcal";
+                        state: root.m10;
+                        clicked => { root.tap-meal(10); }
+                    }
+                    if root.show-col(2): MealPill {
+                        name: "Pasta — pesto";
+                        kcal: "560 kcal";
+                        state: root.m11;
+                        clicked => { root.tap-meal(11); }
+                    }
+                }
+                DayRow {
+                    day: "FRI";
+                    when: "16";
+                    if root.show-col(0): MealPill {
+                        name: "Oats + berries";
+                        kcal: "245 kcal";
+                        state: root.m12;
+                        clicked => { root.tap-meal(12); }
+                    }
+                    if root.show-col(1): MealPill {
+                        name: "Buddha bowl";
+                        kcal: "510 kcal";
+                        state: root.m13;
+                        clicked => { root.tap-meal(13); }
+                    }
+                    if root.show-col(2): MealPill {
+                        name: "Takeaway";
+                        kcal: "—";
+                        state: root.m14;
+                        clicked => { root.tap-meal(14); }
+                    }
+                }
+                DayRow {
+                    day: "SAT";
+                    when: "17";
+                    if root.show-col(0): MealPill {
+                        name: "Eggs + toast";
+                        kcal: "420 kcal";
+                        state: root.m15;
+                        clicked => { root.tap-meal(15); }
+                    }
+                    if root.show-col(1): MealPill {
+                        name: "Salad + bread";
+                        kcal: "380 kcal";
+                        state: root.m16;
+                        clicked => { root.tap-meal(16); }
+                    }
+                    if root.show-col(2): MealPill {
+                        name: "Steak + greens";
+                        kcal: "640 kcal";
+                        state: root.m17;
+                        clicked => { root.tap-meal(17); }
+                    }
+                }
+                DayRow {
+                    day: "SUN";
+                    when: "18";
+                    if root.show-col(0): MealPill {
+                        name: "Brunch out";
+                        kcal: "—";
+                        state: root.m18;
+                        clicked => { root.tap-meal(18); }
+                    }
+                    if root.show-col(1): MealPill {
+                        name: "Leftovers";
+                        kcal: "400 kcal";
+                        state: root.m19;
+                        clicked => { root.tap-meal(19); }
+                    }
+                    if root.show-col(2): MealPill {
+                        name: "Soup + bread";
+                        kcal: "350 kcal";
+                        state: root.m20;
+                        clicked => { root.tap-meal(20); }
+                    }
                 }
             }
         }
 
-        // ----- Day rows -----
-        DayRow {
-            day: "MON";
-            when: "12";
-            MealPill { name: "Oats + berries"; kcal: "245 kcal"; tone: Tone.success; }
-            MealPill { name: "Chicken-rice bowl"; kcal: "542 kcal"; tone: Tone.success; }
-            MealPill { name: "Salmon salad"; kcal: "412 kcal"; tone: Tone.success; }
-        }
-        DayRow {
-            day: "TUE";
-            when: "13";
-            MealPill { name: "Greek yogurt"; kcal: "180 kcal"; tone: Tone.success; }
-            MealPill { name: "Bento — sushi"; kcal: "620 kcal"; tone: Tone.warning; }
-            MealPill { name: "Tofu stir-fry"; kcal: "380 kcal"; tone: Tone.success; }
-        }
-        DayRow {
-            day: "WED";
-            when: "14";
-            today: true;
-            MealPill { name: "Oats + berries"; kcal: "245 kcal"; tone: Tone.success; }
-            MealPill { name: "Chicken-rice bowl"; kcal: "542 kcal"; tone: Tone.success; }
-            MealPill { name: "Salmon + quinoa"; kcal: "352 kcal"; tone: Tone.default; }
-        }
-        DayRow {
-            day: "THU";
-            when: "15";
-            MealPill { name: "Smoothie"; kcal: "210 kcal"; tone: Tone.default; }
-            MealPill { name: "Wrap — chicken"; kcal: "480 kcal"; tone: Tone.default; }
-            MealPill { name: "Pasta — pesto"; kcal: "560 kcal"; tone: Tone.default; }
-        }
-        DayRow {
-            day: "FRI";
-            when: "16";
-            MealPill { name: "Oats + berries"; kcal: "245 kcal"; tone: Tone.default; }
-            MealPill { name: "Buddha bowl"; kcal: "510 kcal"; tone: Tone.default; }
-            MealPill { name: "Takeaway"; kcal: "—"; tone: Tone.warning; }
-        }
-        DayRow {
-            day: "SAT";
-            when: "17";
-            MealPill { name: "Eggs + toast"; kcal: "420 kcal"; tone: Tone.default; }
-            MealPill { name: "Salad + bread"; kcal: "380 kcal"; tone: Tone.default; }
-            MealPill { name: "Steak + greens"; kcal: "640 kcal"; tone: Tone.default; }
-        }
-        DayRow {
-            day: "SUN";
-            when: "18";
-            MealPill { name: "Brunch out"; kcal: "—"; tone: Tone.danger; }
-            MealPill { name: "Leftovers"; kcal: "400 kcal"; tone: Tone.default; }
-            MealPill { name: "Soup + bread"; kcal: "350 kcal"; tone: Tone.default; }
-        }
-            }   // end inner VerticalLayout
-        }       // end ScrollView
-
-        // Footer stats.
+        // Footer stats — derived live.
         Rectangle {
             background: Theme.surface-1;
             drop-shadow-blur: Theme.elevation-2-blur;
@@ -307,7 +693,7 @@ export component WeeklyMealPlanPage inherits Window {
                         letter-spacing: 0.5px;
                     }
                     Text {
-                        text: "13,920";
+                        text: root.add-commas(root.weekly-kcal());
                         color: Theme.on-surface;
                         font-size: Theme.font-size-body;
                         font-weight: 700;
@@ -325,7 +711,7 @@ export component WeeklyMealPlanPage inherits Window {
                         letter-spacing: 0.5px;
                     }
                     Text {
-                        text: "112 g / day";
+                        text: root.avg-protein-per-day() + " g / day";
                         color: Theme.accent-success;
                         font-size: Theme.font-size-body;
                         font-weight: 700;
@@ -343,7 +729,7 @@ export component WeeklyMealPlanPage inherits Window {
                         letter-spacing: 0.5px;
                     }
                     Text {
-                        text: "19 / 21";
+                        text: root.planned-count() + " / 21";
                         color: Theme.on-surface;
                         font-size: Theme.font-size-body;
                         font-weight: 700;

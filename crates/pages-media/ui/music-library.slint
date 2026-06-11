@@ -1,37 +1,23 @@
 // MusicLibraryPage
 // =====================================================================
 //
-// List + grid template — a music / video / podcast / photo library
-// home screen with a horizontally-scrolling "Featured" carousel above
-// a 2-column grid of saved items. Exercises a horizontal `ScrollView`
-// (the carousel) and a layered vertical `ScrollView` (the whole page),
-// neither of which the other templates use.
+// List + grid template — interactive now.
 //
-// Specification
-// -------------
-//
-// Geometry
-//   - AppBar with menu + search.
-//   - Featured carousel — 184-px-wide cards, horizontally scrollable.
-//   - `YOUR LIBRARY` section header.
-//   - 2-column grid of 176-px-wide tiles (album art + title + artist).
-//
-// Slint constraint
-//   - Inner image dimensions are HARDCODED rather than computed from
-//     `parent.width` / `self.width`. Slint's layout engine treats
-//     `height: self.width` as a binding loop when the element sits
-//     inside a Flickable viewport whose width itself depends on
-//     content sizes (and our nested ScrollView setup hits exactly that
-//     case). Hardcoding the inner square dimensions side-steps the
-//     loop; the trade-off is that tile sizes don't reflow with page
-//     width — acceptable for the mobile target where the window is a
-//     fixed 412 px.
+//   - AppBar menu → status update with the menu items; AppBar search →
+//     toggles an inline search bar.
+//   - Typing in the search bar matches album titles exactly; matching
+//     tiles get a warning-yellow border.
+//   - Tap any album → sets it as "now playing"; tile gains a
+//     success-green ring + a `▶ NOW PLAYING` pill in the corner.
+//   - Each tile has a heart in the corner that toggles liked.
 
-import { Theme } from "@mobile-theme/theme.slint";
+import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { NebulaSkin } from "@mobile-theme/skins.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { SectionHeader } from "@mobile-components/section-header.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
+import { FormField } from "@mobile-components/form-field.slint";
+import { TextField } from "@mobile-components/text-field.slint";
 import { ScrollView } from "std-widgets.slint";
 
 export struct AlbumEntry {
@@ -40,9 +26,14 @@ export struct AlbumEntry {
     cover: image,
 }
 
+// Featured carousel card.
 component FeaturedCard inherits Rectangle {
     in property <AlbumEntry> album;
+    in property <bool> playing: false;
+    in property <bool> matched: false;
+    in property <bool> liked: false;
     callback clicked();
+    callback heart-clicked();
 
     accessible-role: button;
     accessible-label: album.title;
@@ -59,10 +50,15 @@ component FeaturedCard inherits Rectangle {
             width: 184px;
             height: 184px;
             border-radius: Theme.radius-md;
+            border-width: root.playing ? 3px : root.matched ? 2px : 0px;
+            border-color: root.playing
+                ? Theme.accent-success
+                : root.matched ? Theme.accent-warning : transparent;
             clip: true;
             drop-shadow-blur: Theme.elevation-1-blur;
             drop-shadow-color: Theme.elevation-1-color;
             drop-shadow-offset-y: Theme.elevation-1-y;
+            animate border-width { duration: Theme.motion-fast; }
 
             Image {
                 width: parent.width;
@@ -70,6 +66,46 @@ component FeaturedCard inherits Rectangle {
                 source: root.album.cover;
                 image-fit: ImageFit.cover;
             }
+            if root.playing: Rectangle {
+                x: 8px;
+                y: 8px;
+                width: np.preferred-width + 14px;
+                height: 22px;
+                border-radius: 11px;
+                background: Theme.accent-success;
+                np := Text {
+                    text: "▶ NOW PLAYING";
+                    color: Theme.on-primary;
+                    font-size: 9px;
+                    font-weight: 800;
+                    letter-spacing: 0.5px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+            }
+            // Heart corner.
+            Rectangle {
+                x: parent.width - 36px;
+                y: parent.height - 36px;
+                width: 28px;
+                height: 28px;
+                border-radius: 14px;
+                background: #00000088;
+                Image {
+                    width: 14px;
+                    height: 14px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: @image-url("@mobile-components/icons/heart.svg");
+                    colorize: root.liked ? Theme.accent-danger : #ffffffaa;
+                    image-fit: contain;
+                }
+                TouchArea { clicked => { root.heart-clicked(); } }
+            }
+            // Tap-anywhere for play (placed before heart so heart wins).
+            TouchArea { clicked => { root.clicked(); } }
         }
         Text {
             text: root.album.title;
@@ -85,15 +121,16 @@ component FeaturedCard inherits Rectangle {
             overflow: elide;
         }
     }
-
-    TouchArea {
-        clicked => { root.clicked(); }
-    }
 }
 
+// Grid tile.
 component GridTile inherits Rectangle {
     in property <AlbumEntry> album;
+    in property <bool> playing: false;
+    in property <bool> matched: false;
+    in property <bool> liked: false;
     callback clicked();
+    callback heart-clicked();
 
     accessible-role: button;
     accessible-label: album.title;
@@ -110,10 +147,15 @@ component GridTile inherits Rectangle {
             width: 176px;
             height: 176px;
             border-radius: Theme.radius-md;
+            border-width: root.playing ? 3px : root.matched ? 2px : 0px;
+            border-color: root.playing
+                ? Theme.accent-success
+                : root.matched ? Theme.accent-warning : transparent;
             clip: true;
             drop-shadow-blur: Theme.elevation-1-blur;
             drop-shadow-color: Theme.elevation-1-color;
             drop-shadow-offset-y: Theme.elevation-1-y;
+            animate border-width { duration: Theme.motion-fast; }
 
             Image {
                 width: parent.width;
@@ -121,6 +163,44 @@ component GridTile inherits Rectangle {
                 source: root.album.cover;
                 image-fit: ImageFit.cover;
             }
+            if root.playing: Rectangle {
+                x: 8px;
+                y: 8px;
+                width: np2.preferred-width + 12px;
+                height: 20px;
+                border-radius: 10px;
+                background: Theme.accent-success;
+                np2 := Text {
+                    text: "▶ PLAYING";
+                    color: Theme.on-primary;
+                    font-size: 9px;
+                    font-weight: 800;
+                    letter-spacing: 0.5px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+            }
+            Rectangle {
+                x: parent.width - 36px;
+                y: parent.height - 36px;
+                width: 28px;
+                height: 28px;
+                border-radius: 14px;
+                background: #00000088;
+                Image {
+                    width: 14px;
+                    height: 14px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: @image-url("@mobile-components/icons/heart.svg");
+                    colorize: root.liked ? Theme.accent-danger : #ffffffaa;
+                    image-fit: contain;
+                }
+                TouchArea { clicked => { root.heart-clicked(); } }
+            }
+            TouchArea { clicked => { root.clicked(); } }
         }
         Text {
             text: root.album.title;
@@ -136,15 +216,8 @@ component GridTile inherits Rectangle {
             overflow: elide;
         }
     }
-
-    TouchArea {
-        clicked => { root.clicked(); }
-    }
 }
 
-// Visual treatment: opt-in to `NebulaSkin` — radial indigo→black
-// gradient (no SVG, the brush is the background), Nimbus Sans for the
-// album-cover energy, translucent dark band on the AppBar.
 export component MusicLibraryPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
@@ -165,6 +238,107 @@ export component MusicLibraryPage inherits Window {
     callback menu-pressed();
     callback search-pressed();
     callback album-pressed(AlbumEntry);
+    callback album-liked(string, bool);
+
+    // ----- Interactive state -----
+    private property <bool> search-open: false;
+    private property <string> query: "";
+    private property <string> playing-title: "";
+    // Per-album liked state (3 featured + 6 library).
+    private property <bool> fl0: false;
+    private property <bool> fl1: false;
+    private property <bool> fl2: false;
+    private property <bool> ll0: true; // After Hours pre-liked
+    private property <bool> ll1: false;
+    private property <bool> ll2: false;
+    private property <bool> ll3: true; // Pretty Print pre-liked
+    private property <bool> ll4: false;
+    private property <bool> ll5: false;
+    private property <int> menu-tick: 0;
+    private property <string> status-msg: "Tap a card to play · search filters by exact title · ♥ to like";
+    private property <bool> status-is-success: false;
+    private property <bool> status-is-danger: false;
+
+    // ----- Helpers -----
+    function liked-count() -> int {
+        return (root.fl0 ? 1 : 0) + (root.fl1 ? 1 : 0) + (root.fl2 ? 1 : 0)
+            + (root.ll0 ? 1 : 0) + (root.ll1 ? 1 : 0) + (root.ll2 ? 1 : 0)
+            + (root.ll3 ? 1 : 0) + (root.ll4 ? 1 : 0) + (root.ll5 ? 1 : 0);
+    }
+
+    // ----- Mutations -----
+    public function tap-album(album: AlbumEntry) {
+        root.playing-title = album.title;
+        root.album-pressed(album);
+        root.status-msg = "▶ Now playing · " + album.title + " — " + album.artist;
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    public function tap-heart-featured(i: int, title: string) {
+        if (i == 0) { root.fl0 = !root.fl0; }
+        if (i == 1) { root.fl1 = !root.fl1; }
+        if (i == 2) { root.fl2 = !root.fl2; }
+        let now: bool = i == 0 ? root.fl0 : i == 1 ? root.fl1 : root.fl2;
+        root.album-liked(title, now);
+        root.status-msg = now
+            ? "Liked " + title + " (" + root.liked-count() + " total)"
+            : "Unliked " + title;
+        root.status-is-success = now;
+        root.status-is-danger = !now;
+    }
+    public function tap-heart-library(i: int, title: string) {
+        if (i == 0) { root.ll0 = !root.ll0; }
+        if (i == 1) { root.ll1 = !root.ll1; }
+        if (i == 2) { root.ll2 = !root.ll2; }
+        if (i == 3) { root.ll3 = !root.ll3; }
+        if (i == 4) { root.ll4 = !root.ll4; }
+        if (i == 5) { root.ll5 = !root.ll5; }
+        let now: bool = i == 0 ? root.ll0
+            : i == 1 ? root.ll1
+            : i == 2 ? root.ll2
+            : i == 3 ? root.ll3
+            : i == 4 ? root.ll4
+            : root.ll5;
+        root.album-liked(title, now);
+        root.status-msg = now
+            ? "Liked " + title + " (" + root.liked-count() + " total)"
+            : "Unliked " + title;
+        root.status-is-success = now;
+        root.status-is-danger = !now;
+    }
+    public function toggle-search() {
+        root.search-open = !root.search-open;
+        root.search-pressed();
+        if (!root.search-open) {
+            root.query = "";
+            root.status-msg = "Search closed";
+        } else {
+            root.status-msg = "Search · type an exact album title";
+        }
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function clear-query() {
+        root.query = "";
+        root.status-msg = "Search cleared";
+        root.status-is-success = false;
+        root.status-is-danger = true;
+    }
+    public function tap-menu() {
+        root.menu-tick = root.menu-tick + 1;
+        root.menu-pressed();
+        root.status-msg = "Menu · Recently played · Albums · Artists · Settings (#"
+            + root.menu-tick + ")";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    changed query => {
+        root.status-msg = root.query.is-empty
+            ? "Search cleared"
+            : "Searching: " + root.query;
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
 
     background: NebulaSkin.page-background;
 
@@ -187,8 +361,64 @@ export component MusicLibraryPage inherits Window {
             trailing-icon: @image-url("@mobile-components/icons/search.svg");
             bar-background: NebulaSkin.bar-background;
             text-color: NebulaSkin.text-primary;
-            leading-pressed => { root.menu-pressed(); }
-            trailing-pressed => { root.search-pressed(); }
+            leading-pressed => { root.tap-menu(); }
+            trailing-pressed => { root.toggle-search(); }
+        }
+
+        // ----- Status banner ---------------------------------------
+        Rectangle {
+            height: 32px;
+            background: root.status-is-danger ? Theme.accent-danger
+                : root.status-is-success ? Theme.accent-success
+                : NebulaSkin.bar-background;
+            animate background { duration: Theme.motion-fast; }
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                Text {
+                    text: root.status-msg;
+                    color: (root.status-is-danger || root.status-is-success)
+                        ? Theme.on-primary
+                        : NebulaSkin.text-primary;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+            }
+        }
+
+        // ----- Inline search bar -----------------------------------
+        if root.search-open: Rectangle {
+            background: NebulaSkin.bar-background;
+            HorizontalLayout {
+                padding: Theme.spacing-sm;
+                spacing: Theme.spacing-sm;
+                FormField {
+                    horizontal-stretch: 1;
+                    TextField {
+                        placeholder: "Title e.g. Cold Compile";
+                        text <=> root.query;
+                    }
+                }
+                if !root.query.is-empty: Rectangle {
+                    width: 40px;
+                    height: 40px;
+                    border-radius: 20px;
+                    background: Theme.surface-1;
+                    Image {
+                        width: 14px;
+                        height: 14px;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        source: @image-url("@mobile-components/icons/close.svg");
+                        colorize: Theme.on-surface;
+                        image-fit: contain;
+                    }
+                    TouchArea { clicked => { root.clear-query(); } }
+                }
+            }
         }
 
         ScrollView {
@@ -200,12 +430,10 @@ export component MusicLibraryPage inherits Window {
                 padding-top: Theme.spacing-md;
                 padding-bottom: Theme.spacing-lg;
 
-                SectionHeader { text: "FEATURED"; }
+                SectionHeader {
+                    text: "FEATURED · " + root.liked-count() + " liked";
+                }
 
-                // Horizontal carousel — viewport-width is static
-                // (3 cards × (184 + 16) + 16 padding = 616) to avoid
-                // Slint's binding-loop detector treating a length-
-                // dependent viewport as cyclic.
                 ScrollView {
                     height: 268px;
                     horizontal-scrollbar-policy: ScrollBarPolicy.always-off;
@@ -215,33 +443,129 @@ export component MusicLibraryPage inherits Window {
                         spacing: Theme.spacing-md;
                         padding-left: Theme.spacing-md;
                         padding-right: Theme.spacing-md;
-                        for album in root.featured: FeaturedCard {
-                            album: album;
-                            clicked => { root.album-pressed(album); }
+                        FeaturedCard {
+                            album: root.featured[0];
+                            playing: root.playing-title == root.featured[0].title;
+                            matched: !root.query.is-empty
+                                && root.query == root.featured[0].title;
+                            liked: root.fl0;
+                            clicked => { root.tap-album(root.featured[0]); }
+                            heart-clicked => {
+                                root.tap-heart-featured(0, root.featured[0].title);
+                            }
+                        }
+                        FeaturedCard {
+                            album: root.featured[1];
+                            playing: root.playing-title == root.featured[1].title;
+                            matched: !root.query.is-empty
+                                && root.query == root.featured[1].title;
+                            liked: root.fl1;
+                            clicked => { root.tap-album(root.featured[1]); }
+                            heart-clicked => {
+                                root.tap-heart-featured(1, root.featured[1].title);
+                            }
+                        }
+                        FeaturedCard {
+                            album: root.featured[2];
+                            playing: root.playing-title == root.featured[2].title;
+                            matched: !root.query.is-empty
+                                && root.query == root.featured[2].title;
+                            liked: root.fl2;
+                            clicked => { root.tap-album(root.featured[2]); }
+                            heart-clicked => {
+                                root.tap-heart-featured(2, root.featured[2].title);
+                            }
                         }
                     }
                 }
 
-                SectionHeader { text: "YOUR LIBRARY"; }
+                SectionHeader { text: "YOUR LIBRARY · 6 albums"; }
 
-                // 2-column grid (rows of HorizontalLayout pairs).
-                for row in [
-                    {a: root.library[0], b: root.library[1]},
-                    {a: root.library[2], b: root.library[3]},
-                    {a: root.library[4], b: root.library[5]},
-                ]: HorizontalLayout {
+                HorizontalLayout {
                     spacing: Theme.spacing-md;
                     padding-left: Theme.spacing-md;
                     padding-right: Theme.spacing-md;
                     padding-bottom: Theme.spacing-md;
                     alignment: center;
                     GridTile {
-                        album: row.a;
-                        clicked => { root.album-pressed(row.a); }
+                        album: root.library[0];
+                        playing: root.playing-title == root.library[0].title;
+                        matched: !root.query.is-empty
+                            && root.query == root.library[0].title;
+                        liked: root.ll0;
+                        clicked => { root.tap-album(root.library[0]); }
+                        heart-clicked => {
+                            root.tap-heart-library(0, root.library[0].title);
+                        }
                     }
                     GridTile {
-                        album: row.b;
-                        clicked => { root.album-pressed(row.b); }
+                        album: root.library[1];
+                        playing: root.playing-title == root.library[1].title;
+                        matched: !root.query.is-empty
+                            && root.query == root.library[1].title;
+                        liked: root.ll1;
+                        clicked => { root.tap-album(root.library[1]); }
+                        heart-clicked => {
+                            root.tap-heart-library(1, root.library[1].title);
+                        }
+                    }
+                }
+                HorizontalLayout {
+                    spacing: Theme.spacing-md;
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-bottom: Theme.spacing-md;
+                    alignment: center;
+                    GridTile {
+                        album: root.library[2];
+                        playing: root.playing-title == root.library[2].title;
+                        matched: !root.query.is-empty
+                            && root.query == root.library[2].title;
+                        liked: root.ll2;
+                        clicked => { root.tap-album(root.library[2]); }
+                        heart-clicked => {
+                            root.tap-heart-library(2, root.library[2].title);
+                        }
+                    }
+                    GridTile {
+                        album: root.library[3];
+                        playing: root.playing-title == root.library[3].title;
+                        matched: !root.query.is-empty
+                            && root.query == root.library[3].title;
+                        liked: root.ll3;
+                        clicked => { root.tap-album(root.library[3]); }
+                        heart-clicked => {
+                            root.tap-heart-library(3, root.library[3].title);
+                        }
+                    }
+                }
+                HorizontalLayout {
+                    spacing: Theme.spacing-md;
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-bottom: Theme.spacing-md;
+                    alignment: center;
+                    GridTile {
+                        album: root.library[4];
+                        playing: root.playing-title == root.library[4].title;
+                        matched: !root.query.is-empty
+                            && root.query == root.library[4].title;
+                        liked: root.ll4;
+                        clicked => { root.tap-album(root.library[4]); }
+                        heart-clicked => {
+                            root.tap-heart-library(4, root.library[4].title);
+                        }
+                    }
+                    GridTile {
+                        album: root.library[5];
+                        playing: root.playing-title == root.library[5].title;
+                        matched: !root.query.is-empty
+                            && root.query == root.library[5].title;
+                        liked: root.ll5;
+                        clicked => { root.tap-album(root.library[5]); }
+                        heart-clicked => {
+                            root.tap-heart-library(5, root.library[5].title);
+                        }
                     }
                 }
             }

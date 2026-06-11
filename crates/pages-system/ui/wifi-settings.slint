@@ -1,17 +1,5 @@
 // WiFiSettingsPage
 // =====================================================================
-//
-// Wi-Fi networks settings — the iOS / Android system-settings list.
-// Distinct from `SmartHomePage` (devices) and `AccountSettingsPage`
-// (profile-level prefs). Demonstrates:
-//
-//   - Master toggle row at the top ("Wi-Fi · ON").
-//   - Connected network hero card showing SSID + signal strength bar
-//     + speed caption + Forget / chevron-right affordances.
-//   - "Other networks" list: per-network row carrying a 3-bar signal
-//     indicator (success / warning / muted depending on bars), lock
-//     glyph for password-protected, network name + frequency band.
-//   - "Join other network" footer row + "Ask to join" toggle.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
@@ -19,10 +7,9 @@ import { SectionHeader } from "@mobile-components/section-header.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
 import { MobileSwitch } from "@mobile-components/switch.slint";
 import { Divider } from "@mobile-components/divider.slint";
+import { TextField } from "@mobile-components/text-field.slint";
+import { ScrollView } from "std-widgets.slint";
 
-// Three-bar signal indicator.
-//
-// `bars` = how many of the three are lit (1..3).
 component SignalBars inherits Rectangle {
     in property <int> bars: 3;
     in property <Tone> tone: Tone.success;
@@ -30,12 +17,8 @@ component SignalBars inherits Rectangle {
     width: 24px;
     height: 18px;
 
-    property <color> tint:
-          root.tone == Tone.warning ? Theme.accent-warning
-        : root.tone == Tone.danger  ? Theme.accent-danger
-        : Theme.accent-success;
+    property <color> tint: root.tone == Tone.warning ? Theme.accent-warning : (root.tone == Tone.danger ? Theme.accent-danger : Theme.accent-success);
 
-    // Bar 1 (shortest, left).
     Rectangle {
         x: 0;
         y: 12px;
@@ -44,7 +27,6 @@ component SignalBars inherits Rectangle {
         border-radius: 1px;
         background: root.bars >= 1 ? tint : Theme.surface-variant;
     }
-    // Bar 2.
     Rectangle {
         x: 8px;
         y: 6px;
@@ -53,7 +35,6 @@ component SignalBars inherits Rectangle {
         border-radius: 1px;
         background: root.bars >= 2 ? tint : Theme.surface-variant;
     }
-    // Bar 3 (tallest, right).
     Rectangle {
         x: 16px;
         y: 0;
@@ -64,32 +45,169 @@ component SignalBars inherits Rectangle {
     }
 }
 
-// Connected-network hero card.
 component ConnectedCard inherits Rectangle {
     in property <string> ssid;
     in property <string> speed;
     in property <int> bars: 3;
+    in property <bool> busy: false;
+    in property <int> busy-pct: 0;
     callback forget-pressed();
     callback detail-pressed();
 
     horizontal-stretch: 1;
-    height: 96px;
+    min-height: 96px;
     background: Theme.surface-1;
     border-radius: Theme.radius-md;
     border-width: 1px;
-    border-color: Theme.accent-success;
+    border-color: root.busy ? Theme.accent-info : Theme.accent-success;
     drop-shadow-blur: Theme.elevation-1-blur;
     drop-shadow-color: Theme.elevation-1-color;
     drop-shadow-offset-y: Theme.elevation-1-y;
 
-    HorizontalLayout {
+    VerticalLayout {
         padding: Theme.spacing-md;
+        spacing: Theme.spacing-sm;
+        HorizontalLayout {
+            spacing: Theme.spacing-md;
+            alignment: stretch;
+            VerticalLayout {
+                alignment: center;
+                SignalBars {
+                    bars: root.bars;
+                    tone: Tone.success;
+                }
+            }
+            VerticalLayout {
+                horizontal-stretch: 1;
+                alignment: center;
+                spacing: 2px;
+                HorizontalLayout {
+                    spacing: Theme.spacing-xs;
+                    Text {
+                        text: root.ssid;
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-body;
+                        font-weight: 700;
+                    }
+                    Rectangle {
+                        width: connected-text.preferred-width + 12px;
+                        height: 18px;
+                        border-radius: 4px;
+                        background: root.busy ? Theme.accent-info : Theme.accent-success;
+                        connected-text := Text {
+                            text: root.busy ? "JOINING" : "CONNECTED";
+                            color: Theme.on-primary;
+                            font-size: 9px;
+                            font-weight: 800;
+                            letter-spacing: 0.5px;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
+                        }
+                    }
+                }
+                Text {
+                    text: root.busy ? "Authenticating… " + root.busy-pct + "%" : root.speed + " · auto-join on";
+                    color: Theme.muted;
+                    font-size: Theme.font-size-caption;
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                spacing: 4px;
+                Rectangle {
+                    width: 60px;
+                    height: 26px;
+                    border-radius: 13px;
+                    background: Theme.surface-3;
+                    Text {
+                        text: "Forget";
+                        color: Theme.accent-danger;
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                    TouchArea {
+                        clicked => {
+                            root.forget-pressed();
+                        }
+                    }
+                }
+                Rectangle {
+                    width: 60px;
+                    height: 26px;
+                    border-radius: 13px;
+                    background: Theme.surface-2;
+                    Text {
+                        text: "Info";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                    TouchArea {
+                        clicked => {
+                            root.detail-pressed();
+                        }
+                    }
+                }
+            }
+        }
+        if root.busy: Rectangle {
+            height: 4px;
+            border-radius: 2px;
+            background: Theme.surface-variant;
+            Rectangle {
+                x: 0;
+                y: 0;
+                height: parent.height;
+                width: parent.width * root.busy-pct / 100;
+                background: Theme.accent-info;
+                border-radius: 2px;
+            }
+        }
+    }
+}
+
+component NetworkRow inherits Rectangle {
+    in property <string> ssid;
+    in property <string> band;
+    in property <int> bars: 3;
+    in property <Tone> signal-tone: Tone.success;
+    in property <bool> locked: true;
+    in property <bool> known: false;
+    in property <bool> expanded: false;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: root.ssid;
+    accessible-action-default => {
+        root.clicked();
+    }
+
+    horizontal-stretch: 1;
+    min-height: 56px;
+    background: root.expanded ? Theme.surface-2 : (touch.pressed ? Theme.surface-pressed : transparent);
+    animate background { duration: Theme.motion-fast; }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
         spacing: Theme.spacing-md;
         alignment: stretch;
-
         VerticalLayout {
             alignment: center;
-            SignalBars { bars: root.bars; tone: Tone.success; }
+            SignalBars {
+                bars: root.bars;
+                tone: root.signal-tone;
+            }
         }
         VerticalLayout {
             horizontal-stretch: 1;
@@ -101,85 +219,25 @@ component ConnectedCard inherits Rectangle {
                     text: root.ssid;
                     color: Theme.on-surface;
                     font-size: Theme.font-size-body;
-                    font-weight: 700;
+                    font-weight: 500;
+                    overflow: elide;
                 }
-                Rectangle {
-                    width: connected-text.preferred-width + 12px;
-                    height: 18px;
-                    border-radius: 4px;
-                    background: Theme.accent-success;
-                    connected-text := Text {
-                        text: "CONNECTED";
-                        color: Theme.on-primary;
+                if root.known: Rectangle {
+                    width: 38px;
+                    height: 16px;
+                    border-radius: 3px;
+                    background: Theme.accent-info.with-alpha(0.18);
+                    Text {
+                        text: "known";
+                        color: Theme.accent-info;
                         font-size: 9px;
                         font-weight: 800;
-                        letter-spacing: 0.5px;
                         horizontal-alignment: center;
                         vertical-alignment: center;
                         width: parent.width;
                         height: parent.height;
                     }
                 }
-            }
-            Text {
-                text: root.speed + " · auto-join on";
-                color: Theme.muted;
-                font-size: Theme.font-size-caption;
-            }
-        }
-        VerticalLayout {
-            alignment: center;
-            Image {
-                width: 16px;
-                height: 16px;
-                source: @image-url("@mobile-components/icons/chevron-right.svg");
-                colorize: Theme.muted;
-                image-fit: contain;
-                TouchArea {
-                    clicked => { root.detail-pressed(); }
-                }
-            }
-        }
-    }
-}
-
-// One other-network row.
-component NetworkRow inherits Rectangle {
-    in property <string> ssid;
-    in property <string> band;
-    in property <int> bars: 3;
-    in property <Tone> signal-tone: Tone.success;
-    in property <bool> locked: true;
-    callback clicked();
-
-    accessible-role: button;
-    accessible-label: root.ssid;
-    accessible-action-default => { root.clicked(); }
-
-    horizontal-stretch: 1;
-    min-height: 56px;
-    background: touch.pressed ? Theme.surface-pressed : transparent;
-    animate background { duration: Theme.motion-fast; }
-
-    HorizontalLayout {
-        padding-left: Theme.spacing-md;
-        padding-right: Theme.spacing-md;
-        spacing: Theme.spacing-md;
-        alignment: stretch;
-        VerticalLayout {
-            alignment: center;
-            SignalBars { bars: root.bars; tone: root.signal-tone; }
-        }
-        VerticalLayout {
-            horizontal-stretch: 1;
-            alignment: center;
-            spacing: 2px;
-            Text {
-                text: root.ssid;
-                color: Theme.on-surface;
-                font-size: Theme.font-size-body;
-                font-weight: 500;
-                overflow: elide;
             }
             Text {
                 text: root.band;
@@ -212,15 +270,65 @@ component NetworkRow inherits Rectangle {
         }
     }
     touch := TouchArea {
-        clicked => { root.clicked(); }
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
+    min-height: 48px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.destructive ? Theme.accent-danger : Theme.on-background;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+        }
     }
 }
 
 export component WiFiSettingsPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
+
     in-out property <bool> wifi-on: true;
     in-out property <bool> ask-to-join: true;
+    in-out property <int> connected-idx: 0; // 0 = patagonia-5g, 1..6 = others, -1 = none
+    in-out property <int> selected: -1; // 0..6 for password panel; -1 none
+    in-out property <string> password;
+    in-out property <bool> show-password;
+    in-out property <bool> connect-busy;
+    in-out property <int> connect-pct;
+    in-out property <int> pending-idx: -1;
+    in-out property <bool> scanning;
+    in-out property <int> scan-pct;
+    in-out property <int> bars-tick;
+    in-out property <bool> join-open;
+    in-out property <string> join-ssid;
+    in-out property <string> join-password;
+    in-out property <bool> sheet-open;
+    in-out property <string> status-msg;
+    in-out property <int> status-tone;
+
+    // Known networks (for "known" badge).
+    in-out property <bool> known-1: true;
+    in-out property <bool> known-3: true;
+
     callback back-pressed();
     callback help-pressed();
     callback network-pressed(string);
@@ -228,190 +336,927 @@ export component WiFiSettingsPage inherits Window {
 
     background: Theme.background;
 
+    function set-status(m: string, tone: int) {
+        root.status-msg = m;
+        root.status-tone = tone;
+    }
+    function status-color() -> color {
+        return root.status-tone == 1 ? Theme.accent-success : (root.status-tone == 2 ? Theme.accent-danger : (root.status-tone == 3 ? Theme.accent-warning : Theme.accent-info));
+    }
+    function ssid-of(i: int) -> string {
+        return i == 0 ? "patagonia-mesh-5g" : (i == 1 ? "patagonia-mesh-2.4g" : (i == 2 ? "Memmo Alfama · Guest" : (i == 3 ? "Léa's iPhone hotspot" : (i == 4 ? "café-paolo" : (i == 5 ? "ATT-WiFi-2890" : "xfinitywifi")))));
+    }
+    function band-of(i: int) -> string {
+        return i == 0 ? "WPA3 · 5 GHz · 643 Mbps" : (i == 1 ? "WPA3 · 2.4 GHz" : (i == 2 ? "Public · captive portal" : (i == 3 ? "WPA2 · 5 GHz · personal hotspot" : (i == 4 ? "WPA2 · 2.4 GHz" : (i == 5 ? "WPA2 · 2.4 GHz" : "Public · subscriber sign-in")))));
+    }
+    function locked-of(i: int) -> bool {
+        return i == 0 || i == 1 || i == 3 || i == 4 || i == 5;
+    }
+    function base-bars(i: int) -> int {
+        return i == 0 ? 3 : (i == 1 ? 3 : (i == 2 ? 2 : (i == 3 ? 2 : (i == 4 ? 2 : (i == 5 ? 1 : 1)))));
+    }
+    function tone-of(i: int) -> Tone {
+        return root.live-bars(i) == 3 ? Tone.success : (root.live-bars(i) == 2 ? Tone.warning : Tone.danger);
+    }
+    function live-bars(i: int) -> int {
+        // Drift bars +/- 1 occasionally based on tick.
+        if (i == 0) {
+            return root.base-bars(i);
+        }
+        return max(1, min(3, root.base-bars(i) + (mod(root.bars-tick + i, 5) == 0 ? 1 : 0) - (mod(root.bars-tick + i * 2, 7) == 0 ? 1 : 0)));
+    }
+    function is-known(i: int) -> bool {
+        return (i == 1 && root.known-1) || (i == 3 && root.known-3);
+    }
+
+    // Scan progress Timer.
+    scan-timer := Timer {
+        interval: 60ms;
+        running: root.scanning;
+        triggered => {
+            root.scan-pct = min(100, root.scan-pct + 4);
+            if (root.scan-pct >= 100) {
+                root.scanning = false;
+                root.bars-tick = root.bars-tick + 1;
+                root.set-status("Scan complete", 1);
+            }
+        }
+    }
+    // Connect progress Timer.
+    connect-timer := Timer {
+        interval: 150ms;
+        running: root.connect-busy;
+        triggered => {
+            root.connect-pct = min(100, root.connect-pct + 12);
+            if (root.connect-pct >= 100) {
+                root.connect-busy = false;
+                root.connected-idx = root.pending-idx;
+                if (root.pending-idx == 1) {
+                    root.known-1 = true;
+                }
+                if (root.pending-idx == 3) {
+                    root.known-3 = true;
+                }
+                root.set-status("Connected to " + root.ssid-of(root.pending-idx), 1);
+                root.pending-idx = -1;
+                root.password = "";
+                root.selected = -1;
+            }
+        }
+    }
+    // Idle drift Timer for bars.
+    drift-timer := Timer {
+        interval: 5000ms;
+        running: root.wifi-on && !root.scanning;
+        triggered => {
+            root.bars-tick = root.bars-tick + 1;
+        }
+    }
+
+    function start-connect(i: int) {
+        root.connect-busy = true;
+        root.connect-pct = 0;
+        root.pending-idx = i;
+        root.set-status("Joining " + root.ssid-of(i) + "…", 0);
+    }
+
+    function tap-row(i: int) {
+        if (root.connected-idx == i) {
+            root.set-status("Already on " + root.ssid-of(i), 0);
+            return;
+        }
+        if (root.connect-busy) {
+            root.set-status("Already joining…", 3);
+            return;
+        }
+        if (!root.locked-of(i) || root.is-known(i)) {
+            root.start-connect(i);
+            return;
+        }
+        // Expand password panel.
+        root.selected = root.selected == i ? -1 : i;
+        if (root.selected == i) {
+            root.set-status("Enter password for " + root.ssid-of(i), 0);
+        } else {
+            root.set-status("Closed", 0);
+        }
+    }
+
     VerticalLayout {
         spacing: 0;
 
         AppBar {
             title: "Wi-Fi";
-            // `plain` default — Inter at the AppBar's historical weight. The
-            // bespoke move on this page is the Plex "Wi-Fi" headline in the
-            // master toggle below, not the bar title.
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
-            leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.help-pressed(); }
-        }
-
-        // Master toggle.
-        Rectangle {
-            background: Theme.surface-1;
-            HorizontalLayout {
-                padding: Theme.spacing-md;
-                spacing: Theme.spacing-md;
-                alignment: stretch;
-                VerticalLayout {
-                    horizontal-stretch: 1;
-                    alignment: center;
-                    spacing: 2px;
-                    Heading {
-                        text: "Wi-Fi";
-                        style: HeadingStyle.plex-medium;
-                        color: Theme.on-surface;
-                        font-size: Theme.font-size-title;
-                    }
-                    Text {
-                        text:
-                              root.wifi-on
-                            ? "Allow this device to connect to nearby networks"
-                            : "Turning off disables AirDrop and AirPlay until re-enabled";
-                        color: Theme.muted;
-                        font-size: Theme.font-size-caption;
-                    }
-                }
-                VerticalLayout {
-                    alignment: center;
-                    MobileSwitch {
-                        checked <=> root.wifi-on;
-                    }
-                }
+            leading-pressed => {
+                root.back-pressed();
+            }
+            trailing-pressed => {
+                root.sheet-open = true;
             }
         }
 
-        Divider { }
-
-        // Connected network.
-        VerticalLayout {
-            padding: Theme.spacing-md;
-            spacing: Theme.spacing-sm;
-            Text {
-                text: "CONNECTED NETWORK";
-                color: Theme.muted;
-                font-size: 10px;
-                font-weight: 800;
-                letter-spacing: 0.5px;
-            }
-            ConnectedCard {
-                ssid: "patagonia-mesh-5g";
-                speed: "WPA3 · 5 GHz · 643 Mbps";
-                bars: 3;
-            }
-        }
-
-        SectionHeader { text: "OTHER NETWORKS"; }
-
-        NetworkRow {
-            ssid: "patagonia-mesh-2.4g";
-            band: "WPA3 · 2.4 GHz";
-            bars: 3;
-            signal-tone: Tone.success;
-            locked: true;
-        }
-        Divider { }
-        NetworkRow {
-            ssid: "Memmo Alfama · Guest";
-            band: "Public · captive portal";
-            bars: 2;
-            signal-tone: Tone.success;
-            locked: false;
-        }
-        Divider { }
-        NetworkRow {
-            ssid: "Léa's iPhone hotspot";
-            band: "WPA2 · 5 GHz · personal hotspot";
-            bars: 2;
-            signal-tone: Tone.warning;
-            locked: true;
-        }
-        Divider { }
-        NetworkRow {
-            ssid: "café-paolo";
-            band: "WPA2 · 2.4 GHz";
-            bars: 2;
-            signal-tone: Tone.warning;
-            locked: true;
-        }
-        Divider { }
-        NetworkRow {
-            ssid: "ATT-WiFi-2890";
-            band: "WPA2 · 2.4 GHz";
-            bars: 1;
-            signal-tone: Tone.danger;
-            locked: true;
-        }
-        Divider { }
-        NetworkRow {
-            ssid: "xfinitywifi";
-            band: "Public · subscriber sign-in";
-            bars: 1;
-            signal-tone: Tone.danger;
-            locked: false;
-        }
-
-        SectionHeader { text: "MANUAL"; }
-        Rectangle {
-            min-height: 56px;
+        if !root.status-msg.is-empty: Rectangle {
+            height: 28px;
+            background: root.status-color().with-alpha(0.18);
             HorizontalLayout {
                 padding-left: Theme.spacing-md;
                 padding-right: Theme.spacing-md;
-                spacing: Theme.spacing-md;
-                alignment: stretch;
                 VerticalLayout {
-                    horizontal-stretch: 1;
                     alignment: center;
                     Text {
-                        text: "Join other network…";
-                        color: Theme.accent-info;
-                        font-size: Theme.font-size-body;
+                        text: root.status-msg;
+                        color: root.status-color();
+                        font-size: Theme.font-size-caption;
                         font-weight: 600;
                     }
                 }
-                VerticalLayout {
-                    alignment: center;
-                    Image {
-                        width: 16px;
-                        height: 16px;
-                        source: @image-url("@mobile-components/icons/chevron-right.svg");
-                        colorize: Theme.muted;
-                        image-fit: contain;
-                    }
-                }
-            }
-            TouchArea {
-                clicked => { root.join-other-pressed(); }
-            }
-        }
-        Divider { }
-        Rectangle {
-            min-height: 56px;
-            HorizontalLayout {
-                padding-left: Theme.spacing-md;
-                padding-right: Theme.spacing-md;
-                spacing: Theme.spacing-md;
-                alignment: stretch;
-                VerticalLayout {
-                    horizontal-stretch: 1;
-                    alignment: center;
-                    spacing: 2px;
-                    Text {
-                        text: "Ask to join networks";
-                        color: Theme.on-surface;
-                        font-size: Theme.font-size-body;
-                    }
-                    Text {
-                        text: "Known networks join automatically.";
-                        color: Theme.muted;
-                        font-size: Theme.font-size-caption;
-                    }
-                }
-                VerticalLayout {
-                    alignment: center;
-                    MobileSwitch {
-                        checked <=> root.ask-to-join;
-                    }
-                }
             }
         }
 
-        Rectangle { vertical-stretch: 1; }
+        ScrollView {
+            vertical-stretch: 1;
+            VerticalLayout {
+                spacing: 0;
+                padding-bottom: Theme.spacing-xl;
+
+                Rectangle {
+                    background: Theme.surface-1;
+                    HorizontalLayout {
+                        padding: Theme.spacing-md;
+                        spacing: Theme.spacing-md;
+                        alignment: stretch;
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            alignment: center;
+                            spacing: 2px;
+                            Heading {
+                                text: "Wi-Fi";
+                                style: HeadingStyle.plex-medium;
+                                color: Theme.on-surface;
+                                font-size: Theme.font-size-title;
+                            }
+                            Text {
+                                text: root.wifi-on ? "Allow this device to connect to nearby networks" : "Turning off disables AirDrop and AirPlay until re-enabled";
+                                color: Theme.muted;
+                                font-size: Theme.font-size-caption;
+                            }
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            MobileSwitch {
+                                checked <=> root.wifi-on;
+                                toggled(c) => {
+                                    root.set-status(c ? "Wi-Fi on" : "Wi-Fi off", c ? 1 : 3);
+                                    if (!c) {
+                                        root.selected = -1;
+                                        root.join-open = false;
+                                        root.connect-busy = false;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Divider { }
+
+                if root.wifi-on: VerticalLayout {
+                    padding: Theme.spacing-md;
+                    spacing: Theme.spacing-sm;
+                    HorizontalLayout {
+                        alignment: space-between;
+                        Text {
+                            text: root.connected-idx >= 0 ? "CONNECTED NETWORK" : "NOT CONNECTED";
+                            color: Theme.muted;
+                            font-size: 10px;
+                            font-weight: 800;
+                            letter-spacing: 0.5px;
+                        }
+                        Rectangle {
+                            horizontal-stretch: 0;
+                            min-width: 70px;
+                            height: 22px;
+                            border-radius: 11px;
+                            background: root.scanning ? Theme.muted : Theme.accent-info;
+                            Text {
+                                text: root.scanning ? "Scan… " + root.scan-pct + "%" : "Rescan";
+                                color: Theme.background;
+                                font-size: 10px;
+                                font-weight: 800;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                width: parent.width;
+                                height: parent.height;
+                            }
+                            TouchArea {
+                                clicked => {
+                                    if (!root.scanning) {
+                                        root.scanning = true;
+                                        root.scan-pct = 0;
+                                        root.set-status("Scanning…", 0);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if root.connected-idx >= 0: ConnectedCard {
+                        ssid: root.ssid-of(root.connected-idx);
+                        speed: root.band-of(root.connected-idx);
+                        bars: root.live-bars(root.connected-idx);
+                        busy: root.connect-busy;
+                        busy-pct: root.connect-pct;
+                        forget-pressed => {
+                            root.set-status("Forgot " + root.ssid-of(root.connected-idx), 2);
+                            if (root.connected-idx == 1) {
+                                root.known-1 = false;
+                            }
+                            if (root.connected-idx == 3) {
+                                root.known-3 = false;
+                            }
+                            root.connected-idx = -1;
+                        }
+                        detail-pressed => {
+                            root.set-status("IP 192.168.1.42 · DHCP", 0);
+                        }
+                    }
+                    if root.connected-idx < 0: Rectangle {
+                        background: Theme.surface-2;
+                        border-radius: Theme.radius-md;
+                        min-height: 60px;
+                        VerticalLayout {
+                            padding: Theme.spacing-md;
+                            alignment: center;
+                            Text {
+                                text: "No network. Tap one below to connect.";
+                                color: Theme.muted;
+                                font-size: Theme.font-size-caption;
+                                horizontal-alignment: center;
+                            }
+                        }
+                    }
+                }
+
+                if root.wifi-on: SectionHeader {
+                    text: "OTHER NETWORKS";
+                }
+
+                if root.wifi-on && root.connected-idx != 1: NetworkRow {
+                    ssid: root.ssid-of(1);
+                    band: root.band-of(1);
+                    bars: root.live-bars(1);
+                    signal-tone: root.tone-of(1);
+                    locked: root.locked-of(1);
+                    known: root.is-known(1);
+                    expanded: root.selected == 1;
+                    clicked => {
+                        root.tap-row(1);
+                        root.network-pressed(root.ssid-of(1));
+                    }
+                }
+                if root.wifi-on && root.selected == 1: Rectangle {
+                    background: Theme.surface-2;
+                    VerticalLayout {
+                        padding: Theme.spacing-md;
+                        spacing: Theme.spacing-sm;
+                        Text {
+                            text: "Enter password for " + root.ssid-of(1);
+                            color: Theme.muted;
+                            font-size: Theme.font-size-caption;
+                        }
+                        HorizontalLayout {
+                            spacing: Theme.spacing-sm;
+                            TextField {
+                                placeholder: root.show-password ? "password" : "••••••••";
+                                text <=> root.password;
+                                horizontal-stretch: 1;
+                            }
+                            Rectangle {
+                                horizontal-stretch: 0;
+                                width: 56px;
+                                height: 36px;
+                                border-radius: 18px;
+                                background: Theme.surface-3;
+                                Text {
+                                    text: root.show-password ? "Hide" : "Show";
+                                    color: Theme.on-surface;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 700;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                                TouchArea {
+                                    clicked => {
+                                        root.show-password = !root.show-password;
+                                    }
+                                }
+                            }
+                        }
+                        HorizontalLayout {
+                            spacing: Theme.spacing-sm;
+                            Rectangle {
+                                horizontal-stretch: 0;
+                                min-width: 90px;
+                                height: 32px;
+                                border-radius: 16px;
+                                background: root.password.character-count >= 8 ? Theme.accent-info : Theme.muted;
+                                Text {
+                                    text: "Join";
+                                    color: Theme.background;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 800;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                                TouchArea {
+                                    clicked => {
+                                        if (root.password.character-count >= 8) {
+                                            root.start-connect(1);
+                                        } else {
+                                            root.set-status("Password needs 8+ chars", 3);
+                                        }
+                                    }
+                                }
+                            }
+                            Rectangle {
+                                horizontal-stretch: 0;
+                                min-width: 80px;
+                                height: 32px;
+                                border-radius: 16px;
+                                background: Theme.surface-3;
+                                Text {
+                                    text: "Cancel";
+                                    color: Theme.on-surface;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 800;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                                TouchArea {
+                                    clicked => {
+                                        root.selected = -1;
+                                        root.password = "";
+                                        root.set-status("Cancelled", 0);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if root.wifi-on && root.connected-idx != 1: Divider { }
+
+                if root.wifi-on && root.connected-idx != 2: NetworkRow {
+                    ssid: root.ssid-of(2);
+                    band: root.band-of(2);
+                    bars: root.live-bars(2);
+                    signal-tone: root.tone-of(2);
+                    locked: root.locked-of(2);
+                    expanded: root.selected == 2;
+                    clicked => {
+                        root.tap-row(2);
+                        root.network-pressed(root.ssid-of(2));
+                    }
+                }
+                if root.wifi-on && root.connected-idx != 2: Divider { }
+
+                if root.wifi-on && root.connected-idx != 3: NetworkRow {
+                    ssid: root.ssid-of(3);
+                    band: root.band-of(3);
+                    bars: root.live-bars(3);
+                    signal-tone: root.tone-of(3);
+                    locked: root.locked-of(3);
+                    known: root.is-known(3);
+                    expanded: root.selected == 3;
+                    clicked => {
+                        root.tap-row(3);
+                        root.network-pressed(root.ssid-of(3));
+                    }
+                }
+                if root.wifi-on && root.selected == 3: Rectangle {
+                    background: Theme.surface-2;
+                    VerticalLayout {
+                        padding: Theme.spacing-md;
+                        spacing: Theme.spacing-sm;
+                        Text {
+                            text: "Enter password for " + root.ssid-of(3);
+                            color: Theme.muted;
+                            font-size: Theme.font-size-caption;
+                        }
+                        TextField {
+                            placeholder: "Password";
+                            text <=> root.password;
+                        }
+                        HorizontalLayout {
+                            spacing: Theme.spacing-sm;
+                            Rectangle {
+                                horizontal-stretch: 0;
+                                min-width: 90px;
+                                height: 32px;
+                                border-radius: 16px;
+                                background: root.password.character-count >= 8 ? Theme.accent-info : Theme.muted;
+                                Text {
+                                    text: "Join";
+                                    color: Theme.background;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 800;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                                TouchArea {
+                                    clicked => {
+                                        if (root.password.character-count >= 8) {
+                                            root.start-connect(3);
+                                        } else {
+                                            root.set-status("Password needs 8+ chars", 3);
+                                        }
+                                    }
+                                }
+                            }
+                            Rectangle {
+                                horizontal-stretch: 0;
+                                min-width: 80px;
+                                height: 32px;
+                                border-radius: 16px;
+                                background: Theme.surface-3;
+                                Text {
+                                    text: "Cancel";
+                                    color: Theme.on-surface;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 800;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                                TouchArea {
+                                    clicked => {
+                                        root.selected = -1;
+                                        root.password = "";
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if root.wifi-on && root.connected-idx != 3: Divider { }
+
+                if root.wifi-on && root.connected-idx != 4: NetworkRow {
+                    ssid: root.ssid-of(4);
+                    band: root.band-of(4);
+                    bars: root.live-bars(4);
+                    signal-tone: root.tone-of(4);
+                    locked: root.locked-of(4);
+                    expanded: root.selected == 4;
+                    clicked => {
+                        root.tap-row(4);
+                        root.network-pressed(root.ssid-of(4));
+                    }
+                }
+                if root.wifi-on && root.selected == 4: Rectangle {
+                    background: Theme.surface-2;
+                    VerticalLayout {
+                        padding: Theme.spacing-md;
+                        spacing: Theme.spacing-sm;
+                        Text {
+                            text: "Enter password for " + root.ssid-of(4);
+                            color: Theme.muted;
+                            font-size: Theme.font-size-caption;
+                        }
+                        TextField {
+                            placeholder: "Password";
+                            text <=> root.password;
+                        }
+                        HorizontalLayout {
+                            spacing: Theme.spacing-sm;
+                            Rectangle {
+                                horizontal-stretch: 0;
+                                min-width: 90px;
+                                height: 32px;
+                                border-radius: 16px;
+                                background: root.password.character-count >= 8 ? Theme.accent-info : Theme.muted;
+                                Text {
+                                    text: "Join";
+                                    color: Theme.background;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 800;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                                TouchArea {
+                                    clicked => {
+                                        if (root.password.character-count >= 8) {
+                                            root.start-connect(4);
+                                        } else {
+                                            root.set-status("Password needs 8+ chars", 3);
+                                        }
+                                    }
+                                }
+                            }
+                            Rectangle {
+                                horizontal-stretch: 0;
+                                min-width: 80px;
+                                height: 32px;
+                                border-radius: 16px;
+                                background: Theme.surface-3;
+                                Text {
+                                    text: "Cancel";
+                                    color: Theme.on-surface;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 800;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                                TouchArea {
+                                    clicked => {
+                                        root.selected = -1;
+                                        root.password = "";
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if root.wifi-on && root.connected-idx != 4: Divider { }
+
+                if root.wifi-on && root.connected-idx != 5: NetworkRow {
+                    ssid: root.ssid-of(5);
+                    band: root.band-of(5);
+                    bars: root.live-bars(5);
+                    signal-tone: root.tone-of(5);
+                    locked: root.locked-of(5);
+                    expanded: root.selected == 5;
+                    clicked => {
+                        root.tap-row(5);
+                        root.network-pressed(root.ssid-of(5));
+                    }
+                }
+                if root.wifi-on && root.selected == 5: Rectangle {
+                    background: Theme.surface-2;
+                    VerticalLayout {
+                        padding: Theme.spacing-md;
+                        spacing: Theme.spacing-sm;
+                        Text {
+                            text: "Enter password for " + root.ssid-of(5);
+                            color: Theme.muted;
+                            font-size: Theme.font-size-caption;
+                        }
+                        TextField {
+                            placeholder: "Password";
+                            text <=> root.password;
+                        }
+                        HorizontalLayout {
+                            spacing: Theme.spacing-sm;
+                            Rectangle {
+                                horizontal-stretch: 0;
+                                min-width: 90px;
+                                height: 32px;
+                                border-radius: 16px;
+                                background: root.password.character-count >= 8 ? Theme.accent-info : Theme.muted;
+                                Text {
+                                    text: "Join";
+                                    color: Theme.background;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 800;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                                TouchArea {
+                                    clicked => {
+                                        if (root.password.character-count >= 8) {
+                                            root.start-connect(5);
+                                        } else {
+                                            root.set-status("Password needs 8+ chars", 3);
+                                        }
+                                    }
+                                }
+                            }
+                            Rectangle {
+                                horizontal-stretch: 0;
+                                min-width: 80px;
+                                height: 32px;
+                                border-radius: 16px;
+                                background: Theme.surface-3;
+                                Text {
+                                    text: "Cancel";
+                                    color: Theme.on-surface;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 800;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                                TouchArea {
+                                    clicked => {
+                                        root.selected = -1;
+                                        root.password = "";
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if root.wifi-on && root.connected-idx != 5: Divider { }
+
+                if root.wifi-on && root.connected-idx != 6: NetworkRow {
+                    ssid: root.ssid-of(6);
+                    band: root.band-of(6);
+                    bars: root.live-bars(6);
+                    signal-tone: root.tone-of(6);
+                    locked: root.locked-of(6);
+                    expanded: root.selected == 6;
+                    clicked => {
+                        root.tap-row(6);
+                        root.network-pressed(root.ssid-of(6));
+                    }
+                }
+
+                // Original 5g network if we forgot it / switched away.
+                if root.wifi-on && root.connected-idx != 0: Divider { }
+                if root.wifi-on && root.connected-idx != 0: NetworkRow {
+                    ssid: root.ssid-of(0);
+                    band: root.band-of(0);
+                    bars: root.live-bars(0);
+                    signal-tone: root.tone-of(0);
+                    locked: root.locked-of(0);
+                    known: true;
+                    expanded: false;
+                    clicked => {
+                        root.start-connect(0);
+                    }
+                }
+
+                if root.wifi-on: SectionHeader {
+                    text: "MANUAL";
+                }
+                if root.wifi-on: Rectangle {
+                    min-height: 56px;
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-md;
+                        padding-right: Theme.spacing-md;
+                        spacing: Theme.spacing-md;
+                        alignment: stretch;
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            alignment: center;
+                            Text {
+                                text: root.join-open ? "Hide manual join" : "Join other network…";
+                                color: Theme.accent-info;
+                                font-size: Theme.font-size-body;
+                                font-weight: 600;
+                            }
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            Image {
+                                width: 16px;
+                                height: 16px;
+                                source: @image-url("@mobile-components/icons/chevron-right.svg");
+                                colorize: Theme.muted;
+                                image-fit: contain;
+                            }
+                        }
+                    }
+                    TouchArea {
+                        clicked => {
+                            root.join-open = !root.join-open;
+                            root.set-status(root.join-open ? "Manual join" : "Closed", 0);
+                            root.join-other-pressed();
+                        }
+                    }
+                }
+                if root.wifi-on && root.join-open: Rectangle {
+                    background: Theme.surface-2;
+                    VerticalLayout {
+                        padding: Theme.spacing-md;
+                        spacing: Theme.spacing-sm;
+                        TextField {
+                            placeholder: "Network name (SSID)";
+                            text <=> root.join-ssid;
+                        }
+                        TextField {
+                            placeholder: "Password (≥8 chars)";
+                            text <=> root.join-password;
+                        }
+                        HorizontalLayout {
+                            spacing: Theme.spacing-sm;
+                            Rectangle {
+                                horizontal-stretch: 0;
+                                min-width: 90px;
+                                height: 32px;
+                                border-radius: 16px;
+                                background: !root.join-ssid.is-empty && root.join-password.character-count >= 8 ? Theme.accent-info : Theme.muted;
+                                Text {
+                                    text: "Join";
+                                    color: Theme.background;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 800;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                                TouchArea {
+                                    clicked => {
+                                        if (!root.join-ssid.is-empty && root.join-password.character-count >= 8) {
+                                            root.set-status("Joining " + root.join-ssid + "…", 0);
+                                            root.join-ssid = "";
+                                            root.join-password = "";
+                                            root.join-open = false;
+                                        } else {
+                                            root.set-status("SSID + password (8+ chars) required", 3);
+                                        }
+                                    }
+                                }
+                            }
+                            Rectangle {
+                                horizontal-stretch: 0;
+                                min-width: 80px;
+                                height: 32px;
+                                border-radius: 16px;
+                                background: Theme.surface-3;
+                                Text {
+                                    text: "Cancel";
+                                    color: Theme.on-surface;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 800;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                                TouchArea {
+                                    clicked => {
+                                        root.join-open = false;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if root.wifi-on: Divider { }
+                if root.wifi-on: Rectangle {
+                    min-height: 56px;
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-md;
+                        padding-right: Theme.spacing-md;
+                        spacing: Theme.spacing-md;
+                        alignment: stretch;
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            alignment: center;
+                            spacing: 2px;
+                            Text {
+                                text: "Ask to join networks";
+                                color: Theme.on-surface;
+                                font-size: Theme.font-size-body;
+                            }
+                            Text {
+                                text: root.ask-to-join ? "Known networks join automatically." : "Off — you'll have to pick manually.";
+                                color: Theme.muted;
+                                font-size: Theme.font-size-caption;
+                            }
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            MobileSwitch {
+                                checked <=> root.ask-to-join;
+                                toggled(c) => {
+                                    root.set-status(c ? "Ask to join on" : "Ask to join off", 0);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if !root.wifi-on: VerticalLayout {
+                    padding: Theme.spacing-lg;
+                    alignment: center;
+                    spacing: Theme.spacing-md;
+                    Text {
+                        text: "Wi-Fi is off";
+                        color: Theme.on-background;
+                        font-size: Theme.font-size-title;
+                        font-weight: 700;
+                        horizontal-alignment: center;
+                    }
+                    Text {
+                        text: "Turn it on to scan and connect to nearby networks.";
+                        color: Theme.muted;
+                        font-size: Theme.font-size-body;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+        }
+    }
+
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: Theme.surface-1;
+            border-top-left-radius: 16px;
+            border-top-right-radius: 16px;
+            clip: true;
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.muted;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: "Network tools";
+                        color: Theme.on-background;
+                        font-size: Theme.font-size-title;
+                        font-weight: 700;
+                    }
+                }
+                SheetRow {
+                    label: root.scanning ? "Scanning…" : "Rescan networks";
+                    clicked => {
+                        if (!root.scanning) {
+                            root.scanning = true;
+                            root.scan-pct = 0;
+                            root.set-status("Scanning…", 0);
+                        }
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Diagnose connection";
+                    clicked => {
+                        root.set-status("DNS ok · gateway ok · 23ms RTT", 1);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Forget all known networks";
+                    clicked => {
+                        root.known-1 = false;
+                        root.known-3 = false;
+                        root.set-status("Forgot 2 known networks", 2);
+                        root.sheet-open = false;
+                    }
+                }
+                Rectangle {
+                    height: 1px;
+                    background: Theme.outline;
+                }
+                SheetRow {
+                    label: "Reset network settings";
+                    destructive: true;
+                    clicked => {
+                        root.connected-idx = -1;
+                        root.known-1 = false;
+                        root.known-3 = false;
+                        root.selected = -1;
+                        root.set-status("Network settings reset", 2);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.sheet-open = false;
+                    }
+                }
+            }
+        }
     }
 }

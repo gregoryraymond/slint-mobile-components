@@ -4,24 +4,27 @@
 // Portfolio summary + holdings list — the canonical surface for a
 // Coinbase / Robinhood / Trading 212-style asset tracker. Demonstrates:
 //
-//   - "Big-number hero" pattern — total portfolio value at 48 px Light,
-//     with a tone-tinted 24h delta beneath it (`accent-success` for
-//     gains, `accent-danger` for losses).
-//   - Stylised sparkline using a horizontal bar-strip approximation
-//     (Slint doesn't ship a line / path primitive in this version) —
-//     each bar's height is driven by the value of an integer in a
-//     fixed array. The strip reads as "rising / falling" at a glance.
+//   - "Big-number hero" pattern — total portfolio value at 44 px Mono,
+//     tap to hide / reveal the balance (privacy mode).
+//   - Stylised sparkline using a horizontal bar-strip approximation —
+//     the bars + delta change when the user picks a different time
+//     range (1H / 1D / 1W / 1M / 1Y / ALL).
 //   - Tabular coin rows: ticker glyph, name + ticker, mini-sparkline,
-//     price + 24h change tone-tinted in matching colour.
-//   - Time-range chip strip (1H / 1D / 1W / 1M / 1Y / ALL).
+//     price + 24h change tone-tinted in matching colour. Tap a row to
+//     expand Buy / Sell / Star / Details action pills.
+//   - Search trailing icon opens an inline search bar that filters
+//     by ticker.
+//   - Sort cycle on the Holdings section header (By value / By gain /
+//     Alphabetical).
 
 import { ScrollView } from "std-widgets.slint";
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
-import { SectionHeader } from "@mobile-components/section-header.slint";
 import { Chip } from "@mobile-components/chip.slint";
 import { Divider } from "@mobile-components/divider.slint";
+import { FormField } from "@mobile-components/form-field.slint";
+import { TextField } from "@mobile-components/text-field.slint";
 
 // Stylised sparkline — a horizontal strip of `count` vertical bars
 // whose heights come from the integer values in `bars`. Two flavours:
@@ -55,25 +58,67 @@ component Sparkline inherits Rectangle {
     }
 }
 
+// A pill button rendered in an expanded-row action strip.
+component ActionPill inherits Rectangle {
+    in property <string> label;
+    in property <bool> primary: false;
+    in property <bool> active: false;
+    in property <bool> danger: false;
+    callback clicked();
+
+    height: 32px;
+    horizontal-stretch: 1;
+    border-radius: 16px;
+    background: root.danger ? Theme.accent-danger
+        : root.active ? Theme.accent-success
+        : root.primary ? Theme.accent-info
+        : Theme.surface-1;
+    border-width: 1px;
+    border-color: (root.danger || root.active || root.primary)
+        ? transparent
+        : Theme.outline;
+    animate background { duration: Theme.motion-fast; }
+
+    Text {
+        text: root.label;
+        color: (root.danger || root.active || root.primary)
+            ? Theme.on-primary
+            : Theme.on-surface;
+        font-size: Theme.font-size-caption;
+        font-weight: 700;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: parent.width;
+        height: parent.height;
+    }
+    TouchArea { clicked => { root.clicked(); } }
+}
+
 // One coin row.
 component CoinRow inherits Rectangle {
     in property <string> ticker;
     in property <string> name;
     in property <string> price;
     in property <string> change;
-    in property <int> change-direction: 1;   // +1 / 0 / -1
+    in property <int> change-direction: 1; // +1 / 0 / -1
     in property <color> glyph-color: Theme.accent-info;
     in property <[int]> spark;
+    in property <bool> starred: false;
+    in property <bool> expanded: false;
+    callback clicked();
 
     horizontal-stretch: 1;
     min-height: 64px;
+    background: root.expanded ? Theme.surface-2
+        : touch.pressed ? Theme.surface-pressed
+        : transparent;
+    animate background { duration: Theme.motion-fast; }
 
     HorizontalLayout {
         padding: Theme.spacing-md;
         spacing: Theme.spacing-md;
         alignment: stretch;
 
-        // Ticker glyph — round colour disc with ticker first letter.
         VerticalLayout {
             alignment: center;
             Rectangle {
@@ -95,17 +140,27 @@ component CoinRow inherits Rectangle {
             }
         }
 
-        // Name + ticker subline.
         VerticalLayout {
             horizontal-stretch: 1;
             alignment: center;
             spacing: 2px;
-            Text {
-                text: root.name;
-                color: Theme.on-surface;
-                font-size: Theme.font-size-body;
-                font-weight: 600;
-                overflow: elide;
+            HorizontalLayout {
+                spacing: Theme.spacing-xs;
+                Text {
+                    text: root.name;
+                    color: Theme.on-surface;
+                    font-size: Theme.font-size-body;
+                    font-weight: 600;
+                    overflow: elide;
+                }
+                if root.starred: Image {
+                    width: 12px;
+                    height: 12px;
+                    source: @image-url("@mobile-components/icons/star.svg");
+                    colorize: Theme.accent-warning;
+                    image-fit: contain;
+                    vertical-alignment: center;
+                }
             }
             Text {
                 text: root.ticker;
@@ -114,7 +169,6 @@ component CoinRow inherits Rectangle {
             }
         }
 
-        // Inline sparkline.
         VerticalLayout {
             alignment: center;
             Sparkline {
@@ -130,7 +184,6 @@ component CoinRow inherits Rectangle {
             }
         }
 
-        // Price + change.
         VerticalLayout {
             alignment: center;
             spacing: 2px;
@@ -153,17 +206,235 @@ component CoinRow inherits Rectangle {
             }
         }
     }
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
 }
 
 export component CryptoPortfolioPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
     in property <string> total: "$24,308.41";
-    in property <string> delta-amount: "+$842.10";
-    in property <string> delta-pct: "+3.59%";
-    in property <int> delta-direction: 1;
     callback back-pressed();
     callback search-pressed();
+    callback coin-pressed(string);
+    callback coin-bought(string, int);
+    callback coin-sold(string, int);
+    callback coin-starred(string, bool);
+
+    // ----- Interactive state -----
+    private property <int> range-index: 1; // 0=1H 1=1D 2=1W 3=1M 4=1Y 5=ALL
+    private property <bool> balance-hidden: false;
+    private property <int> expanded-coin: -1;
+    private property <int> sort-mode: 0; // 0=Value 1=Gain 2=Alpha
+    private property <bool> search-open: false;
+    private property <string> query: "";
+    // Per-coin starred + holding quantity (in "lots").
+    private property <bool> s0: false; // BTC
+    private property <bool> s1: true; // ETH starred by default
+    private property <bool> s2: false;
+    private property <bool> s3: false;
+    private property <bool> s4: false;
+    private property <bool> s5: false;
+    private property <int> q0: 1;   // BTC lots
+    private property <int> q1: 2;   // ETH
+    private property <int> q2: 10;  // SOL
+    private property <int> q3: 100; // ADA
+    private property <int> q4: 500; // USDC
+    private property <int> q5: 5;   // AVAX
+    private property <string> status-msg: "Tap the balance to hide · pick a range · tap a coin to act";
+    private property <bool> status-is-success: false;
+    private property <bool> status-is-danger: false;
+
+    // ----- Helpers -----
+    function range-label(i: int) -> string {
+        if (i == 0) { return "1H"; }
+        if (i == 1) { return "24h"; }
+        if (i == 2) { return "7d"; }
+        if (i == 3) { return "30d"; }
+        if (i == 4) { return "1y"; }
+        return "all-time";
+    }
+    function delta-text(i: int) -> string {
+        if (i == 0) { return "+$12.40 · +0.05% · 1h"; }
+        if (i == 1) { return "+$842.10 · +3.59% · 24h"; }
+        if (i == 2) { return "+$1,420.80 · +6.21% · 7d"; }
+        if (i == 3) { return "−$2,140.55 · −8.10% · 30d"; }
+        if (i == 4) { return "+$12,840.20 · +112.45% · 1y"; }
+        return "+$22,408.41 · +1,420.55% · all-time";
+    }
+    function delta-direction(i: int) -> int {
+        if (i == 3) { return -1; }
+        return 1;
+    }
+    function sort-label(m: int) -> string {
+        if (m == 0) { return "By value"; }
+        if (m == 1) { return "By 24h gain"; }
+        return "Alphabetical";
+    }
+    function ticker(i: int) -> string {
+        if (i == 0) { return "BTC"; }
+        if (i == 1) { return "ETH"; }
+        if (i == 2) { return "SOL"; }
+        if (i == 3) { return "ADA"; }
+        if (i == 4) { return "USDC"; }
+        return "AVAX";
+    }
+    function coin-name(i: int) -> string {
+        if (i == 0) { return "Bitcoin"; }
+        if (i == 1) { return "Ethereum"; }
+        if (i == 2) { return "Solana"; }
+        if (i == 3) { return "Cardano"; }
+        if (i == 4) { return "USD Coin"; }
+        return "Avalanche";
+    }
+    function coin-price(i: int) -> string {
+        if (i == 0) { return "$67,210"; }
+        if (i == 1) { return "$3,810"; }
+        if (i == 2) { return "$142.60"; }
+        if (i == 3) { return "$0.482"; }
+        if (i == 4) { return "$1.00"; }
+        return "$42.18";
+    }
+    function qty(i: int) -> int {
+        if (i == 0) { return root.q0; }
+        if (i == 1) { return root.q1; }
+        if (i == 2) { return root.q2; }
+        if (i == 3) { return root.q3; }
+        if (i == 4) { return root.q4; }
+        return root.q5;
+    }
+    function starred(i: int) -> bool {
+        if (i == 0) { return root.s0; }
+        if (i == 1) { return root.s1; }
+        if (i == 2) { return root.s2; }
+        if (i == 3) { return root.s3; }
+        if (i == 4) { return root.s4; }
+        return root.s5;
+    }
+    function coin-matches-query(i: int) -> bool {
+        return root.query.is-empty || root.ticker(i) == root.query;
+    }
+    function coin-shown(i: int) -> bool {
+        return root.coin-matches-query(i);
+    }
+    function any-shown() -> bool {
+        return root.coin-shown(0) || root.coin-shown(1) || root.coin-shown(2)
+            || root.coin-shown(3) || root.coin-shown(4) || root.coin-shown(5);
+    }
+    function balance-text() -> string {
+        return root.balance-hidden ? "$••••••" : root.total;
+    }
+    function price-display(i: int) -> string {
+        return root.balance-hidden ? "$•••" : root.coin-price(i);
+    }
+    function star-count() -> int {
+        return (root.s0 ? 1 : 0) + (root.s1 ? 1 : 0) + (root.s2 ? 1 : 0)
+            + (root.s3 ? 1 : 0) + (root.s4 ? 1 : 0) + (root.s5 ? 1 : 0);
+    }
+
+    // ----- Mutations -----
+    public function pick-range(i: int) {
+        root.range-index = i;
+        root.status-msg = "Range: " + root.range-label(i) + " · " + root.delta-text(i);
+        root.status-is-success = root.delta-direction(i) >= 0;
+        root.status-is-danger = root.delta-direction(i) < 0;
+    }
+    public function toggle-balance() {
+        root.balance-hidden = !root.balance-hidden;
+        root.status-msg = root.balance-hidden
+            ? "Balance hidden · tap again to reveal"
+            : "Balance revealed";
+        root.status-is-success = !root.balance-hidden;
+        root.status-is-danger = false;
+    }
+    public function cycle-sort() {
+        root.sort-mode = mod(root.sort-mode + 1, 3);
+        root.status-msg = "Sorted: " + root.sort-label(root.sort-mode);
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function tap-coin(i: int) {
+        root.expanded-coin = root.expanded-coin == i ? -1 : i;
+        root.coin-pressed(root.ticker(i));
+        root.status-msg = root.expanded-coin == i
+            ? root.ticker(i) + " · " + root.qty(i) + " lots @ " + root.coin-price(i)
+            : "Collapsed " + root.ticker(i);
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function buy-coin(i: int) {
+        if (i == 0) { root.q0 = root.q0 + 1; }
+        if (i == 1) { root.q1 = root.q1 + 1; }
+        if (i == 2) { root.q2 = root.q2 + 1; }
+        if (i == 3) { root.q3 = root.q3 + 1; }
+        if (i == 4) { root.q4 = root.q4 + 1; }
+        if (i == 5) { root.q5 = root.q5 + 1; }
+        root.coin-bought(root.ticker(i), 1);
+        root.status-msg = "Bought 1 " + root.ticker(i) + " @ " + root.coin-price(i)
+            + " · now " + root.qty(i) + " lots";
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    public function sell-coin(i: int) {
+        if (root.qty(i) <= 0) {
+            root.status-msg = "No " + root.ticker(i) + " to sell";
+            root.status-is-success = false;
+            root.status-is-danger = true;
+            return;
+        }
+        if (i == 0) { root.q0 = root.q0 - 1; }
+        if (i == 1) { root.q1 = root.q1 - 1; }
+        if (i == 2) { root.q2 = root.q2 - 1; }
+        if (i == 3) { root.q3 = root.q3 - 1; }
+        if (i == 4) { root.q4 = root.q4 - 1; }
+        if (i == 5) { root.q5 = root.q5 - 1; }
+        root.coin-sold(root.ticker(i), 1);
+        root.status-msg = "Sold 1 " + root.ticker(i) + " @ " + root.coin-price(i)
+            + " · now " + root.qty(i) + " lots";
+        root.status-is-success = false;
+        root.status-is-danger = true;
+    }
+    public function star-coin(i: int) {
+        if (i == 0) { root.s0 = !root.s0; }
+        if (i == 1) { root.s1 = !root.s1; }
+        if (i == 2) { root.s2 = !root.s2; }
+        if (i == 3) { root.s3 = !root.s3; }
+        if (i == 4) { root.s4 = !root.s4; }
+        if (i == 5) { root.s5 = !root.s5; }
+        root.coin-starred(root.ticker(i), root.starred(i));
+        root.status-msg = root.starred(i)
+            ? "Watching " + root.ticker(i) + " (" + root.star-count() + " total)"
+            : "Unwatched " + root.ticker(i) + " (" + root.star-count() + " total)";
+        root.status-is-success = root.starred(i);
+        root.status-is-danger = !root.starred(i);
+    }
+    public function open-search() {
+        root.search-open = !root.search-open;
+        root.search-pressed();
+        if (!root.search-open) {
+            root.query = "";
+            root.status-msg = "Search closed";
+        } else {
+            root.status-msg = "Search · type a ticker (BTC / ETH / SOL / ADA / USDC / AVAX)";
+        }
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function clear-query() {
+        root.query = "";
+        root.status-msg = "Search cleared";
+        root.status-is-success = false;
+        root.status-is-danger = true;
+    }
+    changed query => {
+        root.status-msg = root.query.is-empty
+            ? "Search cleared"
+            : "Searching: " + root.query
+                + (root.any-shown() ? "" : " (no match)");
+        root.status-is-success = false;
+        root.status-is-danger = !root.query.is-empty && !root.any-shown();
+    }
 
     background: Theme.background;
 
@@ -176,157 +447,561 @@ export component CryptoPortfolioPage inherits Window {
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             trailing-icon: @image-url("@mobile-components/icons/search.svg");
             leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.search-pressed(); }
+            trailing-pressed => { root.open-search(); }
         }
 
-        // Hero + sparkline + chips + 6 holdings rows overflow a single
-        // 892-px screen, so everything below the pinned AppBar scrolls.
+        // ----- Status banner ---------------------------------------
+        Rectangle {
+            height: 32px;
+            background: root.status-is-danger ? Theme.accent-danger
+                : root.status-is-success ? Theme.accent-success
+                : Theme.surface-2;
+            animate background { duration: Theme.motion-fast; }
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                Text {
+                    text: root.status-msg;
+                    color: (root.status-is-danger || root.status-is-success)
+                        ? Theme.on-primary
+                        : Theme.on-surface;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+            }
+        }
+
+        // ----- Inline search ---------------------------------------
+        if root.search-open: Rectangle {
+            background: Theme.surface-2;
+            HorizontalLayout {
+                padding: Theme.spacing-sm;
+                spacing: Theme.spacing-sm;
+                FormField {
+                    horizontal-stretch: 1;
+                    TextField {
+                        placeholder: "Ticker e.g. BTC";
+                        text <=> root.query;
+                    }
+                }
+                if !root.query.is-empty: Rectangle {
+                    width: 40px;
+                    height: 40px;
+                    border-radius: 20px;
+                    background: Theme.surface-1;
+                    Image {
+                        width: 14px;
+                        height: 14px;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        source: @image-url("@mobile-components/icons/close.svg");
+                        colorize: Theme.on-surface;
+                        image-fit: contain;
+                    }
+                    TouchArea { clicked => { root.clear-query(); } }
+                }
+            }
+        }
+
         ScrollView {
             vertical-stretch: 1;
 
             VerticalLayout {
                 spacing: 0;
 
-        // ----- Hero -----
-        VerticalLayout {
-            padding-top: Theme.spacing-lg;
-            padding-bottom: Theme.spacing-md;
-            spacing: Theme.spacing-xs;
+                // ----- Hero --------------------------------------
+                VerticalLayout {
+                    padding-top: Theme.spacing-lg;
+                    padding-bottom: Theme.spacing-md;
+                    spacing: Theme.spacing-xs;
 
-            HorizontalLayout {
-                alignment: center;
-                Text {
-                    text: "Total balance";
-                    color: Theme.muted;
-                    font-size: Theme.font-size-caption;
-                    font-weight: 600;
-                    letter-spacing: 0.5px;
+                    HorizontalLayout {
+                        alignment: center;
+                        Text {
+                            text: root.balance-hidden ? "Total balance · hidden" : "Total balance · tap to hide";
+                            color: Theme.muted;
+                            font-size: Theme.font-size-caption;
+                            font-weight: 600;
+                            letter-spacing: 0.5px;
+                        }
+                    }
+
+                    // Tap the big number to hide/show the balance.
+                    Rectangle {
+                        background: touch.pressed ? Theme.surface-pressed : transparent;
+                        animate background { duration: Theme.motion-fast; }
+                        HorizontalLayout {
+                            alignment: center;
+                            padding-top: Theme.spacing-xs;
+                            padding-bottom: Theme.spacing-xs;
+                            Heading {
+                                text: root.balance-text();
+                                style: HeadingStyle.mono;
+                                color: Theme.on-background;
+                                font-size: 44px;
+                                font-weight: 400;
+                            }
+                        }
+                        touch := TouchArea {
+                            clicked => { root.toggle-balance(); }
+                        }
+                    }
+                    HorizontalLayout {
+                        alignment: center;
+                        spacing: Theme.spacing-sm;
+                        Text {
+                            text: root.delta-text(root.range-index);
+                            color:
+                                  root.delta-direction(root.range-index) > 0 ? Theme.accent-success
+                                : root.delta-direction(root.range-index) < 0 ? Theme.accent-danger
+                                : Theme.muted;
+                            font-size: Theme.font-size-body;
+                            font-weight: 600;
+                        }
+                    }
+                }
+
+                // ----- Hero sparkline ----------------------------
+                // Six different bar arrays — selected by range-index.
+                Rectangle {
+                    height: 120px;
+                    VerticalLayout {
+                        padding-left: Theme.spacing-md;
+                        padding-right: Theme.spacing-md;
+                        padding-bottom: Theme.spacing-md;
+                        if root.range-index == 0: Sparkline {
+                            horizontal-stretch: 1;
+                            height: 96px;
+                            bar-width: 6px;
+                            bar-spacing: 2px;
+                            bars: [50, 52, 51, 53, 54, 53, 52, 54, 55, 53, 52, 54, 56, 55, 54, 53, 55, 56, 55, 53, 52, 54, 55, 56];
+                            stroke: Theme.accent-success;
+                        }
+                        if root.range-index == 1: Sparkline {
+                            horizontal-stretch: 1;
+                            height: 96px;
+                            bar-width: 6px;
+                            bar-spacing: 2px;
+                            bars: [32, 38, 35, 41, 47, 52, 48, 56, 61, 58, 64, 68, 71, 67, 72, 79, 84, 81, 86, 88, 92, 90, 95, 97];
+                            stroke: Theme.accent-success;
+                        }
+                        if root.range-index == 2: Sparkline {
+                            horizontal-stretch: 1;
+                            height: 96px;
+                            bar-width: 6px;
+                            bar-spacing: 2px;
+                            bars: [60, 58, 62, 55, 50, 53, 58, 62, 66, 70, 68, 72, 75, 78, 81, 79, 77, 80, 83, 86, 88, 85, 90, 95];
+                            stroke: Theme.accent-success;
+                        }
+                        if root.range-index == 3: Sparkline {
+                            horizontal-stretch: 1;
+                            height: 96px;
+                            bar-width: 6px;
+                            bar-spacing: 2px;
+                            bars: [80, 78, 82, 76, 70, 72, 68, 64, 60, 65, 62, 58, 55, 60, 52, 48, 50, 45, 42, 38, 35, 32, 28, 25];
+                            stroke: Theme.accent-danger;
+                        }
+                        if root.range-index == 4: Sparkline {
+                            horizontal-stretch: 1;
+                            height: 96px;
+                            bar-width: 6px;
+                            bar-spacing: 2px;
+                            bars: [8, 12, 16, 20, 18, 25, 30, 36, 42, 38, 45, 52, 58, 65, 70, 74, 78, 82, 84, 88, 90, 92, 95, 97];
+                            stroke: Theme.accent-success;
+                        }
+                        if root.range-index == 5: Sparkline {
+                            horizontal-stretch: 1;
+                            height: 96px;
+                            bar-width: 6px;
+                            bar-spacing: 2px;
+                            bars: [5, 12, 8, 25, 15, 35, 40, 30, 50, 45, 60, 55, 70, 60, 80, 75, 88, 80, 95, 90, 92, 88, 95, 97];
+                            stroke: Theme.accent-success;
+                        }
+                    }
+                }
+
+                // ----- Time-range chips --------------------------
+                HorizontalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-bottom: Theme.spacing-md;
+                    spacing: Theme.spacing-sm;
+                    Rectangle {
+                        Chip { label: "1H"; selected: root.range-index == 0; }
+                        TouchArea { clicked => { root.pick-range(0); } }
+                    }
+                    Rectangle {
+                        Chip { label: "1D"; selected: root.range-index == 1; }
+                        TouchArea { clicked => { root.pick-range(1); } }
+                    }
+                    Rectangle {
+                        Chip { label: "1W"; selected: root.range-index == 2; }
+                        TouchArea { clicked => { root.pick-range(2); } }
+                    }
+                    Rectangle {
+                        Chip { label: "1M"; selected: root.range-index == 3; }
+                        TouchArea { clicked => { root.pick-range(3); } }
+                    }
+                    Rectangle {
+                        Chip { label: "1Y"; selected: root.range-index == 4; }
+                        TouchArea { clicked => { root.pick-range(4); } }
+                    }
+                    Rectangle {
+                        Chip { label: "ALL"; selected: root.range-index == 5; }
+                        TouchArea { clicked => { root.pick-range(5); } }
+                    }
+                }
+
+                // ----- Holdings section header (sort cycle) ------
+                Rectangle {
+                    background: sort-touch.pressed ? Theme.surface-pressed : transparent;
+                    animate background { duration: Theme.motion-fast; }
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-md;
+                        padding-right: Theme.spacing-md;
+                        padding-top: Theme.spacing-sm;
+                        padding-bottom: Theme.spacing-sm;
+                        Text {
+                            text: "HOLDINGS · " + root.star-count() + " watched";
+                            color: Theme.muted;
+                            font-size: 10px;
+                            font-weight: 800;
+                            letter-spacing: 0.5px;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                        }
+                        Text {
+                            text: "Sort: " + root.sort-label(root.sort-mode) + "  ⇅";
+                            color: Theme.accent-info;
+                            font-size: 11px;
+                            font-weight: 800;
+                            letter-spacing: 0.3px;
+                            vertical-alignment: center;
+                        }
+                    }
+                    sort-touch := TouchArea {
+                        clicked => { root.cycle-sort(); }
+                    }
+                }
+
+                // ----- Holdings rows -----------------------------
+                if root.coin-shown(0): VerticalLayout {
+                    spacing: 0;
+                    CoinRow {
+                        ticker: "BTC";
+                        name: "Bitcoin";
+                        price: root.price-display(0);
+                        change: "+2.4%";
+                        change-direction: 1;
+                        glyph-color: #f7931a;
+                        spark: [20, 25, 32, 28, 35, 41, 48, 52, 58, 65, 72, 78];
+                        starred: root.s0;
+                        expanded: root.expanded-coin == 0;
+                        clicked => { root.tap-coin(0); }
+                    }
+                    if root.expanded-coin == 0: Rectangle {
+                        background: Theme.surface-2;
+                        VerticalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-sm;
+                            Text {
+                                text: "Position · " + root.q0 + " lots";
+                                color: Theme.muted;
+                                font-size: Theme.font-size-caption;
+                                font-weight: 700;
+                            }
+                            HorizontalLayout {
+                                spacing: Theme.spacing-sm;
+                                ActionPill {
+                                    label: "Buy 1";
+                                    primary: true;
+                                    clicked => { root.buy-coin(0); }
+                                }
+                                ActionPill {
+                                    label: "Sell 1";
+                                    danger: root.q0 > 0;
+                                    clicked => { root.sell-coin(0); }
+                                }
+                                ActionPill {
+                                    label: root.s0 ? "★ Watching" : "☆ Watch";
+                                    active: root.s0;
+                                    clicked => { root.star-coin(0); }
+                                }
+                            }
+                        }
+                    }
+                }
+                if root.coin-shown(0) && (root.coin-shown(1) || root.coin-shown(2)
+                    || root.coin-shown(3) || root.coin-shown(4)
+                    || root.coin-shown(5)): Divider { }
+
+                if root.coin-shown(1): VerticalLayout {
+                    spacing: 0;
+                    CoinRow {
+                        ticker: "ETH";
+                        name: "Ethereum";
+                        price: root.price-display(1);
+                        change: "+5.1%";
+                        change-direction: 1;
+                        glyph-color: #627eea;
+                        spark: [42, 38, 45, 52, 58, 64, 71, 68, 75, 82, 88, 92];
+                        starred: root.s1;
+                        expanded: root.expanded-coin == 1;
+                        clicked => { root.tap-coin(1); }
+                    }
+                    if root.expanded-coin == 1: Rectangle {
+                        background: Theme.surface-2;
+                        VerticalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-sm;
+                            Text {
+                                text: "Position · " + root.q1 + " lots";
+                                color: Theme.muted;
+                                font-size: Theme.font-size-caption;
+                                font-weight: 700;
+                            }
+                            HorizontalLayout {
+                                spacing: Theme.spacing-sm;
+                                ActionPill {
+                                    label: "Buy 1";
+                                    primary: true;
+                                    clicked => { root.buy-coin(1); }
+                                }
+                                ActionPill {
+                                    label: "Sell 1";
+                                    danger: root.q1 > 0;
+                                    clicked => { root.sell-coin(1); }
+                                }
+                                ActionPill {
+                                    label: root.s1 ? "★ Watching" : "☆ Watch";
+                                    active: root.s1;
+                                    clicked => { root.star-coin(1); }
+                                }
+                            }
+                        }
+                    }
+                }
+                if root.coin-shown(1) && (root.coin-shown(2) || root.coin-shown(3)
+                    || root.coin-shown(4) || root.coin-shown(5)): Divider { }
+
+                if root.coin-shown(2): VerticalLayout {
+                    spacing: 0;
+                    CoinRow {
+                        ticker: "SOL";
+                        name: "Solana";
+                        price: root.price-display(2);
+                        change: "−1.8%";
+                        change-direction: -1;
+                        glyph-color: #9945ff;
+                        spark: [88, 92, 85, 80, 76, 72, 68, 64, 60, 58, 52, 48];
+                        starred: root.s2;
+                        expanded: root.expanded-coin == 2;
+                        clicked => { root.tap-coin(2); }
+                    }
+                    if root.expanded-coin == 2: Rectangle {
+                        background: Theme.surface-2;
+                        VerticalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-sm;
+                            Text {
+                                text: "Position · " + root.q2 + " lots";
+                                color: Theme.muted;
+                                font-size: Theme.font-size-caption;
+                                font-weight: 700;
+                            }
+                            HorizontalLayout {
+                                spacing: Theme.spacing-sm;
+                                ActionPill {
+                                    label: "Buy 1";
+                                    primary: true;
+                                    clicked => { root.buy-coin(2); }
+                                }
+                                ActionPill {
+                                    label: "Sell 1";
+                                    danger: root.q2 > 0;
+                                    clicked => { root.sell-coin(2); }
+                                }
+                                ActionPill {
+                                    label: root.s2 ? "★ Watching" : "☆ Watch";
+                                    active: root.s2;
+                                    clicked => { root.star-coin(2); }
+                                }
+                            }
+                        }
+                    }
+                }
+                if root.coin-shown(2) && (root.coin-shown(3) || root.coin-shown(4)
+                    || root.coin-shown(5)): Divider { }
+
+                if root.coin-shown(3): VerticalLayout {
+                    spacing: 0;
+                    CoinRow {
+                        ticker: "ADA";
+                        name: "Cardano";
+                        price: root.price-display(3);
+                        change: "+0.3%";
+                        change-direction: 0;
+                        glyph-color: #0033ad;
+                        spark: [50, 52, 51, 53, 52, 54, 53, 55, 54, 56, 55, 56];
+                        starred: root.s3;
+                        expanded: root.expanded-coin == 3;
+                        clicked => { root.tap-coin(3); }
+                    }
+                    if root.expanded-coin == 3: Rectangle {
+                        background: Theme.surface-2;
+                        VerticalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-sm;
+                            Text {
+                                text: "Position · " + root.q3 + " lots";
+                                color: Theme.muted;
+                                font-size: Theme.font-size-caption;
+                                font-weight: 700;
+                            }
+                            HorizontalLayout {
+                                spacing: Theme.spacing-sm;
+                                ActionPill {
+                                    label: "Buy 1";
+                                    primary: true;
+                                    clicked => { root.buy-coin(3); }
+                                }
+                                ActionPill {
+                                    label: "Sell 1";
+                                    danger: root.q3 > 0;
+                                    clicked => { root.sell-coin(3); }
+                                }
+                                ActionPill {
+                                    label: root.s3 ? "★ Watching" : "☆ Watch";
+                                    active: root.s3;
+                                    clicked => { root.star-coin(3); }
+                                }
+                            }
+                        }
+                    }
+                }
+                if root.coin-shown(3) && (root.coin-shown(4)
+                    || root.coin-shown(5)): Divider { }
+
+                if root.coin-shown(4): VerticalLayout {
+                    spacing: 0;
+                    CoinRow {
+                        ticker: "USDC";
+                        name: "USD Coin";
+                        price: root.price-display(4);
+                        change: "0.0%";
+                        change-direction: 0;
+                        glyph-color: #2775ca;
+                        spark: [50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50];
+                        starred: root.s4;
+                        expanded: root.expanded-coin == 4;
+                        clicked => { root.tap-coin(4); }
+                    }
+                    if root.expanded-coin == 4: Rectangle {
+                        background: Theme.surface-2;
+                        VerticalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-sm;
+                            Text {
+                                text: "Position · " + root.q4 + " lots";
+                                color: Theme.muted;
+                                font-size: Theme.font-size-caption;
+                                font-weight: 700;
+                            }
+                            HorizontalLayout {
+                                spacing: Theme.spacing-sm;
+                                ActionPill {
+                                    label: "Buy 1";
+                                    primary: true;
+                                    clicked => { root.buy-coin(4); }
+                                }
+                                ActionPill {
+                                    label: "Sell 1";
+                                    danger: root.q4 > 0;
+                                    clicked => { root.sell-coin(4); }
+                                }
+                                ActionPill {
+                                    label: root.s4 ? "★ Watching" : "☆ Watch";
+                                    active: root.s4;
+                                    clicked => { root.star-coin(4); }
+                                }
+                            }
+                        }
+                    }
+                }
+                if root.coin-shown(4) && root.coin-shown(5): Divider { }
+
+                if root.coin-shown(5): VerticalLayout {
+                    spacing: 0;
+                    CoinRow {
+                        ticker: "AVAX";
+                        name: "Avalanche";
+                        price: root.price-display(5);
+                        change: "−4.2%";
+                        change-direction: -1;
+                        glyph-color: #e84142;
+                        spark: [78, 75, 72, 68, 64, 60, 58, 52, 48, 44, 40, 38];
+                        starred: root.s5;
+                        expanded: root.expanded-coin == 5;
+                        clicked => { root.tap-coin(5); }
+                    }
+                    if root.expanded-coin == 5: Rectangle {
+                        background: Theme.surface-2;
+                        VerticalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-sm;
+                            Text {
+                                text: "Position · " + root.q5 + " lots";
+                                color: Theme.muted;
+                                font-size: Theme.font-size-caption;
+                                font-weight: 700;
+                            }
+                            HorizontalLayout {
+                                spacing: Theme.spacing-sm;
+                                ActionPill {
+                                    label: "Buy 1";
+                                    primary: true;
+                                    clicked => { root.buy-coin(5); }
+                                }
+                                ActionPill {
+                                    label: "Sell 1";
+                                    danger: root.q5 > 0;
+                                    clicked => { root.sell-coin(5); }
+                                }
+                                ActionPill {
+                                    label: root.s5 ? "★ Watching" : "☆ Watch";
+                                    active: root.s5;
+                                    clicked => { root.star-coin(5); }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if !root.any-shown(): Rectangle {
+                    min-height: 140px;
+                    VerticalLayout {
+                        padding: Theme.spacing-lg;
+                        spacing: Theme.spacing-xs;
+                        alignment: center;
+                        Text {
+                            text: "No coin matches \"" + root.query + "\"";
+                            color: Theme.muted;
+                            font-size: Theme.font-size-body;
+                            font-weight: 700;
+                            horizontal-alignment: center;
+                        }
+                        Text {
+                            text: "Try BTC, ETH, SOL, ADA, USDC, or AVAX.";
+                            color: Theme.muted;
+                            font-size: Theme.font-size-caption;
+                            horizontal-alignment: center;
+                        }
+                    }
                 }
             }
-            HorizontalLayout {
-                alignment: center;
-                Heading {
-                    text: root.total;
-                    style: HeadingStyle.mono;
-                    color: Theme.on-background;
-                    font-size: 44px;
-                    font-weight: 400;
-                }
-            }
-            HorizontalLayout {
-                alignment: center;
-                spacing: Theme.spacing-sm;
-                Text {
-                    text: root.delta-amount + " · " + root.delta-pct + " · 24h";
-                    color:
-                          root.delta-direction > 0 ? Theme.accent-success
-                        : root.delta-direction < 0 ? Theme.accent-danger
-                        : Theme.muted;
-                    font-size: Theme.font-size-body;
-                    font-weight: 600;
-                }
-            }
         }
-
-        // ----- Hero sparkline -----
-        Rectangle {
-            height: 120px;
-            VerticalLayout {
-                padding-left: Theme.spacing-md;
-                padding-right: Theme.spacing-md;
-                padding-bottom: Theme.spacing-md;
-                Sparkline {
-                    horizontal-stretch: 1;
-                    height: 96px;
-                    bar-width: 6px;
-                    bar-spacing: 2px;
-                    bars: [
-                        32, 38, 35, 41, 47, 52, 48, 56, 61, 58,
-                        64, 68, 71, 67, 72, 79, 84, 81, 86, 88,
-                        92, 90, 95, 97
-                    ];
-                    stroke: Theme.accent-success;
-                }
-            }
-        }
-
-        // ----- Time-range chips -----
-        HorizontalLayout {
-            padding-left: Theme.spacing-md;
-            padding-right: Theme.spacing-md;
-            padding-bottom: Theme.spacing-md;
-            spacing: Theme.spacing-sm;
-            Chip { label: "1H"; }
-            Chip { label: "1D"; selected: true; }
-            Chip { label: "1W"; }
-            Chip { label: "1M"; }
-            Chip { label: "1Y"; }
-            Chip { label: "ALL"; }
-        }
-
-        // ----- Holdings list -----
-        SectionHeader { text: "Holdings"; }
-
-        CoinRow {
-            ticker: "BTC";
-            name: "Bitcoin";
-            price: "$67,210";
-            change: "+2.4%";
-            change-direction: 1;
-            glyph-color: #f7931a;
-            spark: [20, 25, 32, 28, 35, 41, 48, 52, 58, 65, 72, 78];
-        }
-        Divider { }
-        CoinRow {
-            ticker: "ETH";
-            name: "Ethereum";
-            price: "$3,810";
-            change: "+5.1%";
-            change-direction: 1;
-            glyph-color: #627eea;
-            spark: [42, 38, 45, 52, 58, 64, 71, 68, 75, 82, 88, 92];
-        }
-        Divider { }
-        CoinRow {
-            ticker: "SOL";
-            name: "Solana";
-            price: "$142.60";
-            change: "−1.8%";
-            change-direction: -1;
-            glyph-color: #9945ff;
-            spark: [88, 92, 85, 80, 76, 72, 68, 64, 60, 58, 52, 48];
-        }
-        Divider { }
-        CoinRow {
-            ticker: "ADA";
-            name: "Cardano";
-            price: "$0.482";
-            change: "+0.3%";
-            change-direction: 0;
-            glyph-color: #0033ad;
-            spark: [50, 52, 51, 53, 52, 54, 53, 55, 54, 56, 55, 56];
-        }
-        Divider { }
-        CoinRow {
-            ticker: "USDC";
-            name: "USD Coin";
-            price: "$1.00";
-            change: "0.0%";
-            change-direction: 0;
-            glyph-color: #2775ca;
-            spark: [50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50];
-        }
-        Divider { }
-        CoinRow {
-            ticker: "AVAX";
-            name: "Avalanche";
-            price: "$42.18";
-            change: "−4.2%";
-            change-direction: -1;
-            glyph-color: #e84142;
-            spark: [78, 75, 72, 68, 64, 60, 58, 52, 48, 44, 40, 38];
-        }
-            }   // end inner VerticalLayout
-        }       // end ScrollView
     }
 }

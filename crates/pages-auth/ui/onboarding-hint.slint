@@ -1,26 +1,43 @@
 // OnboardingHintPage
 // =====================================================================
 //
-// First-run coachmark / tooltip overlay — the floating "this is where
-// you save things" prompts new users see. Distinct from
-// `OnboardingPage` (multi-slide welcome) and `FormWizardPage` (multi-
-// step form). Demonstrates:
+// First-run coachmark / tooltip overlay with a fully working wizard
+// driven by internal state. The catalogue visitor can step through
+// the tour by tapping Next, skip it, tap the highlighted spotlight
+// to advance, or restart after completing. The mockup behind the
+// scrim is a real ScrollView with tappable list rows + a tappable
+// FAB so the visitor can poke the underlying "Reading list" too.
 //
-//   - Faux app screenshot underneath at half-opacity so the user can
-//     see the target UI.
-//   - Dark scrim with a "spotlight" cutout — here approximated as a
-//     bright Rectangle on top of the scrim that highlights the
-//     target's bounding box, surrounded by a thin tone-tinted ring.
-//   - Hint card anchored just below the highlighted target with a
-//     small triangle / arrow + headline + body + step counter + Skip
-//     / Next CTAs.
-//
-// The scene shows the user at "step 2 of 4" — the spotlight points at
-// the bottom-tab FAB on the underlying mockup, and the hint card sits
-// beneath it.
+//   - Wizard moves through 4 steps, each anchored to a different
+//     mockup element (header → first card → FAB → completion).
+//     The spotlight ring follows the current target, the step pips
+//     advance, and the hint title + body change per step.
+//   - Tap the spotlight itself to advance (matches real coachmark
+//     UX: the user instinctively taps the highlighted thing).
+//   - On the final step the hint card flips to "Tour complete" with
+//     a Restart button.
+//   - Skip ends the tour immediately and shows the same Restart
+//     affordance.
+//   - The mockup's 6 "Reading list" cards live in a ScrollView,
+//     each row is tappable and surfaces "Opened: <title>" in the
+//     hint card's status line.
+//   - The mockup FAB is tappable too: fires "Saved a new item"
+//     into the status line and bumps a counter shown in the header.
 
+import { ScrollView } from "std-widgets.slint";
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { MobileButton, TextButton } from "@mobile-components/button.slint";
+
+// Per-step spec consumed by the spotlight + hint card.
+struct StepSpec {
+    title: string,
+    body: string,
+    target-x: length,
+    target-y: length,
+    target-w: length,
+    target-h: length,
+    target-circle: bool,
+}
 
 // One pip in the step indicator.
 component StepPip inherits Rectangle {
@@ -38,10 +55,141 @@ export component OnboardingHintPage inherits Window {
     in property <string> hint-title: "Tap here to save anything for later";
     in property <string> hint-body:
         "We stash articles, photos, voice memos — anything you tap save on — into your library, ready to read offline.";
-    in property <int> step-current: 1;
+    in-out property <int> step-current: 0;
     in property <int> step-total: 4;
     callback skip-pressed();
     callback next-pressed();
+    // Fires when the visitor fully completes the wizard (last
+    // Next press); a real host can hook this to dismiss the
+    // coachmark.
+    callback finished();
+    // Fires when a mockup row or the mockup FAB is tapped.
+    callback mockup-action(string);
+
+    // ----- Internal wizard state -----
+    private property <bool> completed: false;
+    private property <bool> skipped: false;
+    private property <int> save-count: 0;
+    private property <string> status-msg: "";
+
+    // ---- Reading-list mock data ----
+    private property <[string]> reading-titles: [
+        "Designing for offline-first apps",
+        "The case against page weight",
+        "Notes from a voice-memo addict",
+        "Why your daily readlist is too long",
+        "Photo-led writing in 2026",
+        "Building paddles that survive",
+        "How I stopped doomscrolling",
+        "Save-for-later as a memory tool",
+    ];
+    private property <[string]> reading-subtitles: [
+        "8 min · saved May 12",
+        "5 min · saved May 11",
+        "3 min · saved May 10",
+        "12 min · saved May 09",
+        "7 min · saved May 08",
+        "9 min · saved May 06",
+        "4 min · saved May 04",
+        "6 min · saved May 02",
+    ];
+
+    // ---- Step specs ----
+    //
+    // x/y/w/h are in the same coord space as the Window, so the
+    // spotlight halo + the redrawn target sit directly on top of
+    // the matching mockup element. Width 0 + height 0 means "no
+    // spotlight" — used by the completion step.
+    private property <[StepSpec]> steps: [
+        {
+            title: "Welcome to your reading list",
+            body: "Everything you save shows up right here on the home tab. Pull down to refresh — we'll fetch the latest.",
+            target-x: 0px,
+            target-y: 0px,
+            target-w: 412px,
+            target-h: 56px,
+            target-circle: false,
+        },
+        {
+            title: "Tap any item to open it",
+            body: "Open an article, scrub a voice memo, or zoom into a photo without leaving the queue.",
+            target-x: 16px,
+            target-y: 64px,
+            target-w: 380px,
+            target-h: 88px,
+            target-circle: false,
+        },
+        {
+            title: "Tap here to save anything",
+            body: "We stash articles, photos, voice memos — whatever you tap save on — into your library, ready to read offline.",
+            target-x: 332px,
+            target-y: 708px,
+            target-w: 64px,
+            target-h: 64px,
+            target-circle: true,
+        },
+        {
+            title: "You're all set!",
+            body: "Explore the rest of the app. You can replay this tour any time from Settings · Help — or use the Restart button below.",
+            target-x: 0px,
+            target-y: 0px,
+            target-w: 0px,
+            target-h: 0px,
+            target-circle: false,
+        },
+    ];
+
+    // ---- Handlers ----
+    function press-next() {
+        root.next-pressed();
+        if (root.step-current + 1 >= root.step-total) {
+            root.completed = true;
+            root.status-msg = "Tour complete";
+            root.finished();
+        } else {
+            root.step-current = root.step-current + 1;
+            root.status-msg = "Step " + (root.step-current + 1) + " of " + root.step-total;
+        }
+    }
+    function press-skip() {
+        root.skip-pressed();
+        root.skipped = true;
+        root.completed = true;
+        root.status-msg = "Tour skipped";
+    }
+    function press-restart() {
+        root.completed = false;
+        root.skipped = false;
+        root.step-current = 0;
+        root.save-count = 0;
+        root.status-msg = "Tour restarted";
+    }
+    function press-spotlight() {
+        // Tap the highlighted target — also fires the step's
+        // contextual action so the demo cell does something
+        // visible when the visitor instinctively taps the
+        // spotlighted UI.
+        if (root.step-current == 2) {
+            // FAB step: also count a "save" so the visitor sees
+            // the saved-count bump.
+            root.save-count = root.save-count + 1;
+            root.mockup-action("Save");
+        } else if (root.step-current == 1) {
+            root.mockup-action("Read top article");
+        } else if (root.step-current == 0) {
+            root.mockup-action("Header");
+        }
+        root.press-next();
+    }
+    function tap-row(title: string) {
+        root.mockup-action(title);
+        root.status-msg = "Opened: " + title;
+    }
+    function tap-fab() {
+        root.save-count = root.save-count + 1;
+        root.mockup-action("Save");
+        root.status-msg = "Saved a new item (" + root.save-count + " total)";
+    }
 
     background: Theme.background;
 
@@ -53,7 +201,8 @@ export component OnboardingHintPage inherits Window {
         height: parent.height;
         background: Theme.background;
 
-        // Fake top bar.
+        // Fake top bar — Plex Sans, plus a live saved-counter so the
+        // user can see their FAB taps register.
         Rectangle {
             x: 0;
             y: 0;
@@ -62,8 +211,7 @@ export component OnboardingHintPage inherits Window {
             background: Theme.surface-1;
             HorizontalLayout {
                 padding: Theme.spacing-md;
-                // Underlying-app fake bar — Plex Sans for a generic
-                // "another app" feel that contrasts with the coachmark.
+                spacing: Theme.spacing-sm;
                 Text {
                     text: "Reading list";
                     color: Theme.on-surface;
@@ -73,74 +221,91 @@ export component OnboardingHintPage inherits Window {
                     horizontal-stretch: 1;
                     vertical-alignment: center;
                 }
-            }
-        }
-        // Fake content cards.
-        VerticalLayout {
-            x: 0;
-            y: 64px;
-            width: parent.width;
-            padding-left: Theme.spacing-md;
-            padding-right: Theme.spacing-md;
-            spacing: Theme.spacing-sm;
-            for index in 6 : Rectangle {
-                horizontal-stretch: 1;
-                height: 88px;
-                background: Theme.surface-1;
-                border-radius: Theme.radius-md;
-                HorizontalLayout {
-                    padding: Theme.spacing-sm;
-                    spacing: Theme.spacing-sm;
-                    Rectangle {
-                        width: 72px;
-                        height: 72px;
-                        border-radius: Theme.radius-sm;
-                        background: Theme.surface-variant;
-                    }
-                    VerticalLayout {
-                        horizontal-stretch: 1;
-                        alignment: center;
-                        spacing: Theme.spacing-xs;
-                        Rectangle {
-                            horizontal-stretch: 1;
-                            height: 8px;
-                            background: Theme.surface-variant;
-                            border-radius: 2px;
-                            max-width: 200px;
-                        }
-                        Rectangle {
-                            horizontal-stretch: 1;
-                            height: 6px;
-                            background: Theme.surface-variant;
-                            border-radius: 2px;
-                            max-width: 120px;
-                        }
-                    }
+                Text {
+                    text: "Saved: " + root.save-count;
+                    color: Theme.accent-info;
+                    font-family: "JetBrains Mono";
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                    vertical-alignment: center;
                 }
             }
         }
 
-        // Fake FAB target — this is what the coachmark highlights.
-        Rectangle {
-            x: parent.width - 64px - Theme.spacing-md;
-            y: parent.height - 64px - 120px;
-            width: 64px;
-            height: 64px;
-            border-radius: self.width / 2;
-            background: Theme.accent-info;
-            Image {
-                width: 24px;
-                height: 24px;
-                x: (parent.width - self.width) / 2;
-                y: (parent.height - self.height) / 2;
-                source: @image-url("@mobile-components/icons/plus.svg");
-                colorize: Theme.on-primary;
-                image-fit: contain;
+        // Real ScrollView so the mockup's reading-list is genuinely
+        // scrollable — visitors can drag through the rows even with
+        // the scrim drawn over them (the scrim's a plain Rectangle
+        // with no TouchArea, so it doesn't consume scroll events).
+        ScrollView {
+            x: 0;
+            y: 56px;
+            width: parent.width;
+            height: parent.height - 56px - 200px;
+
+            VerticalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-sm;
+                spacing: Theme.spacing-sm;
+                for title[i] in root.reading-titles: Rectangle {
+                    horizontal-stretch: 1;
+                    height: 88px;
+                    background: row-touch.pressed ? Theme.surface-pressed : Theme.surface-1;
+                    border-radius: Theme.radius-md;
+                    animate background { duration: Theme.motion-fast; }
+                    HorizontalLayout {
+                        padding: Theme.spacing-sm;
+                        spacing: Theme.spacing-sm;
+                        Rectangle {
+                            width: 72px;
+                            height: 72px;
+                            border-radius: Theme.radius-sm;
+                            background: @linear-gradient(135deg,
+                                Theme.surface-variant 0%,
+                                Theme.surface-2 100%);
+                            Text {
+                                text: "#" + (i + 1);
+                                color: Theme.muted;
+                                font-size: 14px;
+                                font-weight: 800;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                x: 0; y: 0;
+                                width: parent.width; height: parent.height;
+                            }
+                        }
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            alignment: center;
+                            spacing: 2px;
+                            Text {
+                                text: title;
+                                color: Theme.on-surface;
+                                font-family: "IBM Plex Sans";
+                                font-size: Theme.font-size-body;
+                                font-weight: 700;
+                                overflow: elide;
+                            }
+                            Text {
+                                text: root.reading-subtitles[i];
+                                color: Theme.muted;
+                                font-size: Theme.font-size-caption;
+                                font-weight: 400;
+                                overflow: elide;
+                            }
+                        }
+                    }
+                    row-touch := TouchArea {
+                        clicked => { root.tap-row(title); }
+                    }
+                }
             }
         }
     }
 
-    // ----- Dim scrim (full screen) -----
+    // ----- Dim scrim (full screen, no TouchArea so it's
+    //       transparent to scroll + tap events underneath) -----
     Rectangle {
         x: 0;
         y: 0;
@@ -149,29 +314,36 @@ export component OnboardingHintPage inherits Window {
         background: #0a0d12cc;
     }
 
-    // ----- Spotlight "halo" around the FAB target -----
-    Rectangle {
-        x: parent.width - 88px - (Theme.spacing-md - 12px);
-        y: parent.height - 64px - 120px - 12px;
-        width: 88px;
-        height: 88px;
-        border-radius: self.width / 2;
+    // ----- Spotlight halo for the current step. Tap to advance ----
+    if !root.completed && root.steps[root.step-current].target-w > 0px: Rectangle {
+        x: root.steps[root.step-current].target-x - 12px;
+        y: root.steps[root.step-current].target-y - 12px;
+        width: root.steps[root.step-current].target-w + 24px;
+        height: root.steps[root.step-current].target-h + 24px;
+        border-radius: root.steps[root.step-current].target-circle
+            ? self.width / 2
+            : Theme.radius-lg;
         background: transparent;
         border-width: 3px;
         border-color: Theme.accent-info;
+        animate x, y, width, height { duration: Theme.motion-base; }
+        spot-touch := TouchArea {
+            clicked => { root.press-spotlight(); }
+        }
     }
 
-    // ----- The FAB itself, repainted on top of the scrim so it pops -----
+    // ----- The FAB redrawn on top of the scrim so it visibly pops -----
     Rectangle {
         x: parent.width - 64px - Theme.spacing-md;
         y: parent.height - 64px - 120px;
         width: 64px;
         height: 64px;
         border-radius: self.width / 2;
-        background: Theme.accent-info;
+        background: fab-touch.pressed ? Theme.primary-pressed : Theme.accent-info;
         drop-shadow-blur: Theme.elevation-3-blur;
         drop-shadow-color: Theme.elevation-3-color;
         drop-shadow-offset-y: Theme.elevation-3-y;
+        animate background { duration: Theme.motion-fast; }
         Image {
             width: 24px;
             height: 24px;
@@ -181,14 +353,17 @@ export component OnboardingHintPage inherits Window {
             colorize: Theme.on-primary;
             image-fit: contain;
         }
+        fab-touch := TouchArea {
+            clicked => { root.tap-fab(); }
+        }
     }
 
     // ----- Hint card -----
     Rectangle {
         x: Theme.spacing-md;
-        y: parent.height - 240px;
+        y: parent.height - 260px;
         width: parent.width - 2 * Theme.spacing-md - 88px;
-        height: 200px;
+        height: 240px;
         background: Theme.surface-2;
         border-radius: Theme.radius-md;
         drop-shadow-blur: Theme.elevation-3-blur;
@@ -198,20 +373,26 @@ export component OnboardingHintPage inherits Window {
         VerticalLayout {
             padding: Theme.spacing-md;
             spacing: Theme.spacing-sm;
-            // Step eyebrow — Space Grotesk all-caps with wide tracking
-            // for that "tooltip / coachmark" label feel.
+
+            // Step eyebrow — also reflects completion / skipped.
             Text {
-                text: "TIP · " + (root.step-current + 1) + " OF " + root.step-total;
-                color: Theme.accent-info;
+                text: root.completed
+                    ? (root.skipped ? "TOUR · SKIPPED" : "TOUR · COMPLETE")
+                    : "TIP · " + (root.step-current + 1) + " OF " + root.step-total;
+                color: root.completed
+                    ? (root.skipped ? Theme.muted : Theme.accent-success)
+                    : Theme.accent-info;
                 font-family: "Space Grotesk";
                 font-size: 10px;
                 font-weight: 700;
                 letter-spacing: 2px;
             }
-            // Punchy hint headline — bespoke Inter bold with tight
-            // tracking, sized to fit inside a coachmark bubble.
+            // Hint headline — pulled from the current step spec, or
+            // a generic completion title once finished.
             Text {
-                text: root.hint-title;
+                text: root.completed
+                    ? (root.skipped ? "Tour skipped" : "You're all set!")
+                    : root.steps[root.step-current].title;
                 color: Theme.on-surface;
                 font-family: "Inter";
                 font-size: 19px;
@@ -221,11 +402,24 @@ export component OnboardingHintPage inherits Window {
             }
             // Body in Plex Sans for the soft, conversational tooltip tone.
             Text {
-                text: root.hint-body;
+                text: root.completed
+                    ? (root.skipped
+                        ? "No worries — you can replay it any time."
+                        : root.steps[3].body)
+                    : root.steps[root.step-current].body;
                 color: Theme.muted;
                 font-family: "IBM Plex Sans";
                 font-size: Theme.font-size-caption;
                 font-weight: 400;
+                wrap: word-wrap;
+            }
+            // Live status line so visitors see what each tap did.
+            if root.status-msg != "": Text {
+                text: root.status-msg;
+                color: Theme.accent-info;
+                font-family: "JetBrains Mono";
+                font-size: 11px;
+                font-weight: 700;
                 wrap: word-wrap;
             }
             Rectangle { vertical-stretch: 1; }
@@ -237,24 +431,29 @@ export component OnboardingHintPage inherits Window {
                     HorizontalLayout {
                         spacing: Theme.spacing-xs;
                         alignment: start;
-                        for index in root.step-total : StepPip {
-                            active: index == root.step-current;
+                        for index in root.step-total: StepPip {
+                            active: index == root.step-current && !root.completed;
                         }
                     }
                 }
                 HorizontalLayout {
                     spacing: Theme.spacing-sm;
-                    TextButton {
+                    if !root.completed: TextButton {
                         text: "Skip";
-                        clicked => { root.skip-pressed(); }
+                        clicked => { root.press-skip(); }
                     }
                     Rectangle {
-                        width: 88px;
+                        width: 96px;
                         height: 36px;
                         border-radius: 18px;
-                        background: Theme.accent-info;
+                        background: cta-touch.pressed
+                            ? Theme.primary-pressed
+                            : (root.completed ? Theme.accent-success : Theme.accent-info);
+                        animate background { duration: Theme.motion-fast; }
                         Text {
-                            text: "Next";
+                            text: root.completed
+                                ? "Restart"
+                                : (root.step-current + 1 >= root.step-total ? "Finish" : "Next");
                             color: Theme.on-primary;
                             font-size: Theme.font-size-caption;
                             font-weight: 800;
@@ -264,8 +463,14 @@ export component OnboardingHintPage inherits Window {
                             width: parent.width;
                             height: parent.height;
                         }
-                        TouchArea {
-                            clicked => { root.next-pressed(); }
+                        cta-touch := TouchArea {
+                            clicked => {
+                                if (root.completed) {
+                                    root.press-restart();
+                                } else {
+                                    root.press-next();
+                                }
+                            }
                         }
                     }
                 }

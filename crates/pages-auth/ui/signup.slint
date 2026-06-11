@@ -44,6 +44,133 @@ export component SignupPage inherits Window {
     callback back-pressed();
     callback submit-pressed();
     callback sign-in-pressed();
+    callback account-created(string /* email */);
+
+    // ----- Internal interaction state -----
+    private property <bool> submitted: false;
+    private property <bool> show-terms: false;
+    private property <int> selected-country: -1;
+    private property <[string]> countries: [
+        "United States", "Canada", "Mexico", "United Kingdom",
+        "Germany", "France", "Spain", "Italy", "Netherlands",
+        "Sweden", "Norway", "Japan", "South Korea", "Australia",
+        "New Zealand", "Brazil", "Argentina", "Singapore",
+    ];
+    in-out property <bool> newsletter: true;
+    in-out property <bool> marketing: false;
+    private property <string> status-msg: "";
+    private property <bool> status-is-danger: false;
+    private property <bool> status-is-success: false;
+
+    // ----- Validation helpers -----
+    //
+    // Slint's string type has `character-count` and equality but no
+    // regex, so the checks here are intentionally lightweight — they
+    // give the catalogue cell live visual feedback without pretending
+    // to be a real validator.
+    function email-looks-valid() -> bool {
+        return root.email.character-count >= 5;
+    }
+    function password-strength() -> int {
+        // 0 = empty/too short, 1 = okay, 2 = strong, 3 = excellent.
+        if (root.password.character-count == 0) {
+            return -1;
+        }
+        if (root.password.character-count < 8) {
+            return 0;
+        }
+        if (root.password.character-count < 12) {
+            return 1;
+        }
+        if (root.password.character-count < 16) {
+            return 2;
+        }
+        return 3;
+    }
+    function strength-label(s: int) -> string {
+        return s == -1 ? ""
+            : s == 0 ? "Too short — at least 8 characters"
+            : s == 1 ? "Okay — try 12+ for better security"
+            : s == 2 ? "Strong"
+            : "Excellent — you might be a wizard";
+    }
+    function strength-color(s: int) -> color {
+        return s == 0 ? Theme.accent-danger
+            : s == 1 ? Theme.accent-warning
+            : s == 2 ? Theme.accent-success
+            : Theme.primary;
+    }
+    function form-complete() -> bool {
+        return root.agreed
+            && root.full-name != ""
+            && root.email-looks-valid()
+            && root.password-strength() >= 1;
+    }
+    // ----- Handlers -----
+    function press-submit() {
+        root.submit-pressed();
+        if (root.full-name == "") {
+            root.status-msg = "Please enter your name";
+            root.status-is-danger = true;
+            root.status-is-success = false;
+            return;
+        }
+        if (!root.email-looks-valid()) {
+            root.status-msg = "That email looks too short";
+            root.status-is-danger = true;
+            root.status-is-success = false;
+            return;
+        }
+        if (root.password-strength() < 1) {
+            root.status-msg = "Pick a stronger password — at least 8 chars";
+            root.status-is-danger = true;
+            root.status-is-success = false;
+            return;
+        }
+        if (!root.agreed) {
+            root.status-msg = "You need to agree to the terms";
+            root.status-is-danger = true;
+            root.status-is-success = false;
+            return;
+        }
+        root.submitted = true;
+        root.status-msg = "Account created -- welcome, " + root.full-name;
+        root.status-is-success = true;
+        root.status-is-danger = false;
+        root.account-created(root.email);
+    }
+    function press-reset() {
+        root.submitted = false;
+        root.full-name = "";
+        root.email = "";
+        root.password = "";
+        root.birthday = "";
+        root.agreed = false;
+        root.newsletter = true;
+        root.marketing = false;
+        root.selected-country = -1;
+        root.show-terms = false;
+        root.status-msg = "Form reset";
+        root.status-is-danger = false;
+        root.status-is-success = false;
+    }
+    function press-suggest-password() {
+        root.password = "catalogue-rocks-26!";
+        root.status-msg = "Suggested password applied";
+        root.status-is-danger = false;
+        root.status-is-success = false;
+    }
+    function tap-country(i: int) {
+        if (i >= 0 && i < root.countries.length) {
+            root.selected-country = i;
+            root.status-msg = "Country: " + root.countries[i];
+            root.status-is-danger = false;
+            root.status-is-success = false;
+        }
+    }
+    function toggle-terms() {
+        root.show-terms = !root.show-terms;
+    }
 
     background: Theme.background;
 
@@ -53,6 +180,31 @@ export component SignupPage inherits Window {
         AppBar {
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             leading-pressed => { root.back-pressed(); }
+        }
+
+        // ----- Persistent status banner -----
+        // Tinted by `status-is-danger` / `status-is-success`. Hidden
+        // when there's nothing to say.
+        if root.status-msg != "": Rectangle {
+            background: root.status-is-danger ? Theme.accent-danger
+                : root.status-is-success ? Theme.accent-success
+                : Theme.surface-2;
+            height: 36px;
+            animate background { duration: Theme.motion-fast; }
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                Text {
+                    text: root.status-msg;
+                    color: (root.status-is-danger || root.status-is-success)
+                        ? Theme.on-primary : Theme.on-surface;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+            }
         }
 
         ScrollView {
@@ -66,8 +218,58 @@ export component SignupPage inherits Window {
                 spacing: Theme.spacing-lg;
                 alignment: start;
 
-                // ----- Hero -------------------------------------------------
-                VerticalLayout {
+                // ----- Success card (replaces the form once submitted) -----
+                if root.submitted: VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    spacing: Theme.spacing-md;
+                    HorizontalLayout {
+                        alignment: center;
+                        Rectangle {
+                            width: 96px;
+                            height: 96px;
+                            border-radius: self.width / 2;
+                            background: @linear-gradient(135deg, Theme.accent-success 0%, #1a8a4a 100%);
+                            Text {
+                                text: "✓";
+                                color: Theme.on-primary;
+                                font-size: 48px;
+                                font-weight: 800;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                x: 0;
+                                y: 0;
+                                width: parent.width;
+                                height: parent.height;
+                            }
+                        }
+                    }
+                    Heading {
+                        text: "Welcome, " + root.full-name + "!";
+                        style: HeadingStyle.serif-display;
+                        color: Theme.on-background;
+                        horizontal-alignment: center;
+                    }
+                    Text {
+                        text: "We sent a confirmation link to " + root.email + ". Tap it to verify your address.";
+                        color: Theme.muted;
+                        font-size: Theme.font-size-body;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+                    MobileButton {
+                        text: "Open the app";
+                        primary: true;
+                        clicked => { root.account-created(root.email); }
+                    }
+                    TextButton {
+                        text: "Create another account";
+                        clicked => { root.press-reset(); }
+                    }
+                }
+
+                // ----- Form (hidden after submission) -----
+                if !root.submitted: VerticalLayout {
                     padding-left: Theme.spacing-md;
                     padding-right: Theme.spacing-md;
                     spacing: Theme.spacing-xs;
@@ -84,8 +286,8 @@ export component SignupPage inherits Window {
                     }
                 }
 
-                // ----- Field stack ------------------------------------------
-                VerticalLayout {
+                // ----- Field stack -----
+                if !root.submitted: VerticalLayout {
                     spacing: Theme.spacing-md;
                     alignment: stretch;
 
@@ -101,21 +303,53 @@ export component SignupPage inherits Window {
                     FormField {
                         label: "Email";
                         required: true;
-                        helper: "We'll send a confirmation link.";
+                        helper: root.email == ""
+                            ? "We'll send a confirmation link."
+                            : root.email-looks-valid()
+                                ? "Looks good — confirmation will go here."
+                                : "Hmm, that looks too short.";
                         TextField {
                             placeholder: "you@example.com";
                             text <=> root.email;
                         }
                     }
 
+                    // Password field plus a live strength bar + suggest
+                    // button — caller can use either path.
                     FormField {
                         label: "Password";
                         required: true;
-                        helper: "12+ characters with one number or symbol.";
+                        helper: root.strength-label(root.password-strength());
                         TextField {
-                            placeholder: "••••••••••••";
+                            placeholder: "12+ characters";
                             text <=> root.password;
                             input-type: InputType.password;
+                        }
+                    }
+                    // Strength bar — animates colour + width with the
+                    // current password's strength score.
+                    if root.password-strength() >= 0: VerticalLayout {
+                        padding-left: Theme.spacing-md;
+                        padding-right: Theme.spacing-md;
+                        spacing: Theme.spacing-xs;
+                        HorizontalLayout {
+                            spacing: 4px;
+                            for i in 4: Rectangle {
+                                horizontal-stretch: 1;
+                                height: 6px;
+                                border-radius: 3px;
+                                background: i <= root.password-strength()
+                                    ? root.strength-color(root.password-strength())
+                                    : Theme.surface-variant;
+                                animate background { duration: Theme.motion-fast; }
+                            }
+                        }
+                        HorizontalLayout {
+                            alignment: end;
+                            TextButton {
+                                text: "Use suggested password";
+                                clicked => { root.press-suggest-password(); }
+                            }
                         }
                     }
 
@@ -129,17 +363,126 @@ export component SignupPage inherits Window {
                     }
                 }
 
-                // ----- Terms toggle (settings-row visual) -------------------
-                FormSection {
-                    SettingRow {
-                        title: "I agree to the terms";
-                        subtitle: "Service agreement and privacy policy.";
-                        MobileSwitch { checked <=> root.agreed; }
+                // ----- Country picker (horizontally scrollable) -----
+                if !root.submitted: VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    spacing: Theme.spacing-xs;
+
+                    Text {
+                        text: "COUNTRY";
+                        color: Theme.muted;
+                        font-family: "Space Grotesk";
+                        font-size: 10px;
+                        font-weight: 700;
+                        letter-spacing: 2px;
+                    }
+                    ScrollView {
+                        height: 44px;
+                        HorizontalLayout {
+                            spacing: Theme.spacing-sm;
+                            alignment: start;
+                            for name[i] in root.countries: Rectangle {
+                                height: 36px;
+                                border-radius: 18px;
+                                background: i == root.selected-country
+                                    ? Theme.primary
+                                    : (country-touch.pressed
+                                        ? Theme.surface-pressed
+                                        : Theme.surface-2);
+                                border-width: 1px;
+                                border-color: i == root.selected-country
+                                    ? Theme.primary
+                                    : Theme.outline;
+                                animate background { duration: Theme.motion-fast; }
+                                HorizontalLayout {
+                                    padding-left: 14px;
+                                    padding-right: 14px;
+                                    Text {
+                                        text: name;
+                                        color: i == root.selected-country
+                                            ? Theme.on-primary
+                                            : Theme.on-surface;
+                                        font-size: Theme.font-size-caption;
+                                        font-weight: 700;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                                country-touch := TouchArea {
+                                    clicked => { root.tap-country(i); }
+                                }
+                            }
+                        }
                     }
                 }
 
-                // ----- CTA --------------------------------------------------
-                VerticalLayout {
+                // ----- Marketing opt-ins (tap to toggle) -----
+                if !root.submitted: FormSection {
+                    SettingRow {
+                        title: "Send me product news";
+                        subtitle: "Monthly digest of new components.";
+                        MobileSwitch { checked <=> root.newsletter; }
+                    }
+                    SettingRow {
+                        title: "Tailored marketing emails";
+                        subtitle: "Off by default. You can turn this on later.";
+                        MobileSwitch { checked <=> root.marketing; }
+                    }
+                }
+
+                // ----- Terms toggle with expand-to-read -----
+                if !root.submitted: VerticalLayout {
+                    FormSection {
+                        SettingRow {
+                            title: "I agree to the terms";
+                            subtitle: root.show-terms
+                                ? "Tap below to hide the full text."
+                                : "Service agreement and privacy policy.";
+                            MobileSwitch { checked <=> root.agreed; }
+                        }
+                    }
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-md;
+                        padding-right: Theme.spacing-md;
+                        alignment: start;
+                        TextButton {
+                            text: root.show-terms ? "Hide terms" : "Read the terms";
+                            clicked => { root.toggle-terms(); }
+                        }
+                    }
+                    // Expandable scrollable terms text. Lives inside
+                    // its own fixed-height container so the outer
+                    // page scroll doesn't fight the inner one.
+                    if root.show-terms: Rectangle {
+                        background: Theme.surface-2;
+                        border-radius: Theme.radius-md;
+                        height: 200px;
+                        ScrollView {
+                            VerticalLayout {
+                                padding: Theme.spacing-md;
+                                spacing: Theme.spacing-sm;
+                                Text {
+                                    text: "TERMS OF SERVICE";
+                                    color: Theme.muted;
+                                    font-family: "Space Grotesk";
+                                    font-size: 10px;
+                                    font-weight: 800;
+                                    letter-spacing: 2px;
+                                }
+                                Text {
+                                    text: "1. You agree to use this catalogue for inspiration. The components are open-source and free to adopt in your own apps.\n\n2. We collect no data. The cell you're tapping right now runs entirely in the WebAssembly module in your browser; nothing leaves your device.\n\n3. The 'suggested password' is for demo only -- don't use it in a real account.\n\n4. The author isn't responsible for any patterns of UI envy this catalogue might inspire. If you build something with it, send a picture.\n\n5. By tapping 'Create account' you confirm you've read these terms (or at least scrolled past them).";
+                                    color: Theme.on-surface;
+                                    font-family: "IBM Plex Sans";
+                                    font-size: Theme.font-size-caption;
+                                    wrap: word-wrap;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ----- CTA -----
+                if !root.submitted: VerticalLayout {
                     padding-left: Theme.spacing-md;
                     padding-right: Theme.spacing-md;
                     spacing: Theme.spacing-sm;
@@ -147,11 +490,9 @@ export component SignupPage inherits Window {
 
                     MobileButton {
                         text: "Create account";
-                        enabled: root.agreed
-                                 && root.full-name != ""
-                                 && root.email != ""
-                                 && root.password != "";
-                        clicked => { root.submit-pressed(); }
+                        primary: true;
+                        enabled: root.form-complete();
+                        clicked => { root.press-submit(); }
                     }
 
                     TextButton {

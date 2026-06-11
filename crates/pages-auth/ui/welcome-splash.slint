@@ -16,8 +16,10 @@
 // brand block, bottom footer — so the brand sits a touch above
 // vertical centre, matching what most apps do.
 
+import { ScrollView } from "std-widgets.slint";
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
+import { MobileButton, TextButton } from "@mobile-components/button.slint";
 
 // One dot in the 3-dot loading row.
 component LoadDot inherits Rectangle {
@@ -29,6 +31,7 @@ component LoadDot inherits Rectangle {
     border-radius: Theme.radius-sm;
     background: root.tint;
     opacity: root.intensity;
+    animate opacity { duration: Theme.motion-fast; }
 }
 
 export component WelcomeSplashPage inherits Window {
@@ -38,8 +41,134 @@ export component WelcomeSplashPage inherits Window {
     in property <string> tagline: "Native UIs in pure Rust. No WebView. No compromises.";
     in property <string> version: "v1.13.4 · build 2026.05.14";
     callback ready();
+    callback restarted();
+
+    // ---- Loading state ----
+    //
+    // The splash now drives its own load via a Timer: every 100 ms
+    // `loading-tick` ticks (used for the rotating dot animation)
+    // and `progress` advances by 5 toward 100. At 100 the page
+    // flips into the ready state and shows a "Get started" button.
+    // The visitor can interrupt at any point by tapping the logo,
+    // which restarts the load animation from 0.
+    private property <int> progress: 0;
+    private property <bool> is-ready: false;
+    private property <int> loading-tick: 0;
+
+    // Tap the logo 5 times to unlock "dev mode" — flips the
+    // tagline to a Rust-y / build-info quote so the catalogue
+    // visitor can experience a tiny easter egg. Resets when the
+    // load restarts.
+    private property <int> brand-tap-count: 0;
+    private property <bool> dev-mode: false;
+
+    private property <bool> show-about: false;
+
+    // Phase labels surface as the tagline as `progress` grows.
+    function phase-label() -> string {
+        return root.progress < 20 ? "Loading fonts..."
+            : root.progress < 40 ? "Initialising theme..."
+            : root.progress < 60 ? "Compiling 30+ components..."
+            : root.progress < 80 ? "Wiring page templates..."
+            : root.progress < 100 ? "Almost there..."
+            : "Ready -- tap Get started below";
+    }
+    function display-tagline() -> string {
+        if (root.is-ready) {
+            return root.dev-mode
+                ? "Rust + Slint + zero JS. 100% native, 100% you."
+                : root.tagline;
+        }
+        return root.phase-label();
+    }
+    function dot-intensity(i: int) -> float {
+        // While loading, the active dot cycles through 0, 1, 2.
+        // Position relative to `loading-tick` determines opacity.
+        if (root.is-ready) {
+            return 1.0;
+        }
+        if (i == mod(root.loading-tick, 3)) {
+            return 1.0;
+        }
+        if (i == mod(root.loading-tick + 2, 3)) {
+            return 0.6;
+        }
+        return 0.25;
+    }
+    private property <string> status-msg: "";
+
+    // ---- Handlers ----
+    function press-brand() {
+        if (root.is-ready) {
+            // Already done — restart the load animation.
+            root.is-ready = false;
+            root.progress = 0;
+            root.brand-tap-count = 0;
+            root.dev-mode = false;
+            root.status-msg = "Restarted load";
+            root.restarted();
+            return;
+        }
+        root.brand-tap-count = root.brand-tap-count + 1;
+        if (root.brand-tap-count >= 5 && !root.dev-mode) {
+            root.dev-mode = true;
+            root.status-msg = "Dev mode unlocked";
+        } else if (root.brand-tap-count < 5) {
+            root.status-msg = "Tap "
+                + (5 - root.brand-tap-count)
+                + " more for dev mode";
+        }
+    }
+    function press-ready() {
+        root.status-msg = "Continuing to app";
+        root.ready();
+    }
+    function toggle-about() {
+        root.show-about = !root.show-about;
+        if (root.show-about) {
+            root.status-msg = "About card open";
+        } else {
+            root.status-msg = "About card closed";
+        }
+    }
 
     background: @radial-gradient(circle, #0f1428 0%, #050610 80%);
+
+    // ---- Loading timer ----
+    Timer {
+        interval: 100ms;
+        running: !root.is-ready;
+        triggered => {
+            root.loading-tick = root.loading-tick + 1;
+            root.progress = min(100, root.progress + 5);
+            if (root.progress >= 100) {
+                root.is-ready = true;
+                root.status-msg = "Ready -- tap Get started";
+                root.ready();
+            }
+        }
+    }
+
+    // ---- Status banner (overlaid at top while non-empty) ----
+    if root.status-msg != "": Rectangle {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: 32px;
+        background: root.is-ready ? Theme.accent-success : Theme.surface-2;
+        Text {
+            text: root.status-msg;
+            color: root.is-ready ? Theme.on-primary : Theme.on-surface;
+            font-size: Theme.font-size-caption;
+            font-weight: 700;
+            vertical-alignment: center;
+            horizontal-alignment: center;
+            x: 0;
+            y: 0;
+            width: parent.width;
+            height: parent.height;
+        }
+    }
 
     VerticalLayout {
         spacing: 0;
@@ -50,36 +179,45 @@ export component WelcomeSplashPage inherits Window {
         // Brand block.
         VerticalLayout {
             spacing: Theme.spacing-md;
-            // Logo disc with shadow.
+            // Logo disc — now tappable. Pulses dev-mode-green when
+            // the brand has been tapped enough times.
             HorizontalLayout {
                 alignment: center;
                 Rectangle {
                     width: 128px;
                     height: 128px;
                     border-radius: 32px;
-                    background: @linear-gradient(135deg, #4f8cff 0%, #1f4eaa 100%);
+                    background: root.dev-mode
+                        ? @linear-gradient(135deg, Theme.accent-success 0%, #1a8a4a 100%)
+                        : @linear-gradient(135deg, #4f8cff 0%, #1f4eaa 100%);
                     drop-shadow-blur: 40px;
-                    drop-shadow-color: #4f8cff77;
+                    drop-shadow-color: root.dev-mode ? #22c55e77 : #4f8cff77;
                     drop-shadow-offset-y: 0px;
-                    // Inter ExtraBold monogram with tight tracking —
-                    // confident splash mark.
+                    animate background, drop-shadow-color {
+                        duration: Theme.motion-base;
+                    }
+                    // Monogram swaps to a dev hint when dev-mode is on.
                     Text {
-                        text: "SM";
+                        text: root.dev-mode ? "</>" : "SM";
                         color: Theme.on-primary;
-                        font-family: "Inter";
-                        font-size: 56px;
+                        font-family: root.dev-mode ? "JetBrains Mono" : "Inter";
+                        font-size: root.dev-mode ? 44px : 56px;
                         font-weight: 700;
-                        letter-spacing: -2px;
+                        letter-spacing: root.dev-mode ? 0px : -2px;
                         horizontal-alignment: center;
                         vertical-alignment: center;
+                        x: 0;
+                        y: 0;
                         width: parent.width;
                         height: parent.height;
+                    }
+                    TouchArea {
+                        clicked => { root.press-brand(); }
                     }
                 }
             }
 
-            // Product name — Inter 32 px, weight 700 (the bold-impact
-            // preset), declarative hero statement.
+            // Product name.
             HorizontalLayout {
                 alignment: center;
                 Heading {
@@ -90,13 +228,13 @@ export component WelcomeSplashPage inherits Window {
                 }
             }
 
-            // Tagline in JetBrains Mono — gives the splash a technical,
-            // "engineering" texture distinct from the marketing hero.
+            // Tagline (live phase label while loading; product
+            // tagline once ready; dev-mode quote when unlocked).
             HorizontalLayout {
                 padding-left: Theme.spacing-lg;
                 padding-right: Theme.spacing-lg;
                 Text {
-                    text: root.tagline;
+                    text: root.display-tagline();
                     color: #ffffffaa;
                     font-family: "JetBrains Mono";
                     font-size: Theme.font-size-caption;
@@ -107,57 +245,186 @@ export component WelcomeSplashPage inherits Window {
                 }
             }
 
-            // Load dots.
-            HorizontalLayout {
-                alignment: center;
+            // ---- Loading row OR ready CTA ----
+            if !root.is-ready: VerticalLayout {
                 spacing: Theme.spacing-sm;
                 padding-top: Theme.spacing-md;
-                LoadDot { intensity: 1.0; }
-                LoadDot { intensity: 0.5; }
-                LoadDot { intensity: 0.25; }
+                // Animated dots — intensities cycle while loading.
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: Theme.spacing-sm;
+                    LoadDot { intensity: root.dot-intensity(0); }
+                    LoadDot { intensity: root.dot-intensity(1); }
+                    LoadDot { intensity: root.dot-intensity(2); }
+                }
+                // Real progress bar driven by the Timer.
+                HorizontalLayout {
+                    padding-left: Theme.spacing-xl;
+                    padding-right: Theme.spacing-xl;
+                    Rectangle {
+                        horizontal-stretch: 1;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: #ffffff22;
+                        Rectangle {
+                            x: 0;
+                            y: 0;
+                            width: parent.width * root.progress / 100;
+                            height: parent.height;
+                            border-radius: 2px;
+                            background: Theme.accent-info;
+                            animate width { duration: Theme.motion-fast; }
+                        }
+                    }
+                }
+                // Progress percentage in mono so the visitor sees
+                // the timer ticking.
+                HorizontalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.progress + "%";
+                        color: #ffffff88;
+                        font-family: "JetBrains Mono";
+                        font-size: 11px;
+                        font-weight: 700;
+                    }
+                }
+            }
+
+            if root.is-ready: VerticalLayout {
+                spacing: Theme.spacing-sm;
+                padding-top: Theme.spacing-md;
+                padding-left: Theme.spacing-xl;
+                padding-right: Theme.spacing-xl;
+                MobileButton {
+                    text: "Get started";
+                    primary: true;
+                    clicked => { root.press-ready(); }
+                }
+                HorizontalLayout {
+                    alignment: center;
+                    TextButton {
+                        text: "Restart load";
+                        clicked => { root.press-brand(); }
+                    }
+                }
             }
         }
 
-        Rectangle { vertical-stretch: 4; }
+        Rectangle { vertical-stretch: 2; }
 
-        // Footer.
-        VerticalLayout {
-            spacing: Theme.spacing-xs;
-            padding-bottom: Theme.spacing-lg;
-            HorizontalLayout {
-                alignment: center;
-                spacing: Theme.spacing-xs;
-                VerticalLayout {
-                    alignment: center;
-                    Rectangle {
-                        width: 14px;
-                        height: 14px;
-                        border-radius: 4px;
-                        background: @linear-gradient(135deg, #4f8cff 0%, #1f4eaa 100%);
+        // ---- Scrollable About card (toggled by tapping the footer mark) ----
+        if root.show-about: VerticalLayout {
+            padding-left: Theme.spacing-lg;
+            padding-right: Theme.spacing-lg;
+            Rectangle {
+                background: #ffffff14;
+                border-radius: Theme.radius-md;
+                border-width: 1px;
+                border-color: #ffffff33;
+                height: 220px;
+
+                ScrollView {
+                    VerticalLayout {
+                        padding: Theme.spacing-md;
+                        spacing: Theme.spacing-sm;
+                        Text {
+                            text: "ABOUT THIS BUILD";
+                            color: #ffffff88;
+                            font-family: "Space Grotesk";
+                            font-size: 10px;
+                            font-weight: 800;
+                            letter-spacing: 2px;
+                        }
+                        Text {
+                            text: "Slint Mobile Components is a hand-curated catalogue of 150+ Slint screens for Android. Every page is a real Slint Window, themed entirely through the design tokens in @mobile-theme/theme.slint -- no hand-tuned pixel values anywhere.";
+                            color: #ffffffcc;
+                            font-family: "IBM Plex Sans";
+                            font-size: Theme.font-size-caption;
+                            wrap: word-wrap;
+                        }
+                        Text {
+                            text: "BUILT WITH";
+                            color: #ffffff88;
+                            font-family: "Space Grotesk";
+                            font-size: 10px;
+                            font-weight: 800;
+                            letter-spacing: 2px;
+                        }
+                        Text {
+                            text: "Slint 1.16 - Rust 1.78 - WebAssembly 1.0\nFonts: Inter, Fraunces, IBM Plex Sans, Space Grotesk, JetBrains Mono\nMap tiles: OpenStreetMap (offline bundle)";
+                            color: #ffffffcc;
+                            font-family: "JetBrains Mono";
+                            font-size: 11px;
+                            wrap: word-wrap;
+                        }
+                        Text {
+                            text: "LICENCE";
+                            color: #ffffff88;
+                            font-family: "Space Grotesk";
+                            font-size: 10px;
+                            font-weight: 800;
+                            letter-spacing: 2px;
+                        }
+                        Text {
+                            text: "MIT OR Apache-2.0. Use the source however you like; attribution appreciated but not required.";
+                            color: #ffffffcc;
+                            font-family: "IBM Plex Sans";
+                            font-size: Theme.font-size-caption;
+                            wrap: word-wrap;
+                        }
                     }
                 }
-                // Compact uppercase footer mark — Space Grotesk small caps.
-                Text {
-                    text: "POWERED BY SLINT";
-                    color: #ffffff88;
-                    font-family: "Space Grotesk";
-                    font-size: 11px;
-                    font-weight: 700;
-                    letter-spacing: 1.5px;
-                    vertical-alignment: center;
+            }
+        }
+
+        Rectangle { vertical-stretch: 2; }
+
+        // Footer — tap to toggle the About card. Whole row gets the
+        // touch-area so the user has a comfortably-sized target.
+        Rectangle {
+            background: footer-touch.pressed ? #ffffff11 : transparent;
+            animate background { duration: Theme.motion-fast; }
+            VerticalLayout {
+                spacing: Theme.spacing-xs;
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-lg;
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: Theme.spacing-xs;
+                    VerticalLayout {
+                        alignment: center;
+                        Rectangle {
+                            width: 14px;
+                            height: 14px;
+                            border-radius: 4px;
+                            background: @linear-gradient(135deg, #4f8cff 0%, #1f4eaa 100%);
+                        }
+                    }
+                    Text {
+                        text: root.show-about ? "TAP TO HIDE ABOUT" : "POWERED BY SLINT";
+                        color: #ffffff88;
+                        font-family: "Space Grotesk";
+                        font-size: 11px;
+                        font-weight: 700;
+                        letter-spacing: 1.5px;
+                        vertical-alignment: center;
+                    }
+                }
+                HorizontalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.version;
+                        color: #ffffff44;
+                        font-family: "JetBrains Mono";
+                        font-size: 10px;
+                        font-weight: 400;
+                        letter-spacing: 0px;
+                    }
                 }
             }
-            HorizontalLayout {
-                alignment: center;
-                // Build/version stamp in mono — engineering footer.
-                Text {
-                    text: root.version;
-                    color: #ffffff44;
-                    font-family: "JetBrains Mono";
-                    font-size: 10px;
-                    font-weight: 400;
-                    letter-spacing: 0px;
-                }
+            footer-touch := TouchArea {
+                clicked => { root.toggle-about(); }
             }
         }
     }

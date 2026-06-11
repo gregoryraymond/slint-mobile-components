@@ -1,20 +1,13 @@
 // PostCreatorPage
 // =====================================================================
-//
-// New social post editor. Close + Post text-button in the bar, a tiny
-// audience-selector hero row, a long-form FormField text input,
-// ATTACHMENTS section with one tile, OPTIONS section with three toggle
-// SettingRows + MobileSwitch trailing, and a row of 4 attach IconTiles.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { Avatar } from "@mobile-components/avatar.slint";
-import { Chip } from "@mobile-components/chip.slint";
 import { FormField } from "@mobile-components/form-field.slint";
 import { FormSection } from "@mobile-components/form-section.slint";
 import { SettingRow } from "@mobile-components/setting-row.slint";
 import { TextField } from "@mobile-components/text-field.slint";
-import { TextButton } from "@mobile-components/button.slint";
 import { MobileSwitch } from "@mobile-components/switch.slint";
 import { Divider } from "@mobile-components/divider.slint";
 import { ScrollView } from "std-widgets.slint";
@@ -22,17 +15,22 @@ import { ScrollView } from "std-widgets.slint";
 component AttachTile inherits Rectangle {
     in property <image> icon;
     in property <string> label;
+    in property <bool> active: false;
     callback clicked();
 
     accessible-role: button;
     accessible-label: root.label;
-    accessible-action-default => { root.clicked(); }
+    accessible-action-default => {
+        root.clicked();
+    }
 
     horizontal-stretch: 1;
     min-width: 0;
     height: 64px;
     border-radius: Theme.radius-md;
-    background: touch.pressed ? Theme.surface-pressed : Theme.surface-1;
+    background: touch.pressed ? Theme.surface-pressed : (root.active ? Theme.accent-success.with-alpha(0.22) : Theme.surface-1);
+    border-width: root.active ? 1px : 0px;
+    border-color: Theme.accent-success;
     animate background { duration: Theme.motion-fast; }
 
     VerticalLayout {
@@ -47,15 +45,15 @@ component AttachTile inherits Rectangle {
                 width: 22px;
                 height: 22px;
                 source: root.icon;
-                colorize: Theme.primary;
+                colorize: root.active ? Theme.accent-success : Theme.primary;
                 image-fit: contain;
             }
         }
         HorizontalLayout {
             alignment: center;
             Text {
-                text: root.label;
-                color: Theme.muted;
+                text: root.active ? "✓ " + root.label : root.label;
+                color: root.active ? Theme.accent-success : Theme.muted;
                 font-size: 10px;
                 font-weight: 700;
                 letter-spacing: 0.5px;
@@ -64,7 +62,70 @@ component AttachTile inherits Rectangle {
     }
 
     touch := TouchArea {
-        clicked => { root.clicked(); }
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component AudiencePill inherits Rectangle {
+    in property <string> label;
+    in property <bool> active: false;
+    callback clicked();
+
+    horizontal-stretch: 0;
+    height: 28px;
+    border-radius: 14px;
+    background: root.active ? Theme.primary : Theme.surface-2;
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: center;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.active ? Theme.on-primary : Theme.on-surface;
+                font-size: Theme.font-size-caption;
+                font-weight: 800;
+            }
+        }
+    }
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.destructive ? Theme.accent-danger : Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+        }
     }
 }
 
@@ -76,10 +137,65 @@ export component PostCreatorPage inherits Window {
     in-out property <bool> allow-replies: true;
     in-out property <bool> show-profile: true;
     in-out property <bool> schedule: false;
+    in-out property <int> audience: 0; // 0 Public 1 Followers 2 Just you
+    in-out property <bool> img-on: false;
+    in-out property <bool> gif-on: false;
+    in-out property <bool> poll-on: false;
+    in-out property <bool> place-on: false;
+    in-out property <bool> posted: false;
+    in-out property <bool> draft-saved: false;
+    in-out property <bool> sheet-open: false;
+    in-out property <bool> confirm-discard: false;
+    in-out property <string> status-msg: "";
+    in-out property <bool> status-success: false;
+    in-out property <bool> status-danger: false;
+
     callback close-pressed();
     callback post-pressed();
     callback audience-pressed();
     callback attach-pressed(string);
+
+    function char-count() -> int {
+        return root.body.character-count;
+    }
+    function audience-label() -> string {
+        return root.audience == 0 ? "Public" : (root.audience == 1 ? "Followers" : "Just you");
+    }
+    function attach-count() -> int {
+        return (root.img-on ? 1 : 0) + (root.gif-on ? 1 : 0) + (root.poll-on ? 1 : 0) + (root.place-on ? 1 : 0);
+    }
+    function can-post() -> bool {
+        return root.char-count() > 0 && root.char-count() <= 280;
+    }
+    function over-limit() -> bool {
+        return root.char-count() > 280;
+    }
+    function chars-remaining() -> int {
+        return 280 - root.char-count();
+    }
+    function set-status(m: string, ok: bool, bad: bool) {
+        root.status-msg = m;
+        root.status-success = ok;
+        root.status-danger = bad;
+    }
+    function do-post() {
+        if (!root.can-post()) {
+            root.set-status(root.char-count() == 0 ? "Write something first" : "Too long", false, true);
+            return;
+        }
+        root.posted = true;
+        root.set-status(root.schedule ? "Scheduled for tomorrow 09:00 ⏰" : "Posted ✓", true, false);
+        root.post-pressed();
+    }
+    function reset() {
+        root.body = "";
+        root.img-on = false;
+        root.gif-on = false;
+        root.poll-on = false;
+        root.place-on = false;
+        root.posted = false;
+        root.audience = 0;
+    }
 
     background: Theme.background;
 
@@ -87,17 +203,76 @@ export component PostCreatorPage inherits Window {
         spacing: 0;
 
         AppBar {
+            title: root.posted ? (root.schedule ? "Scheduled" : "Posted ✓") : "New post";
             leading-icon: @image-url("@mobile-components/icons/close.svg");
-            leading-pressed => { root.close-pressed(); }
+            trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
+            leading-pressed => {
+                root.close-pressed();
+            }
+            trailing-pressed => {
+                root.sheet-open = true;
+            }
         }
 
+        // Post row.
         HorizontalLayout {
             padding-left: Theme.spacing-md;
             padding-right: Theme.spacing-md;
-            alignment: end;
-            TextButton {
-                text: "Post";
-                clicked => { root.post-pressed(); }
+            padding-top: Theme.spacing-sm;
+            padding-bottom: Theme.spacing-sm;
+            spacing: Theme.spacing-sm;
+            alignment: stretch;
+            VerticalLayout {
+                alignment: center;
+                horizontal-stretch: 1;
+                Text {
+                    text: root.over-limit() ? "−" + (root.char-count() - 280) + " over" : root.chars-remaining() + " / 280" + (root.attach-count() > 0 ? " · " + root.attach-count() + " attached" : "");
+                    color: root.over-limit() ? Theme.accent-danger : (root.chars-remaining() < 20 ? Theme.accent-warning : Theme.muted);
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                }
+            }
+            Rectangle {
+                horizontal-stretch: 0;
+                height: 32px;
+                border-radius: 16px;
+                background: root.can-post() ? Theme.primary : Theme.surface-2;
+                HorizontalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    VerticalLayout {
+                        alignment: center;
+                        Text {
+                            text: root.posted ? (root.schedule ? "Scheduled" : "Posted") : (root.schedule ? "Schedule" : "Post");
+                            color: root.can-post() ? Theme.on-primary : Theme.muted;
+                            font-size: Theme.font-size-caption;
+                            font-weight: 800;
+                        }
+                    }
+                }
+                TouchArea {
+                    enabled: root.can-post() && !root.posted;
+                    clicked => {
+                        root.do-post();
+                    }
+                }
+            }
+        }
+
+        if !root.status-msg.is-empty: Rectangle {
+            height: 28px;
+            background: root.status-success ? Theme.accent-success.with-alpha(0.16) : (root.status-danger ? Theme.accent-danger.with-alpha(0.16) : Theme.surface-2);
+            HorizontalLayout {
+                alignment: center;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.status-msg;
+                        color: root.status-success ? Theme.accent-success : (root.status-danger ? Theme.accent-danger : Theme.on-surface);
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                    }
+                }
             }
         }
 
@@ -110,14 +285,16 @@ export component PostCreatorPage inherits Window {
                 spacing: Theme.spacing-md;
                 alignment: start;
 
-                // ----- Hero row ---------------------------------------------
                 HorizontalLayout {
                     padding-left: Theme.spacing-md;
                     padding-right: Theme.spacing-md;
                     spacing: Theme.spacing-sm;
                     alignment: stretch;
 
-                    Avatar { fallback: "GR"; size: 40px; }
+                    Avatar {
+                        fallback: "GR";
+                        size: 40px;
+                    }
 
                     VerticalLayout {
                         horizontal-stretch: 1;
@@ -135,72 +312,171 @@ export component PostCreatorPage inherits Window {
                             font-size: Theme.font-size-caption;
                         }
                     }
-                    VerticalLayout {
-                        alignment: center;
-                        Chip {
-                            label: "Public";
-                            leading-icon: @image-url("@mobile-components/icons/profile.svg");
-                            clicked => { root.audience-pressed(); }
+                }
+
+                // Audience pills.
+                HorizontalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    spacing: Theme.spacing-sm;
+                    Text {
+                        text: "AUDIENCE";
+                        color: Theme.muted;
+                        font-size: 10px;
+                        font-weight: 800;
+                        letter-spacing: 2px;
+                        vertical-alignment: center;
+                    }
+                    AudiencePill {
+                        label: "🌐 Public";
+                        active: root.audience == 0;
+                        clicked => {
+                            root.audience = 0;
+                            root.set-status("Audience: Public", true, false);
+                            root.audience-pressed();
+                        }
+                    }
+                    AudiencePill {
+                        label: "👥 Followers";
+                        active: root.audience == 1;
+                        clicked => {
+                            root.audience = 1;
+                            root.set-status("Audience: Followers", true, false);
+                            root.audience-pressed();
+                        }
+                    }
+                    AudiencePill {
+                        label: "🔒 Just you";
+                        active: root.audience == 2;
+                        clicked => {
+                            root.audience = 2;
+                            root.set-status("Audience: Just you", false, false);
+                            root.audience-pressed();
                         }
                     }
                 }
 
-                // ----- Body input -------------------------------------------
                 FormField {
-                    label: "Post";
-                    helper: "280 characters";
+                    label: "Post" + (root.over-limit() ? " · over limit" : "");
+                    helper: root.body.character-count + " chars · " + (root.over-limit() ? "trim to 280" : root.chars-remaining() + " remaining");
                     TextField {
                         placeholder: "What's happening?";
                         text <=> root.body;
                     }
                 }
 
-                // ----- ATTACHMENTS ------------------------------------------
+                // Quick suggestions.
+                if root.body.is-empty: HorizontalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    spacing: Theme.spacing-sm;
+                    Rectangle {
+                        horizontal-stretch: 0;
+                        height: 28px;
+                        border-radius: 14px;
+                        background: Theme.surface-2;
+                        HorizontalLayout {
+                            padding-left: Theme.spacing-sm;
+                            padding-right: Theme.spacing-sm;
+                            VerticalLayout {
+                                alignment: center;
+                                Text {
+                                    text: "Hello world ✨";
+                                    color: Theme.accent-info;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 700;
+                                }
+                            }
+                        }
+                        TouchArea {
+                            clicked => {
+                                root.body = "Hello world ✨";
+                                root.set-status("Loaded preset", true, false);
+                            }
+                        }
+                    }
+                    Rectangle {
+                        horizontal-stretch: 0;
+                        height: 28px;
+                        border-radius: 14px;
+                        background: Theme.surface-2;
+                        HorizontalLayout {
+                            padding-left: Theme.spacing-sm;
+                            padding-right: Theme.spacing-sm;
+                            VerticalLayout {
+                                alignment: center;
+                                Text {
+                                    text: "Shipped iteration 14 🚀";
+                                    color: Theme.accent-info;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 700;
+                                }
+                            }
+                        }
+                        TouchArea {
+                            clicked => {
+                                root.body = "Just shipped iteration 14 of slint-mobile-components 🚀 Pretty proud of how the Tone enum migration came together.";
+                                root.set-status("Loaded preset", true, false);
+                            }
+                        }
+                    }
+                }
+
                 FormSection {
-                    title: "ATTACHMENTS";
+                    title: "ATTACHMENTS · " + root.attach-count() + "/4";
                     SettingRow {
-                        title: "Add a photo / video";
+                        title: root.attach-count() == 0 ? "Add a photo / video" : root.attach-count() + " attachment" + (root.attach-count() == 1 ? "" : "s");
                         subtitle: "JPEG · PNG · MP4 · up to 200 MB";
-                        clicked => { root.attach-pressed("media"); }
+                        clicked => {
+                            root.img-on = !root.img-on;
+                            root.set-status(root.img-on ? "Photo attached" : "Photo removed", root.img-on, !root.img-on);
+                            root.attach-pressed("media");
+                        }
                         Image {
                             width: 18px;
                             height: 18px;
-                            source: @image-url("@mobile-components/icons/plus.svg");
-                            colorize: Theme.primary;
+                            source: root.img-on ? @image-url("@mobile-components/icons/check.svg") : @image-url("@mobile-components/icons/plus.svg");
+                            colorize: root.img-on ? Theme.accent-success : Theme.primary;
                             image-fit: contain;
                         }
                     }
                 }
 
-                // ----- OPTIONS ----------------------------------------------
                 FormSection {
                     title: "OPTIONS";
                     SettingRow {
                         icon: @image-url("@mobile-components/icons/inbox.svg");
                         tone: Tone.info;
                         title: "Allow replies";
-                        subtitle: "Anyone can reply to this post.";
-                        MobileSwitch { checked <=> root.allow-replies; }
+                        subtitle: root.allow-replies ? "Anyone can reply." : "Replies disabled.";
+                        MobileSwitch {
+                            checked <=> root.allow-replies;
+                        }
                     }
                     Divider { }
+
                     SettingRow {
                         icon: @image-url("@mobile-components/icons/profile.svg");
                         tone: Tone.success;
                         title: "Show on profile";
-                        subtitle: "Pin to your profile feed.";
-                        MobileSwitch { checked <=> root.show-profile; }
+                        subtitle: root.show-profile ? "Pinned to your profile feed." : "Hidden from your profile.";
+                        MobileSwitch {
+                            checked <=> root.show-profile;
+                        }
                     }
                     Divider { }
+
                     SettingRow {
                         icon: @image-url("@mobile-components/icons/bell.svg");
                         tone: Tone.warning;
                         title: "Schedule for later";
-                        subtitle: "Pick a date and time before sending.";
-                        MobileSwitch { checked <=> root.schedule; }
+                        subtitle: root.schedule ? "Will send tomorrow 09:00." : "Pick a date before sending.";
+                        MobileSwitch {
+                            checked <=> root.schedule;
+                        }
                     }
                 }
 
-                // ----- Attach row -------------------------------------------
                 VerticalLayout {
                     padding-left: Theme.spacing-md;
                     padding-right: Theme.spacing-md;
@@ -210,23 +486,136 @@ export component PostCreatorPage inherits Window {
                         AttachTile {
                             icon: @image-url("@mobile-components/icons/photo-coral.svg");
                             label: "IMAGE";
-                            clicked => { root.attach-pressed("image"); }
+                            active: root.img-on;
+                            clicked => {
+                                root.img-on = !root.img-on;
+                                root.set-status(root.img-on ? "Image added" : "Image removed", root.img-on, false);
+                                root.attach-pressed("image");
+                            }
                         }
                         AttachTile {
                             icon: @image-url("@mobile-components/icons/play.svg");
                             label: "GIF";
-                            clicked => { root.attach-pressed("gif"); }
+                            active: root.gif-on;
+                            clicked => {
+                                root.gif-on = !root.gif-on;
+                                root.set-status(root.gif-on ? "GIF added" : "GIF removed", root.gif-on, false);
+                                root.attach-pressed("gif");
+                            }
                         }
                         AttachTile {
                             icon: @image-url("@mobile-components/icons/queue.svg");
                             label: "POLL";
-                            clicked => { root.attach-pressed("poll"); }
+                            active: root.poll-on;
+                            clicked => {
+                                root.poll-on = !root.poll-on;
+                                root.set-status(root.poll-on ? "Poll added" : "Poll removed", root.poll-on, false);
+                                root.attach-pressed("poll");
+                            }
                         }
                         AttachTile {
                             icon: @image-url("@mobile-components/icons/pin.svg");
                             label: "PLACE";
-                            clicked => { root.attach-pressed("place"); }
+                            active: root.place-on;
+                            clicked => {
+                                root.place-on = !root.place-on;
+                                root.set-status(root.place-on ? "Place added" : "Place removed", root.place-on, false);
+                                root.attach-pressed("place");
+                            }
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+                root.confirm-discard = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: Theme.surface-2;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.muted;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: "Post options";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 700;
+                    }
+                }
+                SheetRow {
+                    label: "Save as draft";
+                    clicked => {
+                        root.draft-saved = true;
+                        root.set-status("Draft saved", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: root.schedule ? "Cancel schedule" : "Schedule for tomorrow 09:00";
+                    clicked => {
+                        root.schedule = !root.schedule;
+                        root.set-status(root.schedule ? "Scheduled" : "Will send immediately", root.schedule, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Cycle audience (now " + root.audience-label() + ")";
+                    clicked => {
+                        root.audience = mod(root.audience + 1, 3);
+                        root.set-status("Audience: " + root.audience-label(), true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                Divider { }
+
+                SheetRow {
+                    label: root.confirm-discard ? "Confirm: discard draft" : "Discard draft";
+                    destructive: true;
+                    clicked => {
+                        if (root.confirm-discard) {
+                            root.reset();
+                            root.set-status("Discarded", false, true);
+                            root.sheet-open = false;
+                            root.confirm-discard = false;
+                        } else {
+                            root.confirm-discard = true;
+                        }
+                    }
+                }
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.sheet-open = false;
+                        root.confirm-discard = false;
                     }
                 }
             }

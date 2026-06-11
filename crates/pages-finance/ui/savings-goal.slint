@@ -6,13 +6,16 @@
 // `InvestmentDetailPage` (market instrument). Demonstrates a
 // progress-toward-target surface:
 //
-//   - Goal hero card: emoji-ish glyph tile + goal name + saved / target
-//     amounts + a thick progress bar + a projected-completion line.
+//   - Goal hero card: glyph tile + goal name + saved / target amounts
+//     + a thick progress bar + a projected-completion line. All four
+//     derive from `saved-cents` and `target-cents` state.
 //   - A 3-up stat strip: monthly contribution, this-month total,
-//     streak.
+//     streak. Each cell is tappable for a detail-banner.
+//   - Auto-save toggle row.
 //   - Contribution history rows — auto-saves and manual top-ups,
-//     each with a tone-tinted icon and a +amount.
-//   - Sticky "Add money" CTA.
+//     plus up to three fresh rows prepended when the user adds money.
+//   - Sticky CTA: "Add money" until the goal is funded, then flips
+//     to "Goal funded ★".
 
 import { ScrollView } from "std-widgets.slint";
 import { Theme, Tone } from "@mobile-theme/theme.slint";
@@ -21,17 +24,20 @@ import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
 import { SectionHeader } from "@mobile-components/section-header.slint";
 import { Divider } from "@mobile-components/divider.slint";
 import { MobileButton } from "@mobile-components/button.slint";
+import { MobileSwitch } from "@mobile-components/switch.slint";
 
-// One stat in the 3-up strip.
+// One stat in the 3-up strip — tappable.
 component StatCell inherits Rectangle {
     in property <string> value;
     in property <string> label;
     in property <Tone> tone: Tone.default;
+    callback clicked();
 
     horizontal-stretch: 1;
     height: 72px;
     border-radius: Theme.radius-md;
-    background: Theme.surface-1;
+    background: touch.pressed ? Theme.surface-pressed : Theme.surface-1;
+    animate background { duration: Theme.motion-fast; }
     drop-shadow-blur: Theme.elevation-1-blur;
     drop-shadow-color: Theme.elevation-1-color;
     drop-shadow-offset-y: Theme.elevation-1-y;
@@ -43,7 +49,7 @@ component StatCell inherits Rectangle {
             text: root.value;
             color:
                   root.tone == Tone.success ? Theme.accent-success
-                : root.tone == Tone.info    ? Theme.accent-info
+                : root.tone == Tone.info ? Theme.accent-info
                 : Theme.on-surface;
             font-size: Theme.font-size-body-large;
             font-weight: 800;
@@ -58,18 +64,24 @@ component StatCell inherits Rectangle {
             horizontal-alignment: center;
         }
     }
+    touch := TouchArea { clicked => { root.clicked(); } }
 }
 
-// One contribution-history row. `tone` tints the icon disc; auto vs
-// manual is conveyed by the icon + label.
+// One contribution-history row — tappable.
 component ContributionRow inherits Rectangle {
     in property <bool> auto: true;
     in property <string> label;
     in property <string> date;
     in property <string> amount;
+    in property <bool> fresh: false;
+    callback clicked();
 
     horizontal-stretch: 1;
     min-height: 60px;
+    background: root.fresh ? Theme.accent-success.with-alpha(0.12)
+        : touch.pressed ? Theme.surface-pressed
+        : transparent;
+    animate background { duration: Theme.motion-fast; }
 
     HorizontalLayout {
         padding-left: Theme.spacing-md;
@@ -102,11 +114,32 @@ component ContributionRow inherits Rectangle {
             horizontal-stretch: 1;
             alignment: center;
             spacing: 2px;
-            Text {
-                text: root.label;
-                color: Theme.on-surface;
-                font-size: Theme.font-size-body;
-                font-weight: 600;
+            HorizontalLayout {
+                spacing: Theme.spacing-xs;
+                Text {
+                    text: root.label;
+                    color: Theme.on-surface;
+                    font-size: Theme.font-size-body;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                }
+                if root.fresh: Rectangle {
+                    width: nm.preferred-width + 12px;
+                    height: 18px;
+                    border-radius: 4px;
+                    background: Theme.accent-success;
+                    nm := Text {
+                        text: "NEW";
+                        color: Theme.on-primary;
+                        font-size: 9px;
+                        font-weight: 800;
+                        letter-spacing: 0.5px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                }
             }
             Text {
                 text: root.date;
@@ -124,20 +157,138 @@ component ContributionRow inherits Rectangle {
             }
         }
     }
+    touch := TouchArea { clicked => { root.clicked(); } }
 }
 
 export component SavingsGoalPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
     in property <string> goal: "Iceland trip";
-    in property <string> saved: "$3,180";
-    in property <string> target: "$5,000";
-    in property <float> progress: 0.636;
-    in property <string> progress-label: "64%";
-    in property <string> projected: "On track — fully funded by Oct 2026";
     callback back-pressed();
     callback edit-pressed();
     callback add-money-pressed();
+    callback contribution-added(int);
+    callback auto-save-toggled(bool);
+    callback goal-funded();
+
+    // ----- Interactive state -----
+    private property <int> saved-cents: 318000;     // $3,180
+    private property <int> target-cents: 500000;    // $5,000
+    private property <int> monthly-cents: 32000;    // $320 / month avg
+    private property <int> this-month-cents: 28500; // $285
+    private property <int> streak-weeks: 14;
+    private property <bool> auto-save: true;
+    private property <bool> add-sheet-open: false;
+    private property <int> nc-count: 0;
+    private property <int> nc1-cents: 0;
+    private property <int> nc2-cents: 0;
+    private property <int> nc3-cents: 0;
+    private property <bool> funded-toasted: false;
+    private property <string> status-msg: "Tap Add money or pick a quick amount · toggle auto-save below";
+    private property <bool> status-is-success: false;
+    private property <bool> status-is-danger: false;
+
+    // ----- Helpers -----
+    function progress() -> float {
+        return root.target-cents == 0
+            ? 0.0
+            : min(1.0, root.saved-cents * 1.0 / root.target-cents);
+    }
+    function pct() -> int {
+        return min(100, floor(root.saved-cents * 100 / root.target-cents));
+    }
+    function funded() -> bool { return root.saved-cents >= root.target-cents; }
+    function remaining-cents() -> int {
+        return max(0, root.target-cents - root.saved-cents);
+    }
+    function zpad3(n: int) -> string {
+        return n < 10 ? "00" + n : n < 100 ? "0" + n : "" + n;
+    }
+    function add-commas(n: int) -> string {
+        return n < 1000 ? "" + n
+            : floor(n / 1000) + "," + root.zpad3(mod(n, 1000));
+    }
+    function fmt-d(c: int) -> string {
+        return "$" + root.add-commas(floor(c / 100));
+    }
+    function fmt-dc(c: int) -> string {
+        return root.add-commas(floor(c / 100)) + "."
+            + (mod(c, 100) < 10 ? "0" + mod(c, 100) : "" + mod(c, 100));
+    }
+    function projected-text() -> string {
+        if (root.funded()) { return "Goal funded — withdraw any time"; }
+        if (root.monthly-cents == 0) {
+            return root.fmt-d(root.remaining-cents()) + " to go";
+        }
+        // Months remaining at current monthly rate.
+        // floor((remaining + monthly - 1) / monthly) = ceil division
+        return "On track — about "
+            + floor((root.remaining-cents() + root.monthly-cents - 1)
+                / root.monthly-cents)
+            + " months to go";
+    }
+
+    // ----- Mutations -----
+    public function open-add-sheet() {
+        root.add-sheet-open = true;
+        root.status-msg = "Pick an amount to add";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function close-add-sheet() { root.add-sheet-open = false; }
+    public function add-money(cents: int) {
+        if (root.funded()) {
+            root.status-msg = "Goal already funded · nothing to add";
+            root.status-is-success = false;
+            root.status-is-danger = true;
+            return;
+        }
+        root.saved-cents = root.saved-cents + cents;
+        root.this-month-cents = root.this-month-cents + cents;
+        if (root.nc-count < 3) {
+            root.nc-count = root.nc-count + 1;
+            if (root.nc-count == 1) { root.nc1-cents = cents; }
+            if (root.nc-count == 2) { root.nc2-cents = cents; }
+            if (root.nc-count == 3) { root.nc3-cents = cents; }
+        }
+        root.contribution-added(cents);
+        root.status-msg = "Added " + root.fmt-d(cents) + " · " + root.pct() + "% · "
+            + root.fmt-d(root.saved-cents) + " saved";
+        root.status-is-success = true;
+        root.status-is-danger = false;
+        root.add-sheet-open = false;
+        if (root.funded() && !root.funded-toasted) {
+            root.funded-toasted = true;
+            root.goal-funded();
+            root.status-msg = "Goal reached! " + root.fmt-d(root.target-cents)
+                + " saved.";
+        }
+    }
+    public function toggle-auto() {
+        root.auto-save = !root.auto-save;
+        root.auto-save-toggled(root.auto-save);
+        root.status-msg = root.auto-save
+            ? "Auto-save ON · round-ups + weekly transfer active"
+            : "Auto-save OFF · contributions paused";
+        root.status-is-success = root.auto-save;
+        root.status-is-danger = !root.auto-save;
+    }
+    public function tap-stat(name: string, value: string) {
+        root.status-msg = name + " · " + value;
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function tap-contrib(label: string, amount: string) {
+        root.status-msg = "Contribution · " + label + " · +" + amount;
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function tap-edit() {
+        root.edit-pressed();
+        root.status-msg = "Edit goal name + target — coming soon";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
 
     background: Theme.background;
 
@@ -150,185 +301,299 @@ export component SavingsGoalPage inherits Window {
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             trailing-icon: @image-url("@mobile-components/icons/pencil.svg");
             leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.edit-pressed(); }
+            trailing-pressed => { root.tap-edit(); }
         }
 
-        // Goal hero + stat strip + contribution history overflow a
-        // single 892-px screen, so the middle region scrolls between the
-        // pinned AppBar and the sticky Add money CTA below.
+        // ----- Status banner ---------------------------------------
+        Rectangle {
+            height: 32px;
+            background: root.status-is-danger ? Theme.accent-danger
+                : root.status-is-success ? Theme.accent-success
+                : Theme.surface-2;
+            animate background { duration: Theme.motion-fast; }
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                Text {
+                    text: root.status-msg;
+                    color: (root.status-is-danger || root.status-is-success)
+                        ? Theme.on-primary
+                        : Theme.on-surface;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+            }
+        }
+
         ScrollView {
             vertical-stretch: 1;
 
             VerticalLayout {
                 spacing: 0;
 
-        VerticalLayout {
-            padding: Theme.spacing-md;
-            spacing: Theme.spacing-md;
-            alignment: start;
-
-            // Goal hero.
-            Rectangle {
-                border-radius: Theme.radius-lg;
-                background: Theme.surface-1;
-                drop-shadow-blur: Theme.elevation-2-blur;
-                drop-shadow-color: Theme.elevation-2-color;
-                drop-shadow-offset-y: Theme.elevation-2-y;
                 VerticalLayout {
                     padding: Theme.spacing-md;
                     spacing: Theme.spacing-md;
-                    HorizontalLayout {
-                        spacing: Theme.spacing-md;
-                        alignment: stretch;
+                    alignment: start;
+
+                    // Goal hero — derives saved/target/progress/projected
+                    // from state.
+                    Rectangle {
+                        border-radius: Theme.radius-lg;
+                        background: Theme.surface-1;
+                        drop-shadow-blur: Theme.elevation-2-blur;
+                        drop-shadow-color: Theme.elevation-2-color;
+                        drop-shadow-offset-y: Theme.elevation-2-y;
                         VerticalLayout {
-                            alignment: center;
-                            Rectangle {
-                                width: 52px;
-                                height: 52px;
-                                border-radius: Theme.radius-md;
-                                background: @linear-gradient(135deg, #38bdf8 0%, #0c4a6e 100%);
-                                Image {
-                                    width: 26px;
-                                    height: 26px;
-                                    x: (parent.width - self.width) / 2;
-                                    y: (parent.height - self.height) / 2;
-                                    source: @image-url("@mobile-components/icons/pin.svg");
-                                    colorize: #ffffff;
-                                    image-fit: contain;
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-md;
+                            HorizontalLayout {
+                                spacing: Theme.spacing-md;
+                                alignment: stretch;
+                                VerticalLayout {
+                                    alignment: center;
+                                    Rectangle {
+                                        width: 52px;
+                                        height: 52px;
+                                        border-radius: Theme.radius-md;
+                                        background: @linear-gradient(135deg, #38bdf8 0%, #0c4a6e 100%);
+                                        Image {
+                                            width: 26px;
+                                            height: 26px;
+                                            x: (parent.width - self.width) / 2;
+                                            y: (parent.height - self.height) / 2;
+                                            source: @image-url("@mobile-components/icons/pin.svg");
+                                            colorize: #ffffff;
+                                            image-fit: contain;
+                                        }
+                                    }
+                                }
+                                VerticalLayout {
+                                    horizontal-stretch: 1;
+                                    alignment: center;
+                                    spacing: 2px;
+                                    Heading {
+                                        text: root.goal;
+                                        style: HeadingStyle.serif-display;
+                                        color: Theme.on-surface;
+                                        font-size: 24px;
+                                    }
+                                    HorizontalLayout {
+                                        spacing: Theme.spacing-xs;
+                                        alignment: start;
+                                        Text {
+                                            text: root.fmt-d(root.saved-cents);
+                                            color: Theme.accent-success;
+                                            font-size: Theme.font-size-body;
+                                            font-weight: 800;
+                                        }
+                                        Text {
+                                            text: "of " + root.fmt-d(root.target-cents);
+                                            color: Theme.muted;
+                                            font-size: Theme.font-size-body;
+                                            font-weight: 600;
+                                        }
+                                    }
+                                }
+                                VerticalLayout {
+                                    alignment: center;
+                                    Text {
+                                        text: root.pct() + "%";
+                                        color: Theme.accent-success;
+                                        font-size: Theme.font-size-title;
+                                        font-weight: 800;
+                                    }
                                 }
                             }
-                        }
-                        VerticalLayout {
-                            horizontal-stretch: 1;
-                            alignment: center;
-                            spacing: 2px;
-                            Heading {
-                                text: root.goal;
-                                style: HeadingStyle.serif-display;
-                                color: Theme.on-surface;
-                                font-size: 24px;
+                            // Progress bar.
+                            Rectangle {
+                                height: 12px;
+                                border-radius: Theme.radius-sm;
+                                background: Theme.surface-variant;
+                                Rectangle {
+                                    x: 0;
+                                    width: parent.width * root.progress();
+                                    height: parent.height;
+                                    border-radius: Theme.radius-sm;
+                                    background: @linear-gradient(90deg, #34d399 0%, #059669 100%);
+                                }
                             }
                             HorizontalLayout {
-                                spacing: Theme.spacing-xs;
+                                spacing: 6px;
                                 alignment: start;
-                                Text {
-                                    text: root.saved;
-                                    color: Theme.accent-success;
-                                    font-size: Theme.font-size-body;
-                                    font-weight: 800;
+                                Image {
+                                    width: 14px;
+                                    height: 14px;
+                                    source: @image-url("@mobile-components/icons/check.svg");
+                                    colorize: Theme.accent-success;
+                                    image-fit: contain;
+                                    vertical-alignment: center;
                                 }
                                 Text {
-                                    text: "of " + root.target;
+                                    text: root.projected-text();
                                     color: Theme.muted;
-                                    font-size: Theme.font-size-body;
+                                    font-size: Theme.font-size-caption;
                                     font-weight: 600;
+                                    vertical-alignment: center;
                                 }
                             }
                         }
-                        VerticalLayout {
-                            alignment: center;
-                            Text {
-                                text: root.progress-label;
-                                color: Theme.accent-success;
-                                font-size: Theme.font-size-title;
-                                font-weight: 800;
+                    }
+
+                    // Stat strip — tappable.
+                    HorizontalLayout {
+                        spacing: Theme.spacing-sm;
+                        StatCell {
+                            value: root.fmt-d(root.monthly-cents);
+                            label: "PER MONTH";
+                            clicked => {
+                                root.tap-stat("Monthly avg", root.fmt-d(root.monthly-cents));
+                            }
+                        }
+                        StatCell {
+                            value: root.fmt-d(root.this-month-cents);
+                            label: "THIS MONTH";
+                            tone: Tone.info;
+                            clicked => {
+                                root.tap-stat("This month", root.fmt-d(root.this-month-cents));
+                            }
+                        }
+                        StatCell {
+                            value: root.streak-weeks + " wks";
+                            label: "STREAK";
+                            tone: Tone.success;
+                            clicked => {
+                                root.tap-stat("Streak", root.streak-weeks + " consecutive weeks");
                             }
                         }
                     }
-                    // Progress bar.
+
+                    // Auto-save row.
                     Rectangle {
-                        height: 12px;
-                        border-radius: Theme.radius-sm;
-                        background: Theme.surface-variant;
-                        Rectangle {
-                            x: 0;
-                            width: parent.width * root.progress;
-                            height: parent.height;
-                            border-radius: Theme.radius-sm;
-                            background: @linear-gradient(90deg, #34d399 0%, #059669 100%);
+                        height: 60px;
+                        border-radius: Theme.radius-md;
+                        background: Theme.surface-1;
+                        border-width: 1px;
+                        border-color: Theme.outline;
+                        HorizontalLayout {
+                            padding-left: Theme.spacing-md;
+                            padding-right: Theme.spacing-md;
+                            spacing: Theme.spacing-md;
+                            alignment: stretch;
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                alignment: center;
+                                spacing: 2px;
+                                Text {
+                                    text: "Auto-save";
+                                    color: Theme.on-surface;
+                                    font-size: Theme.font-size-body;
+                                    font-weight: 700;
+                                }
+                                Text {
+                                    text: root.auto-save
+                                        ? "Round-ups and weekly transfer enabled"
+                                        : "Paused — no auto-contributions";
+                                    color: Theme.muted;
+                                    font-size: Theme.font-size-caption;
+                                }
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                MobileSwitch {
+                                    checked: root.auto-save;
+                                    toggled => { root.toggle-auto(); }
+                                }
+                            }
                         }
                     }
-                    HorizontalLayout {
-                        spacing: 6px;
-                        alignment: start;
-                        Image {
-                            width: 14px;
-                            height: 14px;
-                            source: @image-url("@mobile-components/icons/check.svg");
-                            colorize: Theme.accent-success;
-                            image-fit: contain;
-                            vertical-alignment: center;
-                        }
-                        Text {
-                            text: root.projected;
-                            color: Theme.muted;
-                            font-size: Theme.font-size-caption;
-                            font-weight: 600;
-                            vertical-alignment: center;
-                        }
+                }
+
+                SectionHeader {
+                    text: "Contributions · " + (root.nc-count + 5) + " total";
+                }
+
+                // Fresh contributions (most recent first).
+                if root.nc-count >= 3: ContributionRow {
+                    auto: false;
+                    label: "Quick top-up · #3";
+                    date: "Just added";
+                    amount: root.fmt-dc(root.nc3-cents);
+                    fresh: true;
+                    clicked => {
+                        root.tap-contrib("Quick top-up #3", root.fmt-dc(root.nc3-cents));
                     }
                 }
+                if root.nc-count >= 3: Divider { }
+                if root.nc-count >= 2: ContributionRow {
+                    auto: false;
+                    label: "Quick top-up · #2";
+                    date: "Just added";
+                    amount: root.fmt-dc(root.nc2-cents);
+                    fresh: true;
+                    clicked => {
+                        root.tap-contrib("Quick top-up #2", root.fmt-dc(root.nc2-cents));
+                    }
+                }
+                if root.nc-count >= 2: Divider { }
+                if root.nc-count >= 1: ContributionRow {
+                    auto: false;
+                    label: "Quick top-up · #1";
+                    date: "Just added";
+                    amount: root.fmt-dc(root.nc1-cents);
+                    fresh: true;
+                    clicked => {
+                        root.tap-contrib("Quick top-up #1", root.fmt-dc(root.nc1-cents));
+                    }
+                }
+                if root.nc-count >= 1: Divider { }
+
+                ContributionRow {
+                    auto: true;
+                    label: "Round-up auto-save";
+                    date: "Today · 6 transactions";
+                    amount: "4.80";
+                    clicked => { root.tap-contrib("Round-up auto-save", "4.80"); }
+                }
+                Divider { }
+                ContributionRow {
+                    auto: false;
+                    label: "Manual top-up";
+                    date: "Yesterday";
+                    amount: "150.00";
+                    clicked => { root.tap-contrib("Manual top-up", "150.00"); }
+                }
+                Divider { }
+                ContributionRow {
+                    auto: true;
+                    label: "Weekly transfer";
+                    date: "Mon · automatic";
+                    amount: "80.00";
+                    clicked => { root.tap-contrib("Weekly transfer", "80.00"); }
+                }
+                Divider { }
+                ContributionRow {
+                    auto: false;
+                    label: "Birthday gift";
+                    date: "3 May";
+                    amount: "100.00";
+                    clicked => { root.tap-contrib("Birthday gift", "100.00"); }
+                }
+                Divider { }
+                ContributionRow {
+                    auto: true;
+                    label: "Round-up auto-save";
+                    date: "2 May · 9 transactions";
+                    amount: "7.20";
+                    clicked => { root.tap-contrib("Round-up auto-save", "7.20"); }
+                }
             }
-
-            // Stat strip.
-            HorizontalLayout {
-                spacing: Theme.spacing-sm;
-                StatCell {
-                    value: "$320";
-                    label: "PER MONTH";
-                }
-                StatCell {
-                    value: "$285";
-                    label: "THIS MONTH";
-                    tone: Tone.info;
-                }
-                StatCell {
-                    value: "14 wks";
-                    label: "STREAK";
-                    tone: Tone.success;
-                }
-            }
         }
 
-        SectionHeader { text: "Contributions"; }
-        ContributionRow {
-            auto: true;
-            label: "Round-up auto-save";
-            date: "Today · 6 transactions";
-            amount: "4.80";
-        }
-        Divider { }
-        ContributionRow {
-            auto: false;
-            label: "Manual top-up";
-            date: "Yesterday";
-            amount: "150.00";
-        }
-        Divider { }
-        ContributionRow {
-            auto: true;
-            label: "Weekly transfer";
-            date: "Mon · automatic";
-            amount: "80.00";
-        }
-        Divider { }
-        ContributionRow {
-            auto: false;
-            label: "Birthday gift";
-            date: "3 May";
-            amount: "100.00";
-        }
-        Divider { }
-        ContributionRow {
-            auto: true;
-            label: "Round-up auto-save";
-            date: "2 May · 9 transactions";
-            amount: "7.20";
-        }
-            }   // end inner VerticalLayout
-        }       // end ScrollView
-
-        // Sticky CTA.
+        // Sticky CTA — flips to "Goal funded" when target reached.
         Rectangle {
             background: Theme.surface-1;
             drop-shadow-blur: Theme.elevation-2-blur;
@@ -338,9 +603,148 @@ export component SavingsGoalPage inherits Window {
             HorizontalLayout {
                 padding: Theme.spacing-md;
                 MobileButton {
-                    text: "Add money";
+                    text: root.funded()
+                        ? "Goal funded ★ tap to celebrate"
+                        : "Add money · " + root.fmt-d(root.remaining-cents()) + " to go";
                     primary: true;
-                    clicked => { root.add-money-pressed(); }
+                    tone: root.funded() ? Tone.success : Tone.default;
+                    clicked => {
+                        if (root.funded()) {
+                            root.status-msg = "🎉 You did it!";
+                            root.status-is-success = true;
+                            root.status-is-danger = false;
+                        } else {
+                            root.add-money-pressed();
+                            root.open-add-sheet();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ----- Add-money bottom sheet ------------------------------------
+    if root.add-sheet-open: Rectangle {
+        Rectangle {
+            background: #00000099;
+            TouchArea {
+                clicked => { root.close-add-sheet(); }
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            height: 380px;
+            background: Theme.surface-1;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding: Theme.spacing-lg;
+                spacing: Theme.spacing-md;
+
+                Rectangle {
+                    width: 40px;
+                    height: 4px;
+                    border-radius: 2px;
+                    background: Theme.muted;
+                }
+
+                Heading {
+                    text: "Add to " + root.goal;
+                    style: HeadingStyle.grotesk-bold;
+                    font-size: Theme.font-size-title;
+                }
+                Text {
+                    text: "Tap an amount — it gets added instantly.";
+                    color: Theme.muted;
+                    font-size: Theme.font-size-caption;
+                }
+
+                HorizontalLayout {
+                    spacing: Theme.spacing-sm;
+                    Rectangle {
+                        height: 56px;
+                        horizontal-stretch: 1;
+                        border-radius: Theme.radius-md;
+                        background: Theme.accent-success;
+                        Text {
+                            text: "$25";
+                            color: Theme.on-primary;
+                            font-size: Theme.font-size-body-large;
+                            font-weight: 800;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
+                        }
+                        TouchArea { clicked => { root.add-money(2500); } }
+                    }
+                    Rectangle {
+                        height: 56px;
+                        horizontal-stretch: 1;
+                        border-radius: Theme.radius-md;
+                        background: Theme.accent-success;
+                        Text {
+                            text: "$50";
+                            color: Theme.on-primary;
+                            font-size: Theme.font-size-body-large;
+                            font-weight: 800;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
+                        }
+                        TouchArea { clicked => { root.add-money(5000); } }
+                    }
+                }
+                HorizontalLayout {
+                    spacing: Theme.spacing-sm;
+                    Rectangle {
+                        height: 56px;
+                        horizontal-stretch: 1;
+                        border-radius: Theme.radius-md;
+                        background: Theme.accent-success;
+                        Text {
+                            text: "$100";
+                            color: Theme.on-primary;
+                            font-size: Theme.font-size-body-large;
+                            font-weight: 800;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
+                        }
+                        TouchArea { clicked => { root.add-money(10000); } }
+                    }
+                    Rectangle {
+                        height: 56px;
+                        horizontal-stretch: 1;
+                        border-radius: Theme.radius-md;
+                        background: Theme.accent-success;
+                        Text {
+                            text: "$250";
+                            color: Theme.on-primary;
+                            font-size: Theme.font-size-body-large;
+                            font-weight: 800;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
+                        }
+                        TouchArea { clicked => { root.add-money(25000); } }
+                    }
+                }
+
+                Rectangle { vertical-stretch: 1; }
+
+                MobileButton {
+                    text: "Cancel";
+                    tone: Tone.danger;
+                    clicked => { root.close-add-sheet(); }
                 }
             }
         }

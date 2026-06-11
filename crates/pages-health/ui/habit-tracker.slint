@@ -2,14 +2,16 @@
 // =====================================================================
 //
 // Daily-habits checklist with a 4-column stat strip at the top, a TODAY
-// section of toggleable habit rows (`SettingRow` with either a done
-// checkmark or a `MobileSwitch` trailing), and a THIS WEEK
-// progress block (KeyValueRows showing N / 7).
+// section of tappable habit rows (each toggles a done check), and a
+// THIS WEEK progress block (tappable KeyValueRows that cycle the
+// completed-days count 0 → 7).
 //
 // Alignment discipline
 // --------------------
 // Stat strip uses the shared `StatTile`. Every row in TODAY and THIS
-// WEEK is `SettingRow` / `KeyValueRow` — no hand-rolled rows.
+// WEEK is `SettingRow` / `KeyValueRow` — no hand-rolled rows. Tap
+// behaviour is wired via the SettingRow / KeyValueRow `clicked`
+// callbacks so the visual rhythm of the page stays intact.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
@@ -18,8 +20,46 @@ import { SettingRow } from "@mobile-components/setting-row.slint";
 import { KeyValueRow } from "@mobile-components/key-value-row.slint";
 import { StatTile } from "@mobile-components/stat-tile.slint";
 import { Divider } from "@mobile-components/divider.slint";
-import { MobileSwitch } from "@mobile-components/switch.slint";
 import { ScrollView } from "std-widgets.slint";
+
+// Tappable wrapper around `StatTile` so we can fire a status update.
+component TapTile inherits Rectangle {
+    in property <string> value;
+    in property <string> label;
+    in property <Tone> tone: Tone.default;
+    callback clicked();
+
+    horizontal-stretch: 1;
+
+    StatTile {
+        value: root.value;
+        label: root.label;
+        tone: root.tone;
+    }
+    TouchArea { clicked => { root.clicked(); } }
+}
+
+// Tappable wrapper around KeyValueRow.
+component TapKVRow inherits Rectangle {
+    in property <string> label;
+    in property <string> value;
+    in property <Tone> value-tone: Tone.default;
+    in property <bool> highlighted: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    background: root.highlighted ? Theme.surface-2
+        : touch.pressed ? Theme.surface-pressed
+        : transparent;
+    animate background { duration: Theme.motion-fast; }
+
+    KeyValueRow {
+        label: root.label;
+        value: root.value;
+        value-tone: root.value-tone;
+    }
+    touch := TouchArea { clicked => { root.clicked(); } }
+}
 
 export component HabitTrackerPage inherits Window {
     preferred-width: 412px;
@@ -31,6 +71,109 @@ export component HabitTrackerPage inherits Window {
     callback back-pressed();
     callback add-pressed();
     callback habit-pressed(string);
+    callback habit-toggled(string, bool);
+    callback week-bumped(string, int);
+
+    // ----- Interactive state -----
+    private property <bool> t0: true;  // Morning run
+    private property <bool> t1: true;  // Read 30 min
+    private property <bool> t3: true;  // 8 glasses of water
+    // habit-meditate ↔ t2, habit-journal ↔ t4 (already in-out)
+    private property <int> w0: 6;
+    private property <int> w1: 5;
+    private property <int> w2: 4;
+    private property <int> w3: 3;
+    private property <int> highlighted-week: -1;
+    private property <int> add-count: 0;
+    private property <int> streak-days: 5;
+    private property <int> month-pct: 92;
+    private property <string> status-msg: "Tap a habit to toggle · tap a weekly row to bump 0 → 7";
+    private property <bool> status-is-success: false;
+    private property <bool> status-is-danger: false;
+
+    // ----- Helpers -----
+    function today-done() -> int {
+        return (root.t0 ? 1 : 0) + (root.t1 ? 1 : 0)
+            + (root.habit-meditate ? 1 : 0) + (root.t3 ? 1 : 0)
+            + (root.habit-journal ? 1 : 0);
+    }
+    function today-name(i: int) -> string {
+        if (i == 0) { return "Morning run"; }
+        if (i == 1) { return "Read for 30 minutes"; }
+        if (i == 2) { return "Meditate"; }
+        if (i == 3) { return "8 glasses of water"; }
+        return "Evening journal";
+    }
+    function week-name(i: int) -> string {
+        if (i == 0) { return "Reading 30 min"; }
+        if (i == 1) { return "Meditation"; }
+        if (i == 2) { return "Walk 10k steps"; }
+        return "No phone after 10pm";
+    }
+    function week-count(i: int) -> int {
+        if (i == 0) { return root.w0; }
+        if (i == 1) { return root.w1; }
+        if (i == 2) { return root.w2; }
+        return root.w3;
+    }
+    function week-tone(c: int) -> Tone {
+        if (c >= 6) { return Tone.success; }
+        if (c >= 4) { return Tone.warning; }
+        return Tone.danger;
+    }
+
+    // ----- Mutations -----
+    public function toggle-today(i: int) {
+        if (i == 0) { root.t0 = !root.t0; }
+        if (i == 1) { root.t1 = !root.t1; }
+        if (i == 2) { root.habit-meditate = !root.habit-meditate; }
+        if (i == 3) { root.t3 = !root.t3; }
+        if (i == 4) { root.habit-journal = !root.habit-journal; }
+        // Read the new value via index to populate status.
+        root.habit-toggled(root.today-name(i),
+            i == 0 ? root.t0
+            : i == 1 ? root.t1
+            : i == 2 ? root.habit-meditate
+            : i == 3 ? root.t3
+            : root.habit-journal);
+        root.status-msg = (i == 0 ? root.t0
+            : i == 1 ? root.t1
+            : i == 2 ? root.habit-meditate
+            : i == 3 ? root.t3
+            : root.habit-journal)
+            ? "Done: " + root.today-name(i) + " · " + root.today-done() + "/5"
+            : "Un-done: " + root.today-name(i) + " · " + root.today-done() + "/5";
+        root.status-is-success = (i == 0 ? root.t0
+            : i == 1 ? root.t1
+            : i == 2 ? root.habit-meditate
+            : i == 3 ? root.t3
+            : root.habit-journal);
+        root.status-is-danger = !root.status-is-success;
+    }
+    public function bump-week(i: int) {
+        if (i == 0) { root.w0 = mod(root.w0 + 1, 8); }
+        if (i == 1) { root.w1 = mod(root.w1 + 1, 8); }
+        if (i == 2) { root.w2 = mod(root.w2 + 1, 8); }
+        if (i == 3) { root.w3 = mod(root.w3 + 1, 8); }
+        root.highlighted-week = i;
+        root.week-bumped(root.week-name(i), root.week-count(i));
+        root.status-msg = root.week-name(i) + " · "
+            + root.week-count(i) + " / 7 days";
+        root.status-is-success = root.week-count(i) >= 6;
+        root.status-is-danger = root.week-count(i) < 4;
+    }
+    public function tap-stat(name: string, value: string) {
+        root.status-msg = name + " · " + value;
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function tap-add() {
+        root.add-count = root.add-count + 1;
+        root.add-pressed();
+        root.status-msg = "Add habit · " + root.add-count + " queued";
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
 
     background: Theme.background;
 
@@ -42,7 +185,31 @@ export component HabitTrackerPage inherits Window {
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             trailing-icon: @image-url("@mobile-components/icons/plus.svg");
             leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.add-pressed(); }
+            trailing-pressed => { root.tap-add(); }
+        }
+
+        // ----- Status banner ---------------------------------------
+        Rectangle {
+            height: 32px;
+            background: root.status-is-danger ? Theme.accent-danger
+                : root.status-is-success ? Theme.accent-success
+                : Theme.surface-2;
+            animate background { duration: Theme.motion-fast; }
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                Text {
+                    text: root.status-msg;
+                    color: (root.status-is-danger || root.status-is-success)
+                        ? Theme.on-primary
+                        : Theme.on-surface;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+            }
         }
 
         ScrollView {
@@ -54,121 +221,173 @@ export component HabitTrackerPage inherits Window {
                 spacing: Theme.spacing-md;
                 alignment: start;
 
-                // ----- Stat strip -------------------------------------------
+                // Stat strip — tappable.
                 HorizontalLayout {
                     padding-left: Theme.spacing-md;
                     padding-right: Theme.spacing-md;
                     spacing: Theme.spacing-md;
 
-                    StatTile {
-                        value: "5";
+                    TapTile {
+                        value: "" + root.streak-days;
                         label: "STREAK";
                         tone: Tone.success;
+                        clicked => {
+                            root.tap-stat("Streak", root.streak-days + " days");
+                        }
                     }
-                    StatTile {
-                        value: "92%";
+                    TapTile {
+                        value: root.month-pct + "%";
                         label: "MONTH";
                         tone: Tone.info;
+                        clicked => {
+                            root.tap-stat("Month", root.month-pct + "% completion");
+                        }
                     }
-                    StatTile {
+                    TapTile {
                         value: "31";
                         label: "DAYS";
+                        clicked => {
+                            root.tap-stat("Days tracked", "31 days");
+                        }
                     }
-                    StatTile {
-                        value: "4";
+                    TapTile {
+                        value: "" + root.today-done();
                         label: "TODAY";
                         tone: Tone.warning;
+                        clicked => {
+                            root.tap-stat("Today", root.today-done() + " of 5 done");
+                        }
                     }
                 }
 
-                // ----- TODAY ------------------------------------------------
+                // TODAY — each row tappable to toggle done.
                 FormSection {
-                    title: "TODAY";
+                    title: "TODAY · " + root.today-done() + " of 5 done";
 
                     SettingRow {
                         icon: @image-url("@mobile-components/icons/heart.svg");
-                        tone: Tone.danger;
-                        title: "Morning run";
-                        subtitle: "Done at 07:42";
+                        tone: root.t0 ? Tone.success : Tone.danger;
+                        title: root.t0 ? "Morning run" : "Morning run · pending";
+                        subtitle: root.t0 ? "Done at 07:42" : "Tap to mark done";
+                        clicked => { root.toggle-today(0); }
                         Image {
                             width: 18px;
                             height: 18px;
-                            source: @image-url("@mobile-components/icons/check.svg");
-                            colorize: Theme.accent-success;
+                            source: root.t0
+                                ? @image-url("@mobile-components/icons/check.svg")
+                                : @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: root.t0 ? Theme.accent-success : Theme.muted;
                             image-fit: contain;
                         }
                     }
                     Divider { }
                     SettingRow {
                         icon: @image-url("@mobile-components/icons/star.svg");
-                        tone: Tone.warning;
-                        title: "Read for 30 minutes";
-                        subtitle: "Done at 08:15";
+                        tone: root.t1 ? Tone.success : Tone.warning;
+                        title: root.t1 ? "Read for 30 minutes" : "Read for 30 minutes · pending";
+                        subtitle: root.t1 ? "Done at 08:15" : "Tap to mark done";
+                        clicked => { root.toggle-today(1); }
                         Image {
                             width: 18px;
                             height: 18px;
-                            source: @image-url("@mobile-components/icons/check.svg");
-                            colorize: Theme.accent-success;
+                            source: root.t1
+                                ? @image-url("@mobile-components/icons/check.svg")
+                                : @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: root.t1 ? Theme.accent-success : Theme.muted;
                             image-fit: contain;
                         }
                     }
                     Divider { }
                     SettingRow {
                         icon: @image-url("@mobile-components/icons/pin.svg");
-                        tone: Tone.info;
-                        title: "Meditate";
-                        subtitle: "Goal: 10 min, no streak today";
-                        MobileSwitch { checked <=> root.habit-meditate; }
+                        tone: root.habit-meditate ? Tone.success : Tone.info;
+                        title: root.habit-meditate ? "Meditate · done" : "Meditate";
+                        subtitle: root.habit-meditate
+                            ? "Just logged"
+                            : "Goal: 10 min, no streak today";
+                        clicked => { root.toggle-today(2); }
+                        Image {
+                            width: 18px;
+                            height: 18px;
+                            source: root.habit-meditate
+                                ? @image-url("@mobile-components/icons/check.svg")
+                                : @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: root.habit-meditate ? Theme.accent-success : Theme.muted;
+                            image-fit: contain;
+                        }
                     }
                     Divider { }
                     SettingRow {
                         icon: @image-url("@mobile-components/icons/check.svg");
-                        tone: Tone.success;
-                        title: "8 glasses of water";
-                        subtitle: "Done at 18:00";
+                        tone: root.t3 ? Tone.success : Tone.info;
+                        title: root.t3 ? "8 glasses of water" : "8 glasses of water · pending";
+                        subtitle: root.t3 ? "Done at 18:00" : "Tap to mark done";
+                        clicked => { root.toggle-today(3); }
                         Image {
                             width: 18px;
                             height: 18px;
-                            source: @image-url("@mobile-components/icons/check.svg");
-                            colorize: Theme.accent-success;
+                            source: root.t3
+                                ? @image-url("@mobile-components/icons/check.svg")
+                                : @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: root.t3 ? Theme.accent-success : Theme.muted;
                             image-fit: contain;
                         }
                     }
                     Divider { }
                     SettingRow {
                         icon: @image-url("@mobile-components/icons/menu.svg");
-                        title: "Evening journal";
-                        subtitle: "Goal: 5 min";
-                        MobileSwitch { checked <=> root.habit-journal; }
+                        tone: root.habit-journal ? Tone.success : Tone.default;
+                        title: root.habit-journal ? "Evening journal · done" : "Evening journal";
+                        subtitle: root.habit-journal
+                            ? "Just logged"
+                            : "Goal: 5 min";
+                        clicked => { root.toggle-today(4); }
+                        Image {
+                            width: 18px;
+                            height: 18px;
+                            source: root.habit-journal
+                                ? @image-url("@mobile-components/icons/check.svg")
+                                : @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: root.habit-journal ? Theme.accent-success : Theme.muted;
+                            image-fit: contain;
+                        }
                     }
                 }
 
-                // ----- THIS WEEK --------------------------------------------
+                // THIS WEEK — each row taps to bump the count.
                 FormSection {
-                    title: "THIS WEEK";
+                    title: "THIS WEEK · tap to bump · " + root.add-count + " added";
 
-                    KeyValueRow {
-                        label: "Reading 30 min";
-                        value: "6 / 7";
-                        value-tone: Tone.success;
+                    TapKVRow {
+                        label: root.week-name(0);
+                        value: root.w0 + " / 7";
+                        value-tone: root.week-tone(root.w0);
+                        highlighted: root.highlighted-week == 0;
+                        clicked => { root.bump-week(0); }
                     }
                     Divider { }
-                    KeyValueRow {
-                        label: "Meditation";
-                        value: "5 / 7";
-                        value-tone: Tone.success;
+                    TapKVRow {
+                        label: root.week-name(1);
+                        value: root.w1 + " / 7";
+                        value-tone: root.week-tone(root.w1);
+                        highlighted: root.highlighted-week == 1;
+                        clicked => { root.bump-week(1); }
                     }
                     Divider { }
-                    KeyValueRow {
-                        label: "Walk 10k steps";
-                        value: "4 / 7";
-                        value-tone: Tone.warning;
+                    TapKVRow {
+                        label: root.week-name(2);
+                        value: root.w2 + " / 7";
+                        value-tone: root.week-tone(root.w2);
+                        highlighted: root.highlighted-week == 2;
+                        clicked => { root.bump-week(2); }
                     }
                     Divider { }
-                    KeyValueRow {
-                        label: "No phone after 10pm";
-                        value: "3 / 7";
-                        value-tone: Tone.danger;
+                    TapKVRow {
+                        label: root.week-name(3);
+                        value: root.w3 + " / 7";
+                        value-tone: root.week-tone(root.w3);
+                        highlighted: root.highlighted-week == 3;
+                        clicked => { root.bump-week(3); }
                     }
                 }
             }

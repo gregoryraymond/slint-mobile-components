@@ -1,38 +1,33 @@
 // SecurityCheckupPage
 // =====================================================================
-//
-// A security checkup — the "is my account safe" review screen.
-// Distinct from `AppPermissionsPage` (per-app grants) and
-// `TwoFactorAuthPage` (a single OTP flow). Demonstrates a
-// status-checklist surface:
-//
-//   - An overall-status hero: a big shield-ish disc + headline + a
-//     "N issues found" subline, tinted by the worst item.
-//   - An ISSUES section: rows with a danger / warning icon disc, a
-//     title + description, and a "Fix" pill.
-//   - A SECURE section: rows with a success check, dimmer, no action.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { SectionHeader } from "@mobile-components/section-header.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
 import { Divider } from "@mobile-components/divider.slint";
+import { TextField } from "@mobile-components/text-field.slint";
+import { ScrollView } from "std-widgets.slint";
 
-// One checkup row. `state`: 0 secure / 1 warning / 2 danger.
 component CheckupRow inherits Rectangle {
     in property <string> title;
     in property <string> detail;
     in property <int> state: 0;
     in property <string> action: "Fix";
+    in property <bool> busy: false;
+    in property <bool> expanded: false;
     callback clicked();
+    callback action-pressed();
 
     accessible-role: button;
     accessible-label: root.title;
-    accessible-action-default => { root.clicked(); }
+    accessible-action-default => {
+        root.clicked();
+    }
 
     horizontal-stretch: 1;
     min-height: 72px;
-    background: touch.pressed ? Theme.surface-pressed : transparent;
+    background: root.expanded ? Theme.surface-2 : (touch.pressed ? Theme.surface-pressed : transparent);
     animate background { duration: Theme.motion-fast; }
 
     HorizontalLayout {
@@ -45,22 +40,14 @@ component CheckupRow inherits Rectangle {
                 width: 38px;
                 height: 38px;
                 border-radius: 19px;
-                background:
-                      root.state == 2 ? Theme.accent-danger.with-alpha(0.18)
-                    : root.state == 1 ? Theme.accent-warning.with-alpha(0.18)
-                    : Theme.accent-success.with-alpha(0.18);
+                background: root.state == 2 ? Theme.accent-danger.with-alpha(0.18) : (root.state == 1 ? Theme.accent-warning.with-alpha(0.18) : Theme.accent-success.with-alpha(0.18));
                 Image {
                     width: 18px;
                     height: 18px;
                     x: (parent.width - self.width) / 2;
                     y: (parent.height - self.height) / 2;
-                    source: root.state == 0
-                        ? @image-url("@mobile-components/icons/check.svg")
-                        : @image-url("@mobile-components/icons/lock.svg");
-                    colorize:
-                          root.state == 2 ? Theme.accent-danger
-                        : root.state == 1 ? Theme.accent-warning
-                        : Theme.accent-success;
+                    source: root.state == 0 ? @image-url("@mobile-components/icons/check.svg") : @image-url("@mobile-components/icons/lock.svg");
+                    colorize: root.state == 2 ? Theme.accent-danger : (root.state == 1 ? Theme.accent-warning : Theme.accent-success);
                     image-fit: contain;
                 }
             }
@@ -88,9 +75,9 @@ component CheckupRow inherits Rectangle {
                 width: fix-text.preferred-width + 24px;
                 height: 30px;
                 border-radius: 15px;
-                background: root.state == 2 ? Theme.accent-danger : Theme.accent-warning;
+                background: root.busy ? Theme.muted : (root.state == 2 ? Theme.accent-danger : Theme.accent-warning);
                 fix-text := Text {
-                    text: root.action;
+                    text: root.busy ? "…" : root.action;
                     color: Theme.on-primary;
                     font-size: Theme.font-size-caption;
                     font-weight: 800;
@@ -99,24 +86,143 @@ component CheckupRow inherits Rectangle {
                     width: parent.width;
                     height: parent.height;
                 }
+                TouchArea {
+                    clicked => {
+                        root.action-pressed();
+                    }
+                }
             }
         }
     }
     touch := TouchArea {
-        clicked => { root.clicked(); }
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
+    min-height: 48px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.destructive ? Theme.accent-danger : Theme.on-background;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+        }
     }
 }
 
 export component SecurityCheckupPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
-    in property <string> headline: "2 issues need your attention";
-    in property <string> subline: "Last checked just now · 6 of 8 checks passed";
+
+    // State: 0 secure / 1 warning / 2 danger.
+    in-out property <int> s1: 2; // reused password
+    in-out property <int> s2: 1; // recovery email
+    in-out property <int> s3: 0; // 2FA
+    in-out property <int> s4: 0; // sign-ins
+    in-out property <int> s5: 0; // biometric
+    in-out property <int> s6: 0; // app version
+
+    in-out property <int> expanded: 0;
+    in-out property <string> recovery-email;
+    in-out property <int> sessions: 4;
+    in-out property <bool> regen-busy;
+    in-out property <int> regen-pct;
+    in-out property <bool> scanning;
+    in-out property <int> scan-pct;
+    in-out property <int> last-checked-ago: 0; // ticks since rescan
+    in-out property <bool> sheet-open;
+    in-out property <string> status-msg;
+    in-out property <int> status-tone;
+
     callback back-pressed();
     callback rescan-pressed();
     callback item-pressed(string);
 
     background: Theme.background;
+
+    function set-status(m: string, tone: int) {
+        root.status-msg = m;
+        root.status-tone = tone;
+    }
+    function status-color() -> color {
+        return root.status-tone == 1 ? Theme.accent-success : (root.status-tone == 2 ? Theme.accent-danger : (root.status-tone == 3 ? Theme.accent-warning : Theme.accent-info));
+    }
+    function issues-count() -> int {
+        return (root.s1 > 0 ? 1 : 0) + (root.s2 > 0 ? 1 : 0) + (root.s3 > 0 ? 1 : 0) + (root.s4 > 0 ? 1 : 0) + (root.s5 > 0 ? 1 : 0) + (root.s6 > 0 ? 1 : 0);
+    }
+    function worst() -> int {
+        return max(root.s1, max(root.s2, max(root.s3, max(root.s4, max(root.s5, root.s6)))));
+    }
+    function hero-color1() -> color {
+        return root.worst() == 2 ? #b45309 : (root.worst() == 1 ? #92400e : #166534);
+    }
+    function hero-color2() -> color {
+        return root.worst() == 2 ? #7c2d12 : (root.worst() == 1 ? #78350f : #14532d);
+    }
+    function headline() -> string {
+        if (root.issues-count() == 0) {
+            return "You're all set";
+        }
+        return root.issues-count() + (root.issues-count() == 1 ? " issue needs your attention" : " issues need your attention");
+    }
+    function subline() -> string {
+        return "Last checked " + (root.last-checked-ago == 0 ? "just now" : root.last-checked-ago + "m ago") + " · " + (6 - root.issues-count()) + " of 6 checks passed";
+    }
+    function email-valid() -> bool {
+        return root.recovery-email.character-count >= 5;
+    }
+
+    // Password regen Timer.
+    regen-timer := Timer {
+        interval: 200ms;
+        running: root.regen-busy;
+        triggered => {
+            root.regen-pct = min(100, root.regen-pct + 8);
+            if (root.regen-pct >= 100) {
+                root.regen-busy = false;
+                root.s1 = 0;
+                root.set-status("New password generated and saved", 1);
+            }
+        }
+    }
+    // Rescan progress Timer.
+    scan-timer := Timer {
+        interval: 80ms;
+        running: root.scanning;
+        triggered => {
+            root.scan-pct = min(100, root.scan-pct + 5);
+            if (root.scan-pct >= 100) {
+                root.scanning = false;
+                root.last-checked-ago = 0;
+                root.set-status("Rescan complete", 1);
+            }
+        }
+    }
+    // Aging Timer.
+    age-timer := Timer {
+        interval: 30000ms;
+        running: !root.scanning;
+        triggered => {
+            root.last-checked-ago = root.last-checked-ago + 1;
+        }
+    }
 
     VerticalLayout {
         spacing: 0;
@@ -125,134 +231,642 @@ export component SecurityCheckupPage inherits Window {
             title: "SECURITY CHECKUP";
             title-style: HeadingStyle.caps-tight;
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
-            leading-pressed => { root.back-pressed(); }
+            trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
+            leading-pressed => {
+                root.back-pressed();
+            }
+            trailing-pressed => {
+                root.sheet-open = true;
+            }
         }
 
-        VerticalLayout {
-            padding: Theme.spacing-md;
-            spacing: Theme.spacing-md;
-            alignment: start;
-
-            // Overall-status hero.
-            Rectangle {
-                height: 160px;
-                border-radius: Theme.radius-lg;
-                background: @linear-gradient(135deg, #b45309 0%, #7c2d12 100%);
-                drop-shadow-blur: Theme.elevation-2-blur;
-                drop-shadow-color: Theme.elevation-2-color;
-                drop-shadow-offset-y: Theme.elevation-2-y;
+        if !root.status-msg.is-empty: Rectangle {
+            height: 28px;
+            background: root.status-color().with-alpha(0.18);
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
                 VerticalLayout {
                     alignment: center;
-                    spacing: Theme.spacing-sm;
-                    HorizontalLayout {
-                        alignment: center;
-                        Rectangle {
-                            width: 56px;
-                            height: 56px;
-                            border-radius: 14px;
-                            background: #ffffff22;
-                            Image {
-                                width: 30px;
-                                height: 30px;
-                                x: (parent.width - self.width) / 2;
-                                y: (parent.height - self.height) / 2;
-                                source: @image-url("@mobile-components/icons/lock.svg");
-                                colorize: #ffffff;
-                                image-fit: contain;
+                    Text {
+                        text: root.status-msg;
+                        color: root.status-color();
+                        font-size: Theme.font-size-caption;
+                        font-weight: 600;
+                    }
+                }
+            }
+        }
+
+        ScrollView {
+            vertical-stretch: 1;
+            VerticalLayout {
+                padding-bottom: Theme.spacing-xl;
+                spacing: 0;
+
+                VerticalLayout {
+                    padding: Theme.spacing-md;
+                    spacing: Theme.spacing-md;
+                    alignment: start;
+
+                    Rectangle {
+                        height: 180px;
+                        border-radius: Theme.radius-lg;
+                        background: @linear-gradient(135deg, root.hero-color1() 0%, root.hero-color2() 100%);
+                        drop-shadow-blur: Theme.elevation-2-blur;
+                        drop-shadow-color: Theme.elevation-2-color;
+                        drop-shadow-offset-y: Theme.elevation-2-y;
+                        animate background { duration: Theme.motion-fast; }
+                        VerticalLayout {
+                            alignment: center;
+                            spacing: Theme.spacing-sm;
+                            HorizontalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: 56px;
+                                    height: 56px;
+                                    border-radius: 14px;
+                                    background: #ffffff22;
+                                    Image {
+                                        width: 30px;
+                                        height: 30px;
+                                        x: (parent.width - self.width) / 2;
+                                        y: (parent.height - self.height) / 2;
+                                        source: root.worst() == 0 ? @image-url("@mobile-components/icons/check.svg") : @image-url("@mobile-components/icons/lock.svg");
+                                        colorize: #ffffff;
+                                        image-fit: contain;
+                                    }
+                                }
+                            }
+                            Heading {
+                                text: root.headline();
+                                style: HeadingStyle.grotesk-bold;
+                                color: Theme.on-primary;
+                                font-size: 22px;
+                                horizontal-alignment: center;
+                            }
+                            Text {
+                                text: root.subline();
+                                color: #ffffffcc;
+                                font-family: "Space Grotesk";
+                                font-size: 11px;
+                                font-weight: 700;
+                                letter-spacing: 0.8px;
+                                horizontal-alignment: center;
+                            }
+                            if root.scanning: HorizontalLayout {
+                                padding-left: Theme.spacing-lg;
+                                padding-right: Theme.spacing-lg;
+                                padding-top: Theme.spacing-sm;
+                                Rectangle {
+                                    height: 6px;
+                                    border-radius: 3px;
+                                    background: #ffffff33;
+                                    Rectangle {
+                                        x: 0;
+                                        y: 0;
+                                        height: parent.height;
+                                        width: parent.width * root.scan-pct / 100;
+                                        background: #ffffff;
+                                        border-radius: 3px;
+                                    }
+                                }
                             }
                         }
                     }
-                    Heading {
-                        text: root.headline;
-                        style: HeadingStyle.grotesk-bold;
-                        color: Theme.on-primary;
-                        font-size: 22px;
-                        horizontal-alignment: center;
+
+                    HorizontalLayout {
+                        alignment: center;
+                        spacing: Theme.spacing-sm;
+                        Rectangle {
+                            min-width: 160px;
+                            height: 34px;
+                            border-radius: 17px;
+                            background: root.scanning ? Theme.muted : Theme.accent-info;
+                            Text {
+                                text: root.scanning ? "Scanning… " + root.scan-pct + "%" : "Run checkup again";
+                                color: Theme.background;
+                                font-size: Theme.font-size-caption;
+                                font-weight: 800;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                width: parent.width;
+                                height: parent.height;
+                            }
+                            TouchArea {
+                                clicked => {
+                                    if (!root.scanning) {
+                                        root.scanning = true;
+                                        root.scan-pct = 0;
+                                        root.set-status("Rescanning…", 0);
+                                        root.rescan-pressed();
+                                    }
+                                }
+                            }
+                        }
+                        if root.issues-count() > 0: Rectangle {
+                            min-width: 100px;
+                            height: 34px;
+                            border-radius: 17px;
+                            background: Theme.surface-2;
+                            Text {
+                                text: "Fix all";
+                                color: Theme.on-surface;
+                                font-size: Theme.font-size-caption;
+                                font-weight: 800;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                width: parent.width;
+                                height: parent.height;
+                            }
+                            TouchArea {
+                                clicked => {
+                                    root.s1 = 0;
+                                    root.s2 = 0;
+                                    root.s3 = 0;
+                                    root.s4 = 0;
+                                    root.s5 = 0;
+                                    root.s6 = 0;
+                                    root.set-status("All issues resolved", 1);
+                                }
+                            }
+                        }
                     }
+                }
+
+                // ----- ISSUES section ---------------------------------
+                if root.issues-count() > 0: SectionHeader {
+                    text: "ISSUES (" + root.issues-count() + ")";
+                }
+
+                if root.s1 > 0: CheckupRow {
+                    title: "Reused password";
+                    detail: root.regen-busy ? "Generating new password… " + root.regen-pct + "%" : "Your password is used on 3 other sites.";
+                    state: root.s1;
+                    action: "Fix";
+                    busy: root.regen-busy;
+                    expanded: root.expanded == 1;
+                    clicked => {
+                        root.expanded = root.expanded == 1 ? 0 : 1;
+                        root.item-pressed("Reused password");
+                    }
+                    action-pressed => {
+                        if (!root.regen-busy) {
+                            root.regen-busy = true;
+                            root.regen-pct = 0;
+                            root.set-status("Generating strong password…", 0);
+                        }
+                    }
+                }
+                if root.s1 > 0 && root.expanded == 1 && !root.regen-busy: Rectangle {
+                    background: Theme.surface-2;
+                    VerticalLayout {
+                        padding: Theme.spacing-md;
+                        spacing: Theme.spacing-sm;
+                        Text {
+                            text: "Replacing your reused password generates a 24-char random value and saves it to the vault.";
+                            color: Theme.muted;
+                            font-size: Theme.font-size-caption;
+                            wrap: word-wrap;
+                        }
+                        HorizontalLayout {
+                            spacing: Theme.spacing-sm;
+                            Rectangle {
+                                horizontal-stretch: 0;
+                                min-width: 110px;
+                                height: 32px;
+                                border-radius: 16px;
+                                background: Theme.accent-danger;
+                                Text {
+                                    text: "Generate now";
+                                    color: Theme.on-primary;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 700;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                                TouchArea {
+                                    clicked => {
+                                        root.regen-busy = true;
+                                        root.regen-pct = 0;
+                                        root.set-status("Generating strong password…", 0);
+                                    }
+                                }
+                            }
+                            Rectangle {
+                                horizontal-stretch: 0;
+                                min-width: 80px;
+                                height: 32px;
+                                border-radius: 16px;
+                                background: Theme.surface-3;
+                                Text {
+                                    text: "Ignore";
+                                    color: Theme.on-surface;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 700;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                                TouchArea {
+                                    clicked => {
+                                        root.s1 = 0;
+                                        root.expanded = 0;
+                                        root.set-status("Ignored — marked safe", 3);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if root.s1 > 0: Divider { }
+
+                if root.s2 > 0: CheckupRow {
+                    title: "Recovery email unverified";
+                    detail: "Verify it so you can regain access if locked out.";
+                    state: root.s2;
+                    action: "Verify";
+                    expanded: root.expanded == 2;
+                    clicked => {
+                        root.expanded = root.expanded == 2 ? 0 : 2;
+                        root.item-pressed("Recovery email");
+                    }
+                    action-pressed => {
+                        root.expanded = 2;
+                        root.set-status("Enter your recovery email", 0);
+                    }
+                }
+                if root.s2 > 0 && root.expanded == 2: Rectangle {
+                    background: Theme.surface-2;
+                    VerticalLayout {
+                        padding: Theme.spacing-md;
+                        spacing: Theme.spacing-sm;
+                        TextField {
+                            placeholder: "you@example.com";
+                            text <=> root.recovery-email;
+                        }
+                        HorizontalLayout {
+                            spacing: Theme.spacing-sm;
+                            Rectangle {
+                                horizontal-stretch: 0;
+                                min-width: 110px;
+                                height: 32px;
+                                border-radius: 16px;
+                                background: root.email-valid() ? Theme.accent-warning : Theme.muted;
+                                Text {
+                                    text: "Send code";
+                                    color: Theme.on-primary;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 700;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                                TouchArea {
+                                    clicked => {
+                                        if (root.email-valid()) {
+                                            root.s2 = 0;
+                                            root.expanded = 0;
+                                            root.set-status("Verification sent to " + root.recovery-email, 1);
+                                            root.recovery-email = "";
+                                        } else {
+                                            root.set-status("Enter a valid email first", 3);
+                                        }
+                                    }
+                                }
+                            }
+                            Rectangle {
+                                horizontal-stretch: 0;
+                                min-width: 70px;
+                                height: 32px;
+                                border-radius: 16px;
+                                background: Theme.surface-3;
+                                Text {
+                                    text: "Later";
+                                    color: Theme.on-surface;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 700;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                                TouchArea {
+                                    clicked => {
+                                        root.expanded = 0;
+                                        root.set-status("Skipped — we'll remind you", 0);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if root.s2 > 0: Divider { }
+
+                if root.s3 > 0: CheckupRow {
+                    title: "Two-factor authentication";
+                    detail: "Two-factor is currently off — re-enable now.";
+                    state: root.s3;
+                    action: "Enable";
+                    expanded: false;
+                    clicked => {
+                        root.item-pressed("Two-factor");
+                    }
+                    action-pressed => {
+                        root.s3 = 0;
+                        root.set-status("Two-factor re-enabled", 1);
+                    }
+                }
+                if root.s3 > 0: Divider { }
+
+                if root.s5 > 0: CheckupRow {
+                    title: "Biometric lock";
+                    detail: "Face unlock is off — turn it back on.";
+                    state: root.s5;
+                    action: "Enable";
+                    expanded: false;
+                    clicked => {
+                        root.item-pressed("Biometric");
+                    }
+                    action-pressed => {
+                        root.s5 = 0;
+                        root.set-status("Biometric re-enabled", 1);
+                    }
+                }
+                if root.s5 > 0: Divider { }
+
+                // ----- SECURE section ---------------------------------
+                if (6 - root.issues-count()) > 0: SectionHeader {
+                    text: "SECURE (" + (6 - root.issues-count()) + ")";
+                }
+
+                if root.s3 == 0: CheckupRow {
+                    title: "Two-factor authentication";
+                    detail: "Enabled via authenticator app.";
+                    state: 0;
+                    expanded: root.expanded == 3;
+                    clicked => {
+                        root.expanded = root.expanded == 3 ? 0 : 3;
+                        root.item-pressed("Two-factor");
+                    }
+                }
+                if root.s3 == 0 && root.expanded == 3: Rectangle {
+                    background: Theme.surface-2;
+                    VerticalLayout {
+                        padding: Theme.spacing-md;
+                        spacing: Theme.spacing-sm;
+                        Text {
+                            text: "Authenticator app paired with this device.";
+                            color: Theme.muted;
+                            font-size: Theme.font-size-caption;
+                        }
+                        HorizontalLayout {
+                            spacing: Theme.spacing-sm;
+                            Rectangle {
+                                horizontal-stretch: 0;
+                                min-width: 100px;
+                                height: 32px;
+                                border-radius: 16px;
+                                background: Theme.accent-danger;
+                                Text {
+                                    text: "Disable 2FA";
+                                    color: Theme.on-primary;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 700;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                                TouchArea {
+                                    clicked => {
+                                        root.s3 = 2;
+                                        root.expanded = 0;
+                                        root.set-status("Two-factor disabled — risk added", 2);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if root.s3 == 0: Divider { }
+
+                if root.s4 == 0: CheckupRow {
+                    title: "No unrecognised sign-ins";
+                    detail: "All " + root.sessions + " active sessions are known devices.";
+                    state: 0;
+                    expanded: root.expanded == 4;
+                    clicked => {
+                        root.expanded = root.expanded == 4 ? 0 : 4;
+                        root.item-pressed("Sign-ins");
+                    }
+                }
+                if root.s4 == 0 && root.expanded == 4: Rectangle {
+                    background: Theme.surface-2;
+                    VerticalLayout {
+                        padding: Theme.spacing-md;
+                        spacing: Theme.spacing-sm;
+                        Text {
+                            text: "iPhone · MacBook Pro · iPad Air · Edge / Win11";
+                            color: Theme.muted;
+                            font-size: Theme.font-size-caption;
+                        }
+                        HorizontalLayout {
+                            spacing: Theme.spacing-sm;
+                            Rectangle {
+                                horizontal-stretch: 0;
+                                min-width: 140px;
+                                height: 32px;
+                                border-radius: 16px;
+                                background: root.sessions > 1 ? Theme.accent-info : Theme.muted;
+                                Text {
+                                    text: "Sign out 1 device";
+                                    color: Theme.background;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 700;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                                TouchArea {
+                                    clicked => {
+                                        if (root.sessions > 1) {
+                                            root.sessions = root.sessions - 1;
+                                            root.set-status("Signed out 1 device · " + root.sessions + " left", 1);
+                                        } else {
+                                            root.set-status("This is your only session", 3);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if root.s4 == 0: Divider { }
+
+                if root.s5 == 0: CheckupRow {
+                    title: "Biometric lock";
+                    detail: "Face unlock is on for this app.";
+                    state: 0;
+                    expanded: root.expanded == 5;
+                    clicked => {
+                        root.expanded = root.expanded == 5 ? 0 : 5;
+                        root.item-pressed("Biometric");
+                    }
+                }
+                if root.s5 == 0 && root.expanded == 5: Rectangle {
+                    background: Theme.surface-2;
+                    VerticalLayout {
+                        padding: Theme.spacing-md;
+                        spacing: Theme.spacing-sm;
+                        HorizontalLayout {
+                            spacing: Theme.spacing-sm;
+                            Rectangle {
+                                horizontal-stretch: 0;
+                                min-width: 130px;
+                                height: 32px;
+                                border-radius: 16px;
+                                background: Theme.accent-warning;
+                                Text {
+                                    text: "Turn off biometric";
+                                    color: Theme.on-primary;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 700;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                                TouchArea {
+                                    clicked => {
+                                        root.s5 = 1;
+                                        root.expanded = 0;
+                                        root.set-status("Biometric disabled — issue added", 3);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if root.s5 == 0: Divider { }
+
+                if root.s6 == 0: CheckupRow {
+                    title: "Up-to-date app version";
+                    detail: "You're on the latest release.";
+                    state: 0;
+                    expanded: false;
+                    clicked => {
+                        root.item-pressed("App version");
+                        root.set-status("Version 1.4.2 · build 3187", 0);
+                    }
+                }
+            }
+        }
+    }
+
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: Theme.surface-1;
+            border-top-left-radius: 16px;
+            border-top-right-radius: 16px;
+            clip: true;
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.muted;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
                     Text {
-                        text: root.subline;
-                        color: #ffffffcc;
-                        font-family: "Space Grotesk";
-                        font-size: 11px;
+                        text: "Security shortcuts";
+                        color: Theme.on-background;
+                        font-size: Theme.font-size-title;
                         font-weight: 700;
-                        letter-spacing: 0.8px;
-                        horizontal-alignment: center;
                     }
                 }
-            }
-
-            // Re-scan pill.
-            HorizontalLayout {
-                alignment: center;
+                SheetRow {
+                    label: "Fix all issues";
+                    clicked => {
+                        root.s1 = 0;
+                        root.s2 = 0;
+                        root.s3 = 0;
+                        root.s4 = 0;
+                        root.s5 = 0;
+                        root.s6 = 0;
+                        root.set-status("All issues resolved", 1);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Sign out all other devices";
+                    clicked => {
+                        root.sessions = 1;
+                        root.set-status("Signed out 3 devices", 1);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Reset checkup (restore defaults)";
+                    clicked => {
+                        root.s1 = 2;
+                        root.s2 = 1;
+                        root.s3 = 0;
+                        root.s4 = 0;
+                        root.s5 = 0;
+                        root.s6 = 0;
+                        root.sessions = 4;
+                        root.expanded = 0;
+                        root.set-status("Checkup reset to demo state", 0);
+                        root.sheet-open = false;
+                    }
+                }
                 Rectangle {
-                    width: rescan.preferred-width + 36px;
-                    height: 34px;
-                    border-radius: 17px;
-                    background: touch-rescan.pressed ? Theme.surface-pressed : Theme.surface-2;
-                    animate background { duration: Theme.motion-fast; }
-                    rescan := Text {
-                        text: "Run checkup again";
-                        color: Theme.on-surface;
-                        font-size: Theme.font-size-caption;
-                        font-weight: 800;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                        width: parent.width;
-                        height: parent.height;
+                    height: 1px;
+                    background: Theme.outline;
+                }
+                SheetRow {
+                    label: "Lock account now";
+                    destructive: true;
+                    clicked => {
+                        root.s3 = 2;
+                        root.s5 = 2;
+                        root.sessions = 0;
+                        root.set-status("Panic mode — account locked", 2);
+                        root.sheet-open = false;
                     }
-                    touch-rescan := TouchArea {
-                        clicked => { root.rescan-pressed(); }
+                }
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.sheet-open = false;
                     }
                 }
             }
         }
-
-        SectionHeader { text: "ISSUES"; }
-        CheckupRow {
-            title: "Reused password";
-            detail: "Your password is used on 3 other sites.";
-            state: 2;
-            action: "Fix";
-            clicked => { root.item-pressed("Reused password"); }
-        }
-        Divider { }
-        CheckupRow {
-            title: "Recovery email unverified";
-            detail: "Verify it so you can regain access if locked out.";
-            state: 1;
-            action: "Verify";
-            clicked => { root.item-pressed("Recovery email"); }
-        }
-
-        SectionHeader { text: "SECURE"; }
-        CheckupRow {
-            title: "Two-factor authentication";
-            detail: "Enabled via authenticator app.";
-            state: 0;
-            clicked => { root.item-pressed("Two-factor"); }
-        }
-        Divider { }
-        CheckupRow {
-            title: "No unrecognised sign-ins";
-            detail: "All 4 active sessions are known devices.";
-            state: 0;
-            clicked => { root.item-pressed("Sign-ins"); }
-        }
-        Divider { }
-        CheckupRow {
-            title: "Biometric lock";
-            detail: "Face unlock is on for this app.";
-            state: 0;
-            clicked => { root.item-pressed("Biometric"); }
-        }
-        Divider { }
-        CheckupRow {
-            title: "Up-to-date app version";
-            detail: "You're on the latest release.";
-            state: 0;
-            clicked => { root.item-pressed("App version"); }
-        }
-
-        Rectangle { vertical-stretch: 1; }
     }
 }

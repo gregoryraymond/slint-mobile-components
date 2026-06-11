@@ -1,57 +1,207 @@
 // VideoFeedPage
 // =====================================================================
 //
-// TikTok / Reels / Shorts vertical-scroll feed showing ONE video that
-// fills the entire screen. No standard AppBar — instead a tiny
-// transparent strip with just a back arrow at the top-left. The right
-// side carries a column of round action buttons (heart / comment /
-// share / more) overlaid on top of the video; the bottom carries the
-// creator + caption + hashtags.
-//
-// Alignment discipline
-//   - Metadata at the bottom (hashtags) uses `MetaRow` so each chip's
-//     icon and text share a baseline, matching every other meta-row in
-//     the library.
-//   - The action column is a single `VerticalLayout` with constant
-//     spacing; every action button is the same 48 × 48 round Rectangle
-//     wrapping a centred 22 px icon — no hand-rolled per-row sizing.
+// TikTok / Reels / Shorts vertical-scroll feed.
 
 import { Theme } from "@mobile-theme/theme.slint";
 import { MetaRow, MetaChip } from "@mobile-components/meta-row.slint";
+import { ScrollView } from "std-widgets.slint";
 
-// Page-local: a round translucent overlay action button — heart /
-// comment / share / more. The library's `IconButton` is a square label-
-// below-icon tab atom, the wrong shape for an overlay action.
 component FeedActionButton inherits Rectangle {
     in property <image> icon;
+    in property <string> label;
+    in property <bool> active: false;
     in property <string> a11y-label;
     callback clicked();
 
     accessible-role: button;
     accessible-label: root.a11y-label;
-    accessible-action-default => { root.clicked(); }
-
-    width: 48px;
-    height: 48px;
-    border-radius: 24px;
-    background: touch.pressed
-        ? Theme.surface-3.with-alpha(0.75)
-        : Theme.surface-3.with-alpha(0.5);
-
-    animate background { duration: Theme.motion-fast; }
-
-    Image {
-        width: 22px;
-        height: 22px;
-        x: (parent.width - self.width) / 2;
-        y: (parent.height - self.height) / 2;
-        source: root.icon;
-        colorize: #ffffff;
-        image-fit: contain;
+    accessible-action-default => {
+        root.clicked();
     }
 
-    touch := TouchArea {
-        clicked => { root.clicked(); }
+    width: 56px;
+    height: 64px;
+
+    VerticalLayout {
+        spacing: 2px;
+        alignment: center;
+        Rectangle {
+            height: 48px;
+            HorizontalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 48px;
+                    height: 48px;
+                    border-radius: 24px;
+                    background: touch.pressed ? Theme.surface-3.with-alpha(0.75) : (root.active ? Theme.accent-danger.with-alpha(0.7) : Theme.surface-3.with-alpha(0.5));
+                    animate background { duration: Theme.motion-fast; }
+                    Image {
+                        width: 22px;
+                        height: 22px;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        source: root.icon;
+                        colorize: #ffffff;
+                        image-fit: contain;
+                    }
+                    touch := TouchArea {
+                        clicked => {
+                            root.clicked();
+                        }
+                    }
+                }
+            }
+        }
+        Text {
+            text: root.label;
+            color: #ffffff;
+            font-size: 11px;
+            font-weight: 700;
+            horizontal-alignment: center;
+        }
+    }
+}
+
+component HashChip inherits Rectangle {
+    in property <string> label;
+    in property <bool> active: false;
+    callback clicked();
+
+    horizontal-stretch: 0;
+    height: 26px;
+    border-radius: 13px;
+    background: root.active ? #ffffff44 : #ffffff22;
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-sm;
+        padding-right: Theme.spacing-sm;
+        alignment: center;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: #ffffff;
+                font-size: Theme.font-size-caption;
+                font-weight: 700;
+            }
+        }
+    }
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component CommentRow inherits Rectangle {
+    in property <string> who;
+    in property <string> body;
+    in property <int> likes;
+    in property <bool> liked: false;
+    callback like-clicked();
+
+    horizontal-stretch: 1;
+    min-height: 64px;
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        padding-top: Theme.spacing-sm;
+        padding-bottom: Theme.spacing-sm;
+        spacing: Theme.spacing-md;
+        Rectangle {
+            width: 32px;
+            height: 32px;
+            border-radius: 16px;
+            background: Theme.surface-3;
+            VerticalLayout {
+                alignment: center;
+                Text {
+                    text: root.who;
+                    color: Theme.on-surface;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                    horizontal-alignment: center;
+                }
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: "@" + root.who;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+                font-weight: 700;
+            }
+            Text {
+                text: root.body;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                wrap: word-wrap;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            Rectangle {
+                width: 28px;
+                height: 28px;
+                Image {
+                    width: 18px;
+                    height: 18px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: @image-url("@mobile-components/icons/heart.svg");
+                    colorize: root.liked ? Theme.accent-danger : Theme.muted;
+                    image-fit: contain;
+                }
+                TouchArea {
+                    clicked => {
+                        root.like-clicked();
+                    }
+                }
+            }
+            Text {
+                text: root.likes;
+                color: Theme.muted;
+                font-size: 11px;
+                horizontal-alignment: center;
+            }
+        }
+    }
+}
+
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    background: ta.has-hover ? Theme.surface-3 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.destructive ? Theme.accent-danger : Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+        }
     }
 }
 
@@ -59,14 +209,97 @@ export component VideoFeedPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
 
-    in property <string> creator: "@brusselskitchen";
-    in property <string> caption:
-        "Quick midweek mussels — white wine, garlic, parsley, and a stack of fries. Whole thing in under fifteen minutes.";
+    in-out property <int> video-idx: 0;
+    in-out property <bool> playing: true;
+    in-out property <bool> muted: false;
+    in-out property <bool> caption-expanded: false;
+    in-out property <bool> following: false;
+    in-out property <bool> liked0: false;
+    in-out property <bool> liked1: false;
+    in-out property <bool> liked2: false;
+    in-out property <int> likes0: 12300;
+    in-out property <int> likes1: 8412;
+    in-out property <int> likes2: 23001;
+    in-out property <bool> saved: false;
+    in-out property <int> share-mode: 0; // 0 default 1 copied 2 messaged 3 emailed
+    in-out property <bool> tag-meals: false;
+    in-out property <bool> tag-brussels: false;
+    in-out property <bool> comments-open: false;
+    in-out property <bool> more-open: false;
+    in-out property <bool> not-interested: false;
+    in-out property <int> comments-c1-likes: 24;
+    in-out property <int> comments-c2-likes: 7;
+    in-out property <int> comments-c3-likes: 91;
+    in-out property <int> comments-c4-likes: 3;
+    in-out property <int> comments-c5-likes: 51;
+    in-out property <bool> c1-liked: false;
+    in-out property <bool> c2-liked: false;
+    in-out property <bool> c3-liked: false;
+    in-out property <bool> c4-liked: false;
+    in-out property <bool> c5-liked: false;
+    in-out property <string> status-msg: "";
+    in-out property <bool> status-success: false;
+    in-out property <bool> status-danger: false;
+
     callback back-pressed();
     callback like-pressed();
     callback comment-pressed();
     callback share-pressed();
     callback more-pressed();
+    callback follow-pressed();
+    callback video-changed(int);
+
+    function creator-name() -> string {
+        return root.video-idx == 0 ? "@brusselskitchen" : (root.video-idx == 1 ? "@maker.daria" : "@bikepacking_ed");
+    }
+    function caption-text() -> string {
+        return root.video-idx == 0 ? "Quick midweek mussels — white wine, garlic, parsley, and a stack of fries. Whole thing in under fifteen minutes." : (root.video-idx == 1 ? "Restoring a 70s desk lamp I found at a flea market. The trick is rebuilding the bakelite switch from scratch." : "Day 4 of the Pyrenees crossing. Today was 1,800 m of climb and zero coffee. Tomorrow we drop into Spain.");
+    }
+    function bg-color() -> color {
+        return root.video-idx == 0 ? #2a1f0e : (root.video-idx == 1 ? #1a1a2e : #0e2a1f);
+    }
+    function video-label() -> string {
+        return root.video-idx == 0 ? "MUSSELS · 0:42" : (root.video-idx == 1 ? "LAMP · 1:18" : "CLIMB · 0:55");
+    }
+    function liked-now() -> bool {
+        return root.video-idx == 0 ? root.liked0 : (root.video-idx == 1 ? root.liked1 : root.liked2);
+    }
+    function likes-now() -> int {
+        return root.video-idx == 0 ? root.likes0 : (root.video-idx == 1 ? root.likes1 : root.likes2);
+    }
+    function fmt-likes() -> string {
+        return root.likes-now() >= 1000 ? floor(root.likes-now() / 100) / 10 + "K" : "" + root.likes-now();
+    }
+    function share-label() -> string {
+        return root.share-mode == 0 ? "Share" : (root.share-mode == 1 ? "Copied" : (root.share-mode == 2 ? "Sent" : "Emailed"));
+    }
+    function set-status(m: string, ok: bool, bad: bool) {
+        root.status-msg = m;
+        root.status-success = ok;
+        root.status-danger = bad;
+    }
+    function toggle-like-now() {
+        if (root.video-idx == 0) {
+            root.liked0 = !root.liked0;
+            root.likes0 = root.liked0 ? root.likes0 + 1 : root.likes0 - 1;
+        }
+        if (root.video-idx == 1) {
+            root.liked1 = !root.liked1;
+            root.likes1 = root.liked1 ? root.likes1 + 1 : root.likes1 - 1;
+        }
+        if (root.video-idx == 2) {
+            root.liked2 = !root.liked2;
+            root.likes2 = root.liked2 ? root.likes2 + 1 : root.likes2 - 1;
+        }
+        root.set-status(root.liked-now() ? "♥ Liked" : "Unliked", root.liked-now(), !root.liked-now());
+    }
+    function jump-to(i: int) {
+        root.video-idx = i;
+        root.playing = true;
+        root.caption-expanded = false;
+        root.set-status("Now playing " + root.creator-name(), true, false);
+        root.video-changed(i);
+    }
 
     background: Theme.background;
 
@@ -76,22 +309,46 @@ export component VideoFeedPage inherits Window {
         y: 0;
         width: parent.width;
         height: parent.height;
-        background: Theme.surface-3;
+        background: root.bg-color();
         clip: true;
 
         Text {
             x: (parent.width - self.width) / 2;
             y: (parent.height - self.height) / 2;
-            text: "VIDEO";
+            text: root.video-label();
             color: Theme.on-background;
             font-family: "Inter";
             font-size: 32px;
             font-weight: 800;
             letter-spacing: 6px;
         }
+
+        // Centre PAUSED overlay
+        if !root.playing: Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            width: 96px;
+            height: 96px;
+            border-radius: 48px;
+            background: #000000aa;
+            Text {
+                text: "▶";
+                color: #ffffff;
+                font-size: 44px;
+                x: (parent.width - self.width) / 2 + 4px;
+                y: (parent.height - self.height) / 2;
+            }
+        }
+
+        TouchArea {
+            clicked => {
+                root.playing = !root.playing;
+                root.set-status(root.playing ? "▶ playing" : "⏸ paused", root.playing, !root.playing);
+            }
+        }
     }
 
-    // ----- Tiny top bar: just a back arrow -----
+    // ----- Top bar: back + mute + scroll arrows -----
     Rectangle {
         x: 0;
         y: 0;
@@ -101,16 +358,15 @@ export component VideoFeedPage inherits Window {
 
         HorizontalLayout {
             padding: Theme.spacing-md;
-            alignment: start;
+            alignment: stretch;
+            spacing: Theme.spacing-sm;
+            // Back
             Rectangle {
                 width: 36px;
                 height: 36px;
                 border-radius: self.width / 2;
-                background: back-touch.pressed
-                    ? Theme.surface-3.with-alpha(0.75)
-                    : Theme.surface-3.with-alpha(0.5);
+                background: back-touch.pressed ? Theme.surface-3.with-alpha(0.75) : Theme.surface-3.with-alpha(0.5);
                 animate background { duration: Theme.motion-fast; }
-
                 Image {
                     width: 18px;
                     height: 18px;
@@ -120,9 +376,78 @@ export component VideoFeedPage inherits Window {
                     colorize: #ffffff;
                     image-fit: contain;
                 }
-
                 back-touch := TouchArea {
-                    clicked => { root.back-pressed(); }
+                    clicked => {
+                        root.set-status("Back", false, false);
+                        root.back-pressed();
+                    }
+                }
+            }
+            Rectangle {
+                horizontal-stretch: 1;
+            }
+
+            // Video counter
+            Rectangle {
+                horizontal-stretch: 0;
+                height: 28px;
+                border-radius: 14px;
+                background: #00000088;
+                HorizontalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    alignment: center;
+                    VerticalLayout {
+                        alignment: center;
+                        Text {
+                            text: (root.video-idx + 1) + " / 3";
+                            color: #ffffff;
+                            font-size: Theme.font-size-caption;
+                            font-weight: 700;
+                        }
+                    }
+                }
+            }
+            // Mute
+            Rectangle {
+                width: 36px;
+                height: 36px;
+                border-radius: self.width / 2;
+                background: mute-touch.pressed ? Theme.surface-3.with-alpha(0.75) : Theme.surface-3.with-alpha(0.5);
+                Text {
+                    text: root.muted ? "🔇" : "🔊";
+                    color: #ffffff;
+                    font-size: 14px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                }
+                mute-touch := TouchArea {
+                    clicked => {
+                        root.muted = !root.muted;
+                        root.set-status(root.muted ? "Muted" : "Unmuted", !root.muted, false);
+                    }
+                }
+            }
+        }
+    }
+
+    // ----- Status banner (under top bar) -----
+    if !root.status-msg.is-empty: Rectangle {
+        x: Theme.spacing-md;
+        y: 60px;
+        width: parent.width - 2 * Theme.spacing-md;
+        height: 28px;
+        border-radius: 14px;
+        background: root.status-success ? Theme.accent-success.with-alpha(0.85) : (root.status-danger ? Theme.accent-danger.with-alpha(0.85) : #000000aa);
+        HorizontalLayout {
+            alignment: center;
+            VerticalLayout {
+                alignment: center;
+                Text {
+                    text: root.status-msg;
+                    color: #ffffff;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
                 }
             }
         }
@@ -132,28 +457,101 @@ export component VideoFeedPage inherits Window {
     VerticalLayout {
         x: parent.width - self.preferred-width - Theme.spacing-md;
         y: (parent.height - self.preferred-height) / 2;
-        spacing: Theme.spacing-md;
+        spacing: Theme.spacing-sm;
         alignment: center;
 
         FeedActionButton {
             icon: @image-url("@mobile-components/icons/heart.svg");
+            label: root.fmt-likes();
+            active: root.liked-now();
             a11y-label: "Like";
-            clicked => { root.like-pressed(); }
+            clicked => {
+                root.toggle-like-now();
+                root.like-pressed();
+            }
         }
         FeedActionButton {
             icon: @image-url("@mobile-components/icons/inbox.svg");
+            label: "Comments";
             a11y-label: "Comment";
-            clicked => { root.comment-pressed(); }
+            clicked => {
+                root.comments-open = true;
+                root.comment-pressed();
+            }
         }
         FeedActionButton {
             icon: @image-url("@mobile-components/icons/send.svg");
+            label: root.share-label();
+            active: root.share-mode != 0;
             a11y-label: "Share";
-            clicked => { root.share-pressed(); }
+            clicked => {
+                root.share-mode = mod(root.share-mode + 1, 4);
+                root.set-status(root.share-label(), root.share-mode != 0, false);
+                root.share-pressed();
+            }
+        }
+        FeedActionButton {
+            icon: @image-url("@mobile-components/icons/star.svg");
+            label: root.saved ? "Saved" : "Save";
+            active: root.saved;
+            a11y-label: "Save";
+            clicked => {
+                root.saved = !root.saved;
+                root.set-status(root.saved ? "Saved" : "Removed save", root.saved, !root.saved);
+            }
         }
         FeedActionButton {
             icon: @image-url("@mobile-components/icons/more-vertical.svg");
+            label: "More";
             a11y-label: "More";
-            clicked => { root.more-pressed(); }
+            clicked => {
+                root.more-open = true;
+                root.more-pressed();
+            }
+        }
+    }
+
+    // ----- Prev / next chevrons (left middle) -----
+    VerticalLayout {
+        x: Theme.spacing-md;
+        y: (parent.height - self.preferred-height) / 2;
+        spacing: Theme.spacing-md;
+        alignment: center;
+        Rectangle {
+            width: 40px;
+            height: 40px;
+            border-radius: 20px;
+            background: #00000080;
+            Text {
+                text: "▲";
+                color: #ffffff;
+                font-size: 18px;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+            }
+            TouchArea {
+                clicked => {
+                    root.jump-to(mod(root.video-idx + 2, 3));
+                }
+            }
+        }
+        Rectangle {
+            width: 40px;
+            height: 40px;
+            border-radius: 20px;
+            background: #00000080;
+            Text {
+                text: "▼";
+                color: #ffffff;
+                font-size: 18px;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+            }
+            TouchArea {
+                clicked => {
+                    root.jump-to(mod(root.video-idx + 1, 3));
+                }
+            }
         }
     }
 
@@ -162,8 +560,6 @@ export component VideoFeedPage inherits Window {
         x: 0;
         y: parent.height - self.height;
         width: parent.width;
-        // Soft scrim so the white text stays legible regardless of the
-        // underlying frame colour.
         background: @linear-gradient(180deg, #00000000 0%, #000000aa 100%);
 
         VerticalLayout {
@@ -174,25 +570,290 @@ export component VideoFeedPage inherits Window {
             spacing: Theme.spacing-xs;
             alignment: end;
 
-            Text {
-                text: root.creator;
-                color: Theme.on-primary;
-                font-family: "Inter";
-                font-size: Theme.font-size-body-large;
-                font-weight: 700;
+            // Creator + Follow.
+            HorizontalLayout {
+                spacing: Theme.spacing-md;
+                alignment: start;
+                Text {
+                    text: root.creator-name();
+                    color: Theme.on-primary;
+                    font-family: "Inter";
+                    font-size: Theme.font-size-body-large;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                }
+                Rectangle {
+                    horizontal-stretch: 0;
+                    width: 88px;
+                    height: 28px;
+                    border-radius: 14px;
+                    background: root.following ? #ffffff22 : Theme.accent-danger;
+                    border-width: root.following ? 1px : 0px;
+                    border-color: #ffffff;
+                    HorizontalLayout {
+                        alignment: center;
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: root.following ? "Following" : "Follow";
+                                color: #ffffff;
+                                font-size: Theme.font-size-caption;
+                                font-weight: 700;
+                            }
+                        }
+                    }
+                    TouchArea {
+                        clicked => {
+                            root.following = !root.following;
+                            root.set-status(root.following ? "Followed " + root.creator-name() : "Unfollowed", root.following, !root.following);
+                            root.follow-pressed();
+                        }
+                    }
+                }
             }
-            Text {
-                text: root.caption;
-                color: #ffffffcc;
-                font-size: Theme.font-size-body;
-                wrap: word-wrap;
-                overflow: elide;
+
+            // Caption (tap to expand).
+            Rectangle {
+                horizontal-stretch: 1;
+                min-height: 24px;
+                Text {
+                    text: root.caption-expanded ? root.caption-text() : root.caption-text() + " · tap for more";
+                    color: #ffffffcc;
+                    font-size: Theme.font-size-body;
+                    wrap: word-wrap;
+                    overflow: root.caption-expanded ? clip : elide;
+                }
+                TouchArea {
+                    clicked => {
+                        root.caption-expanded = !root.caption-expanded;
+                    }
+                }
             }
-            MetaRow {
-                items: [
-                    { icon: @image-url("@mobile-components/icons/pin.svg"), text: "#meals" },
-                    { icon: @image-url("@mobile-components/icons/star.svg"), text: "#brussels" },
-                ];
+
+            HorizontalLayout {
+                spacing: Theme.spacing-sm;
+                alignment: start;
+                HashChip {
+                    label: "#meals";
+                    active: root.tag-meals;
+                    clicked => {
+                        root.tag-meals = !root.tag-meals;
+                        root.set-status(root.tag-meals ? "Following #meals" : "#meals off", root.tag-meals, false);
+                    }
+                }
+                HashChip {
+                    label: "#brussels";
+                    active: root.tag-brussels;
+                    clicked => {
+                        root.tag-brussels = !root.tag-brussels;
+                        root.set-status(root.tag-brussels ? "Following #brussels" : "#brussels off", root.tag-brussels, false);
+                    }
+                }
+            }
+        }
+    }
+
+    // ===================== Comments sheet =====================
+    if root.comments-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.comments-open = false;
+            }
+        }
+
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            height: 540px;
+            background: Theme.background;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                spacing: 0;
+                // Header
+                Rectangle {
+                    height: 48px;
+                    background: Theme.surface-2;
+                    VerticalLayout {
+                        alignment: center;
+                        HorizontalLayout {
+                            alignment: center;
+                            Rectangle {
+                                width: 36px;
+                                height: 4px;
+                                border-radius: 2px;
+                                background: Theme.muted;
+                            }
+                        }
+                        Text {
+                            text: "Comments";
+                            color: Theme.on-surface;
+                            font-size: Theme.font-size-body;
+                            font-weight: 700;
+                            horizontal-alignment: center;
+                        }
+                    }
+                }
+                ScrollView {
+                    vertical-stretch: 1;
+                    VerticalLayout {
+                        spacing: 0;
+                        CommentRow {
+                            who: "ana_l";
+                            body: "Recipe please??";
+                            likes: root.comments-c1-likes;
+                            liked: root.c1-liked;
+                            like-clicked => {
+                                root.c1-liked = !root.c1-liked;
+                                root.comments-c1-likes = root.c1-liked ? root.comments-c1-likes + 1 : root.comments-c1-likes - 1;
+                            }
+                        }
+                        CommentRow {
+                            who: "jpvd";
+                            body: "Looks great but where are the frites??";
+                            likes: root.comments-c2-likes;
+                            liked: root.c2-liked;
+                            like-clicked => {
+                                root.c2-liked = !root.c2-liked;
+                                root.comments-c2-likes = root.c2-liked ? root.comments-c2-likes + 1 : root.comments-c2-likes - 1;
+                            }
+                        }
+                        CommentRow {
+                            who: "mussels4lyfe";
+                            body: "Belgian beer next time, white wine is sacrilege.";
+                            likes: root.comments-c3-likes;
+                            liked: root.c3-liked;
+                            like-clicked => {
+                                root.c3-liked = !root.c3-liked;
+                                root.comments-c3-likes = root.c3-liked ? root.comments-c3-likes + 1 : root.comments-c3-likes - 1;
+                            }
+                        }
+                        CommentRow {
+                            who: "kim_t";
+                            body: "Saving this for the weekend";
+                            likes: root.comments-c4-likes;
+                            liked: root.c4-liked;
+                            like-clicked => {
+                                root.c4-liked = !root.c4-liked;
+                                root.comments-c4-likes = root.c4-liked ? root.comments-c4-likes + 1 : root.comments-c4-likes - 1;
+                            }
+                        }
+                        CommentRow {
+                            who: "rhianna_m";
+                            body: "Where do you get fresh mussels?";
+                            likes: root.comments-c5-likes;
+                            liked: root.c5-liked;
+                            like-clicked => {
+                                root.c5-liked = !root.c5-liked;
+                                root.comments-c5-likes = root.c5-liked ? root.comments-c5-likes + 1 : root.comments-c5-likes - 1;
+                            }
+                        }
+                        Rectangle {
+                            height: Theme.spacing-xl;
+                        }
+                    }
+                }
+                // Close bar
+                Rectangle {
+                    height: 48px;
+                    background: Theme.surface-2;
+                    SheetRow {
+                        label: "Close comments";
+                        clicked => {
+                            root.comments-open = false;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ===================== More sheet =====================
+    if root.more-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.more-open = false;
+            }
+        }
+
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: Theme.surface-2;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.muted;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: "Video options";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 700;
+                    }
+                }
+                SheetRow {
+                    label: root.saved ? "★ Remove from saved" : "★ Save to collection";
+                    clicked => {
+                        root.saved = !root.saved;
+                        root.set-status(root.saved ? "Saved" : "Removed", root.saved, !root.saved);
+                        root.more-open = false;
+                    }
+                }
+                SheetRow {
+                    label: root.following ? "Unfollow " + root.creator-name() : "Follow " + root.creator-name();
+                    clicked => {
+                        root.following = !root.following;
+                        root.set-status(root.following ? "Followed" : "Unfollowed", root.following, !root.following);
+                        root.more-open = false;
+                    }
+                }
+                SheetRow {
+                    label: root.not-interested ? "Marked: not interested" : "Not interested";
+                    clicked => {
+                        root.not-interested = !root.not-interested;
+                        root.set-status(root.not-interested ? "Won't show again" : "Cleared", false, root.not-interested);
+                        root.more-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Report video";
+                    destructive: true;
+                    clicked => {
+                        root.set-status("Reported — thanks", true, false);
+                        root.more-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.more-open = false;
+                    }
+                }
             }
         }
     }

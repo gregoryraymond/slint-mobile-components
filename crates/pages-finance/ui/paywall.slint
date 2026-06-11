@@ -2,25 +2,20 @@
 // =====================================================================
 //
 // Three-tier pricing comparison (Free / Pro / Team) — the conversion
-// surface app store onboarding flows + B2B SaaS dashboards converge on.
+// surface app-store onboarding flows + B2B SaaS dashboards converge on.
 // Demonstrates:
 //
-//   - Three side-by-side tier cards where one card is visually elevated
-//     (the recommended tier — Pro) via a "Most popular" pill, an info-
-//     tone outline ring, and a slightly taller bounding box.
-//   - Feature checklist with a check / dash glyph per row (inclusion vs
-//     omission), tinted by tone.
-//   - A persistent footer CTA — "Subscribe" with the recommended tier's
-//     accent, plus a tiny "restore purchase" textbutton beside it.
-//
-// Layout
-// ------
-//
-//   AppBar — close (x) leading + "Restore" text in trailing slot
-//   Hero block — headline + subhead
-//   Three TierCards in a horizontal row (free/pro/team)
-//   FAQ-style accordion teaser (3 collapsed rows)
-//   Footer — Subscribe primary button + small restore link
+//   - Three vertically-stacked tier cards. Each is tappable to select.
+//     The recommended tier (Pro) keeps its "MOST POPULAR" pill; the
+//     selected tier gets a success-green outline ring + a small
+//     "Selected" tag.
+//   - Billing cycle toggle (Monthly / Annual — save 20%) above the
+//     cards. Annual recomputes every displayed price.
+//   - Feature checklist with a check / dash glyph per row.
+//   - FAQ rows expand on tap to show the answer body.
+//   - Footer CTA labelled with the active tier + price. Two-tap
+//     confirm; after subscribing, becomes `Subscribed to <Tier> ✓`.
+//   - Restore purchase TextButton increments a count + status.
 
 import { ScrollView } from "std-widgets.slint";
 import { Theme, Tone } from "@mobile-theme/theme.slint";
@@ -29,8 +24,7 @@ import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
 import { MobileButton, TextButton } from "@mobile-components/button.slint";
 import { Divider } from "@mobile-components/divider.slint";
 
-// One feature row inside a tier card. `included: false` swaps the
-// leading glyph from a check to a dash and dims the row.
+// One feature row inside a tier card.
 component FeatureRow inherits Rectangle {
     in property <string> text;
     in property <bool> included: true;
@@ -61,30 +55,41 @@ component FeatureRow inherits Rectangle {
     }
 }
 
-// One pricing tier card.
-//
-// Layout switched from horizontal-row tiers to a vertical stack — at
-// 412 px mobile width, three side-by-side cards push the third
-// off-screen. Vertical stacking also lets each tier comfortably show
-// its full feature checklist without truncation.
+// One pricing tier card — tappable.
 component TierCard inherits Rectangle {
     in property <string> name;
     in property <string> price;
     in property <string> price-unit: "/mo";
+    in property <string> annual-note;
     in property <string> tagline;
     in property <bool> recommended: false;
+    in property <bool> selected: false;
+    callback clicked();
 
     horizontal-stretch: 1;
-    background: root.recommended ? Theme.surface-2 : Theme.surface-1;
+    background: root.selected ? Theme.surface-2
+        : root.recommended ? Theme.surface-2
+        : Theme.surface-1;
     border-radius: Theme.radius-md;
-    drop-shadow-blur: root.recommended ? Theme.elevation-2-blur : Theme.elevation-1-blur;
-    drop-shadow-color: root.recommended ? Theme.elevation-2-color : Theme.elevation-1-color;
-    drop-shadow-offset-y: root.recommended ? Theme.elevation-2-y : Theme.elevation-1-y;
-    border-width: root.recommended ? 1px : 0px;
-    border-color: Theme.accent-info;
+    drop-shadow-blur: (root.selected || root.recommended)
+        ? Theme.elevation-2-blur
+        : Theme.elevation-1-blur;
+    drop-shadow-color: (root.selected || root.recommended)
+        ? Theme.elevation-2-color
+        : Theme.elevation-1-color;
+    drop-shadow-offset-y: (root.selected || root.recommended)
+        ? Theme.elevation-2-y
+        : Theme.elevation-1-y;
+    border-width: root.selected ? 2px
+        : root.recommended ? 1px
+        : 0px;
+    border-color: root.selected ? Theme.accent-success
+        : root.recommended ? Theme.accent-info
+        : transparent;
+    animate background { duration: Theme.motion-fast; }
+    animate border-color { duration: Theme.motion-fast; }
+    animate border-width { duration: Theme.motion-fast; }
 
-    // "Most popular" pill — only on the recommended tier, anchored to
-    // the top-right corner so the card edge "carries" the badge.
     if root.recommended: Rectangle {
         x: parent.width - self.width - Theme.spacing-md;
         y: -10px;
@@ -104,15 +109,33 @@ component TierCard inherits Rectangle {
             height: parent.height;
         }
     }
+    if root.selected: Rectangle {
+        x: Theme.spacing-md;
+        y: -10px;
+        width: sel-text.preferred-width + 16px;
+        height: 20px;
+        border-radius: 10px;
+        background: Theme.accent-success;
+        sel-text := Text {
+            text: "SELECTED";
+            color: Theme.on-primary;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            width: parent.width;
+            height: parent.height;
+        }
+    }
 
     VerticalLayout {
         padding: Theme.spacing-md;
-        padding-top: root.recommended ? Theme.spacing-md + 6px : Theme.spacing-md;
+        padding-top: (root.recommended || root.selected)
+            ? Theme.spacing-md + 6px
+            : Theme.spacing-md;
         spacing: Theme.spacing-sm;
 
-        // Header: tier name (left) + price (right) on the same row, so
-        // the vertical card stays compact while keeping the two key
-        // pieces of info visually anchored to opposite edges.
         HorizontalLayout {
             spacing: Theme.spacing-sm;
             alignment: stretch;
@@ -131,66 +154,218 @@ component TierCard inherits Rectangle {
                     font-size: Theme.font-size-caption;
                 }
             }
-            HorizontalLayout {
-                spacing: 2px;
+            VerticalLayout {
                 alignment: end;
-                Heading {
-                    text: root.price;
-                    style: HeadingStyle.bold-impact;
-                    color: Theme.on-surface;
-                    font-size: 24px;
-                }
-                VerticalLayout {
+                spacing: 2px;
+                HorizontalLayout {
+                    spacing: 2px;
                     alignment: end;
-                    padding-bottom: Theme.spacing-xs;
-                    Text {
-                        text: root.price-unit;
-                        color: Theme.muted;
-                        font-size: Theme.font-size-caption;
+                    Heading {
+                        text: root.price;
+                        style: HeadingStyle.bold-impact;
+                        color: Theme.on-surface;
+                        font-size: 24px;
                     }
+                    VerticalLayout {
+                        alignment: end;
+                        padding-bottom: Theme.spacing-xs;
+                        Text {
+                            text: root.price-unit;
+                            color: Theme.muted;
+                            font-size: Theme.font-size-caption;
+                        }
+                    }
+                }
+                if root.annual-note != "": Text {
+                    text: root.annual-note;
+                    color: Theme.accent-success;
+                    font-size: 10px;
+                    font-weight: 700;
+                    horizontal-alignment: right;
                 }
             }
         }
         Divider { }
         @children
     }
+
+    TouchArea { clicked => { root.clicked(); } }
 }
 
-// FAQ teaser row — collapsed accordion.
+// FAQ teaser row — expands on tap.
 component FaqRow inherits Rectangle {
     in property <string> question;
+    in property <string> answer;
+    in property <bool> expanded: false;
+    callback clicked();
 
-    height: 48px;
-    HorizontalLayout {
-        padding: Theme.spacing-md;
-        spacing: Theme.spacing-md;
-        alignment: stretch;
-        Text {
-            text: root.question;
-            color: Theme.on-surface;
-            font-size: Theme.font-size-body;
-            vertical-alignment: center;
-            horizontal-stretch: 1;
+    background: root.expanded ? Theme.surface-2
+        : touch.pressed ? Theme.surface-pressed
+        : transparent;
+    animate background { duration: Theme.motion-fast; }
+
+    VerticalLayout {
+        spacing: 0;
+        HorizontalLayout {
+            padding: Theme.spacing-md;
+            spacing: Theme.spacing-md;
+            alignment: stretch;
+            Text {
+                text: root.question;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+            }
+            Image {
+                width: 16px;
+                height: 16px;
+                source: @image-url("@mobile-components/icons/chevron-right.svg");
+                colorize: root.expanded ? Theme.accent-info : Theme.muted;
+                image-fit: contain;
+                vertical-alignment: center;
+            }
         }
-        Image {
-            width: 16px;
-            height: 16px;
-            source: @image-url("@mobile-components/icons/chevron-right.svg");
-            colorize: Theme.muted;
-            image-fit: contain;
-            vertical-alignment: center;
+        if root.expanded: Rectangle {
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                padding-bottom: Theme.spacing-md;
+                Text {
+                    text: root.answer;
+                    color: Theme.muted;
+                    font-size: Theme.font-size-caption;
+                    wrap: word-wrap;
+                }
+            }
         }
     }
+    touch := TouchArea { clicked => { root.clicked(); } }
 }
 
 export component PaywallPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
-    in property <int> selected-tier: 1;   // 0=Free, 1=Pro, 2=Team
     callback close-pressed();
     callback restore-pressed();
     callback tier-selected(int);
     callback subscribe-pressed();
+    callback billing-cycle-changed(string);
+
+    // ----- Interactive state -----
+    private property <int> selected-tier: 1; // 0=Free 1=Pro 2=Team
+    private property <int> billing-cycle: 0; // 0=Monthly 1=Annual
+    private property <int> subscribed-tier: -1;
+    private property <bool> subscribe-confirming: false;
+    private property <int> expanded-faq: -1;
+    private property <int> restore-count: 0;
+    private property <string> status-msg: "Tap a tier to switch · toggle Annual to save 20%";
+    private property <bool> status-is-success: false;
+    private property <bool> status-is-danger: false;
+
+    // ----- Helpers -----
+    function tier-name(i: int) -> string {
+        if (i == 0) { return "Free"; }
+        if (i == 1) { return "Pro"; }
+        return "Team";
+    }
+    function monthly-cents(i: int) -> int {
+        if (i == 0) { return 0; }
+        if (i == 1) { return 1200; }
+        return 2800;
+    }
+    function display-cents(i: int) -> int {
+        return root.billing-cycle == 1
+            ? floor(root.monthly-cents(i) * 80 / 100)
+            : root.monthly-cents(i);
+    }
+    function display-price-str(i: int) -> string {
+        return "$" + floor(root.display-cents(i) / 100)
+            + (mod(root.display-cents(i), 100) == 0
+                ? ""
+                : "." + (mod(root.display-cents(i), 100) < 10
+                    ? "0" + mod(root.display-cents(i), 100)
+                    : "" + mod(root.display-cents(i), 100)));
+    }
+    function annual-note(i: int) -> string {
+        return root.billing-cycle == 1 && root.monthly-cents(i) > 0
+            ? "save 20%"
+            : "";
+    }
+    function selected-price-str() -> string {
+        return root.display-price-str(root.selected-tier);
+    }
+    function cycle-name() -> string {
+        return root.billing-cycle == 0 ? "Monthly" : "Annual";
+    }
+
+    // ----- Mutations -----
+    public function pick-tier(i: int) {
+        root.selected-tier = i;
+        root.tier-selected(i);
+        root.subscribe-confirming = false;
+        root.status-msg = "Selected " + root.tier-name(i)
+            + " · " + root.display-price-str(i) + "/mo";
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    public function set-cycle(c: int) {
+        root.billing-cycle = c;
+        root.subscribe-confirming = false;
+        root.billing-cycle-changed(root.cycle-name());
+        root.status-msg = "Billing · " + root.cycle-name()
+            + (c == 1 ? " · save 20%" : "");
+        root.status-is-success = c == 1;
+        root.status-is-danger = false;
+    }
+    public function tap-faq(i: int) {
+        root.expanded-faq = root.expanded-faq == i ? -1 : i;
+        root.status-msg = root.expanded-faq == i
+            ? "FAQ #" + (i + 1) + " expanded"
+            : "FAQ collapsed";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function do-subscribe() {
+        if (root.subscribed-tier == root.selected-tier) {
+            // Toggle off
+            root.subscribed-tier = -1;
+            root.status-msg = "Subscription cancelled";
+            root.status-is-success = false;
+            root.status-is-danger = true;
+            return;
+        }
+        if (root.selected-tier == 0) {
+            root.subscribed-tier = 0;
+            root.status-msg = "Free tier · no payment required";
+            root.status-is-success = true;
+            root.status-is-danger = false;
+            return;
+        }
+        if (!root.subscribe-confirming) {
+            root.subscribe-confirming = true;
+            root.status-msg = "Tap again to confirm "
+                + root.tier-name(root.selected-tier)
+                + " · " + root.display-price-str(root.selected-tier) + "/mo";
+            root.status-is-success = false;
+            root.status-is-danger = false;
+            return;
+        }
+        root.subscribe-confirming = false;
+        root.subscribed-tier = root.selected-tier;
+        root.subscribe-pressed();
+        root.status-msg = "Subscribed · " + root.tier-name(root.selected-tier)
+            + " · " + root.display-price-str(root.selected-tier) + "/mo (" + root.cycle-name() + ")";
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    public function tap-restore() {
+        root.restore-count = root.restore-count + 1;
+        root.restore-pressed();
+        root.status-msg = "Restored purchase check (#" + root.restore-count + ")";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
 
     background: Theme.background;
 
@@ -204,88 +379,217 @@ export component PaywallPage inherits Window {
             leading-pressed => { root.close-pressed(); }
         }
 
-        // Hero + 3 tier cards (each with its feature checklist) + FAQ
-        // teaser overflow a single 892-px screen, so the middle region
-        // scrolls between the pinned AppBar and the footer CTA below.
+        // ----- Status banner ---------------------------------------
+        Rectangle {
+            height: 32px;
+            background: root.status-is-danger ? Theme.accent-danger
+                : root.status-is-success ? Theme.accent-success
+                : Theme.surface-2;
+            animate background { duration: Theme.motion-fast; }
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                Text {
+                    text: root.status-msg;
+                    color: (root.status-is-danger || root.status-is-success)
+                        ? Theme.on-primary
+                        : Theme.on-surface;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+            }
+        }
+
         ScrollView {
             vertical-stretch: 1;
 
-        VerticalLayout {
-            padding: Theme.spacing-md;
-            spacing: Theme.spacing-md;
-
-            // ----- Hero -----
             VerticalLayout {
-                spacing: Theme.spacing-xs;
-                Heading {
-                    text: "Unlock everything";
-                    style: HeadingStyle.serif-display;
-                    color: Theme.on-background;
-                    font-size: 32px;
-                }
-                Text {
-                    text: "Choose the plan that fits how you work. Cancel anytime.";
-                    color: Theme.muted;
-                    font-size: Theme.font-size-body;
-                    wrap: word-wrap;
-                }
-            }
-
-            // ----- Tier cards (vertical stack) -----
-            VerticalLayout {
+                padding: Theme.spacing-md;
                 spacing: Theme.spacing-md;
-                padding-top: Theme.spacing-sm;
-                TierCard {
-                    name: "Free";
-                    tagline: "Get started";
-                    price: "$0";
-                    price-unit: "/mo";
-                    FeatureRow { text: "1 project"; }
-                    FeatureRow { text: "Community support"; }
-                    FeatureRow { text: "Team workspaces"; included: false; }
-                }
-                TierCard {
-                    name: "Pro";
-                    tagline: "For individuals shipping production work";
-                    price: "$12";
-                    price-unit: "/mo";
-                    recommended: true;
-                    FeatureRow { text: "Unlimited projects"; }
-                    FeatureRow { text: "Email support"; }
-                    FeatureRow { text: "Premium templates"; }
-                    FeatureRow { text: "Custom domain"; }
-                }
-                TierCard {
-                    name: "Team";
-                    tagline: "Collaborate with up to 25 seats";
-                    price: "$28";
-                    price-unit: "/mo";
-                    FeatureRow { text: "Everything in Pro"; }
-                    FeatureRow { text: "Team workspaces"; }
-                    FeatureRow { text: "SSO + audit log"; }
-                    FeatureRow { text: "Priority support"; }
-                }
-            }
 
-            // ----- FAQ teaser -----
-            VerticalLayout {
-                spacing: 0;
-                padding-top: Theme.spacing-md;
-                Heading {
-                    text: "Frequently asked";
-                    style: HeadingStyle.serif-light;
-                    color: Theme.on-background;
-                    font-size: Theme.font-size-title;
+                // ----- Hero -----
+                VerticalLayout {
+                    spacing: Theme.spacing-xs;
+                    Heading {
+                        text: "Unlock everything";
+                        style: HeadingStyle.serif-display;
+                        color: Theme.on-background;
+                        font-size: 32px;
+                    }
+                    Text {
+                        text: "Choose the plan that fits how you work. Cancel anytime.";
+                        color: Theme.muted;
+                        font-size: Theme.font-size-body;
+                        wrap: word-wrap;
+                    }
                 }
-                Rectangle { height: Theme.spacing-sm; }
-                FaqRow { question: "Can I switch plans later?"; }
-                Divider { }
-                FaqRow { question: "How does billing work?"; }
-                Divider { }
-                FaqRow { question: "What payment methods do you support?"; }
+
+                // ----- Billing cycle toggle -----
+                Rectangle {
+                    height: 44px;
+                    border-radius: Theme.radius-md;
+                    background: Theme.surface-2;
+                    HorizontalLayout {
+                        padding: Theme.spacing-xs;
+                        spacing: Theme.spacing-xs;
+                        Rectangle {
+                            horizontal-stretch: 1;
+                            border-radius: Theme.radius-sm;
+                            background: root.billing-cycle == 0
+                                ? Theme.surface-1
+                                : transparent;
+                            drop-shadow-blur: root.billing-cycle == 0
+                                ? Theme.elevation-1-blur
+                                : 0px;
+                            drop-shadow-color: Theme.elevation-1-color;
+                            drop-shadow-offset-y: root.billing-cycle == 0
+                                ? Theme.elevation-1-y
+                                : 0px;
+                            animate background { duration: Theme.motion-fast; }
+                            Text {
+                                text: "Monthly";
+                                color: root.billing-cycle == 0
+                                    ? Theme.on-surface
+                                    : Theme.muted;
+                                font-size: Theme.font-size-body;
+                                font-weight: 700;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                width: parent.width;
+                                height: parent.height;
+                            }
+                            TouchArea { clicked => { root.set-cycle(0); } }
+                        }
+                        Rectangle {
+                            horizontal-stretch: 1;
+                            border-radius: Theme.radius-sm;
+                            background: root.billing-cycle == 1
+                                ? Theme.surface-1
+                                : transparent;
+                            drop-shadow-blur: root.billing-cycle == 1
+                                ? Theme.elevation-1-blur
+                                : 0px;
+                            drop-shadow-color: Theme.elevation-1-color;
+                            drop-shadow-offset-y: root.billing-cycle == 1
+                                ? Theme.elevation-1-y
+                                : 0px;
+                            animate background { duration: Theme.motion-fast; }
+                            HorizontalLayout {
+                                spacing: 4px;
+                                alignment: center;
+                                Text {
+                                    text: "Annual";
+                                    color: root.billing-cycle == 1
+                                        ? Theme.on-surface
+                                        : Theme.muted;
+                                    font-size: Theme.font-size-body;
+                                    font-weight: 700;
+                                    vertical-alignment: center;
+                                }
+                                Rectangle {
+                                    width: sv.preferred-width + 8px;
+                                    height: 16px;
+                                    border-radius: 8px;
+                                    background: Theme.accent-success;
+                                    sv := Text {
+                                        text: "-20%";
+                                        color: Theme.on-primary;
+                                        font-size: 9px;
+                                        font-weight: 800;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                        width: parent.width;
+                                        height: parent.height;
+                                    }
+                                }
+                            }
+                            TouchArea { clicked => { root.set-cycle(1); } }
+                        }
+                    }
+                }
+
+                // ----- Tier cards (vertical stack) -----
+                VerticalLayout {
+                    spacing: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    TierCard {
+                        name: "Free";
+                        tagline: "Get started";
+                        price: root.display-price-str(0);
+                        price-unit: "/mo";
+                        annual-note: "";
+                        selected: root.selected-tier == 0;
+                        clicked => { root.pick-tier(0); }
+                        FeatureRow { text: "1 project"; }
+                        FeatureRow { text: "Community support"; }
+                        FeatureRow { text: "Team workspaces"; included: false; }
+                    }
+                    TierCard {
+                        name: "Pro";
+                        tagline: "For individuals shipping production work";
+                        price: root.display-price-str(1);
+                        price-unit: "/mo";
+                        annual-note: root.annual-note(1);
+                        recommended: true;
+                        selected: root.selected-tier == 1;
+                        clicked => { root.pick-tier(1); }
+                        FeatureRow { text: "Unlimited projects"; }
+                        FeatureRow { text: "Email support"; }
+                        FeatureRow { text: "Premium templates"; }
+                        FeatureRow { text: "Custom domain"; }
+                    }
+                    TierCard {
+                        name: "Team";
+                        tagline: "Collaborate with up to 25 seats";
+                        price: root.display-price-str(2);
+                        price-unit: "/mo";
+                        annual-note: root.annual-note(2);
+                        selected: root.selected-tier == 2;
+                        clicked => { root.pick-tier(2); }
+                        FeatureRow { text: "Everything in Pro"; }
+                        FeatureRow { text: "Team workspaces"; }
+                        FeatureRow { text: "SSO + audit log"; }
+                        FeatureRow { text: "Priority support"; }
+                    }
+                }
+
+                // ----- FAQ -----
+                VerticalLayout {
+                    spacing: 0;
+                    padding-top: Theme.spacing-md;
+                    Heading {
+                        text: "Frequently asked";
+                        style: HeadingStyle.serif-light;
+                        color: Theme.on-background;
+                        font-size: Theme.font-size-title;
+                    }
+                    Rectangle { height: Theme.spacing-sm; }
+                    FaqRow {
+                        question: "Can I switch plans later?";
+                        answer: "Yes — upgrade or downgrade any time from Settings. Changes prorate immediately, so you only pay for the time you use each tier.";
+                        expanded: root.expanded-faq == 0;
+                        clicked => { root.tap-faq(0); }
+                    }
+                    Divider { }
+                    FaqRow {
+                        question: "How does billing work?";
+                        answer: "We bill on the same day each month (or year, on Annual). Cancel anytime — there's no termination fee and you keep access through the current period.";
+                        expanded: root.expanded-faq == 1;
+                        clicked => { root.tap-faq(1); }
+                    }
+                    Divider { }
+                    FaqRow {
+                        question: "What payment methods do you support?";
+                        answer: "Visa, Mastercard, Amex, Discover, Apple Pay, Google Pay, and PayPal in most countries. Bank transfer is available on Team plans.";
+                        expanded: root.expanded-faq == 2;
+                        clicked => { root.tap-faq(2); }
+                    }
+                }
             }
         }
-        }       // end ScrollView
 
         // ----- Footer CTA -----
         Rectangle {
@@ -297,15 +601,26 @@ export component PaywallPage inherits Window {
                 padding: Theme.spacing-md;
                 spacing: Theme.spacing-sm;
                 MobileButton {
-                    text: "Subscribe to Pro — $12/mo";
-                    tone: Tone.info;
-                    clicked => { root.subscribe-pressed(); }
+                    text: root.subscribed-tier == root.selected-tier
+                        ? "Subscribed to " + root.tier-name(root.selected-tier) + " ✓ · tap to cancel"
+                        : root.subscribe-confirming
+                            ? "Tap again to confirm · " + root.selected-price-str() + "/mo"
+                            : root.selected-tier == 0
+                                ? "Start on Free"
+                                : "Subscribe to " + root.tier-name(root.selected-tier)
+                                    + " — " + root.selected-price-str() + "/mo";
+                    tone: root.subscribed-tier == root.selected-tier ? Tone.success
+                        : root.subscribe-confirming ? Tone.warning
+                        : Tone.info;
+                    clicked => { root.do-subscribe(); }
                 }
                 HorizontalLayout {
                     alignment: center;
                     TextButton {
-                        text: "Restore purchase";
-                        clicked => { root.restore-pressed(); }
+                        text: root.restore-count > 0
+                            ? "Restore purchase (" + root.restore-count + " checks)"
+                            : "Restore purchase";
+                        clicked => { root.tap-restore(); }
                     }
                 }
             }

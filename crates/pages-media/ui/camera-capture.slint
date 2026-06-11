@@ -1,21 +1,21 @@
 // CameraCapturePage
 // =====================================================================
 //
-// A camera viewfinder — the default "take a photo" screen. Distinct
-// from `DocumentScannerPage` (edge-detection brackets) and
-// `QRScannerPage` (a scan window). Demonstrates a full-bleed capture
-// surface:
+// A camera viewfinder — the default "take a photo" screen.
 //
-//   - A full-bleed viewfinder (a gradient stand-in) with a subtle
-//     rule-of-thirds grid and a tap-to-focus square.
-//   - A top control row: flash / timer / aspect-ratio chips.
-//   - A horizontal mode strip with the active mode centred.
-//   - A bottom bar: a gallery thumbnail, the big shutter button, and
-//     a flip-camera disc.
+// Interactive behaviour
+//   - Tap the viewfinder to move the focus square; status banner shows
+//     the new fractional position.
+//   - Flash / Timer / Aspect controls cycle through 3 modes each.
+//   - Mode strip flips between VIDEO / PHOTO / PORTRAIT / NIGHT.
+//   - Shutter starts a countdown when the timer is non-Off, then
+//     "captures" (increments a counter and rotates the gallery
+//     thumbnail gradient).
+//   - Flip camera toggles front/back. Gallery thumbnail opens.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 
-// A small round top-control with a glyph label.
+// One small round top-control with a glyph label.
 component TopControl inherits Rectangle {
     in property <string> glyph;
     in property <string> a11y;
@@ -48,7 +48,6 @@ component TopControl inherits Rectangle {
     }
 }
 
-// One mode label in the mode strip.
 component ModeLabel inherits Rectangle {
     in property <string> label;
     in property <bool> active: false;
@@ -81,13 +80,179 @@ component ModeLabel inherits Rectangle {
 export component CameraCapturePage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
-    in-out property <int> mode: 0;
+    in-out property <int> mode: 1; // 0=Video 1=Photo 2=Portrait 3=Night
     in-out property <bool> flash: false;
     callback close-pressed();
     callback shutter-pressed();
     callback flip-pressed();
     callback gallery-pressed();
     callback mode-pressed(int);
+    callback capture-saved(int);
+
+    // ----- Interactive state -----
+    private property <int> flash-mode: 0; // 0=Off 1=On 2=Auto
+    private property <int> timer-mode: 0; // 0=Off 1=3s 2=10s
+    private property <int> aspect-mode: 0; // 0=3:4 1=1:1 2=16:9
+    private property <float> focus-frac-x: 0.56;
+    private property <float> focus-frac-y: 0.42;
+    private property <bool> camera-front: false;
+    private property <int> countdown-sec: 0;
+    private property <bool> countdown-active: false;
+    private property <int> capture-count: 0;
+    private property <string> status-msg: "Tap to focus · cycle Flash / Timer / Aspect · shutter captures";
+    private property <bool> status-is-success: false;
+    private property <bool> status-is-danger: false;
+
+    // ----- Timer for countdown -----
+    Timer {
+        interval: 1s;
+        running: root.countdown-active;
+        triggered => {
+            if (root.countdown-sec > 1) {
+                root.countdown-sec = root.countdown-sec - 1;
+            } else {
+                root.countdown-sec = 0;
+                root.countdown-active = false;
+                root.do-capture();
+            }
+        }
+    }
+
+    // ----- Helpers -----
+    function flash-label(m: int) -> string {
+        if (m == 0) { return "⚡"; }
+        if (m == 1) { return "⚡!"; }
+        return "⚡A";
+    }
+    function flash-name(m: int) -> string {
+        if (m == 0) { return "Off"; }
+        if (m == 1) { return "On"; }
+        return "Auto";
+    }
+    function timer-label(m: int) -> string {
+        if (m == 0) { return "⏱"; }
+        if (m == 1) { return "3s"; }
+        return "10s";
+    }
+    function timer-seconds(m: int) -> int {
+        if (m == 0) { return 0; }
+        if (m == 1) { return 3; }
+        return 10;
+    }
+    function aspect-label(m: int) -> string {
+        if (m == 0) { return "3:4"; }
+        if (m == 1) { return "1:1"; }
+        return "16:9";
+    }
+    function mode-name(m: int) -> string {
+        if (m == 0) { return "Video"; }
+        if (m == 1) { return "Photo"; }
+        if (m == 2) { return "Portrait"; }
+        return "Night";
+    }
+    function gallery-fill() -> brush {
+        // 6 different gradients rotated by capture-count
+        if (mod(root.capture-count, 6) == 0) {
+            return @linear-gradient(135deg, #4f8cff 0%, #b45309 100%);
+        }
+        if (mod(root.capture-count, 6) == 1) {
+            return @linear-gradient(135deg, #16a34a 0%, #14532d 100%);
+        }
+        if (mod(root.capture-count, 6) == 2) {
+            return @linear-gradient(135deg, #9333ea 0%, #581c87 100%);
+        }
+        if (mod(root.capture-count, 6) == 3) {
+            return @linear-gradient(135deg, #ef4444 0%, #7f1d1d 100%);
+        }
+        if (mod(root.capture-count, 6) == 4) {
+            return @linear-gradient(135deg, #f59e0b 0%, #92400e 100%);
+        }
+        return @linear-gradient(135deg, #0e7490 0%, #134e4a 100%);
+    }
+
+    // ----- Mutations -----
+    public function tap-focus(fx: float, fy: float) {
+        root.focus-frac-x = fx;
+        root.focus-frac-y = fy;
+        root.status-msg = "Focus · " + floor(fx * 100) + "%, "
+            + floor(fy * 100) + "%";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function cycle-flash() {
+        root.flash-mode = mod(root.flash-mode + 1, 3);
+        root.flash = root.flash-mode != 0;
+        root.status-msg = "Flash · " + root.flash-name(root.flash-mode);
+        root.status-is-success = root.flash-mode == 1;
+        root.status-is-danger = false;
+    }
+    public function cycle-timer() {
+        root.timer-mode = mod(root.timer-mode + 1, 3);
+        root.status-msg = "Timer · " + (root.timer-mode == 0
+            ? "Off" : root.timer-seconds(root.timer-mode) + "s");
+        root.status-is-success = root.timer-mode > 0;
+        root.status-is-danger = false;
+    }
+    public function cycle-aspect() {
+        root.aspect-mode = mod(root.aspect-mode + 1, 3);
+        root.status-msg = "Aspect · " + root.aspect-label(root.aspect-mode);
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function pick-mode(m: int) {
+        root.mode = m;
+        root.mode-pressed(m);
+        root.status-msg = "Mode · " + root.mode-name(m);
+        root.status-is-success = m == 1;
+        root.status-is-danger = m == 0;
+    }
+    public function tap-shutter() {
+        root.shutter-pressed();
+        if (root.timer-mode == 0) {
+            root.do-capture();
+            return;
+        }
+        root.countdown-sec = root.timer-seconds(root.timer-mode);
+        root.countdown-active = true;
+        root.status-msg = "Countdown · " + root.countdown-sec + "s";
+        root.status-is-success = false;
+        root.status-is-danger = true;
+    }
+    public function do-capture() {
+        root.capture-count = root.capture-count + 1;
+        root.capture-saved(root.capture-count);
+        root.status-msg = "Captured · #" + root.capture-count
+            + " · " + root.mode-name(root.mode);
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    public function tap-flip() {
+        root.camera-front = !root.camera-front;
+        root.flip-pressed();
+        root.status-msg = "Camera · " + (root.camera-front ? "Front" : "Back");
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    public function tap-gallery() {
+        root.gallery-pressed();
+        root.status-msg = "Gallery · " + root.capture-count + " photos this session";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function tap-close() {
+        if (root.countdown-active) {
+            root.countdown-active = false;
+            root.countdown-sec = 0;
+            root.status-msg = "Countdown cancelled";
+            root.status-is-success = false;
+            root.status-is-danger = true;
+            return;
+        }
+        root.close-pressed();
+        root.status-msg = "Close · returning";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
 
     background: #05070b;
 
@@ -97,9 +262,12 @@ export component CameraCapturePage inherits Window {
         y: 0;
         width: parent.width;
         height: parent.height;
-        background: @linear-gradient(160deg, #3a4150 0%, #0c0f16 100%);
+        background: root.camera-front
+            ? @linear-gradient(160deg, #5a4a55 0%, #1a1218 100%)
+            : @linear-gradient(160deg, #3a4150 0%, #0c0f16 100%);
+        animate background { duration: Theme.motion-fast; }
         clip: true;
-        // Rule-of-thirds grid.
+        // Rule-of-thirds.
         Rectangle {
             x: parent.width / 3;
             y: 0;
@@ -128,57 +296,101 @@ export component CameraCapturePage inherits Window {
             height: 1px;
             background: #ffffff22;
         }
-        // Tap-to-focus square.
+        // Tap-to-focus area (full-screen) — bottom-most TouchArea so
+        // the buttons added later win their own areas.
+        focus-touch := TouchArea {
+            clicked => {
+                root.tap-focus(self.pressed-x / parent.width,
+                    self.pressed-y / parent.height);
+            }
+        }
+        // Tap-to-focus square — position driven by state.
         Rectangle {
-            x: parent.width * 0.56;
-            y: parent.height * 0.42;
+            x: parent.width * root.focus-frac-x - self.width / 2;
+            y: parent.height * root.focus-frac-y - self.height / 2;
             width: 72px;
             height: 72px;
             border-radius: Theme.radius-sm;
             background: transparent;
             border-width: 2px;
             border-color: Theme.accent-warning;
+            animate x { duration: Theme.motion-fast; }
+            animate y { duration: Theme.motion-fast; }
+        }
+        // Countdown overlay.
+        if root.countdown-active: Text {
+            text: root.countdown-sec;
+            color: Theme.accent-warning;
+            font-size: 144px;
+            font-weight: 800;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            width: parent.width;
+            height: parent.height;
         }
     }
 
-    // ----- Top control row -----
+    // ----- Top control row + status banner -----
     Rectangle {
         x: 0;
         y: 0;
         width: parent.width;
-        height: 88px;
+        height: 120px;
         background: @linear-gradient(180deg, #000000aa 0%, #00000000 100%);
+        // Status banner (32 dp).
+        Rectangle {
+            x: 0;
+            y: 0;
+            width: parent.width;
+            height: 32px;
+            background: root.status-is-danger ? Theme.accent-danger.with-alpha(0.85)
+                : root.status-is-success ? Theme.accent-success.with-alpha(0.85)
+                : #00000099;
+            animate background { duration: Theme.motion-fast; }
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                Text {
+                    text: root.status-msg;
+                    color: #ffffff;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+            }
+        }
+        // Buttons row.
         HorizontalLayout {
             x: Theme.spacing-md;
-            y: Theme.spacing-lg;
+            y: 48px;
             width: parent.width - 2 * Theme.spacing-md;
             height: 40px;
-            // Close.
             TopControl {
                 glyph: "✕";
                 a11y: "Close";
-                clicked => { root.close-pressed(); }
+                clicked => { root.tap-close(); }
             }
             Rectangle { horizontal-stretch: 1; }
             HorizontalLayout {
                 spacing: Theme.spacing-sm;
                 TopControl {
-                    glyph: "⚡";
+                    glyph: root.flash-label(root.flash-mode);
                     a11y: "Flash";
-                    active: root.flash;
-                    clicked => {
-                        root.flash = !root.flash;
-                    }
+                    active: root.flash-mode != 0;
+                    clicked => { root.cycle-flash(); }
                 }
                 TopControl {
-                    glyph: "⏱";
+                    glyph: root.timer-label(root.timer-mode);
                     a11y: "Timer";
-                    clicked => { }
+                    active: root.timer-mode != 0;
+                    clicked => { root.cycle-timer(); }
                 }
                 TopControl {
-                    glyph: "3:4";
+                    glyph: root.aspect-label(root.aspect-mode);
                     a11y: "Aspect ratio";
-                    clicked => { }
+                    clicked => { root.cycle-aspect(); }
                 }
             }
         }
@@ -207,22 +419,22 @@ export component CameraCapturePage inherits Window {
                 ModeLabel {
                     label: "VIDEO";
                     active: root.mode == 0;
-                    clicked => { root.mode = 0; root.mode-pressed(0); }
+                    clicked => { root.pick-mode(0); }
                 }
                 ModeLabel {
                     label: "PHOTO";
                     active: root.mode == 1;
-                    clicked => { root.mode = 1; root.mode-pressed(1); }
+                    clicked => { root.pick-mode(1); }
                 }
                 ModeLabel {
                     label: "PORTRAIT";
                     active: root.mode == 2;
-                    clicked => { root.mode = 2; root.mode-pressed(2); }
+                    clicked => { root.pick-mode(2); }
                 }
                 ModeLabel {
                     label: "NIGHT";
                     active: root.mode == 3;
-                    clicked => { root.mode = 3; root.mode-pressed(3); }
+                    clicked => { root.pick-mode(3); }
                 }
             }
 
@@ -239,13 +451,22 @@ export component CameraCapturePage inherits Window {
                         width: 48px;
                         height: 48px;
                         border-radius: Theme.radius-sm;
-                        background: @linear-gradient(135deg, #4f8cff 0%, #b45309 100%);
+                        background: root.gallery-fill();
+                        animate background { duration: Theme.motion-fast; }
                         border-width: 2px;
                         border-color: #ffffff66;
                         clip: true;
-                        TouchArea {
-                            clicked => { root.gallery-pressed(); }
+                        if root.capture-count > 0: Text {
+                            text: root.capture-count;
+                            color: #ffffff;
+                            font-size: 14px;
+                            font-weight: 800;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
                         }
+                        TouchArea { clicked => { root.tap-gallery(); } }
                     }
                 }
                 // Shutter.
@@ -255,20 +476,24 @@ export component CameraCapturePage inherits Window {
                         width: 72px;
                         height: 72px;
                         border-radius: 36px;
-                        background: #ffffff;
+                        background: root.countdown-active ? Theme.accent-warning : #ffffff;
+                        animate background { duration: Theme.motion-fast; }
                         Rectangle {
                             width: 60px;
                             height: 60px;
                             x: (parent.width - self.width) / 2;
                             y: (parent.height - self.height) / 2;
                             border-radius: 30px;
-                            background: touch-shutter.pressed ? #dddddd : #ffffff;
+                            background: touch-shutter.pressed ? #dddddd
+                                : root.countdown-active ? Theme.accent-warning
+                                : root.mode == 0 ? #ff3b30
+                                : #ffffff;
+                            animate background { duration: Theme.motion-fast; }
                             border-width: 3px;
                             border-color: #05070b;
-                            animate background { duration: Theme.motion-fast; }
                         }
                         touch-shutter := TouchArea {
-                            clicked => { root.shutter-pressed(); }
+                            clicked => { root.tap-shutter(); }
                         }
                     }
                 }
@@ -279,7 +504,8 @@ export component CameraCapturePage inherits Window {
                         width: 48px;
                         height: 48px;
                         border-radius: 24px;
-                        background: #ffffff22;
+                        background: root.camera-front ? Theme.accent-info : #ffffff22;
+                        animate background { duration: Theme.motion-fast; }
                         Text {
                             text: "⟲";
                             color: Theme.on-primary;
@@ -291,7 +517,7 @@ export component CameraCapturePage inherits Window {
                             height: parent.height;
                         }
                         TouchArea {
-                            clicked => { root.flip-pressed(); }
+                            clicked => { root.tap-flip(); }
                         }
                     }
                 }

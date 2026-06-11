@@ -2,22 +2,6 @@
 // =====================================================================
 //
 // GitHub / GitLab-style pull-request review surface for mobile.
-// Demonstrates a developer-facing template that the catalogue otherwise
-// lacks:
-//
-//   - PR title + status pill (Open / Approved / Merged) + branch arrow
-//     ("feature/tone-enum → main").
-//   - Reviewer row: avatar cluster + reviewer-status glyphs (✓ approved,
-//     ◐ pending, ↻ requested changes), each tone-tinted.
-//   - Tab strip ("Conversation · 8" / "Files changed · 12" / "Checks").
-//   - Diff lines: each line carries a sign glyph (+ / - / blank), a
-//     line number, and monospaced source code with appropriate
-//     background tint (`accent-success` at 14% alpha for additions,
-//     `accent-danger` at 14% for deletions).
-//   - Inline thread underneath one diff hunk — the canonical "Conversa-
-//     tion thread anchored to a line" pattern.
-//   - Sticky review footer with Approve / Comment / Request changes
-//     pill row + Submit CTA.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
@@ -27,29 +11,28 @@ import { Divider } from "@mobile-components/divider.slint";
 import { Chip } from "@mobile-components/chip.slint";
 import { MobileButton } from "@mobile-components/button.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
+import { ScrollView } from "std-widgets.slint";
 
-// One diff line.
-//
-// `state`:
-//   0 = context (no fill, dim line number)
-//   1 = addition (success tint, "+" glyph)
-//   2 = deletion (danger tint, "-" glyph)
 component DiffLine inherits Rectangle {
     in property <int> line-no;
     in property <int> state: 0;
     in property <string> code;
+    in property <bool> commented: false;
+    callback clicked();
 
     horizontal-stretch: 1;
     min-height: 22px;
-    background:
-          root.state == 1 ? #22c55e22
-        : root.state == 2 ? #ef444422
-        : transparent;
+    background: ta.has-hover ? Theme.surface-2 : (root.state == 1 ? #22c55e22 : (root.state == 2 ? #ef444422 : transparent));
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
 
     HorizontalLayout {
         spacing: 0;
 
-        // Line number column.
         VerticalLayout {
             alignment: center;
             width: 36px;
@@ -62,26 +45,18 @@ component DiffLine inherits Rectangle {
                 width: parent.width - 6px;
             }
         }
-        // Sign column.
         VerticalLayout {
             alignment: center;
             width: 18px;
             Text {
-                text:
-                      root.state == 1 ? "+"
-                    : root.state == 2 ? "−"
-                    : " ";
-                color:
-                      root.state == 1 ? Theme.accent-success
-                    : root.state == 2 ? Theme.accent-danger
-                    : Theme.muted;
+                text: root.state == 1 ? "+" : (root.state == 2 ? "−" : " ");
+                color: root.state == 1 ? Theme.accent-success : (root.state == 2 ? Theme.accent-danger : Theme.muted);
                 font-size: Theme.font-size-caption;
                 font-family: "Menlo";
                 font-weight: 700;
                 horizontal-alignment: center;
             }
         }
-        // Code.
         VerticalLayout {
             horizontal-stretch: 1;
             alignment: center;
@@ -93,17 +68,39 @@ component DiffLine inherits Rectangle {
                 overflow: elide;
             }
         }
+        VerticalLayout {
+            alignment: center;
+            width: 22px;
+            if root.commented: Rectangle {
+                width: 14px;
+                height: 14px;
+                border-radius: 7px;
+                background: Theme.accent-info;
+                Text {
+                    text: "1";
+                    color: Theme.on-primary;
+                    font-size: 9px;
+                    font-weight: 700;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+            }
+        }
     }
 }
 
-// One reviewer row inside the reviewers strip.
 component ReviewerChip inherits Rectangle {
     in property <string> initials;
     in property <string> status-glyph;
     in property <Tone> tone: Tone.default;
+    in property <bool> reminded: false;
+    callback clicked();
 
     width: 40px;
     height: 40px;
+    opacity: root.reminded ? 1.0 : 0.95;
 
     Avatar {
         x: 0;
@@ -113,19 +110,13 @@ component ReviewerChip inherits Rectangle {
         fallback: root.initials;
         size: 36px;
     }
-    // Status glyph in the bottom-right corner.
     Rectangle {
         x: parent.width - 16px;
         y: parent.height - 16px;
         width: 16px;
         height: 16px;
         border-radius: 8px;
-        background:
-              root.tone == Tone.success ? Theme.accent-success
-            : root.tone == Tone.warning ? Theme.accent-warning
-            : root.tone == Tone.danger  ? Theme.accent-danger
-            : root.tone == Tone.info    ? Theme.accent-info
-            : Theme.surface-2;
+        background: root.tone == Tone.success ? Theme.accent-success : (root.tone == Tone.warning ? Theme.accent-warning : (root.tone == Tone.danger ? Theme.accent-danger : (root.tone == Tone.info ? Theme.accent-info : Theme.surface-2)));
         border-width: 2px;
         border-color: Theme.background;
         Text {
@@ -139,14 +130,39 @@ component ReviewerChip inherits Rectangle {
             height: parent.height;
         }
     }
+    if root.reminded: Rectangle {
+        x: 0;
+        y: 0;
+        width: 12px;
+        height: 12px;
+        border-radius: 6px;
+        background: Theme.accent-warning;
+        Text {
+            text: "!";
+            color: Theme.on-primary;
+            font-size: 8px;
+            font-weight: 800;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            width: parent.width;
+            height: parent.height;
+        }
+    }
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
 }
 
-// One inline review-thread comment under a diff hunk.
 component ThreadComment inherits Rectangle {
     in property <string> initials;
     in property <string> author;
     in property <string> when;
     in property <string> body;
+    in property <int> reactions: 0;
+    in property <bool> reacted: false;
+    callback react-clicked();
 
     horizontal-stretch: 1;
     HorizontalLayout {
@@ -163,7 +179,7 @@ component ThreadComment inherits Rectangle {
         }
         VerticalLayout {
             horizontal-stretch: 1;
-            spacing: 2px;
+            spacing: 4px;
             HorizontalLayout {
                 spacing: Theme.spacing-xs;
                 Text {
@@ -184,6 +200,104 @@ component ThreadComment inherits Rectangle {
                 font-size: Theme.font-size-caption;
                 wrap: word-wrap;
             }
+            HorizontalLayout {
+                spacing: Theme.spacing-xs;
+                alignment: start;
+                Rectangle {
+                    horizontal-stretch: 0;
+                    height: 22px;
+                    border-radius: 11px;
+                    background: root.reacted ? Theme.accent-info.with-alpha(0.22) : Theme.surface-1;
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-sm;
+                        padding-right: Theme.spacing-sm;
+                        alignment: center;
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: "👍 " + root.reactions;
+                                color: root.reacted ? Theme.accent-info : Theme.muted;
+                                font-size: Theme.font-size-caption;
+                                font-weight: 700;
+                            }
+                        }
+                    }
+                    TouchArea {
+                        clicked => {
+                            root.react-clicked();
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+component CheckRow inherits Rectangle {
+    in property <string> name;
+    in property <string> meta;
+    in property <int> state: 0; // 0 pass, 1 fail, 2 running, 3 queued
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 56px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 24px;
+                height: 24px;
+                border-radius: 12px;
+                background: root.state == 0 ? Theme.accent-success : (root.state == 1 ? Theme.accent-danger : (root.state == 2 ? Theme.accent-warning : Theme.surface-2));
+                Text {
+                    text: root.state == 0 ? "✓" : (root.state == 1 ? "✕" : (root.state == 2 ? "⟳" : "·"));
+                    color: Theme.on-primary;
+                    font-size: 12px;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: root.name;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 700;
+                overflow: elide;
+            }
+            Text {
+                text: root.meta;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+                overflow: elide;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.state == 0 ? "Re-run" : (root.state == 1 ? "Retry" : (root.state == 2 ? "Cancel" : "Start"));
+                color: Theme.accent-info;
+                font-size: Theme.font-size-caption;
+                font-weight: 700;
+            }
         }
     }
 }
@@ -191,18 +305,74 @@ component ThreadComment inherits Rectangle {
 export component CodeReviewPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
+
     in property <string> repo-pr: "slint-mobile-components #312";
     in property <string> pr-title: "Drawer primitive + Tone-enum migration";
     in property <string> branch-from: "feature/tone-enum";
     in property <string> branch-to: "main";
-    in property <string> diff-stats: "+412 / −287 across 12 files";
+
     in-out property <int> active-tab: 1;
+    in-out property <int> pr-status: 0; // 0 OPEN, 1 APPROVED, 2 CHANGES REQUESTED, 3 MERGED, 4 CLOSED
+    in-out property <bool> thread-resolved: false;
+    in-out property <int> r0-reactions: 2;
+    in-out property <int> r1-reactions: 0;
+    in-out property <int> r2-reactions: 1;
+    in-out property <bool> r0-reacted: false;
+    in-out property <bool> r1-reacted: false;
+    in-out property <bool> r2-reacted: false;
+    in-out property <bool> diff-1-comment: false;
+    in-out property <bool> diff-2-comment: false;
+    in-out property <bool> diff-3-comment: false;
+    in-out property <bool> diff-4-comment: false;
+    in-out property <bool> diff-5-comment: false;
+    in-out property <bool> rem0: false;
+    in-out property <bool> rem1: false;
+    in-out property <bool> rem2: false;
+    in-out property <bool> rem3: false;
+    in-out property <int> check-build: 0; // 0 pass 1 fail 2 running 3 queued
+    in-out property <int> check-tests: 0;
+    in-out property <int> check-fmt: 1;
+    in-out property <int> check-deploy: 3;
+    in-out property <bool> sheet-open: false;
+    in-out property <bool> confirm-merge: false;
+    in-out property <string> status-msg: "";
+    in-out property <bool> status-success: false;
+    in-out property <bool> status-danger: false;
+
     callback back-pressed();
     callback overflow-pressed();
     callback approve-pressed();
     callback comment-pressed();
     callback request-changes-pressed();
     callback submit-pressed();
+    callback merge-pressed();
+
+    function status-label() -> string {
+        return root.pr-status == 0 ? "OPEN" : (root.pr-status == 1 ? "APPROVED" : (root.pr-status == 2 ? "CHANGES REQUESTED" : (root.pr-status == 3 ? "MERGED" : "CLOSED")));
+    }
+    function status-color() -> color {
+        return root.pr-status == 0 ? Theme.accent-success : (root.pr-status == 1 ? Theme.accent-info : (root.pr-status == 2 ? Theme.accent-danger : (root.pr-status == 3 ? Theme.accent-info : Theme.muted)));
+    }
+    function diff-comment-count() -> int {
+        return (root.diff-1-comment ? 1 : 0) + (root.diff-2-comment ? 1 : 0) + (root.diff-3-comment ? 1 : 0) + (root.diff-4-comment ? 1 : 0) + (root.diff-5-comment ? 1 : 0);
+    }
+    function total-comments() -> int {
+        return 3 + root.diff-comment-count();
+    }
+    function set-status(m: string, ok: bool, bad: bool) {
+        root.status-msg = m;
+        root.status-success = ok;
+        root.status-danger = bad;
+    }
+    function check-label(s: int) -> string {
+        return s == 0 ? "Passed" : (s == 1 ? "Failed" : (s == 2 ? "Running" : "Queued"));
+    }
+    function cycle-check(cur: int) -> int {
+        return cur == 0 ? 2 : (cur == 2 ? 0 : (cur == 1 ? 2 : 2));
+    }
+    function diff-stats() -> string {
+        return "+412 / −287 across 12 files · " + root.total-comments() + " comments";
+    }
 
     background: Theme.background;
 
@@ -214,15 +384,37 @@ export component CodeReviewPage inherits Window {
             title-style: HeadingStyle.mono;
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
-            leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.overflow-pressed(); }
+            leading-pressed => {
+                root.back-pressed();
+            }
+            trailing-pressed => {
+                root.sheet-open = true;
+                root.overflow-pressed();
+            }
+        }
+
+        // Status banner.
+        if !root.status-msg.is-empty: Rectangle {
+            height: 28px;
+            background: root.status-success ? Theme.accent-success.with-alpha(0.16) : (root.status-danger ? Theme.accent-danger.with-alpha(0.16) : Theme.surface-2);
+            HorizontalLayout {
+                alignment: center;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.status-msg;
+                        color: root.status-success ? Theme.accent-success : (root.status-danger ? Theme.accent-danger : Theme.on-surface);
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                    }
+                }
+            }
         }
 
         VerticalLayout {
             padding: Theme.spacing-md;
             spacing: Theme.spacing-sm;
 
-            // Title row.
             HorizontalLayout {
                 spacing: Theme.spacing-sm;
                 alignment: start;
@@ -230,9 +422,9 @@ export component CodeReviewPage inherits Window {
                     width: status-text.preferred-width + 14px;
                     height: 22px;
                     border-radius: 11px;
-                    background: Theme.accent-success;
+                    background: root.status-color();
                     status-text := Text {
-                        text: "OPEN";
+                        text: root.status-label();
                         color: Theme.on-primary;
                         font-size: 10px;
                         font-weight: 800;
@@ -244,7 +436,7 @@ export component CodeReviewPage inherits Window {
                     }
                 }
                 Text {
-                    text: root.diff-stats;
+                    text: root.diff-stats();
                     color: Theme.muted;
                     font-size: Theme.font-size-caption;
                     vertical-alignment: center;
@@ -257,7 +449,6 @@ export component CodeReviewPage inherits Window {
                 wrap: word-wrap;
             }
 
-            // Branches.
             HorizontalLayout {
                 spacing: Theme.spacing-xs;
                 Rectangle {
@@ -305,7 +496,6 @@ export component CodeReviewPage inherits Window {
                 }
             }
 
-            // Reviewers strip.
             HorizontalLayout {
                 spacing: Theme.spacing-sm;
                 alignment: start;
@@ -321,112 +511,398 @@ export component CodeReviewPage inherits Window {
                     initials: "PR";
                     status-glyph: "✓";
                     tone: Tone.success;
+                    reminded: root.rem0;
+                    clicked => {
+                        root.rem0 = !root.rem0;
+                        root.set-status(root.rem0 ? "Reminded Priya" : "Reminder cleared", root.rem0, false);
+                    }
                 }
                 ReviewerChip {
                     initials: "AR";
                     status-glyph: "✓";
                     tone: Tone.success;
+                    reminded: root.rem1;
+                    clicked => {
+                        root.rem1 = !root.rem1;
+                        root.set-status(root.rem1 ? "Reminded Aïsha" : "Reminder cleared", root.rem1, false);
+                    }
                 }
                 ReviewerChip {
                     initials: "DV";
                     status-glyph: "↻";
                     tone: Tone.danger;
+                    reminded: root.rem2;
+                    clicked => {
+                        root.rem2 = !root.rem2;
+                        root.set-status(root.rem2 ? "Reminded Devika" : "Reminder cleared", root.rem2, false);
+                    }
                 }
                 ReviewerChip {
                     initials: "MK";
                     status-glyph: "·";
                     tone: Tone.warning;
+                    reminded: root.rem3;
+                    clicked => {
+                        root.rem3 = !root.rem3;
+                        root.set-status(root.rem3 ? "Reminded Marco" : "Reminder cleared", root.rem3, false);
+                    }
                 }
             }
         }
 
-        // Tab strip.
-        TabBar {
-            Tab { label: "Conversation · 8"; }
-            Tab { label: "Files · 12"; active: true; }
-            Tab { label: "Checks"; }
-        }
-
-        // ----- Diff hunk -----
-        Rectangle {
-            background: Theme.surface-1;
-            HorizontalLayout {
-                padding: Theme.spacing-sm;
+        // Tab strip — manually built so we can swap which is active.
+        HorizontalLayout {
+            spacing: 0;
+            padding-left: Theme.spacing-md;
+            padding-right: Theme.spacing-md;
+            for tab[i] in [
+                { label: "Conversation · " + root.total-comments() },
+                { label: "Files · 12" },
+                { label: "Checks" },
+            ]: Rectangle {
+                horizontal-stretch: 1;
+                height: 44px;
+                background: root.active-tab == i ? Theme.surface-2 : transparent;
+                border-radius: Theme.radius-sm;
                 Text {
-                    text: "ui/dialog.slint";
-                    color: Theme.muted;
-                    font-size: 11px;
-                    font-family: "Menlo";
+                    text: tab.label;
+                    color: root.active-tab == i ? Theme.on-surface : Theme.muted;
+                    font-size: Theme.font-size-caption;
                     font-weight: 700;
-                    horizontal-stretch: 1;
+                    horizontal-alignment: center;
                     vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
                 }
-                Text {
-                    text: "+38 / −12";
-                    color: Theme.muted;
-                    font-size: 11px;
-                    font-weight: 600;
-                    vertical-alignment: center;
+                TouchArea {
+                    clicked => {
+                        root.active-tab = i;
+                    }
                 }
             }
         }
         Divider { }
 
-        DiffLine {
-            line-no: 67;
-            state: 0;
-            code: "    in property <string> secondary-label;";
-        }
-        DiffLine {
-            line-no: 68;
-            state: 2;
-            code: "    in property <bool> danger: false;";
-        }
-        DiffLine {
-            line-no: 68;
-            state: 1;
-            code: "    in property <Tone> tone: Tone.default;";
-        }
-        DiffLine {
-            line-no: 69;
-            state: 0;
-            code: "    callback primary-pressed();";
-        }
-        DiffLine {
-            line-no: 70;
-            state: 0;
-            code: "    callback secondary-pressed();";
-        }
-
-        // Inline comment thread under the hunk.
-        Rectangle {
-            background: Theme.surface-2;
+        ScrollView {
+            vertical-stretch: 1;
             VerticalLayout {
                 spacing: 0;
-                ThreadComment {
-                    initials: "PR";
-                    author: "Priya Rao";
-                    when: "2h";
-                    body: "Nice — and the existing `danger: true` call sites all get a tone:Tone.danger migration in the same PR, right?";
+
+                // ===== Conversation tab =====
+                if root.active-tab == 0: VerticalLayout {
+                    spacing: 0;
+                    Rectangle {
+                        background: Theme.surface-2;
+                        VerticalLayout {
+                            spacing: 0;
+                            ThreadComment {
+                                initials: "GR";
+                                author: "Greg Raymond";
+                                when: "opened · 4h";
+                                body: "Splits the Drawer primitive out and migrates `danger: bool` to a `Tone` enum. All call sites updated. 19 files touched.";
+                                reactions: root.r0-reactions;
+                                reacted: root.r0-reacted;
+                                react-clicked => {
+                                    root.r0-reacted = !root.r0-reacted;
+                                    root.r0-reactions = root.r0-reacted ? root.r0-reactions + 1 : root.r0-reactions - 1;
+                                }
+                            }
+                            Divider { }
+
+                            ThreadComment {
+                                initials: "PR";
+                                author: "Priya Rao";
+                                when: "2h";
+                                body: "Reviewed everything but the audit log. Approving on the condition that we also publish a migration note for downstream apps.";
+                                reactions: root.r1-reactions;
+                                reacted: root.r1-reacted;
+                                react-clicked => {
+                                    root.r1-reacted = !root.r1-reacted;
+                                    root.r1-reactions = root.r1-reacted ? root.r1-reactions + 1 : root.r1-reactions - 1;
+                                }
+                            }
+                            Divider { }
+
+                            ThreadComment {
+                                initials: "DV";
+                                author: "Devika Sharma";
+                                when: "23m";
+                                body: "Two diff comments above. After those land I'll approve.";
+                                reactions: root.r2-reactions;
+                                reacted: root.r2-reacted;
+                                react-clicked => {
+                                    root.r2-reacted = !root.r2-reacted;
+                                    root.r2-reactions = root.r2-reacted ? root.r2-reactions + 1 : root.r2-reactions - 1;
+                                }
+                            }
+                        }
+                    }
                 }
-                Divider { }
-                ThreadComment {
-                    initials: "GR";
-                    author: "Greg Raymond";
-                    when: "1h";
-                    body: "Yes, see tests/snapshot_scenes.slint:266 — SnapDialog scene was the only caller and it's already on the new API.";
+
+                // ===== Files tab =====
+                if root.active-tab == 1: VerticalLayout {
+                    spacing: 0;
+                    Rectangle {
+                        background: Theme.surface-1;
+                        HorizontalLayout {
+                            padding: Theme.spacing-sm;
+                            Text {
+                                text: "ui/dialog.slint";
+                                color: Theme.muted;
+                                font-size: 11px;
+                                font-family: "Menlo";
+                                font-weight: 700;
+                                horizontal-stretch: 1;
+                                vertical-alignment: center;
+                            }
+                            Text {
+                                text: "+38 / −12";
+                                color: Theme.muted;
+                                font-size: 11px;
+                                font-weight: 600;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                    Divider { }
+
+                    DiffLine {
+                        line-no: 67;
+                        state: 0;
+                        code: "    in property <string> secondary-label;";
+                        commented: root.diff-1-comment;
+                        clicked => {
+                            root.diff-1-comment = !root.diff-1-comment;
+                            root.set-status(root.diff-1-comment ? "Comment on line 67" : "Comment removed", true, false);
+                        }
+                    }
+                    DiffLine {
+                        line-no: 68;
+                        state: 2;
+                        code: "    in property <bool> danger: false;";
+                        commented: root.diff-2-comment;
+                        clicked => {
+                            root.diff-2-comment = !root.diff-2-comment;
+                            root.set-status(root.diff-2-comment ? "Comment on line 68 (−)" : "Comment removed", true, false);
+                        }
+                    }
+                    DiffLine {
+                        line-no: 68;
+                        state: 1;
+                        code: "    in property <Tone> tone: Tone.default;";
+                        commented: root.diff-3-comment;
+                        clicked => {
+                            root.diff-3-comment = !root.diff-3-comment;
+                            root.set-status(root.diff-3-comment ? "Comment on line 68 (+)" : "Comment removed", true, false);
+                        }
+                    }
+                    DiffLine {
+                        line-no: 69;
+                        state: 0;
+                        code: "    callback primary-pressed();";
+                        commented: root.diff-4-comment;
+                        clicked => {
+                            root.diff-4-comment = !root.diff-4-comment;
+                            root.set-status(root.diff-4-comment ? "Comment on line 69" : "Comment removed", true, false);
+                        }
+                    }
+                    DiffLine {
+                        line-no: 70;
+                        state: 0;
+                        code: "    callback secondary-pressed();";
+                        commented: root.diff-5-comment;
+                        clicked => {
+                            root.diff-5-comment = !root.diff-5-comment;
+                            root.set-status(root.diff-5-comment ? "Comment on line 70" : "Comment removed", true, false);
+                        }
+                    }
+
+                    // Inline thread under the hunk (can be resolved).
+                    if !root.thread-resolved: Rectangle {
+                        background: Theme.surface-2;
+                        VerticalLayout {
+                            spacing: 0;
+                            HorizontalLayout {
+                                padding-left: Theme.spacing-sm;
+                                padding-right: Theme.spacing-sm;
+                                padding-top: Theme.spacing-sm;
+                                alignment: stretch;
+                                VerticalLayout {
+                                    alignment: center;
+                                    horizontal-stretch: 1;
+                                    Text {
+                                        text: "Thread · 3 replies";
+                                        color: Theme.muted;
+                                        font-size: Theme.font-size-caption;
+                                        font-weight: 700;
+                                    }
+                                }
+                                Rectangle {
+                                    horizontal-stretch: 0;
+                                    height: 24px;
+                                    border-radius: 12px;
+                                    background: Theme.accent-success.with-alpha(0.22);
+                                    HorizontalLayout {
+                                        padding-left: Theme.spacing-sm;
+                                        padding-right: Theme.spacing-sm;
+                                        alignment: center;
+                                        VerticalLayout {
+                                            alignment: center;
+                                            Text {
+                                                text: "Resolve";
+                                                color: Theme.accent-success;
+                                                font-size: Theme.font-size-caption;
+                                                font-weight: 700;
+                                            }
+                                        }
+                                    }
+                                    TouchArea {
+                                        clicked => {
+                                            root.thread-resolved = true;
+                                            root.set-status("Thread resolved", true, false);
+                                        }
+                                    }
+                                }
+                            }
+                            ThreadComment {
+                                initials: "PR";
+                                author: "Priya Rao";
+                                when: "2h";
+                                body: "Nice — and the existing `danger: true` call sites all get a tone:Tone.danger migration in the same PR, right?";
+                                reactions: root.r0-reactions;
+                                reacted: root.r0-reacted;
+                                react-clicked => {
+                                    root.r0-reacted = !root.r0-reacted;
+                                    root.r0-reactions = root.r0-reacted ? root.r0-reactions + 1 : root.r0-reactions - 1;
+                                }
+                            }
+                            Divider { }
+
+                            ThreadComment {
+                                initials: "GR";
+                                author: "Greg Raymond";
+                                when: "1h";
+                                body: "Yes, see tests/snapshot_scenes.slint:266 — SnapDialog scene was the only caller and it's already on the new API.";
+                                reactions: root.r1-reactions;
+                                reacted: root.r1-reacted;
+                                react-clicked => {
+                                    root.r1-reacted = !root.r1-reacted;
+                                    root.r1-reactions = root.r1-reacted ? root.r1-reactions + 1 : root.r1-reactions - 1;
+                                }
+                            }
+                            Divider { }
+
+                            ThreadComment {
+                                initials: "DV";
+                                author: "Devika Sharma";
+                                when: "23m";
+                                body: "Resolve — looks good.";
+                                reactions: root.r2-reactions;
+                                reacted: root.r2-reacted;
+                                react-clicked => {
+                                    root.r2-reacted = !root.r2-reacted;
+                                    root.r2-reactions = root.r2-reacted ? root.r2-reactions + 1 : root.r2-reactions - 1;
+                                }
+                            }
+                        }
+                    }
+
+                    if root.thread-resolved: Rectangle {
+                        background: Theme.surface-1;
+                        min-height: 48px;
+                        HorizontalLayout {
+                            padding: Theme.spacing-md;
+                            alignment: stretch;
+                            Text {
+                                text: "Thread resolved";
+                                color: Theme.accent-success;
+                                font-size: Theme.font-size-caption;
+                                font-weight: 700;
+                                vertical-alignment: center;
+                                horizontal-stretch: 1;
+                            }
+                            Rectangle {
+                                horizontal-stretch: 0;
+                                height: 26px;
+                                border-radius: 13px;
+                                background: Theme.surface-2;
+                                HorizontalLayout {
+                                    padding-left: Theme.spacing-sm;
+                                    padding-right: Theme.spacing-sm;
+                                    alignment: center;
+                                    VerticalLayout {
+                                        alignment: center;
+                                        Text {
+                                            text: "Reopen";
+                                            color: Theme.on-surface;
+                                            font-size: Theme.font-size-caption;
+                                            font-weight: 700;
+                                        }
+                                    }
+                                }
+                                TouchArea {
+                                    clicked => {
+                                        root.thread-resolved = false;
+                                        root.set-status("Thread reopened", false, true);
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
-                Divider { }
-                ThreadComment {
-                    initials: "DV";
-                    author: "Devika Sharma";
-                    when: "23m";
-                    body: "Resolve — looks good.";
+
+                // ===== Checks tab =====
+                if root.active-tab == 2: VerticalLayout {
+                    spacing: 0;
+                    CheckRow {
+                        name: "build / linux-arm64";
+                        meta: root.check-label(root.check-build) + " · 2m 41s";
+                        state: root.check-build;
+                        clicked => {
+                            root.check-build = root.cycle-check(root.check-build);
+                            root.set-status("build → " + root.check-label(root.check-build), root.check-build == 0, root.check-build == 1);
+                        }
+                    }
+                    Divider { }
+
+                    CheckRow {
+                        name: "tests / cargo test --workspace";
+                        meta: root.check-label(root.check-tests) + " · 4m 12s";
+                        state: root.check-tests;
+                        clicked => {
+                            root.check-tests = root.cycle-check(root.check-tests);
+                            root.set-status("tests → " + root.check-label(root.check-tests), root.check-tests == 0, root.check-tests == 1);
+                        }
+                    }
+                    Divider { }
+
+                    CheckRow {
+                        name: "fmt / cargo fmt --check";
+                        meta: root.check-label(root.check-fmt) + " · 12s";
+                        state: root.check-fmt;
+                        clicked => {
+                            root.check-fmt = root.cycle-check(root.check-fmt);
+                            root.set-status("fmt → " + root.check-label(root.check-fmt), root.check-fmt == 0, root.check-fmt == 1);
+                        }
+                    }
+                    Divider { }
+
+                    CheckRow {
+                        name: "deploy / preview-app";
+                        meta: root.check-label(root.check-deploy) + " · queued";
+                        state: root.check-deploy;
+                        clicked => {
+                            root.check-deploy = root.cycle-check(root.check-deploy);
+                            root.set-status("deploy → " + root.check-label(root.check-deploy), root.check-deploy == 0, root.check-deploy == 1);
+                        }
+                    }
+                }
+
+                Rectangle {
+                    height: Theme.spacing-xl;
                 }
             }
         }
-
-        Rectangle { vertical-stretch: 1; }
 
         // Sticky review action footer.
         Rectangle {
@@ -442,19 +918,212 @@ export component CodeReviewPage inherits Window {
                     text: "Comment";
                     primary: false;
                     horizontal-stretch: 1;
-                    clicked => { root.comment-pressed(); }
+                    clicked => {
+                        root.diff-1-comment = !root.diff-1-comment;
+                        root.set-status("Comment added", true, false);
+                        root.comment-pressed();
+                    }
                 }
                 MobileButton {
-                    text: "Approve";
+                    text: root.pr-status == 1 ? "Merge" : "Approve";
                     horizontal-stretch: 1;
                     tone: Tone.success;
-                    clicked => { root.approve-pressed(); }
+                    clicked => {
+                        if (root.pr-status == 1) {
+                            root.pr-status = 3;
+                            root.set-status("Merged into " + root.branch-to + " ✓", true, false);
+                            root.merge-pressed();
+                        } else {
+                            root.pr-status = 1;
+                            root.set-status("Approved", true, false);
+                            root.approve-pressed();
+                        }
+                    }
                 }
                 MobileButton {
                     text: "Request";
                     horizontal-stretch: 1;
                     tone: Tone.danger;
-                    clicked => { root.request-changes-pressed(); }
+                    clicked => {
+                        root.pr-status = 2;
+                        root.set-status("Changes requested", false, true);
+                        root.request-changes-pressed();
+                    }
+                }
+            }
+        }
+    }
+
+    // ===================== Bottom sheet =====================
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+                root.confirm-merge = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: Theme.surface-2;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.muted;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: "PR actions";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 700;
+                    }
+                }
+                Rectangle {
+                    horizontal-stretch: 1;
+                    min-height: 48px;
+                    background: ta1.has-hover ? Theme.surface-1 : transparent;
+                    ta1 := TouchArea {
+                        clicked => {
+                            root.thread-resolved = !root.thread-resolved;
+                            root.set-status(root.thread-resolved ? "Thread resolved" : "Thread reopened", root.thread-resolved, !root.thread-resolved);
+                            root.sheet-open = false;
+                        }
+                    }
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-md;
+                        padding-right: Theme.spacing-md;
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: root.thread-resolved ? "Reopen thread" : "Resolve thread";
+                                color: Theme.on-surface;
+                                font-size: Theme.font-size-body;
+                                font-weight: 600;
+                            }
+                        }
+                    }
+                }
+                Rectangle {
+                    horizontal-stretch: 1;
+                    min-height: 48px;
+                    background: ta2.has-hover ? Theme.surface-1 : transparent;
+                    ta2 := TouchArea {
+                        clicked => {
+                            root.check-build = 2;
+                            root.check-tests = 2;
+                            root.check-fmt = 2;
+                            root.check-deploy = 2;
+                            root.set-status("Re-running all checks", true, false);
+                            root.sheet-open = false;
+                        }
+                    }
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-md;
+                        padding-right: Theme.spacing-md;
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: "Re-run all checks";
+                                color: Theme.on-surface;
+                                font-size: Theme.font-size-body;
+                                font-weight: 600;
+                            }
+                        }
+                    }
+                }
+                Rectangle {
+                    horizontal-stretch: 1;
+                    min-height: 48px;
+                    background: ta3.has-hover ? Theme.surface-1 : transparent;
+                    ta3 := TouchArea {
+                        clicked => {
+                            root.pr-status = root.pr-status == 1 ? 3 : 1;
+                            root.set-status(root.pr-status == 3 ? "Merged" : "Approved", true, false);
+                            root.sheet-open = false;
+                        }
+                    }
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-md;
+                        padding-right: Theme.spacing-md;
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: root.pr-status == 1 ? "Merge now" : "Approve PR";
+                                color: Theme.on-surface;
+                                font-size: Theme.font-size-body;
+                                font-weight: 600;
+                            }
+                        }
+                    }
+                }
+                Divider { }
+
+                Rectangle {
+                    horizontal-stretch: 1;
+                    min-height: 48px;
+                    background: ta4.has-hover ? Theme.surface-1 : transparent;
+                    ta4 := TouchArea {
+                        clicked => {
+                            root.pr-status = 4;
+                            root.set-status("PR closed", false, true);
+                            root.sheet-open = false;
+                        }
+                    }
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-md;
+                        padding-right: Theme.spacing-md;
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: "Close PR";
+                                color: Theme.accent-danger;
+                                font-size: Theme.font-size-body;
+                                font-weight: 600;
+                            }
+                        }
+                    }
+                }
+                Rectangle {
+                    horizontal-stretch: 1;
+                    min-height: 48px;
+                    background: ta5.has-hover ? Theme.surface-1 : transparent;
+                    ta5 := TouchArea {
+                        clicked => {
+                            root.sheet-open = false;
+                        }
+                    }
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-md;
+                        padding-right: Theme.spacing-md;
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: "Cancel";
+                                color: Theme.on-surface;
+                                font-size: Theme.font-size-body;
+                                font-weight: 600;
+                            }
+                        }
+                    }
                 }
             }
         }

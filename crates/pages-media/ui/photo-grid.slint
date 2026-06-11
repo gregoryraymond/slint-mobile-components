@@ -1,29 +1,18 @@
 // PhotoGridPage
 // =====================================================================
 //
-// Densest grid template in the catalogue — a 3-column tile sheet with
-// 1-px gaps between tiles (Instagram / camera-roll style). No borders,
-// no shadows on the tiles themselves; the grid IS the surface.
+// 3-column tile sheet — interactive selection mode now.
 //
-// Specification
-// -------------
-//
-// Geometry
-//   - AppBar with menu + search.
-//   - Small TabBar-style sub-nav (Recents / Albums / Shared) below the
-//     bar, reusing the existing TabBar primitive.
-//   - 3-column grid filling the rest of the page. Each tile is
-//     `(page_width - 2) / 3` wide (1px gap between cells × 2 gaps in
-//     each row).
-//
-// Hardcoding
-//   - Tile width is hardcoded to 136 px (412 − 4 ≈ 408 / 3 = 136).
-//     Per the MusicLibraryPage lesson, computing tile size from page
-//     width via `parent.width / 3` triggers Slint's binding-loop
-//     detector when wrapped in a ScrollView. The mobile target is
-//     fixed-width 412 so this is safe.
+//   - Tap a tile to toggle its selected state. Bottom action bar slides
+//     in when any tile is selected, showing N selected + Share / ♥
+//     Favorite / 🗑 Delete (two-tap confirm) / × Done.
+//   - Each tile also has a heart corner that toggles favorite
+//     independently of selection.
+//   - Tab strip filters how many rows are visible (Recents shows 4
+//     rows, Albums 2, Shared 1).
+//   - Menu / search trigger status updates.
 
-import { Theme } from "@mobile-theme/theme.slint";
+import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { TabBar, Tab } from "@mobile-components/tab-bar.slint";
 import { HeadingStyle } from "@mobile-components/heading.slint";
@@ -35,7 +24,10 @@ export struct PhotoEntry {
 
 component PhotoTile inherits Rectangle {
     in property <PhotoEntry> photo;
+    in property <bool> selected: false;
+    in property <bool> favorited: false;
     callback clicked();
+    callback heart-clicked();
 
     accessible-role: button;
     accessible-label: "Photo";
@@ -52,17 +44,61 @@ component PhotoTile inherits Rectangle {
         image-fit: ImageFit.cover;
     }
 
-    // Subtle press-state overlay, mid-translucent so it reads on any
-    // underlying photo colour.
+    // Press-state overlay.
     Rectangle {
         width: parent.width;
         height: parent.height;
-        background: touch.pressed ? #00000040 : transparent;
+        background: touch.pressed ? #00000040
+            : root.selected ? Theme.accent-success.with-alpha(0.4)
+            : transparent;
         animate background { duration: Theme.motion-fast; }
     }
 
+    // Selected indicator — top-right checkmark.
+    if root.selected: Rectangle {
+        x: parent.width - 32px;
+        y: 4px;
+        width: 24px;
+        height: 24px;
+        border-radius: 12px;
+        background: Theme.accent-success;
+        Text {
+            text: "✓";
+            color: Theme.on-primary;
+            font-size: 16px;
+            font-weight: 800;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            width: parent.width;
+            height: parent.height;
+        }
+    }
+
+    // Main tap area.
     touch := TouchArea {
         clicked => { root.clicked(); }
+    }
+
+    // Heart corner — placed AFTER the main TouchArea so its tap area
+    // wins clicks at its bounds.
+    Rectangle {
+        x: 4px;
+        y: parent.height - 32px;
+        width: 28px;
+        height: 28px;
+        border-radius: 14px;
+        background: #00000088;
+        Text {
+            text: root.favorited ? "♥" : "♡";
+            color: root.favorited ? Theme.accent-danger : #ffffffcc;
+            font-size: 16px;
+            font-weight: 800;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            width: parent.width;
+            height: parent.height;
+        }
+        TouchArea { clicked => { root.heart-clicked(); } }
     }
 }
 
@@ -87,6 +123,231 @@ export component PhotoGridPage inherits Window {
     callback menu-pressed();
     callback search-pressed();
     callback photo-pressed(PhotoEntry);
+    callback photos-deleted(int);
+    callback photo-favorited(int, bool);
+
+    // ----- Interactive state -----
+    private property <bool> s0: false;
+    private property <bool> s1: false;
+    private property <bool> s2: false;
+    private property <bool> s3: false;
+    private property <bool> s4: false;
+    private property <bool> s5: false;
+    private property <bool> s6: false;
+    private property <bool> s7: false;
+    private property <bool> s8: false;
+    private property <bool> s9: false;
+    private property <bool> s10: false;
+    private property <bool> s11: false;
+    private property <bool> f0: false;
+    private property <bool> f1: false;
+    private property <bool> f2: false;
+    private property <bool> f3: false;
+    private property <bool> f4: false;
+    private property <bool> f5: false;
+    private property <bool> f6: false;
+    private property <bool> f7: false;
+    private property <bool> f8: false;
+    private property <bool> f9: false;
+    private property <bool> f10: false;
+    private property <bool> f11: false;
+    // Removed (after delete) — hidden from grid.
+    private property <bool> d0: false;
+    private property <bool> d1: false;
+    private property <bool> d2: false;
+    private property <bool> d3: false;
+    private property <bool> d4: false;
+    private property <bool> d5: false;
+    private property <bool> d6: false;
+    private property <bool> d7: false;
+    private property <bool> d8: false;
+    private property <bool> d9: false;
+    private property <bool> d10: false;
+    private property <bool> d11: false;
+    private property <bool> delete-confirming: false;
+    private property <int> menu-tick: 0;
+    private property <string> status-msg: "Tap photos to select · then use the bottom bar · ♥ on each tile favorites";
+    private property <bool> status-is-success: false;
+    private property <bool> status-is-danger: false;
+
+    // ----- Helpers -----
+    function selected-count() -> int {
+        return (root.s0 ? 1 : 0) + (root.s1 ? 1 : 0) + (root.s2 ? 1 : 0)
+            + (root.s3 ? 1 : 0) + (root.s4 ? 1 : 0) + (root.s5 ? 1 : 0)
+            + (root.s6 ? 1 : 0) + (root.s7 ? 1 : 0) + (root.s8 ? 1 : 0)
+            + (root.s9 ? 1 : 0) + (root.s10 ? 1 : 0) + (root.s11 ? 1 : 0);
+    }
+    function favorited-count() -> int {
+        return (root.f0 ? 1 : 0) + (root.f1 ? 1 : 0) + (root.f2 ? 1 : 0)
+            + (root.f3 ? 1 : 0) + (root.f4 ? 1 : 0) + (root.f5 ? 1 : 0)
+            + (root.f6 ? 1 : 0) + (root.f7 ? 1 : 0) + (root.f8 ? 1 : 0)
+            + (root.f9 ? 1 : 0) + (root.f10 ? 1 : 0) + (root.f11 ? 1 : 0);
+    }
+    function visible-row-count() -> int {
+        if (root.tab-index == 0) { return 4; }
+        if (root.tab-index == 1) { return 2; }
+        return 1;
+    }
+    function tab-name(i: int) -> string {
+        if (i == 0) { return "Recents"; }
+        if (i == 1) { return "Albums"; }
+        return "Shared";
+    }
+    function selected-for(i: int) -> bool {
+        if (i == 0) { return root.s0; }
+        if (i == 1) { return root.s1; }
+        if (i == 2) { return root.s2; }
+        if (i == 3) { return root.s3; }
+        if (i == 4) { return root.s4; }
+        if (i == 5) { return root.s5; }
+        if (i == 6) { return root.s6; }
+        if (i == 7) { return root.s7; }
+        if (i == 8) { return root.s8; }
+        if (i == 9) { return root.s9; }
+        if (i == 10) { return root.s10; }
+        return root.s11;
+    }
+
+    // ----- Mutations -----
+    public function tap-photo(i: int) {
+        if (i == 0) { root.s0 = !root.s0; }
+        if (i == 1) { root.s1 = !root.s1; }
+        if (i == 2) { root.s2 = !root.s2; }
+        if (i == 3) { root.s3 = !root.s3; }
+        if (i == 4) { root.s4 = !root.s4; }
+        if (i == 5) { root.s5 = !root.s5; }
+        if (i == 6) { root.s6 = !root.s6; }
+        if (i == 7) { root.s7 = !root.s7; }
+        if (i == 8) { root.s8 = !root.s8; }
+        if (i == 9) { root.s9 = !root.s9; }
+        if (i == 10) { root.s10 = !root.s10; }
+        if (i == 11) { root.s11 = !root.s11; }
+        root.delete-confirming = false;
+        root.status-msg = "Selected · " + root.selected-count() + " of 12";
+        root.status-is-success = root.selected-count() > 0;
+        root.status-is-danger = false;
+    }
+    public function tap-heart(i: int) {
+        if (i == 0) { root.f0 = !root.f0; }
+        if (i == 1) { root.f1 = !root.f1; }
+        if (i == 2) { root.f2 = !root.f2; }
+        if (i == 3) { root.f3 = !root.f3; }
+        if (i == 4) { root.f4 = !root.f4; }
+        if (i == 5) { root.f5 = !root.f5; }
+        if (i == 6) { root.f6 = !root.f6; }
+        if (i == 7) { root.f7 = !root.f7; }
+        if (i == 8) { root.f8 = !root.f8; }
+        if (i == 9) { root.f9 = !root.f9; }
+        if (i == 10) { root.f10 = !root.f10; }
+        if (i == 11) { root.f11 = !root.f11; }
+        let now: bool = i == 0 ? root.f0
+            : i == 1 ? root.f1
+            : i == 2 ? root.f2
+            : i == 3 ? root.f3
+            : i == 4 ? root.f4
+            : i == 5 ? root.f5
+            : i == 6 ? root.f6
+            : i == 7 ? root.f7
+            : i == 8 ? root.f8
+            : i == 9 ? root.f9
+            : i == 10 ? root.f10
+            : root.f11;
+        root.photo-favorited(i, now);
+        root.status-msg = now
+            ? "♥ Photo " + (i + 1) + " favorited (" + root.favorited-count() + " total)"
+            : "Photo " + (i + 1) + " un-favorited";
+        root.status-is-success = now;
+        root.status-is-danger = !now;
+    }
+    public function clear-selection() {
+        root.s0 = false;
+        root.s1 = false;
+        root.s2 = false;
+        root.s3 = false;
+        root.s4 = false;
+        root.s5 = false;
+        root.s6 = false;
+        root.s7 = false;
+        root.s8 = false;
+        root.s9 = false;
+        root.s10 = false;
+        root.s11 = false;
+        root.delete-confirming = false;
+        root.status-msg = "Selection cleared";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function favorite-selected() {
+        if (root.s0) { root.f0 = true; }
+        if (root.s1) { root.f1 = true; }
+        if (root.s2) { root.f2 = true; }
+        if (root.s3) { root.f3 = true; }
+        if (root.s4) { root.f4 = true; }
+        if (root.s5) { root.f5 = true; }
+        if (root.s6) { root.f6 = true; }
+        if (root.s7) { root.f7 = true; }
+        if (root.s8) { root.f8 = true; }
+        if (root.s9) { root.f9 = true; }
+        if (root.s10) { root.f10 = true; }
+        if (root.s11) { root.f11 = true; }
+        root.status-msg = "♥ Favorited " + root.selected-count()
+            + " photos (" + root.favorited-count() + " total)";
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    public function share-selected() {
+        root.status-msg = "Sharing " + root.selected-count() + " photos…";
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    public function delete-selected() {
+        if (!root.delete-confirming) {
+            root.delete-confirming = true;
+            root.status-msg = "Tap Delete again to remove "
+                + root.selected-count() + " photos";
+            root.status-is-success = false;
+            root.status-is-danger = true;
+            return;
+        }
+        root.delete-confirming = false;
+        let count: int = root.selected-count();
+        if (root.s0) { root.d0 = true; root.s0 = false; }
+        if (root.s1) { root.d1 = true; root.s1 = false; }
+        if (root.s2) { root.d2 = true; root.s2 = false; }
+        if (root.s3) { root.d3 = true; root.s3 = false; }
+        if (root.s4) { root.d4 = true; root.s4 = false; }
+        if (root.s5) { root.d5 = true; root.s5 = false; }
+        if (root.s6) { root.d6 = true; root.s6 = false; }
+        if (root.s7) { root.d7 = true; root.s7 = false; }
+        if (root.s8) { root.d8 = true; root.s8 = false; }
+        if (root.s9) { root.d9 = true; root.s9 = false; }
+        if (root.s10) { root.d10 = true; root.s10 = false; }
+        if (root.s11) { root.d11 = true; root.s11 = false; }
+        root.photos-deleted(count);
+        root.status-msg = "Deleted " + count + " photos";
+        root.status-is-success = false;
+        root.status-is-danger = true;
+    }
+    public function set-tab(i: int) {
+        root.tab-index = i;
+        root.status-msg = "Tab · " + root.tab-name(i);
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function tap-menu() {
+        root.menu-tick = root.menu-tick + 1;
+        root.menu-pressed();
+        root.status-msg = "Menu · select · sort · settings (#"
+            + root.menu-tick + ")";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function tap-search() {
+        root.search-pressed();
+        root.status-msg = "Search · type a date or location";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
 
     background: Theme.background;
 
@@ -98,8 +359,32 @@ export component PhotoGridPage inherits Window {
             title-style: HeadingStyle.uppercase-spaced;
             leading-icon: @image-url("@mobile-components/icons/menu.svg");
             trailing-icon: @image-url("@mobile-components/icons/search.svg");
-            leading-pressed => { root.menu-pressed(); }
-            trailing-pressed => { root.search-pressed(); }
+            leading-pressed => { root.tap-menu(); }
+            trailing-pressed => { root.tap-search(); }
+        }
+
+        // ----- Status banner ---------------------------------------
+        Rectangle {
+            height: 32px;
+            background: root.status-is-danger ? Theme.accent-danger
+                : root.status-is-success ? Theme.accent-success
+                : Theme.surface-2;
+            animate background { duration: Theme.motion-fast; }
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                Text {
+                    text: root.status-msg;
+                    color: (root.status-is-danger || root.status-is-success)
+                        ? Theme.on-primary
+                        : Theme.on-surface;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+            }
         }
 
         TabBar {
@@ -107,17 +392,17 @@ export component PhotoGridPage inherits Window {
             Tab {
                 label: "Recents";
                 active: root.tab-index == 0;
-                clicked => { root.tab-index = 0; }
+                clicked => { root.set-tab(0); }
             }
             Tab {
                 label: "Albums";
                 active: root.tab-index == 1;
-                clicked => { root.tab-index = 1; }
+                clicked => { root.set-tab(1); }
             }
             Tab {
                 label: "Shared";
                 active: root.tab-index == 2;
-                clicked => { root.tab-index = 2; }
+                clicked => { root.set-tab(2); }
             }
         }
 
@@ -129,26 +414,218 @@ export component PhotoGridPage inherits Window {
                 spacing: 1px;
                 padding-top: 1px;
 
-                // 12 photos → 4 rows of 3.
-                for row in [
-                    {a: root.photos[0],  b: root.photos[1],  c: root.photos[2]},
-                    {a: root.photos[3],  b: root.photos[4],  c: root.photos[5]},
-                    {a: root.photos[6],  b: root.photos[7],  c: root.photos[8]},
-                    {a: root.photos[9],  b: root.photos[10], c: root.photos[11]},
-                ]: HorizontalLayout {
+                if root.visible-row-count() >= 1: HorizontalLayout {
                     spacing: 1px;
                     alignment: center;
-                    PhotoTile {
-                        photo: row.a;
-                        clicked => { root.photo-pressed(row.a); }
+                    if !root.d0: PhotoTile {
+                        photo: root.photos[0];
+                        selected: root.s0;
+                        favorited: root.f0;
+                        clicked => { root.tap-photo(0); }
+                        heart-clicked => { root.tap-heart(0); }
                     }
-                    PhotoTile {
-                        photo: row.b;
-                        clicked => { root.photo-pressed(row.b); }
+                    if !root.d1: PhotoTile {
+                        photo: root.photos[1];
+                        selected: root.s1;
+                        favorited: root.f1;
+                        clicked => { root.tap-photo(1); }
+                        heart-clicked => { root.tap-heart(1); }
                     }
-                    PhotoTile {
-                        photo: row.c;
-                        clicked => { root.photo-pressed(row.c); }
+                    if !root.d2: PhotoTile {
+                        photo: root.photos[2];
+                        selected: root.s2;
+                        favorited: root.f2;
+                        clicked => { root.tap-photo(2); }
+                        heart-clicked => { root.tap-heart(2); }
+                    }
+                }
+                if root.visible-row-count() >= 2: HorizontalLayout {
+                    spacing: 1px;
+                    alignment: center;
+                    if !root.d3: PhotoTile {
+                        photo: root.photos[3];
+                        selected: root.s3;
+                        favorited: root.f3;
+                        clicked => { root.tap-photo(3); }
+                        heart-clicked => { root.tap-heart(3); }
+                    }
+                    if !root.d4: PhotoTile {
+                        photo: root.photos[4];
+                        selected: root.s4;
+                        favorited: root.f4;
+                        clicked => { root.tap-photo(4); }
+                        heart-clicked => { root.tap-heart(4); }
+                    }
+                    if !root.d5: PhotoTile {
+                        photo: root.photos[5];
+                        selected: root.s5;
+                        favorited: root.f5;
+                        clicked => { root.tap-photo(5); }
+                        heart-clicked => { root.tap-heart(5); }
+                    }
+                }
+                if root.visible-row-count() >= 3: HorizontalLayout {
+                    spacing: 1px;
+                    alignment: center;
+                    if !root.d6: PhotoTile {
+                        photo: root.photos[6];
+                        selected: root.s6;
+                        favorited: root.f6;
+                        clicked => { root.tap-photo(6); }
+                        heart-clicked => { root.tap-heart(6); }
+                    }
+                    if !root.d7: PhotoTile {
+                        photo: root.photos[7];
+                        selected: root.s7;
+                        favorited: root.f7;
+                        clicked => { root.tap-photo(7); }
+                        heart-clicked => { root.tap-heart(7); }
+                    }
+                    if !root.d8: PhotoTile {
+                        photo: root.photos[8];
+                        selected: root.s8;
+                        favorited: root.f8;
+                        clicked => { root.tap-photo(8); }
+                        heart-clicked => { root.tap-heart(8); }
+                    }
+                }
+                if root.visible-row-count() >= 4: HorizontalLayout {
+                    spacing: 1px;
+                    alignment: center;
+                    if !root.d9: PhotoTile {
+                        photo: root.photos[9];
+                        selected: root.s9;
+                        favorited: root.f9;
+                        clicked => { root.tap-photo(9); }
+                        heart-clicked => { root.tap-heart(9); }
+                    }
+                    if !root.d10: PhotoTile {
+                        photo: root.photos[10];
+                        selected: root.s10;
+                        favorited: root.f10;
+                        clicked => { root.tap-photo(10); }
+                        heart-clicked => { root.tap-heart(10); }
+                    }
+                    if !root.d11: PhotoTile {
+                        photo: root.photos[11];
+                        selected: root.s11;
+                        favorited: root.f11;
+                        clicked => { root.tap-photo(11); }
+                        heart-clicked => { root.tap-heart(11); }
+                    }
+                }
+            }
+        }
+
+        // ----- Sticky selection action bar -----------------------------
+        if root.selected-count() > 0: Rectangle {
+            background: Theme.surface-1;
+            drop-shadow-blur: Theme.elevation-2-blur;
+            drop-shadow-color: Theme.elevation-2-color;
+            drop-shadow-offset-y: -4px;
+            height: 64px;
+            HorizontalLayout {
+                padding: Theme.spacing-md;
+                spacing: Theme.spacing-sm;
+                alignment: stretch;
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    Text {
+                        text: root.selected-count() + " selected";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-body;
+                        font-weight: 800;
+                    }
+                }
+                Rectangle {
+                    width: 40px;
+                    height: 40px;
+                    border-radius: 20px;
+                    background: share-touch.pressed
+                        ? Theme.surface-pressed
+                        : Theme.surface-2;
+                    animate background { duration: Theme.motion-fast; }
+                    Text {
+                        text: "↗";
+                        color: Theme.on-surface;
+                        font-size: 18px;
+                        font-weight: 800;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                    share-touch := TouchArea {
+                        clicked => { root.share-selected(); }
+                    }
+                }
+                Rectangle {
+                    width: 40px;
+                    height: 40px;
+                    border-radius: 20px;
+                    background: fav-touch.pressed
+                        ? Theme.surface-pressed
+                        : Theme.surface-2;
+                    animate background { duration: Theme.motion-fast; }
+                    Text {
+                        text: "♥";
+                        color: Theme.accent-danger;
+                        font-size: 18px;
+                        font-weight: 800;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                    fav-touch := TouchArea {
+                        clicked => { root.favorite-selected(); }
+                    }
+                }
+                Rectangle {
+                    width: 40px;
+                    height: 40px;
+                    border-radius: 20px;
+                    background: root.delete-confirming
+                        ? Theme.accent-danger
+                        : (del-touch.pressed ? Theme.surface-pressed : Theme.surface-2);
+                    animate background { duration: Theme.motion-fast; }
+                    Text {
+                        text: "🗑";
+                        color: root.delete-confirming
+                            ? Theme.on-primary
+                            : Theme.accent-danger;
+                        font-size: 16px;
+                        font-weight: 800;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                    del-touch := TouchArea {
+                        clicked => { root.delete-selected(); }
+                    }
+                }
+                Rectangle {
+                    width: 40px;
+                    height: 40px;
+                    border-radius: 20px;
+                    background: done-touch.pressed
+                        ? Theme.surface-pressed
+                        : Theme.surface-2;
+                    animate background { duration: Theme.motion-fast; }
+                    Text {
+                        text: "×";
+                        color: Theme.on-surface;
+                        font-size: 22px;
+                        font-weight: 800;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                    done-touch := TouchArea {
+                        clicked => { root.clear-selection(); }
                     }
                 }
             }

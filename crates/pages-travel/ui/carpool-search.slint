@@ -1,22 +1,5 @@
 // CarpoolSearchPage
 // =====================================================================
-//
-// Carpool / BlaBlaCar-style rideshare search-and-pick screen. Distinct
-// from `RideShareBookingPage` (full-bleed-map taxi booking) and
-// `FlightSearchPage` (multi-leg air search). Pure showcase of the
-// `FormSection` + `SettingRow` / `KeyValueRow` alignment primitives —
-// every list row on the page (origin / destination, trip parameters,
-// match list) goes through ONE of those components so leading tiles,
-// titles, subtitles and trailing values sit on identical baselines.
-//
-// What this screen does
-//   - AppBar "Find a ride" with back leading.
-//   - WHERE section: from + to SettingRows (green / red pin tiles), and
-//     a tiny "swap" SettingRow no title between them.
-//   - WHEN section: date / time / passengers KeyValueRows.
-//   - MATCHES section: 5 SettingRows, one per matching driver, each
-//     showing avatar-substitute tile + driver name + trip blurb + fare.
-//   - Bottom: primary "Search again" + text-button "Save search".
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
@@ -28,9 +11,151 @@ import { Divider } from "@mobile-components/divider.slint";
 import { MobileButton, TextButton } from "@mobile-components/button.slint";
 import { ScrollView } from "std-widgets.slint";
 
+component TagPill inherits Rectangle {
+    in property <string> label;
+    in property <bool> active;
+    callback clicked();
+    horizontal-stretch: 0;
+    min-height: 30px;
+    background: root.active ? Theme.accent-info : Theme.surface-2;
+    border-radius: 15px;
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.active ? Theme.background : Theme.on-surface;
+                font-size: Theme.font-size-caption;
+                font-weight: 600;
+            }
+        }
+    }
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
+    min-height: 48px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.destructive ? Theme.accent-danger : Theme.on-background;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+        }
+    }
+}
+
+component Stepper inherits HorizontalLayout {
+    in property <int> value;
+    in property <int> min-val: 1;
+    in property <int> max-val: 99;
+    callback changed(int);
+    spacing: 4px;
+    Rectangle {
+        horizontal-stretch: 0;
+        width: 28px;
+        height: 28px;
+        border-radius: 14px;
+        background: root.value > root.min-val ? Theme.surface-3 : Theme.surface-2;
+        Text {
+            text: "−";
+            color: root.value > root.min-val ? Theme.on-surface : Theme.muted;
+            font-size: Theme.font-size-body;
+            font-weight: 800;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            width: parent.width;
+            height: parent.height;
+        }
+        TouchArea {
+            clicked => {
+                if (root.value > root.min-val) {
+                    root.changed(root.value - 1);
+                }
+            }
+        }
+    }
+    VerticalLayout {
+        alignment: center;
+        Text {
+            text: "" + root.value;
+            color: Theme.on-background;
+            font-size: Theme.font-size-body;
+            font-weight: 700;
+            horizontal-alignment: center;
+            min-width: 28px;
+        }
+    }
+    Rectangle {
+        horizontal-stretch: 0;
+        width: 28px;
+        height: 28px;
+        border-radius: 14px;
+        background: root.value < root.max-val ? Theme.surface-3 : Theme.surface-2;
+        Text {
+            text: "+";
+            color: root.value < root.max-val ? Theme.on-surface : Theme.muted;
+            font-size: Theme.font-size-body;
+            font-weight: 800;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            width: parent.width;
+            height: parent.height;
+        }
+        TouchArea {
+            clicked => {
+                if (root.value < root.max-val) {
+                    root.changed(root.value + 1);
+                }
+            }
+        }
+    }
+}
+
 export component CarpoolSearchPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
+
+    in-out property <int> from-idx: 0;
+    in-out property <int> to-idx: 0;
+    in-out property <int> date-idx: 0;
+    in-out property <int> time-idx: 0;
+    in-out property <int> pax: 1;
+    in-out property <int> filter-idx: 0;
+    in-out property <int> expanded: 0; // 0 none, 1..5 = match
+    in-out property <int> booked: 0;
+    in-out property <bool> saved;
+    in-out property <bool> refreshing;
+    in-out property <int> refresh-pct;
+    in-out property <int> match-base: 0; // entropy for price drift
+    in-out property <int> seats-1: 3;
+    in-out property <int> seats-2: 2;
+    in-out property <int> seats-3: 1;
+    in-out property <int> seats-4: 3;
+    in-out property <int> seats-5: 2;
+    in-out property <bool> sheet-open;
+    in-out property <string> status-msg;
+    in-out property <int> status-tone;
 
     callback back-pressed();
     callback swap-pressed();
@@ -41,13 +166,119 @@ export component CarpoolSearchPage inherits Window {
 
     background: Theme.background;
 
+    function set-status(m: string, tone: int) {
+        root.status-msg = m;
+        root.status-tone = tone;
+    }
+    function status-color() -> color {
+        return root.status-tone == 1 ? Theme.accent-success : (root.status-tone == 2 ? Theme.accent-danger : (root.status-tone == 3 ? Theme.accent-warning : Theme.accent-info));
+    }
+    function city(i: int) -> string {
+        return i == 0 ? "Sablon" : (i == 1 ? "Brussels Central" : (i == 2 ? "Antwerp" : "Charleroi"));
+    }
+    function dest(i: int) -> string {
+        return i == 0 ? "Louvain-la-Neuve" : (i == 1 ? "Namur" : (i == 2 ? "Liège" : "Mons"));
+    }
+    function date-label() -> string {
+        return root.date-idx == 0 ? "Sat, May 17" : (root.date-idx == 1 ? "Sun, May 18" : (root.date-idx == 2 ? "Mon, May 19" : (root.date-idx == 3 ? "Tue, May 20" : (root.date-idx == 4 ? "Wed, May 21" : (root.date-idx == 5 ? "Thu, May 22" : "Fri, May 23")))));
+    }
+    function time-label() -> string {
+        return root.time-idx == 0 ? "after 09:00" : (root.time-idx == 1 ? "after 12:00" : (root.time-idx == 2 ? "after 15:00" : "after 18:00"));
+    }
+    function filter-label() -> string {
+        return root.filter-idx == 0 ? "All" : (root.filter-idx == 1 ? "3+ seats" : (root.filter-idx == 2 ? "Electric" : "Verified"));
+    }
+    function visible-1() -> bool {
+        return root.filter-idx == 0 || root.filter-idx == 1 || root.filter-idx == 2 || root.filter-idx == 3;
+    }
+    function visible-2() -> bool {
+        return root.filter-idx == 0 || root.filter-idx == 2 || root.filter-idx == 3;
+    }
+    function visible-3() -> bool {
+        return root.filter-idx == 0 || root.filter-idx == 3;
+    }
+    function visible-4() -> bool {
+        return root.filter-idx == 0 || root.filter-idx == 1 || root.filter-idx == 2;
+    }
+    function visible-5() -> bool {
+        return root.filter-idx == 0;
+    }
+    function visible-count() -> int {
+        return (root.visible-1() ? 1 : 0) + (root.visible-2() ? 1 : 0) + (root.visible-3() ? 1 : 0) + (root.visible-4() ? 1 : 0) + (root.visible-5() ? 1 : 0);
+    }
+    function price-1() -> string {
+        return "€ " + (8 + mod(root.match-base, 3)) + "." + (50 + mod(root.match-base, 5) * 5);
+    }
+    function price-2() -> string {
+        return "€ " + (9 + mod(root.match-base + 1, 2)) + ".00";
+    }
+    function price-3() -> string {
+        return "€ " + (7 + mod(root.match-base + 2, 2)) + ".50";
+    }
+    function price-4() -> string {
+        return "€ " + (8 + mod(root.match-base + 3, 2)) + ".00";
+    }
+    function price-5() -> string {
+        return "€ " + (7 + mod(root.match-base + 4, 2)) + ".00";
+    }
+
+    // Refresh Timer.
+    refresh-timer := Timer {
+        interval: 60ms;
+        running: root.refreshing;
+        triggered => {
+            root.refresh-pct = min(100, root.refresh-pct + 5);
+            if (root.refresh-pct >= 100) {
+                root.refreshing = false;
+                root.match-base = root.match-base + 1;
+                root.set-status("Found " + root.visible-count() + " new matches", 1);
+            }
+        }
+    }
+
     VerticalLayout {
         spacing: 0;
 
         AppBar {
-            title: "Find a ride";
+            title: root.booked > 0 ? "Booked ✓" : "Find a ride";
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
-            leading-pressed => { root.back-pressed(); }
+            trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
+            leading-pressed => {
+                root.back-pressed();
+            }
+            trailing-pressed => {
+                root.sheet-open = true;
+            }
+        }
+
+        if !root.status-msg.is-empty: Rectangle {
+            height: 28px;
+            background: root.status-color().with-alpha(0.18);
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.status-msg;
+                        color: root.status-color();
+                        font-size: Theme.font-size-caption;
+                        font-weight: 600;
+                    }
+                }
+            }
+        }
+
+        if root.refreshing: Rectangle {
+            height: 4px;
+            background: Theme.surface-variant;
+            Rectangle {
+                x: 0;
+                y: 0;
+                height: parent.height;
+                width: parent.width * root.refresh-pct / 100;
+                background: Theme.accent-info;
+            }
         }
 
         ScrollView {
@@ -59,7 +290,6 @@ export component CarpoolSearchPage inherits Window {
                 spacing: Theme.spacing-md;
                 alignment: start;
 
-                // ----- WHERE ------------------------------------------------
                 FormSection {
                     title: "WHERE";
 
@@ -67,8 +297,13 @@ export component CarpoolSearchPage inherits Window {
                         icon: @image-url("@mobile-components/icons/pin.svg");
                         tone: Tone.success;
                         title: "From";
+                        subtitle: "Tap to cycle origin";
+                        clicked => {
+                            root.from-idx = mod(root.from-idx + 1, 4);
+                            root.set-status("From → " + root.city(root.from-idx), 0);
+                        }
                         Text {
-                            text: "Sablon";
+                            text: root.city(root.from-idx);
                             color: Theme.on-surface;
                             font-size: Theme.font-size-body;
                             font-weight: 600;
@@ -77,13 +312,16 @@ export component CarpoolSearchPage inherits Window {
                     }
                     Divider { }
                     SettingRow {
-                        title: "Swap";
-                        clicked => { root.swap-pressed(); }
+                        title: "Swap origin and destination";
+                        clicked => {
+                            root.swap-pressed();
+                            root.set-status("Swapped: " + root.dest(root.to-idx) + " → " + root.city(root.from-idx), 0);
+                        }
                         Image {
                             width: 16px;
                             height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
+                            source: @image-url("@mobile-components/icons/spinner-arc.svg");
+                            colorize: Theme.accent-info;
                             image-fit: contain;
                         }
                     }
@@ -92,8 +330,13 @@ export component CarpoolSearchPage inherits Window {
                         icon: @image-url("@mobile-components/icons/pin.svg");
                         tone: Tone.danger;
                         title: "To";
+                        subtitle: "Tap to cycle destination";
+                        clicked => {
+                            root.to-idx = mod(root.to-idx + 1, 4);
+                            root.set-status("To → " + root.dest(root.to-idx), 0);
+                        }
                         Text {
-                            text: "Louvain-la-Neuve";
+                            text: root.dest(root.to-idx);
                             color: Theme.on-surface;
                             font-size: Theme.font-size-body;
                             font-weight: 600;
@@ -102,107 +345,457 @@ export component CarpoolSearchPage inherits Window {
                     }
                 }
 
-                // ----- WHEN -------------------------------------------------
                 FormSection {
                     title: "WHEN";
 
-                    KeyValueRow {
-                        label: "Date";
-                        value: "Sat, May 17";
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/pin.svg");
+                        title: "Date";
+                        clicked => {
+                            root.date-idx = mod(root.date-idx + 1, 7);
+                            root.set-status("Date → " + root.date-label(), 0);
+                            root.edit-when-pressed("date");
+                        }
+                        Text {
+                            text: root.date-label();
+                            color: Theme.on-surface;
+                            font-size: Theme.font-size-body;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                        }
                     }
                     Divider { }
-                    KeyValueRow {
-                        label: "Time";
-                        value: "after 09:00";
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/bell.svg");
+                        title: "Time";
+                        clicked => {
+                            root.time-idx = mod(root.time-idx + 1, 4);
+                            root.set-status("Time → " + root.time-label(), 0);
+                            root.edit-when-pressed("time");
+                        }
+                        Text {
+                            text: root.time-label();
+                            color: Theme.on-surface;
+                            font-size: Theme.font-size-body;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                        }
                     }
                     Divider { }
-                    KeyValueRow {
-                        label: "Passengers";
-                        value: "1 adult";
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        title: "Passengers";
+                        Stepper {
+                            value: root.pax;
+                            min-val: 1;
+                            max-val: 4;
+                            changed(v) => {
+                                root.pax = v;
+                                root.set-status("Passengers → " + v, 0);
+                            }
+                        }
                     }
                 }
 
-                // ----- MATCHES ----------------------------------------------
-                FormSection {
-                    title: "MATCHES";
-                    caption: "5 drivers leaving within the next two hours.";
+                HorizontalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    spacing: Theme.spacing-sm;
+                    TagPill {
+                        label: "All";
+                        active: root.filter-idx == 0;
+                        clicked => {
+                            root.filter-idx = 0;
+                            root.set-status("All matches", 0);
+                        }
+                    }
+                    TagPill {
+                        label: "3+ seats";
+                        active: root.filter-idx == 1;
+                        clicked => {
+                            root.filter-idx = 1;
+                            root.set-status("3+ seats only", 0);
+                        }
+                    }
+                    TagPill {
+                        label: "Electric";
+                        active: root.filter-idx == 2;
+                        clicked => {
+                            root.filter-idx = 2;
+                            root.set-status("Electric only", 0);
+                        }
+                    }
+                    TagPill {
+                        label: "Verified";
+                        active: root.filter-idx == 3;
+                        clicked => {
+                            root.filter-idx = 3;
+                            root.set-status("Verified drivers only", 0);
+                        }
+                    }
+                }
 
-                    SettingRow {
+                FormSection {
+                    title: "MATCHES (" + root.visible-count() + ")";
+                    caption: root.refreshing ? "Refreshing prices…" : "Drivers leaving within the next two hours.";
+
+                    if root.visible-1(): SettingRow {
                         icon: @image-url("@mobile-components/icons/profile.svg");
                         tone: Tone.info;
-                        title: "Marie · BMW i3";
-                        subtitle: "departs 09:30 · arrives 10:25 · 3 seats";
-                        clicked => { root.match-pressed("marie"); }
+                        title: root.booked == 1 ? "Marie · BMW i3 · BOOKED" : "Marie · BMW i3";
+                        subtitle: "departs 09:30 · arrives 10:25 · " + root.seats-1 + " seats";
+                        clicked => {
+                            root.expanded = root.expanded == 1 ? 0 : 1;
+                            root.set-status(root.expanded == 1 ? "Marie ★4.9 · 312 trips" : "Closed", 0);
+                            root.match-pressed("marie");
+                        }
                         Text {
-                            text: "€ 8.50";
-                            color: Theme.on-surface;
+                            text: root.price-1();
+                            color: root.booked == 1 ? Theme.accent-success : Theme.on-surface;
                             font-size: Theme.font-size-body;
                             font-weight: 700;
                             vertical-alignment: center;
                         }
                     }
-                    Divider { }
-                    SettingRow {
+                    if root.visible-1() && root.expanded == 1: Rectangle {
+                        background: Theme.surface-2;
+                        VerticalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-sm;
+                            Text {
+                                text: "★ 4.9 · 312 trips · French, English";
+                                color: Theme.muted;
+                                font-size: Theme.font-size-caption;
+                            }
+                            Text {
+                                text: "Pickup at Sablon · drop at LLN station · 1 stop";
+                                color: Theme.muted;
+                                font-size: Theme.font-size-caption;
+                            }
+                            HorizontalLayout {
+                                spacing: Theme.spacing-sm;
+                                Rectangle {
+                                    horizontal-stretch: 0;
+                                    min-width: 110px;
+                                    height: 34px;
+                                    border-radius: 17px;
+                                    background: root.booked == 1 ? Theme.accent-success : Theme.accent-info;
+                                    Text {
+                                        text: root.booked == 1 ? "Booked ✓" : "Book " + root.price-1();
+                                        color: Theme.background;
+                                        font-size: Theme.font-size-caption;
+                                        font-weight: 800;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                        width: parent.width;
+                                        height: parent.height;
+                                    }
+                                    TouchArea {
+                                        clicked => {
+                                            if (root.booked == 1) {
+                                                root.booked = 0;
+                                                root.seats-1 = root.seats-1 + 1;
+                                                root.set-status("Cancelled with Marie", 2);
+                                            } else if (root.seats-1 > 0) {
+                                                root.booked = 1;
+                                                root.seats-1 = root.seats-1 - 1;
+                                                root.set-status("Booked with Marie · " + root.price-1(), 1);
+                                            }
+                                        }
+                                    }
+                                }
+                                Rectangle {
+                                    horizontal-stretch: 0;
+                                    min-width: 80px;
+                                    height: 34px;
+                                    border-radius: 17px;
+                                    background: Theme.surface-3;
+                                    Text {
+                                        text: "Message";
+                                        color: Theme.on-surface;
+                                        font-size: Theme.font-size-caption;
+                                        font-weight: 700;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                        width: parent.width;
+                                        height: parent.height;
+                                    }
+                                    TouchArea {
+                                        clicked => {
+                                            root.set-status("Opening chat with Marie", 0);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if root.visible-1() && root.visible-2(): Divider { }
+
+                    if root.visible-2(): SettingRow {
                         icon: @image-url("@mobile-components/icons/profile.svg");
                         tone: Tone.success;
-                        title: "Tom · Tesla Model 3";
-                        subtitle: "departs 09:45 · arrives 10:40 · 2 seats";
-                        clicked => { root.match-pressed("tom"); }
+                        title: root.booked == 2 ? "Tom · Tesla Model 3 · BOOKED" : "Tom · Tesla Model 3";
+                        subtitle: "departs 09:45 · arrives 10:40 · " + root.seats-2 + " seats";
+                        clicked => {
+                            root.expanded = root.expanded == 2 ? 0 : 2;
+                            root.set-status(root.expanded == 2 ? "Tom ★4.7 · 178 trips" : "Closed", 0);
+                            root.match-pressed("tom");
+                        }
                         Text {
-                            text: "€ 9.00";
-                            color: Theme.on-surface;
+                            text: root.price-2();
+                            color: root.booked == 2 ? Theme.accent-success : Theme.on-surface;
                             font-size: Theme.font-size-body;
                             font-weight: 700;
                             vertical-alignment: center;
                         }
                     }
-                    Divider { }
-                    SettingRow {
+                    if root.visible-2() && root.expanded == 2: Rectangle {
+                        background: Theme.surface-2;
+                        VerticalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-sm;
+                            Text {
+                                text: "★ 4.7 · 178 trips · Quiet ride, autopilot enabled";
+                                color: Theme.muted;
+                                font-size: Theme.font-size-caption;
+                            }
+                            HorizontalLayout {
+                                spacing: Theme.spacing-sm;
+                                Rectangle {
+                                    horizontal-stretch: 0;
+                                    min-width: 110px;
+                                    height: 34px;
+                                    border-radius: 17px;
+                                    background: root.booked == 2 ? Theme.accent-success : Theme.accent-info;
+                                    Text {
+                                        text: root.booked == 2 ? "Booked ✓" : "Book " + root.price-2();
+                                        color: Theme.background;
+                                        font-size: Theme.font-size-caption;
+                                        font-weight: 800;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                        width: parent.width;
+                                        height: parent.height;
+                                    }
+                                    TouchArea {
+                                        clicked => {
+                                            if (root.booked == 2) {
+                                                root.booked = 0;
+                                                root.seats-2 = root.seats-2 + 1;
+                                                root.set-status("Cancelled with Tom", 2);
+                                            } else if (root.seats-2 > 0) {
+                                                root.booked = 2;
+                                                root.seats-2 = root.seats-2 - 1;
+                                                root.set-status("Booked with Tom · " + root.price-2(), 1);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if root.visible-2() && root.visible-3(): Divider { }
+
+                    if root.visible-3(): SettingRow {
                         icon: @image-url("@mobile-components/icons/profile.svg");
                         tone: Tone.warning;
-                        title: "Sofia · VW Golf";
-                        subtitle: "departs 10:00 · arrives 10:55 · 1 seat";
-                        clicked => { root.match-pressed("sofia"); }
+                        title: root.booked == 3 ? "Sofia · VW Golf · BOOKED" : "Sofia · VW Golf";
+                        subtitle: "departs 10:00 · arrives 10:55 · " + root.seats-3 + " seat";
+                        clicked => {
+                            root.expanded = root.expanded == 3 ? 0 : 3;
+                            root.set-status(root.expanded == 3 ? "Sofia ★4.8 · 89 trips" : "Closed", 0);
+                            root.match-pressed("sofia");
+                        }
                         Text {
-                            text: "€ 7.50";
-                            color: Theme.on-surface;
+                            text: root.price-3();
+                            color: root.booked == 3 ? Theme.accent-success : Theme.on-surface;
                             font-size: Theme.font-size-body;
                             font-weight: 700;
                             vertical-alignment: center;
                         }
                     }
-                    Divider { }
-                    SettingRow {
+                    if root.visible-3() && root.expanded == 3: Rectangle {
+                        background: Theme.surface-2;
+                        VerticalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-sm;
+                            Text {
+                                text: "★ 4.8 · 89 trips · verified ID";
+                                color: Theme.muted;
+                                font-size: Theme.font-size-caption;
+                            }
+                            HorizontalLayout {
+                                spacing: Theme.spacing-sm;
+                                Rectangle {
+                                    horizontal-stretch: 0;
+                                    min-width: 110px;
+                                    height: 34px;
+                                    border-radius: 17px;
+                                    background: root.booked == 3 ? Theme.accent-success : Theme.accent-info;
+                                    Text {
+                                        text: root.booked == 3 ? "Booked ✓" : "Book " + root.price-3();
+                                        color: Theme.background;
+                                        font-size: Theme.font-size-caption;
+                                        font-weight: 800;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                        width: parent.width;
+                                        height: parent.height;
+                                    }
+                                    TouchArea {
+                                        clicked => {
+                                            if (root.booked == 3) {
+                                                root.booked = 0;
+                                                root.seats-3 = root.seats-3 + 1;
+                                                root.set-status("Cancelled with Sofia", 2);
+                                            } else if (root.seats-3 > 0) {
+                                                root.booked = 3;
+                                                root.seats-3 = root.seats-3 - 1;
+                                                root.set-status("Booked with Sofia · " + root.price-3(), 1);
+                                            } else {
+                                                root.set-status("No seats left", 3);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if root.visible-3() && root.visible-4(): Divider { }
+
+                    if root.visible-4(): SettingRow {
                         icon: @image-url("@mobile-components/icons/profile.svg");
                         tone: Tone.danger;
-                        title: "Karim · Renault Zoé";
-                        subtitle: "departs 10:15 · arrives 11:10 · 3 seats";
-                        clicked => { root.match-pressed("karim"); }
+                        title: root.booked == 4 ? "Karim · Renault Zoé · BOOKED" : "Karim · Renault Zoé";
+                        subtitle: "departs 10:15 · arrives 11:10 · " + root.seats-4 + " seats";
+                        clicked => {
+                            root.expanded = root.expanded == 4 ? 0 : 4;
+                            root.set-status(root.expanded == 4 ? "Karim ★4.6 · 56 trips" : "Closed", 0);
+                            root.match-pressed("karim");
+                        }
                         Text {
-                            text: "€ 8.00";
-                            color: Theme.on-surface;
+                            text: root.price-4();
+                            color: root.booked == 4 ? Theme.accent-success : Theme.on-surface;
                             font-size: Theme.font-size-body;
                             font-weight: 700;
                             vertical-alignment: center;
                         }
                     }
-                    Divider { }
-                    SettingRow {
+                    if root.visible-4() && root.expanded == 4: Rectangle {
+                        background: Theme.surface-2;
+                        VerticalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-sm;
+                            Text {
+                                text: "★ 4.6 · 56 trips · pet-friendly";
+                                color: Theme.muted;
+                                font-size: Theme.font-size-caption;
+                            }
+                            Rectangle {
+                                horizontal-stretch: 0;
+                                min-width: 110px;
+                                height: 34px;
+                                border-radius: 17px;
+                                background: root.booked == 4 ? Theme.accent-success : Theme.accent-info;
+                                Text {
+                                    text: root.booked == 4 ? "Booked ✓" : "Book " + root.price-4();
+                                    color: Theme.background;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 800;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                                TouchArea {
+                                    clicked => {
+                                        if (root.booked == 4) {
+                                            root.booked = 0;
+                                            root.seats-4 = root.seats-4 + 1;
+                                            root.set-status("Cancelled with Karim", 2);
+                                        } else if (root.seats-4 > 0) {
+                                            root.booked = 4;
+                                            root.seats-4 = root.seats-4 - 1;
+                                            root.set-status("Booked with Karim · " + root.price-4(), 1);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if root.visible-4() && root.visible-5(): Divider { }
+
+                    if root.visible-5(): SettingRow {
                         icon: @image-url("@mobile-components/icons/profile.svg");
-                        title: "Anne · Citroën C3";
-                        subtitle: "departs 10:30 · arrives 11:25 · 2 seats";
-                        clicked => { root.match-pressed("anne"); }
+                        title: root.booked == 5 ? "Anne · Citroën C3 · BOOKED" : "Anne · Citroën C3";
+                        subtitle: "departs 10:30 · arrives 11:25 · " + root.seats-5 + " seats";
+                        clicked => {
+                            root.expanded = root.expanded == 5 ? 0 : 5;
+                            root.set-status(root.expanded == 5 ? "Anne ★4.5 · 22 trips" : "Closed", 0);
+                            root.match-pressed("anne");
+                        }
                         Text {
-                            text: "€ 7.00";
-                            color: Theme.on-surface;
+                            text: root.price-5();
+                            color: root.booked == 5 ? Theme.accent-success : Theme.on-surface;
                             font-size: Theme.font-size-body;
                             font-weight: 700;
                             vertical-alignment: center;
+                        }
+                    }
+                    if root.visible-5() && root.expanded == 5: Rectangle {
+                        background: Theme.surface-2;
+                        VerticalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-sm;
+                            Text {
+                                text: "★ 4.5 · 22 trips · new driver";
+                                color: Theme.muted;
+                                font-size: Theme.font-size-caption;
+                            }
+                            Rectangle {
+                                horizontal-stretch: 0;
+                                min-width: 110px;
+                                height: 34px;
+                                border-radius: 17px;
+                                background: root.booked == 5 ? Theme.accent-success : Theme.accent-info;
+                                Text {
+                                    text: root.booked == 5 ? "Booked ✓" : "Book " + root.price-5();
+                                    color: Theme.background;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 800;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                                TouchArea {
+                                    clicked => {
+                                        if (root.booked == 5) {
+                                            root.booked = 0;
+                                            root.seats-5 = root.seats-5 + 1;
+                                            root.set-status("Cancelled with Anne", 2);
+                                        } else if (root.seats-5 > 0) {
+                                            root.booked = 5;
+                                            root.seats-5 = root.seats-5 - 1;
+                                            root.set-status("Booked with Anne · " + root.price-5(), 1);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if root.visible-count() == 0: VerticalLayout {
+                        padding: Theme.spacing-md;
+                        Text {
+                            text: "No drivers match this filter.";
+                            color: Theme.muted;
+                            font-size: Theme.font-size-caption;
+                            horizontal-alignment: center;
                         }
                     }
                 }
 
-                // ----- Actions ----------------------------------------------
                 VerticalLayout {
                     padding-left: Theme.spacing-md;
                     padding-right: Theme.spacing-md;
@@ -210,12 +803,132 @@ export component CarpoolSearchPage inherits Window {
                     alignment: stretch;
 
                     MobileButton {
-                        text: "Search again";
-                        clicked => { root.search-again-pressed(); }
+                        text: root.refreshing ? "Refreshing… " + root.refresh-pct + "%" : "Search again";
+                        clicked => {
+                            if (!root.refreshing) {
+                                root.refreshing = true;
+                                root.refresh-pct = 0;
+                                root.set-status("Refreshing matches…", 0);
+                                root.search-again-pressed();
+                            }
+                        }
                     }
                     TextButton {
-                        text: "Save search";
-                        clicked => { root.save-search-pressed(); }
+                        text: root.saved ? "Saved ✓ — tap to unsave" : "Save search";
+                        clicked => {
+                            root.saved = !root.saved;
+                            root.set-status(root.saved ? "Search saved" : "Removed from saved", root.saved ? 1 : 0);
+                            root.save-search-pressed();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: Theme.surface-1;
+            border-top-left-radius: 16px;
+            border-top-right-radius: 16px;
+            clip: true;
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.muted;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: "Trip tools";
+                        color: Theme.on-background;
+                        font-size: Theme.font-size-title;
+                        font-weight: 700;
+                    }
+                }
+                SheetRow {
+                    label: "Sort by price (low → high)";
+                    clicked => {
+                        root.set-status("Sorted by price", 0);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Sort by departure";
+                    clicked => {
+                        root.set-status("Sorted by departure", 0);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: root.saved ? "Unsave this search" : "Save this search";
+                    clicked => {
+                        root.saved = !root.saved;
+                        root.set-status(root.saved ? "Search saved" : "Removed from saved", root.saved ? 1 : 0);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Reset filters";
+                    clicked => {
+                        root.filter-idx = 0;
+                        root.expanded = 0;
+                        root.set-status("Filters reset", 0);
+                        root.sheet-open = false;
+                    }
+                }
+                Rectangle {
+                    height: 1px;
+                    background: Theme.outline;
+                }
+                if root.booked > 0: SheetRow {
+                    label: "Cancel current booking";
+                    destructive: true;
+                    clicked => {
+                        if (root.booked == 1) {
+                            root.seats-1 = root.seats-1 + 1;
+                        }
+                        if (root.booked == 2) {
+                            root.seats-2 = root.seats-2 + 1;
+                        }
+                        if (root.booked == 3) {
+                            root.seats-3 = root.seats-3 + 1;
+                        }
+                        if (root.booked == 4) {
+                            root.seats-4 = root.seats-4 + 1;
+                        }
+                        if (root.booked == 5) {
+                            root.seats-5 = root.seats-5 + 1;
+                        }
+                        root.booked = 0;
+                        root.set-status("Booking cancelled", 2);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.sheet-open = false;
                     }
                 }
             }

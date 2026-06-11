@@ -1,46 +1,540 @@
 // InboxPage
 // =====================================================================
-//
-// List-view template — works as scaffolding for any inbox / activity /
-// message-feed / notification-centre screen. Driven by the shared
-// `ContactRow` primitive: Avatar + 2-line text + trailing timestamp +
-// unread Badge. Plus an AppBar and compose FAB.
-//
-// The message data is supplied as a Slint model so consuming apps drive
-// it from Rust state; for the demo / snapshot we instantiate the page
-// with an inline array literal carrying ~6 sample messages.
 
 import { Theme } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { Fab } from "@mobile-components/button.slint";
-import { ContactRow } from "@mobile-components/contact-row.slint";
 import { SectionHeader } from "@mobile-components/section-header.slint";
+import { Divider } from "@mobile-components/divider.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
+import { TextField } from "@mobile-components/text-field.slint";
 import { ScrollView } from "std-widgets.slint";
 
-export struct InboxMessage {
-    sender: string,
-    initials: string,
-    preview: string,
-    time: string,
-    unread: int,   // 0 = read; >0 = unread count
+component MsgRow inherits Rectangle {
+    in property <string> initials;
+    in property <string> sender;
+    in property <string> preview;
+    in property <string> time-str;
+    in property <int> unread: 0;
+    in property <bool> starred: false;
+    in property <bool> snoozed: false;
+    in property <bool> archived: false;
+    in property <bool> selected: false;
+    in property <bool> select-mode: false;
+    callback row-clicked();
+    callback star-clicked();
+    callback snooze-clicked();
+    callback archive-clicked();
+    callback selection-clicked();
+
+    horizontal-stretch: 1;
+    min-height: 76px;
+    opacity: root.archived ? 0.55 : 1.0;
+    background: root.selected ? Theme.accent-info.with-alpha(0.10) : (ta.has-hover ? Theme.surface-2 : transparent);
+
+    ta := TouchArea {
+        clicked => {
+            if (root.select-mode) {
+                root.selection-clicked();
+            } else {
+                root.row-clicked();
+            }
+        }
+    }
+
+    HorizontalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+        if root.select-mode: VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 22px;
+                height: 22px;
+                border-radius: 4px;
+                border-width: 2px;
+                border-color: root.selected ? Theme.accent-info : Theme.muted;
+                background: root.selected ? Theme.accent-info : transparent;
+                Text {
+                    text: root.selected ? "✓" : "";
+                    color: Theme.on-primary;
+                    font-size: 12px;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 44px;
+                height: 44px;
+                border-radius: 22px;
+                background: root.unread > 0 ? Theme.accent-info.with-alpha(0.22) : Theme.surface-2;
+                Text {
+                    text: root.initials;
+                    color: root.unread > 0 ? Theme.accent-info : Theme.on-surface;
+                    font-size: Theme.font-size-body;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            HorizontalLayout {
+                spacing: 6px;
+                alignment: start;
+                if root.starred: Text {
+                    text: "★";
+                    color: Theme.accent-warning;
+                    font-size: 12px;
+                    font-weight: 800;
+                    vertical-alignment: center;
+                }
+                if root.snoozed: Text {
+                    text: "⏰";
+                    color: Theme.accent-success;
+                    font-size: 11px;
+                    vertical-alignment: center;
+                }
+                Text {
+                    text: root.sender + (root.archived ? " · archived" : "");
+                    color: Theme.on-surface;
+                    font-size: Theme.font-size-body;
+                    font-weight: root.unread > 0 ? 800 : 600;
+                    overflow: elide;
+                }
+            }
+            Text {
+                text: root.preview;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+                overflow: elide;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 4px;
+            Text {
+                text: root.time-str;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+                horizontal-alignment: right;
+            }
+            HorizontalLayout {
+                spacing: 4px;
+                alignment: end;
+                Rectangle {
+                    horizontal-stretch: 0;
+                    width: 26px;
+                    height: 22px;
+                    border-radius: 11px;
+                    background: root.starred ? Theme.accent-warning.with-alpha(0.22) : Theme.surface-2;
+                    Text {
+                        text: "★";
+                        color: root.starred ? Theme.accent-warning : Theme.muted;
+                        font-size: 11px;
+                        font-weight: 800;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                    TouchArea {
+                        clicked => {
+                            root.star-clicked();
+                        }
+                    }
+                }
+                Rectangle {
+                    horizontal-stretch: 0;
+                    width: 26px;
+                    height: 22px;
+                    border-radius: 11px;
+                    background: root.snoozed ? Theme.accent-success.with-alpha(0.22) : Theme.surface-2;
+                    Text {
+                        text: "⏰";
+                        color: root.snoozed ? Theme.accent-success : Theme.muted;
+                        font-size: 11px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                    TouchArea {
+                        clicked => {
+                            root.snooze-clicked();
+                        }
+                    }
+                }
+                Rectangle {
+                    horizontal-stretch: 0;
+                    width: 26px;
+                    height: 22px;
+                    border-radius: 11px;
+                    background: root.archived ? Theme.accent-info.with-alpha(0.22) : Theme.surface-2;
+                    Text {
+                        text: "📥";
+                        color: root.archived ? Theme.accent-info : Theme.muted;
+                        font-size: 10px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                    TouchArea {
+                        clicked => {
+                            root.archive-clicked();
+                        }
+                    }
+                }
+            }
+            if root.unread > 0: HorizontalLayout {
+                alignment: end;
+                Rectangle {
+                    horizontal-stretch: 0;
+                    height: 20px;
+                    border-radius: 10px;
+                    background: Theme.accent-info;
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-sm;
+                        padding-right: Theme.spacing-sm;
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: "" + root.unread;
+                                color: Theme.on-primary;
+                                font-size: 10px;
+                                font-weight: 800;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+component Chip2 inherits Rectangle {
+    in property <string> label;
+    in property <bool> active: false;
+    callback clicked();
+
+    horizontal-stretch: 0;
+    height: 28px;
+    border-radius: 14px;
+    background: root.active ? Theme.primary : Theme.surface-2;
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: center;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.active ? Theme.on-primary : Theme.on-surface;
+                font-size: Theme.font-size-caption;
+                font-weight: 700;
+            }
+        }
+    }
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.destructive ? Theme.accent-danger : Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+        }
+    }
 }
 
 export component InboxPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
-    in property <[InboxMessage]> messages: [
-        { sender: "GitHub", initials: "GH", preview: "tronical commented on slint#5710 — backdrop blur on Android", time: "2m", unread: 3 },
-        { sender: "Petra Lindquist", initials: "PL", preview: "Re: design tokens — okay with the surface tier names but…", time: "14m", unread: 1 },
-        { sender: "Maestro CI", initials: "MC", preview: "gallery-tabs flow passed on emulator-5554", time: "32m", unread: 0 },
-        { sender: "Stripe", initials: "S", preview: "Receipt for your subscription · $20.00 · Oct 28 2026", time: "2h", unread: 0 },
-        { sender: "Marco · ops", initials: "MO", preview: "I bumped the snapshot threshold to 0.5 % — let me know if it's", time: "9h", unread: 0 },
-        { sender: "Linear", initials: "L", preview: "ENG-218 was moved to In Review by Petra", time: "Mon", unread: 0 },
-    ];
-    callback message-pressed(InboxMessage);
+
+    in-out property <int> filter: 0; // 0 All 1 Unread 2 Starred 3 Snoozed 4 Archived
+    in-out property <string> query;
+    in-out property <bool> search-open: false;
+    in-out property <bool> select-mode: false;
+    in-out property <int> u0: 3;
+    in-out property <int> u1: 1;
+    in-out property <int> u2: 0;
+    in-out property <int> u3: 0;
+    in-out property <int> u4: 0;
+    in-out property <int> u5: 0;
+    in-out property <bool> s0: false;
+    in-out property <bool> s1: true;
+    in-out property <bool> s2: false;
+    in-out property <bool> s3: false;
+    in-out property <bool> s4: false;
+    in-out property <bool> s5: false;
+    in-out property <bool> sn0: false;
+    in-out property <bool> sn1: false;
+    in-out property <bool> sn2: false;
+    in-out property <bool> sn3: false;
+    in-out property <bool> sn4: false;
+    in-out property <bool> sn5: false;
+    in-out property <bool> ar0: false;
+    in-out property <bool> ar1: false;
+    in-out property <bool> ar2: false;
+    in-out property <bool> ar3: false;
+    in-out property <bool> ar4: false;
+    in-out property <bool> ar5: false;
+    in-out property <bool> sel0: false;
+    in-out property <bool> sel1: false;
+    in-out property <bool> sel2: false;
+    in-out property <bool> sel3: false;
+    in-out property <bool> sel4: false;
+    in-out property <bool> sel5: false;
+    in-out property <int> new-msgs: 0;
+    in-out property <bool> sheet-open: false;
+    in-out property <bool> confirm-bulk: false;
+    in-out property <string> status-msg: "";
+    in-out property <bool> status-success: false;
+    in-out property <bool> status-danger: false;
+
+    callback message-pressed(int);
     callback compose-pressed();
     callback menu-pressed();
     callback search-pressed();
+
+    function unread-total() -> int {
+        return root.u0 + root.u1 + root.u2 + root.u3 + root.u4 + root.u5;
+    }
+    function starred-count() -> int {
+        return (root.s0 ? 1 : 0) + (root.s1 ? 1 : 0) + (root.s2 ? 1 : 0) + (root.s3 ? 1 : 0) + (root.s4 ? 1 : 0) + (root.s5 ? 1 : 0);
+    }
+    function snoozed-count() -> int {
+        return (root.sn0 ? 1 : 0) + (root.sn1 ? 1 : 0) + (root.sn2 ? 1 : 0) + (root.sn3 ? 1 : 0) + (root.sn4 ? 1 : 0) + (root.sn5 ? 1 : 0);
+    }
+    function arch-count() -> int {
+        return (root.ar0 ? 1 : 0) + (root.ar1 ? 1 : 0) + (root.ar2 ? 1 : 0) + (root.ar3 ? 1 : 0) + (root.ar4 ? 1 : 0) + (root.ar5 ? 1 : 0);
+    }
+    function selected-count() -> int {
+        return (root.sel0 ? 1 : 0) + (root.sel1 ? 1 : 0) + (root.sel2 ? 1 : 0) + (root.sel3 ? 1 : 0) + (root.sel4 ? 1 : 0) + (root.sel5 ? 1 : 0);
+    }
+    function unread-of(i: int) -> int {
+        return i == 0 ? root.u0 : (i == 1 ? root.u1 : (i == 2 ? root.u2 : (i == 3 ? root.u3 : (i == 4 ? root.u4 : root.u5))));
+    }
+    function starred-of(i: int) -> bool {
+        return i == 0 ? root.s0 : (i == 1 ? root.s1 : (i == 2 ? root.s2 : (i == 3 ? root.s3 : (i == 4 ? root.s4 : root.s5))));
+    }
+    function snoozed-of(i: int) -> bool {
+        return i == 0 ? root.sn0 : (i == 1 ? root.sn1 : (i == 2 ? root.sn2 : (i == 3 ? root.sn3 : (i == 4 ? root.sn4 : root.sn5))));
+    }
+    function arch-of(i: int) -> bool {
+        return i == 0 ? root.ar0 : (i == 1 ? root.ar1 : (i == 2 ? root.ar2 : (i == 3 ? root.ar3 : (i == 4 ? root.ar4 : root.ar5))));
+    }
+    function sel-of(i: int) -> bool {
+        return i == 0 ? root.sel0 : (i == 1 ? root.sel1 : (i == 2 ? root.sel2 : (i == 3 ? root.sel3 : (i == 4 ? root.sel4 : root.sel5))));
+    }
+    function row-visible(i: int) -> bool {
+        if (root.filter == 0) {
+            return !root.arch-of(i);
+        }
+        if (root.filter == 1) {
+            return !root.arch-of(i) && root.unread-of(i) > 0;
+        }
+        if (root.filter == 2) {
+            return !root.arch-of(i) && root.starred-of(i);
+        }
+        if (root.filter == 3) {
+            return !root.arch-of(i) && root.snoozed-of(i);
+        }
+        return root.arch-of(i);
+    }
+    function set-status(m: string, ok: bool, bad: bool) {
+        root.status-msg = m;
+        root.status-success = ok;
+        root.status-danger = bad;
+    }
+    function clear-unread(i: int) {
+        if (i == 0) {
+            root.u0 = 0;
+        }
+        if (i == 1) {
+            root.u1 = 0;
+        }
+        if (i == 2) {
+            root.u2 = 0;
+        }
+        if (i == 3) {
+            root.u3 = 0;
+        }
+        if (i == 4) {
+            root.u4 = 0;
+        }
+        if (i == 5) {
+            root.u5 = 0;
+        }
+    }
+    function toggle-star(i: int) {
+        if (i == 0) {
+            root.s0 = !root.s0;
+        }
+        if (i == 1) {
+            root.s1 = !root.s1;
+        }
+        if (i == 2) {
+            root.s2 = !root.s2;
+        }
+        if (i == 3) {
+            root.s3 = !root.s3;
+        }
+        if (i == 4) {
+            root.s4 = !root.s4;
+        }
+        if (i == 5) {
+            root.s5 = !root.s5;
+        }
+    }
+    function toggle-snooze(i: int) {
+        if (i == 0) {
+            root.sn0 = !root.sn0;
+        }
+        if (i == 1) {
+            root.sn1 = !root.sn1;
+        }
+        if (i == 2) {
+            root.sn2 = !root.sn2;
+        }
+        if (i == 3) {
+            root.sn3 = !root.sn3;
+        }
+        if (i == 4) {
+            root.sn4 = !root.sn4;
+        }
+        if (i == 5) {
+            root.sn5 = !root.sn5;
+        }
+    }
+    function toggle-arch(i: int) {
+        if (i == 0) {
+            root.ar0 = !root.ar0;
+        }
+        if (i == 1) {
+            root.ar1 = !root.ar1;
+        }
+        if (i == 2) {
+            root.ar2 = !root.ar2;
+        }
+        if (i == 3) {
+            root.ar3 = !root.ar3;
+        }
+        if (i == 4) {
+            root.ar4 = !root.ar4;
+        }
+        if (i == 5) {
+            root.ar5 = !root.ar5;
+        }
+    }
+    function toggle-sel(i: int) {
+        if (i == 0) {
+            root.sel0 = !root.sel0;
+        }
+        if (i == 1) {
+            root.sel1 = !root.sel1;
+        }
+        if (i == 2) {
+            root.sel2 = !root.sel2;
+        }
+        if (i == 3) {
+            root.sel3 = !root.sel3;
+        }
+        if (i == 4) {
+            root.sel4 = !root.sel4;
+        }
+        if (i == 5) {
+            root.sel5 = !root.sel5;
+        }
+    }
+    function clear-sel() {
+        root.sel0 = false;
+        root.sel1 = false;
+        root.sel2 = false;
+        root.sel3 = false;
+        root.sel4 = false;
+        root.sel5 = false;
+    }
+    function archive-selected() {
+        if (root.sel0) {
+            root.ar0 = true;
+        }
+        if (root.sel1) {
+            root.ar1 = true;
+        }
+        if (root.sel2) {
+            root.ar2 = true;
+        }
+        if (root.sel3) {
+            root.ar3 = true;
+        }
+        if (root.sel4) {
+            root.ar4 = true;
+        }
+        if (root.sel5) {
+            root.ar5 = true;
+        }
+        root.clear-sel();
+    }
+    function read-selected() {
+        if (root.sel0) {
+            root.u0 = 0;
+        }
+        if (root.sel1) {
+            root.u1 = 0;
+        }
+        if (root.sel2) {
+            root.u2 = 0;
+        }
+        if (root.sel3) {
+            root.u3 = 0;
+        }
+        if (root.sel4) {
+            root.u4 = 0;
+        }
+        if (root.sel5) {
+            root.u5 = 0;
+        }
+        root.clear-sel();
+    }
 
     background: Theme.background;
 
@@ -48,12 +542,192 @@ export component InboxPage inherits Window {
         spacing: 0;
 
         AppBar {
-            title: "Inbox";
+            title: root.select-mode ? root.selected-count() + " selected" : "Inbox · " + root.unread-total() + " unread";
             title-style: HeadingStyle.bold-impact;
-            leading-icon: @image-url("@mobile-components/icons/menu.svg");
-            trailing-icon: @image-url("@mobile-components/icons/search.svg");
-            leading-pressed => { root.menu-pressed(); }
-            trailing-pressed => { root.search-pressed(); }
+            leading-icon: root.select-mode ? @image-url("@mobile-components/icons/close.svg") : @image-url("@mobile-components/icons/menu.svg");
+            trailing-icon: root.search-open ? @image-url("@mobile-components/icons/close.svg") : @image-url("@mobile-components/icons/search.svg");
+            leading-pressed => {
+                if (root.select-mode) {
+                    root.select-mode = false;
+                    root.clear-sel();
+                    root.set-status("Selection cleared", false, false);
+                } else {
+                    root.menu-pressed();
+                }
+            }
+            trailing-pressed => {
+                root.search-open = !root.search-open;
+                root.set-status(root.search-open ? "Search opened" : "Search closed", root.search-open, false);
+                root.search-pressed();
+            }
+        }
+
+        if root.search-open: VerticalLayout {
+            padding: Theme.spacing-sm;
+            TextField {
+                placeholder: "Search inbox…";
+                text <=> root.query;
+            }
+        }
+
+        if !root.status-msg.is-empty: Rectangle {
+            height: 28px;
+            background: root.status-success ? Theme.accent-success.with-alpha(0.16) : (root.status-danger ? Theme.accent-danger.with-alpha(0.16) : Theme.surface-2);
+            HorizontalLayout {
+                alignment: center;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.status-msg;
+                        color: root.status-success ? Theme.accent-success : (root.status-danger ? Theme.accent-danger : Theme.on-surface);
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                    }
+                }
+            }
+        }
+
+        // Filter chips + select toggle.
+        HorizontalLayout {
+            padding-left: Theme.spacing-md;
+            padding-right: Theme.spacing-md;
+            padding-top: Theme.spacing-sm;
+            padding-bottom: Theme.spacing-sm;
+            spacing: Theme.spacing-sm;
+            Chip2 {
+                label: "All · " + (6 + root.new-msgs);
+                active: root.filter == 0;
+                clicked => {
+                    root.filter = 0;
+                }
+            }
+            Chip2 {
+                label: "Unread · " + root.unread-total();
+                active: root.filter == 1;
+                clicked => {
+                    root.filter = 1;
+                }
+            }
+            Chip2 {
+                label: "★ " + root.starred-count();
+                active: root.filter == 2;
+                clicked => {
+                    root.filter = 2;
+                }
+            }
+            Chip2 {
+                label: "⏰ " + root.snoozed-count();
+                active: root.filter == 3;
+                clicked => {
+                    root.filter = 3;
+                }
+            }
+            Chip2 {
+                label: "📥 " + root.arch-count();
+                active: root.filter == 4;
+                clicked => {
+                    root.filter = 4;
+                }
+            }
+            Rectangle {
+                horizontal-stretch: 1;
+            }
+            Rectangle {
+                horizontal-stretch: 0;
+                height: 28px;
+                border-radius: 14px;
+                background: root.select-mode ? Theme.accent-info : Theme.surface-2;
+                HorizontalLayout {
+                    padding-left: Theme.spacing-sm;
+                    padding-right: Theme.spacing-sm;
+                    VerticalLayout {
+                        alignment: center;
+                        Text {
+                            text: root.select-mode ? "Done" : "Select";
+                            color: root.select-mode ? Theme.on-primary : Theme.on-surface;
+                            font-size: Theme.font-size-caption;
+                            font-weight: 800;
+                        }
+                    }
+                }
+                TouchArea {
+                    clicked => {
+                        root.select-mode = !root.select-mode;
+                        root.clear-sel();
+                    }
+                }
+            }
+        }
+
+        if root.select-mode: Rectangle {
+            background: Theme.accent-info.with-alpha(0.16);
+            height: 40px;
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                spacing: Theme.spacing-sm;
+                alignment: stretch;
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    Text {
+                        text: root.selected-count() + " selected";
+                        color: Theme.accent-info;
+                        font-size: Theme.font-size-body;
+                        font-weight: 800;
+                    }
+                }
+                Rectangle {
+                    horizontal-stretch: 0;
+                    height: 28px;
+                    border-radius: 14px;
+                    background: Theme.surface-2;
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-sm;
+                        padding-right: Theme.spacing-sm;
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: "Read";
+                                color: Theme.on-surface;
+                                font-size: Theme.font-size-caption;
+                                font-weight: 800;
+                            }
+                        }
+                    }
+                    TouchArea {
+                        clicked => {
+                            root.read-selected();
+                            root.set-status("Marked read", true, false);
+                        }
+                    }
+                }
+                Rectangle {
+                    horizontal-stretch: 0;
+                    height: 28px;
+                    border-radius: 14px;
+                    background: Theme.accent-info;
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-sm;
+                        padding-right: Theme.spacing-sm;
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: "Archive";
+                                color: Theme.on-primary;
+                                font-size: Theme.font-size-caption;
+                                font-weight: 800;
+                            }
+                        }
+                    }
+                    TouchArea {
+                        clicked => {
+                            root.archive-selected();
+                            root.set-status("Archived", true, false);
+                        }
+                    }
+                }
+            }
         }
 
         ScrollView {
@@ -61,19 +735,82 @@ export component InboxPage inherits Window {
 
             VerticalLayout {
                 alignment: start;
-                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-xl + 56px;
+                spacing: 0;
 
-                SectionHeader { text: "TODAY"; }
+                SectionHeader {
+                    text: root.filter == 4 ? "ARCHIVED" : "TODAY";
+                }
 
-                for msg in root.messages: ContactRow {
-                    initials: msg.initials;
-                    avatar-size: 44px;
-                    title: msg.sender;
-                    subtitle: msg.preview;
-                    trailing-text: msg.time;
-                    badge-count: msg.unread;
-                    emphasized: msg.unread > 0;
-                    clicked => { root.message-pressed(msg); }
+                for r[i] in [
+                    { idx: 0, init: "GH", sender: "GitHub", preview: "tronical commented on slint#5710 — backdrop blur on Android", time: "2m" },
+                    { idx: 1, init: "PL", sender: "Petra Lindquist", preview: "Re: design tokens — okay with the surface tier names but…", time: "14m" },
+                    { idx: 2, init: "MC", sender: "Maestro CI", preview: "gallery-tabs flow passed on emulator-5554", time: "32m" },
+                    { idx: 3, init: "S", sender: "Stripe", preview: "Receipt for your subscription · $20.00 · Oct 28 2026", time: "2h" },
+                    { idx: 4, init: "MO", sender: "Marco · ops", preview: "I bumped the snapshot threshold to 0.5 % — let me know if it's", time: "9h" },
+                    { idx: 5, init: "L", sender: "Linear", preview: "ENG-218 was moved to In Review by Petra", time: "Mon" },
+                ]: VerticalLayout {
+                    spacing: 0;
+                    if root.row-visible(r.idx): MsgRow {
+                        initials: r.init;
+                        sender: r.sender;
+                        preview: r.preview;
+                        time-str: r.time;
+                        unread: root.unread-of(r.idx);
+                        starred: root.starred-of(r.idx);
+                        snoozed: root.snoozed-of(r.idx);
+                        archived: root.arch-of(r.idx);
+                        selected: root.sel-of(r.idx);
+                        select-mode: root.select-mode;
+                        row-clicked => {
+                            root.clear-unread(r.idx);
+                            root.set-status("Opened " + r.sender, true, false);
+                            root.message-pressed(r.idx);
+                        }
+                        star-clicked => {
+                            root.toggle-star(r.idx);
+                            root.set-status(root.starred-of(r.idx) ? "★ Starred" : "Unstarred", root.starred-of(r.idx), false);
+                        }
+                        snooze-clicked => {
+                            root.toggle-snooze(r.idx);
+                            root.set-status(root.snoozed-of(r.idx) ? "Snoozed" : "Unsnoozed", root.snoozed-of(r.idx), false);
+                        }
+                        archive-clicked => {
+                            root.toggle-arch(r.idx);
+                            root.set-status(root.arch-of(r.idx) ? "Archived" : "Restored", !root.arch-of(r.idx), root.arch-of(r.idx));
+                        }
+                        selection-clicked => {
+                            root.toggle-sel(r.idx);
+                        }
+                    }
+                    if root.row-visible(r.idx): Divider { }
+                }
+
+                if root.new-msgs > 0 && root.filter != 4: SectionHeader {
+                    text: "DRAFTS · " + root.new-msgs;
+                }
+                for nt[i] in [{ idx: 1 }, { idx: 2 }, { idx: 3 }]: VerticalLayout {
+                    spacing: 0;
+                    if nt.idx <= root.new-msgs && root.filter != 4: MsgRow {
+                        initials: "DR";
+                        sender: "Draft " + nt.idx;
+                        preview: "(empty body)";
+                        time-str: "now";
+                        unread: 0;
+                        starred: false;
+                        snoozed: false;
+                        archived: false;
+                        selected: false;
+                        select-mode: false;
+                        row-clicked => {
+                            root.set-status("Opened draft", true, false);
+                        }
+                        star-clicked => { }
+                        snooze-clicked => { }
+                        archive-clicked => { }
+                        selection-clicked => { }
+                    }
+                    if nt.idx <= root.new-msgs && nt.idx < root.new-msgs: Divider { }
                 }
             }
         }
@@ -84,6 +821,111 @@ export component InboxPage inherits Window {
         y: parent.height - self.height - Theme.spacing-md;
         icon: @image-url("@mobile-components/icons/pencil.svg");
         accessible-label: "Compose";
-        clicked => { root.compose-pressed(); }
+        clicked => {
+            root.new-msgs = min(3, root.new-msgs + 1);
+            root.set-status("Draft created (+" + root.new-msgs + ")", true, false);
+            root.compose-pressed();
+        }
+    }
+
+    // ===================== Bottom sheet =====================
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+                root.confirm-bulk = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: Theme.surface-2;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.muted;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: "Inbox menu";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 700;
+                    }
+                }
+                SheetRow {
+                    label: "Mark all read";
+                    clicked => {
+                        root.u0 = 0;
+                        root.u1 = 0;
+                        root.u2 = 0;
+                        root.u3 = 0;
+                        root.u4 = 0;
+                        root.u5 = 0;
+                        root.set-status("All marked read", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Restore archive";
+                    clicked => {
+                        root.ar0 = false;
+                        root.ar1 = false;
+                        root.ar2 = false;
+                        root.ar3 = false;
+                        root.ar4 = false;
+                        root.ar5 = false;
+                        root.set-status("Archive restored", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                Divider { }
+
+                SheetRow {
+                    label: root.confirm-bulk ? "Confirm: archive everything" : "Archive everything";
+                    destructive: true;
+                    clicked => {
+                        if (root.confirm-bulk) {
+                            root.ar0 = true;
+                            root.ar1 = true;
+                            root.ar2 = true;
+                            root.ar3 = true;
+                            root.ar4 = true;
+                            root.ar5 = true;
+                            root.set-status("All archived", false, true);
+                            root.sheet-open = false;
+                            root.confirm-bulk = false;
+                        } else {
+                            root.confirm-bulk = true;
+                        }
+                    }
+                }
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.sheet-open = false;
+                        root.confirm-bulk = false;
+                    }
+                }
+            }
+        }
     }
 }

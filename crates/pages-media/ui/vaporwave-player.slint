@@ -1,27 +1,26 @@
 // VaporwavePlayerPage  —  VaporwaveSkin demo
 // =====================================================================
 //
-// Retro-future now-playing screen. A magenta→cyan sunset with a
-// perspective horizon grid (baked SVG) sits behind a translucent neon
-// player card. Space Grotesk, electric pink + cyan accents. Shows album
-// art, a scrubber, transport controls, and an up-next strip. Reads
-// VaporwaveSkin tokens.
+// Retro-future now-playing screen.
 
 import { Theme } from "@mobile-theme/theme.slint";
 import { VaporwaveSkin } from "@mobile-theme/skins.slint";
 import { ScrollView } from "std-widgets.slint";
 
-// A circular transport button.
 component TransportButton inherits Rectangle {
     in property <string> glyph;
     in property <bool> primary;
+    in property <bool> active: false;
     in property <length> diameter: 56px;
+    callback clicked();
+
     width: root.diameter;
     height: root.diameter;
     border-radius: self.width / 2;
-    background: root.primary ? #ff2fae : VaporwaveSkin.glass-fill;
+    background: root.primary ? #ff2fae : (root.active ? #00f0ff66 : VaporwaveSkin.glass-fill);
     border-width: 1px;
-    border-color: VaporwaveSkin.hairline;
+    border-color: root.active ? #00f0ff : VaporwaveSkin.hairline;
+
     Text {
         text: root.glyph;
         color: VaporwaveSkin.text-primary;
@@ -30,14 +29,29 @@ component TransportButton inherits Rectangle {
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
     }
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
 }
 
-// An up-next row.
 component UpNextRow inherits Rectangle {
     in property <string> title;
     in property <string> artist;
     in property <string> dur;
+    in property <bool> playing: false;
+    callback clicked();
+
     min-height: 52px;
+    background: ta.has-hover ? #ff2fae22 : (root.playing ? #00f0ff22 : transparent);
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
     HorizontalLayout {
         padding-left: Theme.spacing-md;
         padding-right: Theme.spacing-md;
@@ -47,9 +61,17 @@ component UpNextRow inherits Rectangle {
             height: 36px;
             y: 8px;
             border-radius: Theme.radius-sm;
-            background: #ff4fd84d;
+            background: root.playing ? #00f0ff4d : #ff4fd84d;
             border-width: 1px;
             border-color: VaporwaveSkin.hairline;
+            Text {
+                text: root.playing ? "♪" : "";
+                color: VaporwaveSkin.text-primary;
+                font-size: Theme.font-size-body;
+                font-weight: 700;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+            }
         }
         VerticalLayout {
             horizontal-stretch: 1;
@@ -57,7 +79,7 @@ component UpNextRow inherits Rectangle {
             spacing: 1px;
             Text {
                 text: root.title;
-                color: VaporwaveSkin.text-primary;
+                color: root.playing ? #00f0ff : VaporwaveSkin.text-primary;
                 font-size: Theme.font-size-body;
                 font-weight: 700;
                 overflow: elide;
@@ -78,14 +100,119 @@ component UpNextRow inherits Rectangle {
     }
 }
 
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    background: ta.has-hover ? #ff2fae33 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: VaporwaveSkin.text-primary;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+        }
+    }
+}
+
 export component VaporwavePlayerPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
     default-font-family: VaporwaveSkin.font-family;
     background: VaporwaveSkin.page-background;
 
+    in-out property <int> track-idx: 0;
+    in-out property <bool> playing: false;
+    in-out property <bool> liked: false;
+    in-out property <int> repeat-mode: 0; // 0 off, 1 queue, 2 one
+    in-out property <float> progress: 0.38;
+    in-out property <bool> minimized: false;
+    in-out property <bool> sheet-open: false;
+    in-out property <string> status-msg: "";
+    in-out property <bool> status-success: false;
+    in-out property <bool> status-danger: false;
+
+    function track-title() -> string {
+        return root.track-idx == 0 ? "Sunset Cassette" : (root.track-idx == 1 ? "Midnight Modem" : (root.track-idx == 2 ? "Mall at Dawn" : "Pastel Highway"));
+    }
+    function track-artist() -> string {
+        return root.track-idx == 0 ? "MACINTOSH PLAYER" : (root.track-idx == 1 ? "TELECOM" : (root.track-idx == 2 ? "ATRIUM" : "VHS DREAMS"));
+    }
+    function track-len() -> int {
+        return root.track-idx == 0 ? 219 : (root.track-idx == 1 ? 221 : (root.track-idx == 2 ? 242 : 197));
+    }
+    function repeat-glyph() -> string {
+        return root.repeat-mode == 0 ? "↺" : (root.repeat-mode == 1 ? "↻" : "①");
+    }
+    function repeat-label() -> string {
+        return root.repeat-mode == 0 ? "Repeat off" : (root.repeat-mode == 1 ? "Repeat queue" : "Repeat one");
+    }
+    function pad2(n: int) -> string {
+        return n < 10 ? "0" + n : "" + n;
+    }
+    function mmss(s: int) -> string {
+        return floor(s / 60) + ":" + root.pad2(mod(s, 60));
+    }
+    function cur-secs() -> int {
+        return floor(root.progress * root.track-len());
+    }
+    function set-status(m: string, ok: bool, bad: bool) {
+        root.status-msg = m;
+        root.status-success = ok;
+        root.status-danger = bad;
+    }
+    function jump-to(i: int) {
+        root.track-idx = i;
+        root.progress = 0;
+        root.playing = true;
+        root.set-status("Now playing: " + root.track-title(), true, false);
+    }
+    function next-track() {
+        if (root.repeat-mode == 2) {
+            root.progress = 0;
+            root.set-status("Repeating: " + root.track-title(), true, false);
+        } else {
+            root.track-idx = mod(root.track-idx + 1, 4);
+            root.progress = 0;
+            root.set-status("Next: " + root.track-title(), true, false);
+        }
+    }
+
+    tick := Timer {
+        interval: 1s;
+        running: root.playing;
+        triggered => {
+            root.progress = root.progress + 1.0 / root.track-len();
+            if (root.progress >= 1.0) {
+                if (root.repeat-mode == 0 && root.track-idx == 3) {
+                    root.progress = 1.0;
+                    root.playing = false;
+                    root.set-status("Queue complete", false, false);
+                } else {
+                    root.next-track();
+                }
+            }
+        }
+    }
+
     if VaporwaveSkin.has-background-image: Image {
-        x: 0; y: 0;
+        x: 0;
+        y: 0;
         width: root.width;
         height: root.height;
         source: VaporwaveSkin.page-background-image;
@@ -101,133 +228,376 @@ export component VaporwavePlayerPage inherits Window {
             // ---- Top bar ----
             HorizontalLayout {
                 alignment: space-between;
-                Text {
-                    text: "▾";
-                    color: VaporwaveSkin.text-primary;
-                    font-size: Theme.font-size-title;
-                }
-                Text {
-                    text: "N E O N   D R I V E";
-                    color: VaporwaveSkin.text-secondary;
-                    font-size: Theme.font-size-caption;
-                    font-weight: 700;
-                    letter-spacing: 2px;
-                    vertical-alignment: center;
-                }
-                Text {
-                    text: "⋯";
-                    color: VaporwaveSkin.text-primary;
-                    font-size: Theme.font-size-title;
-                }
-            }
-
-            // ---- Album art (neon frame) ----
-            HorizontalLayout {
-                alignment: center;
                 Rectangle {
-                    width: 280px;
-                    height: 280px;
-                    border-radius: Theme.radius-lg;
-                    background: #ff2fae40;
-                    border-width: 2px;
-                    border-color: #00f0ff;
-                    clip: true;
-                    drop-shadow-blur: Theme.elevation-3-blur;
-                    drop-shadow-color: #ff2fae66;
+                    width: 36px;
+                    height: 36px;
+                    border-radius: self.width / 2;
+                    background: VaporwaveSkin.glass-fill;
+                    border-width: 1px;
+                    border-color: VaporwaveSkin.hairline;
                     Text {
-                        text: "◑";
-                        color: #00f0ff;
-                        font-size: 140px;
+                        text: root.minimized ? "▴" : "▾";
+                        color: VaporwaveSkin.text-primary;
+                        font-size: Theme.font-size-title;
                         x: (parent.width - self.width) / 2;
                         y: (parent.height - self.height) / 2;
                     }
-                }
-            }
-
-            // ---- Track title ----
-            VerticalLayout {
-                spacing: Theme.spacing-xs;
-                Text {
-                    text: "Sunset Cassette";
-                    color: VaporwaveSkin.text-primary;
-                    font-size: Theme.font-size-headline;
-                    font-weight: 700;
-                    horizontal-alignment: center;
-                }
-                Text {
-                    text: "MACINTOSH PLAYER";
-                    color: VaporwaveSkin.text-secondary;
-                    font-size: Theme.font-size-body;
-                    letter-spacing: 1px;
-                    horizontal-alignment: center;
-                }
-            }
-
-            // ---- Scrubber ----
-            VerticalLayout {
-                spacing: Theme.spacing-xs;
-                Rectangle {
-                    height: 6px;
-                    border-radius: 3px;
-                    background: VaporwaveSkin.glass-fill;
-                    clip: true;
-                    Rectangle {
-                        x: 0;
-                        y: 0;
-                        height: parent.height;
-                        width: parent.width * 0.38;
-                        background: #00f0ff;
-                    }
-                }
-                HorizontalLayout {
-                    Text {
-                        text: "1:24";
-                        color: VaporwaveSkin.text-muted;
-                        font-size: Theme.font-size-caption;
-                        horizontal-stretch: 1;
-                    }
-                    Text {
-                        text: "-2:15";
-                        color: VaporwaveSkin.text-muted;
-                        font-size: Theme.font-size-caption;
-                    }
-                }
-            }
-
-            // ---- Transport ----
-            HorizontalLayout {
-                alignment: center;
-                spacing: Theme.spacing-lg;
-                TransportButton { glyph: "↺"; }
-                TransportButton { glyph: "◀◀"; }
-                TransportButton { glyph: "▶"; primary: true; diameter: 72px; }
-                TransportButton { glyph: "▶▶"; }
-                TransportButton { glyph: "♡"; }
-            }
-
-            // ---- Up next ----
-            Rectangle {
-                background: VaporwaveSkin.bar-background;
-                border-radius: Theme.radius-lg;
-                clip: true;
-                border-width: 1px;
-                border-color: VaporwaveSkin.hairline;
-                VerticalLayout {
-                    padding-top: Theme.spacing-sm;
-                    padding-bottom: Theme.spacing-sm;
-                    HorizontalLayout {
-                        padding-left: Theme.spacing-md;
-                        Text {
-                            text: "UP NEXT";
-                            color: VaporwaveSkin.text-secondary;
-                            font-size: Theme.font-size-caption;
-                            font-weight: 700;
-                            letter-spacing: 2px;
+                    TouchArea {
+                        clicked => {
+                            root.minimized = !root.minimized;
+                            root.set-status(root.minimized ? "Minimized" : "Expanded", root.minimized, false);
                         }
                     }
-                    UpNextRow { title: "Midnight Modem"; artist: "Telecom"; dur: "3:41"; }
-                    UpNextRow { title: "Mall at Dawn"; artist: "Atrium"; dur: "4:02"; }
-                    UpNextRow { title: "Pastel Highway"; artist: "VHS Dreams"; dur: "3:17"; }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: "N E O N   D R I V E";
+                        color: VaporwaveSkin.text-secondary;
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                        letter-spacing: 2px;
+                        vertical-alignment: center;
+                    }
+                }
+                Rectangle {
+                    width: 36px;
+                    height: 36px;
+                    border-radius: self.width / 2;
+                    background: VaporwaveSkin.glass-fill;
+                    border-width: 1px;
+                    border-color: VaporwaveSkin.hairline;
+                    Text {
+                        text: "⋯";
+                        color: VaporwaveSkin.text-primary;
+                        font-size: Theme.font-size-title;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                    }
+                    TouchArea {
+                        clicked => {
+                            root.sheet-open = true;
+                        }
+                    }
+                }
+            }
+
+            // ---- Status banner ----
+            if !root.status-msg.is-empty: Rectangle {
+                height: 28px;
+                border-radius: 14px;
+                background: root.status-success ? #00f0ff33 : (root.status-danger ? #ff2fae33 : VaporwaveSkin.glass-fill);
+                border-width: 1px;
+                border-color: VaporwaveSkin.hairline;
+                HorizontalLayout {
+                    alignment: center;
+                    VerticalLayout {
+                        alignment: center;
+                        Text {
+                            text: root.status-msg;
+                            color: VaporwaveSkin.text-primary;
+                            font-size: Theme.font-size-caption;
+                            font-weight: 700;
+                            letter-spacing: 1px;
+                        }
+                    }
+                }
+            }
+
+            if !root.minimized: VerticalLayout {
+                spacing: Theme.spacing-lg;
+
+                // ---- Album art (neon frame) ----
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 280px;
+                        height: 280px;
+                        border-radius: Theme.radius-lg;
+                        background: root.playing ? #00f0ff40 : #ff2fae40;
+                        border-width: 2px;
+                        border-color: root.playing ? #ff2fae : #00f0ff;
+                        clip: true;
+                        drop-shadow-blur: Theme.elevation-3-blur;
+                        drop-shadow-color: #ff2fae66;
+                        Text {
+                            text: root.playing ? "◐" : "◑";
+                            color: #00f0ff;
+                            font-size: 140px;
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                        }
+                        TouchArea {
+                            clicked => {
+                                root.playing = !root.playing;
+                                root.set-status(root.playing ? "▶ playing" : "⏸ paused", root.playing, !root.playing);
+                            }
+                        }
+                    }
+                }
+
+                // ---- Track title ----
+                VerticalLayout {
+                    spacing: Theme.spacing-xs;
+                    Text {
+                        text: root.track-title();
+                        color: VaporwaveSkin.text-primary;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 700;
+                        horizontal-alignment: center;
+                    }
+                    Text {
+                        text: root.track-artist();
+                        color: VaporwaveSkin.text-secondary;
+                        font-size: Theme.font-size-body;
+                        letter-spacing: 1px;
+                        horizontal-alignment: center;
+                    }
+                }
+
+                // ---- Scrubber (tap to seek) ----
+                VerticalLayout {
+                    spacing: Theme.spacing-xs;
+                    Rectangle {
+                        height: 16px;
+                        bar := Rectangle {
+                            y: (parent.height - self.height) / 2;
+                            height: 6px;
+                            border-radius: 3px;
+                            background: VaporwaveSkin.glass-fill;
+                            clip: true;
+                            Rectangle {
+                                x: 0;
+                                y: 0;
+                                height: parent.height;
+                                width: parent.width * root.progress;
+                                background: #00f0ff;
+                            }
+                        }
+                        seek := TouchArea {
+                            clicked => {
+                                root.progress = max(0, min(1.0, self.mouse-x / self.width));
+                                root.set-status("Seek to " + root.mmss(root.cur-secs()), true, false);
+                            }
+                        }
+                    }
+                    HorizontalLayout {
+                        Text {
+                            text: root.mmss(root.cur-secs());
+                            color: VaporwaveSkin.text-muted;
+                            font-size: Theme.font-size-caption;
+                            horizontal-stretch: 1;
+                        }
+                        Text {
+                            text: "-" + root.mmss(root.track-len() - root.cur-secs());
+                            color: VaporwaveSkin.text-muted;
+                            font-size: Theme.font-size-caption;
+                        }
+                    }
+                }
+
+                // ---- Transport ----
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: Theme.spacing-lg;
+                    TransportButton {
+                        glyph: root.repeat-glyph();
+                        active: root.repeat-mode != 0;
+                        clicked => {
+                            root.repeat-mode = mod(root.repeat-mode + 1, 3);
+                            root.set-status(root.repeat-label(), root.repeat-mode != 0, false);
+                        }
+                    }
+                    TransportButton {
+                        glyph: "◀◀";
+                        clicked => {
+                            if (root.progress > 0.05) {
+                                root.progress = 0;
+                                root.set-status("Restart", true, false);
+                            } else {
+                                root.track-idx = mod(root.track-idx + 3, 4);
+                                root.progress = 0;
+                                root.set-status("Prev: " + root.track-title(), true, false);
+                            }
+                        }
+                    }
+                    TransportButton {
+                        glyph: root.playing ? "❚❚" : "▶";
+                        primary: true;
+                        diameter: 72px;
+                        clicked => {
+                            root.playing = !root.playing;
+                            root.set-status(root.playing ? "▶ playing" : "⏸ paused", root.playing, !root.playing);
+                        }
+                    }
+                    TransportButton {
+                        glyph: "▶▶";
+                        clicked => {
+                            root.next-track();
+                        }
+                    }
+                    TransportButton {
+                        glyph: root.liked ? "♥" : "♡";
+                        active: root.liked;
+                        clicked => {
+                            root.liked = !root.liked;
+                            root.set-status(root.liked ? "♥ liked" : "♡ unliked", root.liked, !root.liked);
+                        }
+                    }
+                }
+
+                // ---- Up next (tappable rows) ----
+                Rectangle {
+                    background: VaporwaveSkin.bar-background;
+                    border-radius: Theme.radius-lg;
+                    clip: true;
+                    border-width: 1px;
+                    border-color: VaporwaveSkin.hairline;
+                    VerticalLayout {
+                        padding-top: Theme.spacing-sm;
+                        padding-bottom: Theme.spacing-sm;
+                        HorizontalLayout {
+                            padding-left: Theme.spacing-md;
+                            padding-right: Theme.spacing-md;
+                            Text {
+                                text: "UP NEXT";
+                                color: VaporwaveSkin.text-secondary;
+                                font-size: Theme.font-size-caption;
+                                font-weight: 700;
+                                letter-spacing: 2px;
+                                horizontal-stretch: 1;
+                            }
+                            Text {
+                                text: root.repeat-label();
+                                color: VaporwaveSkin.text-muted;
+                                font-size: Theme.font-size-caption;
+                            }
+                        }
+                        UpNextRow {
+                            title: "Sunset Cassette";
+                            artist: "Macintosh Player";
+                            dur: "3:39";
+                            playing: root.track-idx == 0;
+                            clicked => {
+                                root.jump-to(0);
+                            }
+                        }
+                        UpNextRow {
+                            title: "Midnight Modem";
+                            artist: "Telecom";
+                            dur: "3:41";
+                            playing: root.track-idx == 1;
+                            clicked => {
+                                root.jump-to(1);
+                            }
+                        }
+                        UpNextRow {
+                            title: "Mall at Dawn";
+                            artist: "Atrium";
+                            dur: "4:02";
+                            playing: root.track-idx == 2;
+                            clicked => {
+                                root.jump-to(2);
+                            }
+                        }
+                        UpNextRow {
+                            title: "Pastel Highway";
+                            artist: "VHS Dreams";
+                            dur: "3:17";
+                            playing: root.track-idx == 3;
+                            clicked => {
+                                root.jump-to(3);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ===================== Bottom sheet =====================
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: VaporwaveSkin.bar-background;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            border-width: 1px;
+            border-color: VaporwaveSkin.hairline;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: VaporwaveSkin.text-muted;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: "NEON DRIVE";
+                        color: VaporwaveSkin.text-primary;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 700;
+                        letter-spacing: 2px;
+                    }
+                }
+                SheetRow {
+                    label: root.liked ? "♥ Unlike" : "♡ Like this track";
+                    clicked => {
+                        root.liked = !root.liked;
+                        root.set-status(root.liked ? "Liked" : "Unliked", root.liked, !root.liked);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Cycle repeat (" + root.repeat-label() + ")";
+                    clicked => {
+                        root.repeat-mode = mod(root.repeat-mode + 1, 3);
+                        root.set-status(root.repeat-label(), root.repeat-mode != 0, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Skip to next track";
+                    clicked => {
+                        root.next-track();
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Restart queue";
+                    clicked => {
+                        root.track-idx = 0;
+                        root.progress = 0;
+                        root.playing = true;
+                        root.set-status("Queue restarted", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.sheet-open = false;
+                    }
                 }
             }
         }

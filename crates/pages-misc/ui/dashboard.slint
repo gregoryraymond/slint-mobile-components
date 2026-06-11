@@ -1,10 +1,7 @@
 // DashboardPage
 // =====================================================================
 //
-// Composite-screen template — KPI overview for an operations dashboard,
-// fintech home, ops monitor, or sales tracker. Demonstrates a 2×2 stat
-// tile grid, period switcher, and activity feed all composing existing
-// catalogue primitives (Card, SegmentedControl, ListItem, Avatar).
+// KPI overview for an operations dashboard.
 
 import { Theme } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
@@ -12,6 +9,7 @@ import { Card } from "@mobile-components/card.slint";
 import { SegmentedControl } from "@mobile-components/segmented-control.slint";
 import { SectionHeader } from "@mobile-components/section-header.slint";
 import { ContactRow } from "@mobile-components/contact-row.slint";
+import { Divider } from "@mobile-components/divider.slint";
 import { HeadingStyle } from "@mobile-components/heading.slint";
 import { ScrollView } from "std-widgets.slint";
 
@@ -35,8 +33,13 @@ export struct DashboardEvent {
     time: string,
 }
 
-component StatTile inherits Rectangle {
-    in property <DashboardStat> stat;
+component InteractiveStatTile inherits Rectangle {
+    in property <string> label;
+    in property <string> value;
+    in property <string> delta;
+    in property <int> trend: 0; // 0 up 1 down 2 flat
+    in property <bool> pinned: false;
+    callback clicked();
 
     horizontal-stretch: 1;
     vertical-stretch: 1;
@@ -44,17 +47,27 @@ component StatTile inherits Rectangle {
     Card {
         VerticalLayout {
             spacing: Theme.spacing-xs;
-
-            Text {
-                text: root.stat.label;
-                color: Theme.muted;
-                font-family: "Inter";
-                font-size: 11px;
-                font-weight: 700;
-                letter-spacing: 2px;
+            HorizontalLayout {
+                spacing: 4px;
+                alignment: stretch;
+                Text {
+                    text: root.label;
+                    color: Theme.muted;
+                    font-family: "Inter";
+                    font-size: 11px;
+                    font-weight: 700;
+                    letter-spacing: 2px;
+                    horizontal-stretch: 1;
+                }
+                if root.pinned: Text {
+                    text: "★";
+                    color: Theme.accent-warning;
+                    font-size: 12px;
+                    font-weight: 800;
+                }
             }
             Text {
-                text: root.stat.value;
+                text: root.value;
                 color: Theme.on-surface;
                 font-family: "JetBrains Mono";
                 font-size: Theme.font-size-headline;
@@ -62,10 +75,83 @@ component StatTile inherits Rectangle {
                 letter-spacing: -0.5px;
             }
             Text {
-                text: root.stat.delta;
-                color: root.stat.trend == DashboardTrend.up ? Theme.accent-success
-                    : root.stat.trend == DashboardTrend.down ? Theme.accent-danger
-                    : Theme.muted;
+                text: root.delta;
+                color: root.trend == 0 ? Theme.accent-success : (root.trend == 1 ? Theme.accent-danger : Theme.muted);
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+        }
+    }
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component LivePill inherits Rectangle {
+    in property <bool> on: false;
+    callback clicked();
+
+    horizontal-stretch: 0;
+    height: 26px;
+    border-radius: 13px;
+    background: root.on ? Theme.accent-danger : Theme.surface-2;
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-sm;
+        padding-right: Theme.spacing-sm;
+        spacing: 6px;
+        alignment: center;
+        if root.on: Rectangle {
+            width: 8px;
+            height: 8px;
+            border-radius: 4px;
+            background: #ffffff;
+            y: (parent.height - self.height) / 2;
+        }
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.on ? "LIVE" : "Go live";
+                color: root.on ? Theme.on-primary : Theme.on-surface;
+                font-size: Theme.font-size-caption;
+                font-weight: 800;
+                letter-spacing: 1px;
+            }
+        }
+    }
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.destructive ? Theme.accent-danger : Theme.on-surface;
                 font-size: Theme.font-size-body;
                 font-weight: 600;
             }
@@ -76,23 +162,140 @@ component StatTile inherits Rectangle {
 export component DashboardPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
+
     in-out property <int> period-index: 0;
-    in property <[DashboardStat]> stats: [
-        { label: "REVENUE", value: "$12,438", delta: "+12.4%", trend: DashboardTrend.up },
-        { label: "ORDERS", value: "184", delta: "+3.2%", trend: DashboardTrend.up },
-        { label: "REFUNDS", value: "$420", delta: "+1.0%", trend: DashboardTrend.down },
-        { label: "AOV", value: "$67.60", delta: "0.0%", trend: DashboardTrend.flat },
-    ];
-    in property <[DashboardEvent]> events: [
-        { actor-initials: "GH", actor: "GitHub", action: "Deploy succeeded · v0.4.2", time: "2m" },
-        { actor-initials: "S", actor: "Stripe", action: "$240 received · payout pending", time: "14m" },
-        { actor-initials: "MC", actor: "Maestro CI", action: "All flows green on emulator-5554", time: "32m" },
-        { actor-initials: "PL", actor: "Petra Lindquist", action: "approved PR #248 — DESIGN.md", time: "1h" },
-        { actor-initials: "L", actor: "Linear", action: "ENG-218 moved to Done", time: "2h" },
-    ];
+    in-out property <int> revenue-cents: 1243800; // $12,438
+    in-out property <int> orders: 184;
+    in-out property <int> refunds-cents: 42000;
+    in-out property <int> aov-cents: 6760;
+    in-out property <bool> live: false;
+    in-out property <bool> pin0: false;
+    in-out property <bool> pin1: false;
+    in-out property <bool> pin2: false;
+    in-out property <bool> pin3: false;
+    in-out property <bool> ack0: false;
+    in-out property <bool> ack1: false;
+    in-out property <bool> ack2: false;
+    in-out property <bool> ack3: false;
+    in-out property <bool> ack4: false;
+    in-out property <int> selected-tile: -1;
+    in-out property <bool> sheet-open: false;
+    in-out property <bool> confirm-reset: false;
+    in-out property <string> status-msg: "";
+    in-out property <bool> status-success: false;
+    in-out property <bool> status-danger: false;
+
     callback menu-pressed();
     callback filter-pressed();
-    callback event-pressed(DashboardEvent);
+    callback event-pressed(int);
+    callback refresh-pressed();
+    callback tile-pressed(int);
+
+    function period-mult() -> int {
+        return root.period-index == 0 ? 1 : (root.period-index == 1 ? 7 : 30);
+    }
+    function period-name() -> string {
+        return root.period-index == 0 ? "today" : (root.period-index == 1 ? "this week" : "this month");
+    }
+    function fmt-money(cents: int) -> string {
+        return "$" + floor(cents / 100) + "." + (mod(cents, 100) < 10 ? "0" + mod(cents, 100) : "" + mod(cents, 100));
+    }
+    function fmt-money-int(cents: int) -> string {
+        return "$" + floor(cents / 100);
+    }
+    function revenue-display() -> string {
+        return root.fmt-money-int(root.revenue-cents * root.period-mult());
+    }
+    function orders-display() -> string {
+        return "" + (root.orders * root.period-mult());
+    }
+    function refunds-display() -> string {
+        return root.fmt-money-int(root.refunds-cents * root.period-mult());
+    }
+    function aov-display() -> string {
+        return root.fmt-money(root.aov-cents);
+    }
+    function delta-rev() -> string {
+        return root.period-index == 0 ? "+12.4%" : (root.period-index == 1 ? "+9.1%" : "+15.2%");
+    }
+    function delta-ord() -> string {
+        return root.period-index == 0 ? "+3.2%" : (root.period-index == 1 ? "+5.8%" : "+11.0%");
+    }
+    function delta-ref() -> string {
+        return root.period-index == 0 ? "+1.0%" : (root.period-index == 1 ? "−0.4%" : "+2.1%");
+    }
+    function delta-aov() -> string {
+        return root.period-index == 0 ? "0.0%" : (root.period-index == 1 ? "+0.6%" : "−0.8%");
+    }
+    function event-time(i: int) -> string {
+        if (i == 0) {
+            return root.ack0 ? "✓ ack" : "2m";
+        }
+        if (i == 1) {
+            return root.ack1 ? "✓ ack" : "14m";
+        }
+        if (i == 2) {
+            return root.ack2 ? "✓ ack" : "32m";
+        }
+        if (i == 3) {
+            return root.ack3 ? "✓ ack" : "1h";
+        }
+        if (i == 4) {
+            return root.ack4 ? "✓ ack" : "2h";
+        }
+        return "";
+    }
+    function set-status(m: string, ok: bool, bad: bool) {
+        root.status-msg = m;
+        root.status-success = ok;
+        root.status-danger = bad;
+    }
+    function toggle-pin(i: int) {
+        if (i == 0) {
+            root.pin0 = !root.pin0;
+        }
+        if (i == 1) {
+            root.pin1 = !root.pin1;
+        }
+        if (i == 2) {
+            root.pin2 = !root.pin2;
+        }
+        if (i == 3) {
+            root.pin3 = !root.pin3;
+        }
+        root.set-status("Pin toggled", true, false);
+    }
+    function ack-event(i: int) {
+        if (i == 0) {
+            root.ack0 = !root.ack0;
+            root.set-status(root.ack0 ? "Acknowledged GitHub" : "Cleared", root.ack0, false);
+        }
+        if (i == 1) {
+            root.ack1 = !root.ack1;
+            root.set-status(root.ack1 ? "Acknowledged Stripe" : "Cleared", root.ack1, false);
+        }
+        if (i == 2) {
+            root.ack2 = !root.ack2;
+            root.set-status(root.ack2 ? "Acknowledged Maestro" : "Cleared", root.ack2, false);
+        }
+        if (i == 3) {
+            root.ack3 = !root.ack3;
+            root.set-status(root.ack3 ? "Acknowledged PR" : "Cleared", root.ack3, false);
+        }
+        if (i == 4) {
+            root.ack4 = !root.ack4;
+            root.set-status(root.ack4 ? "Acknowledged Linear" : "Cleared", root.ack4, false);
+        }
+    }
+
+    tick := Timer {
+        interval: 2s;
+        running: root.live;
+        triggered => {
+            root.revenue-cents = root.revenue-cents + 2400; // +$24
+            root.orders = root.orders + 1;
+        }
+    }
 
     background: Theme.background;
 
@@ -104,8 +307,32 @@ export component DashboardPage inherits Window {
             title-style: HeadingStyle.grotesk-bold;
             leading-icon: @image-url("@mobile-components/icons/menu.svg");
             trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
-            leading-pressed => { root.menu-pressed(); }
-            trailing-pressed => { root.filter-pressed(); }
+            leading-pressed => {
+                root.set-status("Menu", false, false);
+                root.menu-pressed();
+            }
+            trailing-pressed => {
+                root.sheet-open = true;
+                root.filter-pressed();
+            }
+        }
+
+        // Status banner.
+        if !root.status-msg.is-empty: Rectangle {
+            height: 28px;
+            background: root.status-success ? Theme.accent-success.with-alpha(0.16) : (root.status-danger ? Theme.accent-danger.with-alpha(0.16) : Theme.surface-2);
+            HorizontalLayout {
+                alignment: center;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.status-msg;
+                        color: root.status-success ? Theme.accent-success : (root.status-danger ? Theme.accent-danger : Theme.on-surface);
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                    }
+                }
+            }
         }
 
         ScrollView {
@@ -116,39 +343,375 @@ export component DashboardPage inherits Window {
                 padding: Theme.spacing-md;
                 spacing: Theme.spacing-md;
 
-                // Period switcher
+                // Live + period header.
+                HorizontalLayout {
+                    spacing: Theme.spacing-sm;
+                    alignment: stretch;
+                    VerticalLayout {
+                        alignment: center;
+                        horizontal-stretch: 1;
+                        Text {
+                            text: "Showing " + root.period-name();
+                            color: Theme.muted;
+                            font-size: Theme.font-size-caption;
+                            font-weight: 700;
+                            letter-spacing: 1px;
+                        }
+                    }
+                    LivePill {
+                        on: root.live;
+                        clicked => {
+                            root.live = !root.live;
+                            root.set-status(root.live ? "Live tick on" : "Paused", root.live, false);
+                        }
+                    }
+                    Rectangle {
+                        horizontal-stretch: 0;
+                        height: 26px;
+                        border-radius: 13px;
+                        background: Theme.surface-2;
+                        HorizontalLayout {
+                            padding-left: Theme.spacing-sm;
+                            padding-right: Theme.spacing-sm;
+                            alignment: center;
+                            VerticalLayout {
+                                alignment: center;
+                                Text {
+                                    text: "↻";
+                                    color: Theme.on-surface;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 800;
+                                }
+                            }
+                        }
+                        TouchArea {
+                            clicked => {
+                                root.revenue-cents = root.revenue-cents + 12000;
+                                root.orders = root.orders + 5;
+                                root.set-status("Refreshed", true, false);
+                                root.refresh-pressed();
+                            }
+                        }
+                    }
+                }
+
                 SegmentedControl {
                     options: ["Today", "Week", "Month"];
                     selected-index <=> root.period-index;
                 }
 
-                // Stat tile grid (2 × 2)
                 VerticalLayout {
                     spacing: Theme.spacing-md;
                     HorizontalLayout {
                         spacing: Theme.spacing-md;
-                        StatTile { stat: root.stats[0]; }
-                        StatTile { stat: root.stats[1]; }
+                        InteractiveStatTile {
+                            label: "REVENUE";
+                            value: root.revenue-display();
+                            delta: root.delta-rev();
+                            trend: 0;
+                            pinned: root.pin0;
+                            clicked => {
+                                if (root.selected-tile == 0) {
+                                    root.toggle-pin(0);
+                                } else {
+                                    root.selected-tile = 0;
+                                    root.set-status("Selected REVENUE", true, false);
+                                }
+                                root.tile-pressed(0);
+                            }
+                        }
+                        InteractiveStatTile {
+                            label: "ORDERS";
+                            value: root.orders-display();
+                            delta: root.delta-ord();
+                            trend: 0;
+                            pinned: root.pin1;
+                            clicked => {
+                                if (root.selected-tile == 1) {
+                                    root.toggle-pin(1);
+                                } else {
+                                    root.selected-tile = 1;
+                                    root.set-status("Selected ORDERS", true, false);
+                                }
+                                root.tile-pressed(1);
+                            }
+                        }
                     }
                     HorizontalLayout {
                         spacing: Theme.spacing-md;
-                        StatTile { stat: root.stats[2]; }
-                        StatTile { stat: root.stats[3]; }
+                        InteractiveStatTile {
+                            label: "REFUNDS";
+                            value: root.refunds-display();
+                            delta: root.delta-ref();
+                            trend: 1;
+                            pinned: root.pin2;
+                            clicked => {
+                                if (root.selected-tile == 2) {
+                                    root.toggle-pin(2);
+                                } else {
+                                    root.selected-tile = 2;
+                                    root.set-status("Selected REFUNDS", true, false);
+                                }
+                                root.tile-pressed(2);
+                            }
+                        }
+                        InteractiveStatTile {
+                            label: "AOV";
+                            value: root.aov-display();
+                            delta: root.delta-aov();
+                            trend: 2;
+                            pinned: root.pin3;
+                            clicked => {
+                                if (root.selected-tile == 3) {
+                                    root.toggle-pin(3);
+                                } else {
+                                    root.selected-tile = 3;
+                                    root.set-status("Selected AOV", true, false);
+                                }
+                                root.tile-pressed(3);
+                            }
+                        }
                     }
                 }
 
-                // Activity feed
-                SectionHeader { text: "RECENT ACTIVITY"; }
+                // Selected-tile drill-down panel.
+                if root.selected-tile >= 0: Card {
+                    VerticalLayout {
+                        spacing: Theme.spacing-xs;
+                        HorizontalLayout {
+                            spacing: Theme.spacing-sm;
+                            alignment: stretch;
+                            Text {
+                                text: "Drill-down · " + (root.selected-tile == 0 ? "REVENUE" : (root.selected-tile == 1 ? "ORDERS" : (root.selected-tile == 2 ? "REFUNDS" : "AOV")));
+                                color: Theme.on-surface;
+                                font-family: "Inter";
+                                font-size: 11px;
+                                font-weight: 800;
+                                letter-spacing: 2px;
+                                horizontal-stretch: 1;
+                            }
+                            Rectangle {
+                                horizontal-stretch: 0;
+                                height: 22px;
+                                border-radius: 11px;
+                                background: Theme.surface-2;
+                                HorizontalLayout {
+                                    padding-left: Theme.spacing-sm;
+                                    padding-right: Theme.spacing-sm;
+                                    alignment: center;
+                                    VerticalLayout {
+                                        alignment: center;
+                                        Text {
+                                            text: "Close";
+                                            color: Theme.on-surface;
+                                            font-size: Theme.font-size-caption;
+                                            font-weight: 700;
+                                        }
+                                    }
+                                }
+                                TouchArea {
+                                    clicked => {
+                                        root.selected-tile = -1;
+                                    }
+                                }
+                            }
+                        }
+                        Text {
+                            text: root.selected-tile == 0 ? "Top channel: organic search · " + root.fmt-money-int(root.revenue-cents * 4 / 10) : (root.selected-tile == 1 ? "Avg basket: 2.4 items · top SKU: F-218" : (root.selected-tile == 2 ? "Returns this " + root.period-name() + ": 18 items" : "Period range: " + root.fmt-money(5800) + " – " + root.fmt-money(8400)));
+                            color: Theme.muted;
+                            font-size: Theme.font-size-caption;
+                        }
+                        Text {
+                            text: "Tap the tile again to pin it ★";
+                            color: Theme.accent-info;
+                            font-size: Theme.font-size-caption;
+                            font-weight: 700;
+                        }
+                    }
+                }
+
+                SectionHeader {
+                    text: "RECENT ACTIVITY";
+                }
 
                 VerticalLayout {
                     spacing: 0;
-                    for evt in root.events: ContactRow {
-                        initials: evt.actor-initials;
+                    ContactRow {
+                        initials: "GH";
                         avatar-size: 32px;
-                        title: evt.actor;
-                        subtitle: evt.action;
-                        trailing-text: evt.time;
-                        clicked => { root.event-pressed(evt); }
+                        title: "GitHub";
+                        subtitle: "Deploy succeeded · v0.4.2";
+                        trailing-text: root.event-time(0);
+                        clicked => {
+                            root.ack-event(0);
+                            root.event-pressed(0);
+                        }
+                    }
+                    ContactRow {
+                        initials: "S";
+                        avatar-size: 32px;
+                        title: "Stripe";
+                        subtitle: "$240 received · payout pending";
+                        trailing-text: root.event-time(1);
+                        clicked => {
+                            root.ack-event(1);
+                            root.event-pressed(1);
+                        }
+                    }
+                    ContactRow {
+                        initials: "MC";
+                        avatar-size: 32px;
+                        title: "Maestro CI";
+                        subtitle: "All flows green on emulator-5554";
+                        trailing-text: root.event-time(2);
+                        clicked => {
+                            root.ack-event(2);
+                            root.event-pressed(2);
+                        }
+                    }
+                    ContactRow {
+                        initials: "PL";
+                        avatar-size: 32px;
+                        title: "Petra Lindquist";
+                        subtitle: "approved PR #248 — DESIGN.md";
+                        trailing-text: root.event-time(3);
+                        clicked => {
+                            root.ack-event(3);
+                            root.event-pressed(3);
+                        }
+                    }
+                    ContactRow {
+                        initials: "L";
+                        avatar-size: 32px;
+                        title: "Linear";
+                        subtitle: "ENG-218 moved to Done";
+                        trailing-text: root.event-time(4);
+                        clicked => {
+                            root.ack-event(4);
+                            root.event-pressed(4);
+                        }
+                    }
+                }
+
+                Rectangle {
+                    height: Theme.spacing-xl;
+                }
+            }
+        }
+    }
+
+    // ===================== Bottom sheet =====================
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+                root.confirm-reset = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: Theme.surface-2;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.muted;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: "Dashboard menu";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 700;
+                    }
+                }
+                SheetRow {
+                    label: root.live ? "Pause live tick" : "Start live tick";
+                    clicked => {
+                        root.live = !root.live;
+                        root.set-status(root.live ? "Live on" : "Paused", root.live, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Force refresh (+$120, +5 orders)";
+                    clicked => {
+                        root.revenue-cents = root.revenue-cents + 12000;
+                        root.orders = root.orders + 5;
+                        root.set-status("Refreshed", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Ack all activity";
+                    clicked => {
+                        root.ack0 = true;
+                        root.ack1 = true;
+                        root.ack2 = true;
+                        root.ack3 = true;
+                        root.ack4 = true;
+                        root.set-status("All acknowledged", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Unpin all tiles";
+                    clicked => {
+                        root.pin0 = false;
+                        root.pin1 = false;
+                        root.pin2 = false;
+                        root.pin3 = false;
+                        root.set-status("Pins cleared", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                Divider { }
+
+                SheetRow {
+                    label: root.confirm-reset ? "Confirm: reset numbers" : "Reset numbers";
+                    destructive: true;
+                    clicked => {
+                        if (root.confirm-reset) {
+                            root.revenue-cents = 1243800;
+                            root.orders = 184;
+                            root.refunds-cents = 42000;
+                            root.aov-cents = 6760;
+                            root.ack0 = false;
+                            root.ack1 = false;
+                            root.ack2 = false;
+                            root.ack3 = false;
+                            root.ack4 = false;
+                            root.set-status("Reset to baseline", false, true);
+                            root.sheet-open = false;
+                            root.confirm-reset = false;
+                        } else {
+                            root.confirm-reset = true;
+                        }
+                    }
+                }
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.sheet-open = false;
+                        root.confirm-reset = false;
                     }
                 }
             }

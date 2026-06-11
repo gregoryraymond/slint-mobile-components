@@ -1,34 +1,353 @@
 // DeliveryDriverPage
 // =====================================================================
 //
-// Courier route view — progress meter at the top, then a single "next
-// stop" SettingRow, the remaining stops, and the completed stops, each
-// in their own FormSection. Bottom actions: primary "Open in maps" +
-// secondary "Mark stop complete".
-//
-// All three sections use SettingRow as the row primitive so the leading
-// icon tiles, titles, subtitles and chevron trailing slots all align
-// vertically across the page.
+// Courier route view.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { HeadingStyle } from "@mobile-components/heading.slint";
 import { Card } from "@mobile-components/card.slint";
 import { FormSection } from "@mobile-components/form-section.slint";
-import { SettingRow } from "@mobile-components/setting-row.slint";
 import { ProgressBar } from "@mobile-components/progress-bar.slint";
 import { Divider } from "@mobile-components/divider.slint";
 import { MobileButton, TextButton } from "@mobile-components/button.slint";
 import { ScrollView } from "std-widgets.slint";
 
+component StopRow inherits Rectangle {
+    in property <int> position;
+    in property <string> title;
+    in property <string> subtitle;
+    in property <int> state: 0; // 0 done, 1 next, 2 remaining, 3 skipped
+    in property <bool> urgent: false;
+    in property <bool> called: false;
+    in property <bool> messaged: false;
+    callback row-clicked();
+    callback urgent-clicked();
+    callback call-clicked();
+    callback message-clicked();
+    callback deliver-clicked();
+
+    horizontal-stretch: 1;
+    min-height: 64px;
+    background: ta.has-hover ? Theme.surface-2 : (root.state == 1 ? Theme.accent-info.with-alpha(0.10) : transparent);
+
+    ta := TouchArea {
+        clicked => {
+            root.row-clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 32px;
+                height: 32px;
+                border-radius: 8px;
+                background: root.state == 0 ? Theme.accent-success.with-alpha(0.22) : (root.state == 1 ? Theme.accent-info.with-alpha(0.22) : (root.state == 3 ? Theme.accent-danger.with-alpha(0.22) : Theme.surface-2));
+                Image {
+                    width: 18px;
+                    height: 18px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: root.state == 0 ? @image-url("@mobile-components/icons/check.svg") : (root.state == 3 ? @image-url("@mobile-components/icons/close.svg") : @image-url("@mobile-components/icons/pin.svg"));
+                    colorize: root.state == 0 ? Theme.accent-success : (root.state == 1 ? Theme.accent-info : (root.state == 3 ? Theme.accent-danger : Theme.muted));
+                    image-fit: contain;
+                }
+            }
+        }
+
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 3px;
+            Text {
+                text: (root.urgent ? "★ " : "") + root.title + (root.state == 3 ? " · skipped" : "");
+                color: root.state == 0 ? Theme.muted : (root.state == 1 ? Theme.accent-info : Theme.on-surface);
+                font-size: Theme.font-size-body;
+                font-weight: root.state == 1 ? 700 : 600;
+                overflow: elide;
+            }
+            Text {
+                text: root.subtitle;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+                overflow: elide;
+            }
+        }
+
+        if root.state == 1: HorizontalLayout {
+            alignment: center;
+            spacing: 4px;
+            Rectangle {
+                width: 32px;
+                height: 32px;
+                border-radius: 16px;
+                background: root.called ? Theme.accent-info.with-alpha(0.22) : Theme.surface-2;
+                Text {
+                    text: "☎";
+                    color: root.called ? Theme.accent-info : Theme.muted;
+                    font-size: 14px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                }
+                TouchArea {
+                    clicked => {
+                        root.call-clicked();
+                    }
+                }
+            }
+            Rectangle {
+                width: 32px;
+                height: 32px;
+                border-radius: 16px;
+                background: root.messaged ? Theme.accent-success.with-alpha(0.22) : Theme.surface-2;
+                Text {
+                    text: "✉";
+                    color: root.messaged ? Theme.accent-success : Theme.muted;
+                    font-size: 14px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                }
+                TouchArea {
+                    clicked => {
+                        root.message-clicked();
+                    }
+                }
+            }
+            Rectangle {
+                width: 64px;
+                height: 32px;
+                border-radius: 16px;
+                background: Theme.accent-success;
+                Text {
+                    text: "Deliver";
+                    color: Theme.on-primary;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+                TouchArea {
+                    clicked => {
+                        root.deliver-clicked();
+                    }
+                }
+            }
+        }
+
+        if root.state == 2 || root.state == 3: Rectangle {
+            width: 28px;
+            VerticalLayout {
+                alignment: center;
+                Image {
+                    width: 16px;
+                    height: 16px;
+                    source: @image-url("@mobile-components/icons/star.svg");
+                    colorize: root.urgent ? Theme.accent-warning : Theme.muted;
+                    image-fit: contain;
+                }
+            }
+            TouchArea {
+                clicked => {
+                    root.urgent-clicked();
+                }
+            }
+        }
+    }
+}
+
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.destructive ? Theme.accent-danger : Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+        }
+    }
+}
+
 export component DeliveryDriverPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
 
+    // next-idx: which stop is currently the "next" one (0..8). 8 means done.
+    in-out property <int> next-idx: 2;
+    in-out property <int> total-stops: 8;
+    in-out property <int> eta-min: 92; // minutes from now until last stop
+    in-out property <bool> paused: false;
+    // Skip flags for stops 2..7 (next-idx region).
+    in-out property <bool> skip2: false;
+    in-out property <bool> skip3: false;
+    in-out property <bool> skip4: false;
+    in-out property <bool> skip5: false;
+    in-out property <bool> skip6: false;
+    in-out property <bool> skip7: false;
+    // Urgent stars.
+    in-out property <bool> urg2: false;
+    in-out property <bool> urg3: false;
+    in-out property <bool> urg4: false;
+    in-out property <bool> urg5: false;
+    in-out property <bool> urg6: false;
+    in-out property <bool> urg7: false;
+    in-out property <bool> called: false;
+    in-out property <bool> messaged: false;
+    in-out property <bool> sheet-open: false;
+    in-out property <bool> confirm-end: false;
+    in-out property <string> status-msg: "";
+    in-out property <bool> status-success: false;
+    in-out property <bool> status-danger: false;
+
     callback back-pressed();
     callback maps-pressed();
     callback complete-pressed();
-    callback stop-pressed(string);
+    callback stop-pressed(int);
+
+    function progress() -> float {
+        return root.next-idx * 1.0 / root.total-stops;
+    }
+    function pad2(n: int) -> string {
+        return n < 10 ? "0" + n : "" + n;
+    }
+    function eta-clock() -> string {
+        // Start 14:00 baseline + eta-min.
+        return 14 + floor(root.eta-min / 60) + ":" + root.pad2(mod(root.eta-min, 60));
+    }
+    function tour-status() -> string {
+        return root.paused ? "Paused" : (root.next-idx >= root.total-stops ? "Tour complete ✓" : (root.eta-min > 100 ? "Running late" : "On schedule"));
+    }
+    function stop-title(i: int) -> string {
+        return i == 0 ? "Depot pickup" : (i == 1 ? "M. Hubert · 1A" : (i == 2 ? "Mme Sophie · 4B" : (i == 3 ? "M. Dupont · 12A" : (i == 4 ? "Atlas Coffee Co." : (i == 5 ? "P. Lindquist · 7C" : (i == 6 ? "Studio K · loading dock" : "Mme van Acker · 2B"))))));
+    }
+    function stop-sub(i: int) -> string {
+        return i == 0 ? "Completed 13:08" : (i == 1 ? "Completed 13:42" : (i == 2 ? "Rue de la Loi 110 · 1.2 km" : (i == 3 ? "Avenue Louise 240 · 2.1 km" : (i == 4 ? "Place du Châtelain 8 · 3.4 km" : (i == 5 ? "Rue Antoine Dansaert 31 · 4.0 km" : (i == 6 ? "Quai aux Briques 62 · 5.3 km" : "Rue Royale 145 · 6.1 km"))))));
+    }
+    function row-state(i: int) -> int {
+        // 0 done, 1 next, 2 remaining, 3 skipped
+        if (i < root.next-idx) {
+            return 0;
+        }
+        // Skipped flag.
+        if (i == 2 && root.skip2) {
+            return 3;
+        }
+        if (i == 3 && root.skip3) {
+            return 3;
+        }
+        if (i == 4 && root.skip4) {
+            return 3;
+        }
+        if (i == 5 && root.skip5) {
+            return 3;
+        }
+        if (i == 6 && root.skip6) {
+            return 3;
+        }
+        if (i == 7 && root.skip7) {
+            return 3;
+        }
+        if (i == root.next-idx) {
+            return 1;
+        }
+        return 2;
+    }
+    function urgent(i: int) -> bool {
+        return i == 2 ? root.urg2 : (i == 3 ? root.urg3 : (i == 4 ? root.urg4 : (i == 5 ? root.urg5 : (i == 6 ? root.urg6 : (i == 7 ? root.urg7 : false)))));
+    }
+    function set-status(m: string, ok: bool, bad: bool) {
+        root.status-msg = m;
+        root.status-success = ok;
+        root.status-danger = bad;
+    }
+    function toggle-urgent(i: int) {
+        if (i == 2) {
+            root.urg2 = !root.urg2;
+        }
+        if (i == 3) {
+            root.urg3 = !root.urg3;
+        }
+        if (i == 4) {
+            root.urg4 = !root.urg4;
+        }
+        if (i == 5) {
+            root.urg5 = !root.urg5;
+        }
+        if (i == 6) {
+            root.urg6 = !root.urg6;
+        }
+        if (i == 7) {
+            root.urg7 = !root.urg7;
+        }
+        root.set-status(root.urgent(i) ? "★ Marked priority" : "Priority cleared", root.urgent(i), false);
+    }
+    function toggle-skip(i: int) {
+        if (i == 2) {
+            root.skip2 = !root.skip2;
+        }
+        if (i == 3) {
+            root.skip3 = !root.skip3;
+        }
+        if (i == 4) {
+            root.skip4 = !root.skip4;
+        }
+        if (i == 5) {
+            root.skip5 = !root.skip5;
+        }
+        if (i == 6) {
+            root.skip6 = !root.skip6;
+        }
+        if (i == 7) {
+            root.skip7 = !root.skip7;
+        }
+    }
+    function deliver-next() {
+        if (root.next-idx < root.total-stops) {
+            root.next-idx = root.next-idx + 1;
+            root.eta-min = max(0, root.eta-min - 14);
+            root.called = false;
+            root.messaged = false;
+            root.set-status("Delivered stop " + root.next-idx, true, false);
+        }
+        root.complete-pressed();
+    }
+
+    // Live ETA tick.
+    tick := Timer {
+        interval: 5s;
+        running: !root.paused && root.next-idx < root.total-stops;
+        triggered => {
+            if (root.eta-min > 0) {
+                root.eta-min = root.eta-min - 1;
+            }
+        }
+    }
 
     background: Theme.background;
 
@@ -39,7 +358,31 @@ export component DeliveryDriverPage inherits Window {
             title: "Tour · #487";
             title-style: HeadingStyle.plex-medium;
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
-            leading-pressed => { root.back-pressed(); }
+            trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
+            leading-pressed => {
+                root.back-pressed();
+            }
+            trailing-pressed => {
+                root.sheet-open = true;
+            }
+        }
+
+        // Status banner.
+        if !root.status-msg.is-empty: Rectangle {
+            height: 28px;
+            background: root.status-success ? Theme.accent-success.with-alpha(0.16) : (root.status-danger ? Theme.accent-danger.with-alpha(0.16) : Theme.surface-2);
+            HorizontalLayout {
+                alignment: center;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.status-msg;
+                        color: root.status-success ? Theme.accent-success : (root.status-danger ? Theme.accent-danger : Theme.on-surface);
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                    }
+                }
+            }
         }
 
         ScrollView {
@@ -58,19 +401,53 @@ export component DeliveryDriverPage inherits Window {
                     Card {
                         VerticalLayout {
                             spacing: Theme.spacing-sm;
-                            Text {
-                                text: "3 of 8 stops";
-                                color: Theme.on-surface;
-                                font-size: Theme.font-size-title;
-                                font-weight: 700;
+                            HorizontalLayout {
+                                alignment: stretch;
+                                VerticalLayout {
+                                    alignment: center;
+                                    horizontal-stretch: 1;
+                                    Text {
+                                        text: root.next-idx + " of " + root.total-stops + " stops";
+                                        color: Theme.on-surface;
+                                        font-size: Theme.font-size-title;
+                                        font-weight: 700;
+                                    }
+                                }
+                                // Pause / resume pill.
+                                Rectangle {
+                                    horizontal-stretch: 0;
+                                    height: 32px;
+                                    border-radius: 16px;
+                                    background: root.paused ? Theme.accent-warning : Theme.surface-2;
+                                    HorizontalLayout {
+                                        padding-left: Theme.spacing-sm;
+                                        padding-right: Theme.spacing-sm;
+                                        alignment: center;
+                                        VerticalLayout {
+                                            alignment: center;
+                                            Text {
+                                                text: root.paused ? "Resume" : "Pause tour";
+                                                color: root.paused ? Theme.on-primary : Theme.on-surface;
+                                                font-size: Theme.font-size-caption;
+                                                font-weight: 700;
+                                            }
+                                        }
+                                    }
+                                    TouchArea {
+                                        clicked => {
+                                            root.paused = !root.paused;
+                                            root.set-status(root.paused ? "Tour paused" : "Tour resumed", !root.paused, root.paused);
+                                        }
+                                    }
+                                }
                             }
                             Text {
-                                text: "On schedule · ETA 16:10";
-                                color: Theme.muted;
+                                text: root.tour-status() + " · ETA " + root.eta-clock();
+                                color: root.eta-min > 100 ? Theme.accent-danger : Theme.muted;
                                 font-size: Theme.font-size-body;
                             }
                             ProgressBar {
-                                value: 0.375;
+                                value: root.progress();
                             }
                         }
                     }
@@ -79,19 +456,45 @@ export component DeliveryDriverPage inherits Window {
                 // ----- Next stop ----------------------------------------
                 FormSection {
                     title: "NEXT STOP";
-
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/pin.svg");
-                        tone: Tone.info;
-                        title: "Mme Sophie · 4B";
-                        subtitle: "Rue de la Loi 110 · 1.2 km · ETA 14:32";
-                        clicked => { root.stop-pressed("next"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
+                    if root.next-idx < root.total-stops: StopRow {
+                        position: root.next-idx;
+                        title: root.stop-title(root.next-idx);
+                        subtitle: root.stop-sub(root.next-idx) + " · ETA " + root.eta-clock();
+                        state: 1;
+                        urgent: root.urgent(root.next-idx);
+                        called: root.called;
+                        messaged: root.messaged;
+                        row-clicked => {
+                            root.stop-pressed(root.next-idx);
+                        }
+                        urgent-clicked => {
+                            root.toggle-urgent(root.next-idx);
+                        }
+                        call-clicked => {
+                            root.called = !root.called;
+                            root.set-status(root.called ? "Calling customer…" : "Cancelled call", root.called, false);
+                        }
+                        message-clicked => {
+                            root.messaged = !root.messaged;
+                            root.set-status(root.messaged ? "Sent ETA SMS" : "SMS withdrawn", root.messaged, false);
+                        }
+                        deliver-clicked => {
+                            root.deliver-next();
+                        }
+                    }
+                    if root.next-idx >= root.total-stops: Rectangle {
+                        min-height: 64px;
+                        HorizontalLayout {
+                            alignment: center;
+                            VerticalLayout {
+                                alignment: center;
+                                Text {
+                                    text: "✓ Tour complete — return to depot";
+                                    color: Theme.accent-success;
+                                    font-size: Theme.font-size-body;
+                                    font-weight: 700;
+                                }
+                            }
                         }
                     }
                 }
@@ -100,93 +503,63 @@ export component DeliveryDriverPage inherits Window {
                 FormSection {
                     title: "REMAINING";
 
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/pin.svg");
-                        title: "M. Dupont · 12A";
-                        subtitle: "Avenue Louise 240 · 2.1 km";
-                        clicked => { root.stop-pressed("4"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
+                    for stop[i] in [
+                        { idx: 2 },
+                        { idx: 3 },
+                        { idx: 4 },
+                        { idx: 5 },
+                        { idx: 6 },
+                        { idx: 7 },
+                    ]: VerticalLayout {
+                        spacing: 0;
+                        if root.row-state(stop.idx) >= 2: StopRow {
+                            position: stop.idx;
+                            title: root.stop-title(stop.idx);
+                            subtitle: root.stop-sub(stop.idx);
+                            state: root.row-state(stop.idx);
+                            urgent: root.urgent(stop.idx);
+                            row-clicked => {
+                                root.toggle-skip(stop.idx);
+                                root.set-status(root.row-state(stop.idx) == 3 ? "Skipped stop " + (stop.idx + 1) : "Re-added stop " + (stop.idx + 1), root.row-state(stop.idx) != 3, root.row-state(stop.idx) == 3);
+                            }
+                            urgent-clicked => {
+                                root.toggle-urgent(stop.idx);
+                            }
+                            call-clicked => { }
+                            message-clicked => { }
+                            deliver-clicked => { }
                         }
-                    }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/pin.svg");
-                        title: "Atlas Coffee Co.";
-                        subtitle: "Place du Châtelain 8 · 3.4 km";
-                        clicked => { root.stop-pressed("5"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
-                        }
-                    }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/pin.svg");
-                        title: "P. Lindquist · 7C";
-                        subtitle: "Rue Antoine Dansaert 31 · 4.0 km";
-                        clicked => { root.stop-pressed("6"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
-                        }
-                    }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/pin.svg");
-                        title: "Studio K · loading dock";
-                        subtitle: "Quai aux Briques 62 · 5.3 km";
-                        clicked => { root.stop-pressed("7"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
-                        }
-                    }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/pin.svg");
-                        title: "Mme van Acker · 2B";
-                        subtitle: "Rue Royale 145 · 6.1 km";
-                        clicked => { root.stop-pressed("8"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
-                        }
+                        if root.row-state(stop.idx) >= 2 && stop.idx < 7: Divider { }
                     }
                 }
 
                 // ----- Done ---------------------------------------------
-                FormSection {
-                    title: "DONE";
+                if root.next-idx > 0: FormSection {
+                    title: "DONE (" + root.next-idx + ")";
 
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/check.svg");
-                        tone: Tone.success;
-                        title: "Depot pickup";
-                        subtitle: "Completed 13:08";
-                    }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/check.svg");
-                        tone: Tone.success;
-                        title: "M. Hubert · 1A";
-                        subtitle: "Completed 13:42";
+                    for stop[i] in [
+                        { idx: 0 },
+                        { idx: 1 },
+                        { idx: 2 },
+                        { idx: 3 },
+                        { idx: 4 },
+                        { idx: 5 },
+                        { idx: 6 },
+                        { idx: 7 },
+                    ]: VerticalLayout {
+                        spacing: 0;
+                        if stop.idx < root.next-idx: StopRow {
+                            position: stop.idx;
+                            title: root.stop-title(stop.idx);
+                            subtitle: root.stop-sub(stop.idx);
+                            state: 0;
+                            row-clicked => { }
+                            urgent-clicked => { }
+                            call-clicked => { }
+                            message-clicked => { }
+                            deliver-clicked => { }
+                        }
+                        if stop.idx < root.next-idx && stop.idx < root.next-idx - 1: Divider { }
                     }
                 }
 
@@ -198,12 +571,123 @@ export component DeliveryDriverPage inherits Window {
                     alignment: stretch;
 
                     MobileButton {
-                        text: "Open in maps";
-                        clicked => { root.maps-pressed(); }
+                        text: root.next-idx >= root.total-stops ? "Return to depot" : "Open in maps";
+                        clicked => {
+                            root.set-status(root.next-idx >= root.total-stops ? "Routing to depot" : "Opening route to " + root.stop-title(root.next-idx), true, false);
+                            root.maps-pressed();
+                        }
                     }
                     TextButton {
-                        text: "Mark stop complete";
-                        clicked => { root.complete-pressed(); }
+                        text: root.next-idx >= root.total-stops ? "Tour finished" : "Mark stop complete";
+                        clicked => {
+                            root.deliver-next();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ===================== Bottom sheet =====================
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+                root.confirm-end = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: Theme.surface-2;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.muted;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: "Tour actions";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 700;
+                    }
+                }
+                SheetRow {
+                    label: root.paused ? "Resume tour" : "Pause tour";
+                    clicked => {
+                        root.paused = !root.paused;
+                        root.set-status(root.paused ? "Paused" : "Resumed", !root.paused, root.paused);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Report problem at this stop";
+                    clicked => {
+                        root.set-status("Dispatch notified", false, true);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Add 30 min to ETA";
+                    clicked => {
+                        root.eta-min = root.eta-min + 30;
+                        root.set-status("ETA pushed +30m", false, true);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Restore all skipped";
+                    clicked => {
+                        root.skip2 = false;
+                        root.skip3 = false;
+                        root.skip4 = false;
+                        root.skip5 = false;
+                        root.skip6 = false;
+                        root.skip7 = false;
+                        root.set-status("Skipped stops restored", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                Divider { }
+
+                SheetRow {
+                    label: root.confirm-end ? "Confirm: end shift" : "End shift";
+                    destructive: true;
+                    clicked => {
+                        if (root.confirm-end) {
+                            root.next-idx = root.total-stops;
+                            root.set-status("Shift ended", false, true);
+                            root.sheet-open = false;
+                            root.confirm-end = false;
+                        } else {
+                            root.confirm-end = true;
+                        }
+                    }
+                }
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.sheet-open = false;
+                        root.confirm-end = false;
                     }
                 }
             }

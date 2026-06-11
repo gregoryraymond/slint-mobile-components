@@ -1,16 +1,7 @@
 // AchievementsPage
 // =====================================================================
 //
-// Game / app achievements gallery. Top: three StatTiles summarise the
-// totals. Then a "Recent" FormSection with rows for unlocked badges
-// (tone-tinted leading tile + a small success-coloured check Image
-// trailing) and an "In progress" FormSection for partially-completed
-// achievements (percentage Text trailing).
-//
-// Pure showcase of SettingRow + StatTile alignment: every row in both
-// sections inherits the same 56 px floor and 16 px leading-tile, so
-// titles, subtitles, and trailing slots line up vertically regardless
-// of which type of trailing widget appears.
+// Game / app achievements gallery.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
@@ -21,12 +12,201 @@ import { StatTile } from "@mobile-components/stat-tile.slint";
 import { Divider } from "@mobile-components/divider.slint";
 import { ScrollView } from "std-widgets.slint";
 
+component FilterChip inherits Rectangle {
+    in property <string> label;
+    in property <bool> active: false;
+    callback clicked();
+
+    horizontal-stretch: 0;
+    height: 28px;
+    border-radius: 14px;
+    background: root.active ? Theme.primary : Theme.surface-2;
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: center;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.active ? Theme.on-primary : Theme.on-surface;
+                font-size: Theme.font-size-caption;
+                font-weight: 700;
+            }
+        }
+    }
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component ClaimPill inherits Rectangle {
+    in property <string> label;
+    in property <bool> ready: false;
+    callback clicked();
+
+    horizontal-stretch: 0;
+    height: 26px;
+    border-radius: 13px;
+    background: root.ready ? Theme.accent-success : Theme.surface-2;
+    HorizontalLayout {
+        padding-left: Theme.spacing-sm;
+        padding-right: Theme.spacing-sm;
+        alignment: center;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.ready ? Theme.on-primary : Theme.muted;
+                font-size: Theme.font-size-caption;
+                font-weight: 700;
+            }
+        }
+    }
+    TouchArea {
+        enabled: root.ready;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.destructive ? Theme.accent-danger : Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+        }
+    }
+}
+
 export component AchievementsPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
 
+    in-out property <int> filter-mode: 0; // 0 All 1 Recent 2 In progress 3 Rare
+    in-out property <int> points: 1200;
+    in-out property <int> earned-count: 23;
+    in-out property <bool> pin0: false;
+    in-out property <bool> pin1: false;
+    in-out property <bool> pin2: false;
+    in-out property <bool> pin3: false;
+    in-out property <bool> pin4: false;
+    in-out property <int> prog-power: 3;
+    in-out property <int> prog-marathon: 12;
+    in-out property <int> prog-community: 7;
+    in-out property <int> prog-cartograph: 4;
+    in-out property <bool> claimed-power: false;
+    in-out property <bool> claimed-marathon: false;
+    in-out property <bool> claimed-community: false;
+    in-out property <bool> claimed-cartograph: false;
+    in-out property <bool> sheet-open: false;
+    in-out property <bool> confirm-reset: false;
+    in-out property <string> status-msg: "";
+    in-out property <bool> status-success: false;
+    in-out property <bool> status-danger: false;
+
     callback back-pressed();
     callback row-pressed(string);
+    callback claim-pressed(string);
+
+    function fmt-points() -> string {
+        return root.points >= 1000 ? floor(root.points / 100) / 10 + "K" : "" + root.points;
+    }
+    function show-recent() -> bool {
+        return root.filter-mode == 0 || root.filter-mode == 1 || root.filter-mode == 3;
+    }
+    function show-progress() -> bool {
+        return root.filter-mode == 0 || root.filter-mode == 2;
+    }
+    function pct(a: int, b: int) -> int {
+        return floor(a * 100 / b);
+    }
+    function set-status(m: string, ok: bool, bad: bool) {
+        root.status-msg = m;
+        root.status-success = ok;
+        root.status-danger = bad;
+    }
+    function bump(which: string) {
+        if (which == "power") {
+            if (root.prog-power < 10) {
+                root.prog-power = root.prog-power + 1;
+                root.set-status("Power user " + root.prog-power + "/10", true, false);
+            }
+        }
+        if (which == "marathon") {
+            if (root.prog-marathon < 25) {
+                root.prog-marathon = root.prog-marathon + 1;
+                root.set-status("Marathoner " + root.prog-marathon + "/25", true, false);
+            }
+        }
+        if (which == "community") {
+            if (root.prog-community < 20) {
+                root.prog-community = root.prog-community + 1;
+                root.set-status("Community " + root.prog-community + "/20", true, false);
+            }
+        }
+        if (which == "cartograph") {
+            if (root.prog-cartograph < 50) {
+                root.prog-cartograph = root.prog-cartograph + 1;
+                root.set-status("Cartographer " + root.prog-cartograph + "/50", true, false);
+            }
+        }
+    }
+    function claim(which: string, pts: int) {
+        if (which == "power" && !root.claimed-power) {
+            root.claimed-power = true;
+            root.points = root.points + pts;
+            root.earned-count = root.earned-count + 1;
+            root.set-status("Claimed +" + pts + " pts (Power user)", true, false);
+            root.claim-pressed("power-user");
+        }
+        if (which == "marathon" && !root.claimed-marathon) {
+            root.claimed-marathon = true;
+            root.points = root.points + pts;
+            root.earned-count = root.earned-count + 1;
+            root.set-status("Claimed +" + pts + " pts (Marathoner)", true, false);
+            root.claim-pressed("marathoner");
+        }
+        if (which == "community" && !root.claimed-community) {
+            root.claimed-community = true;
+            root.points = root.points + pts;
+            root.earned-count = root.earned-count + 1;
+            root.set-status("Claimed +" + pts + " pts (Community)", true, false);
+            root.claim-pressed("community");
+        }
+        if (which == "cartograph" && !root.claimed-cartograph) {
+            root.claimed-cartograph = true;
+            root.points = root.points + pts;
+            root.earned-count = root.earned-count + 1;
+            root.set-status("Claimed +" + pts + " pts (Cartographer)", true, false);
+            root.claim-pressed("cartographer");
+        }
+    }
 
     background: Theme.background;
 
@@ -37,7 +217,31 @@ export component AchievementsPage inherits Window {
             title: "Achievements";
             title-style: HeadingStyle.plex-medium;
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
-            leading-pressed => { root.back-pressed(); }
+            trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
+            leading-pressed => {
+                root.back-pressed();
+            }
+            trailing-pressed => {
+                root.sheet-open = true;
+            }
+        }
+
+        // Status banner.
+        if !root.status-msg.is-empty: Rectangle {
+            height: 28px;
+            background: root.status-success ? Theme.accent-success.with-alpha(0.16) : (root.status-danger ? Theme.accent-danger.with-alpha(0.16) : Theme.surface-2);
+            HorizontalLayout {
+                alignment: center;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.status-msg;
+                        color: root.status-success ? Theme.accent-success : (root.status-danger ? Theme.accent-danger : Theme.on-surface);
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                    }
+                }
+            }
         }
 
         ScrollView {
@@ -55,21 +259,74 @@ export component AchievementsPage inherits Window {
                     padding-right: Theme.spacing-md;
                     spacing: Theme.spacing-md;
 
-                    StatTile { value: "23 / 60"; label: "EARNED"; }
-                    StatTile { value: "4"; label: "RARE"; tone: Tone.info; }
-                    StatTile { value: "1.2K"; label: "POINTS"; tone: Tone.warning; }
+                    StatTile {
+                        value: root.earned-count + " / 60";
+                        label: "EARNED";
+                    }
+                    StatTile {
+                        value: "4";
+                        label: "RARE";
+                        tone: Tone.info;
+                    }
+                    StatTile {
+                        value: root.fmt-points();
+                        label: "POINTS";
+                        tone: Tone.warning;
+                    }
+                }
+
+                // ----- Filter chips ---------------------------------------
+                HorizontalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    spacing: Theme.spacing-sm;
+                    FilterChip {
+                        label: "All";
+                        active: root.filter-mode == 0;
+                        clicked => {
+                            root.filter-mode = 0;
+                        }
+                    }
+                    FilterChip {
+                        label: "Recent";
+                        active: root.filter-mode == 1;
+                        clicked => {
+                            root.filter-mode = 1;
+                        }
+                    }
+                    FilterChip {
+                        label: "In progress";
+                        active: root.filter-mode == 2;
+                        clicked => {
+                            root.filter-mode = 2;
+                        }
+                    }
+                    FilterChip {
+                        label: "Rare";
+                        active: root.filter-mode == 3;
+                        clicked => {
+                            root.filter-mode = 3;
+                        }
+                    }
+                    Rectangle {
+                        horizontal-stretch: 1;
+                    }
                 }
 
                 // ----- Recent ---------------------------------------------
-                FormSection {
+                if root.show-recent(): FormSection {
                     title: "RECENT";
 
                     SettingRow {
                         icon: @image-url("@mobile-components/icons/star.svg");
                         tone: Tone.warning;
-                        title: "First steps";
+                        title: (root.pin0 ? "★ " : "") + "First steps";
                         subtitle: "Earned May 12 · 50 pts";
-                        clicked => { root.row-pressed("first-steps"); }
+                        clicked => {
+                            root.pin0 = !root.pin0;
+                            root.set-status(root.pin0 ? "Pinned First steps" : "Unpinned", root.pin0, false);
+                            root.row-pressed("first-steps");
+                        }
                         Image {
                             width: 16px;
                             height: 16px;
@@ -79,12 +336,17 @@ export component AchievementsPage inherits Window {
                         }
                     }
                     Divider { }
+
                     SettingRow {
                         icon: @image-url("@mobile-components/icons/heart.svg");
                         tone: Tone.danger;
-                        title: "Heart of gold";
+                        title: (root.pin1 ? "★ " : "") + "Heart of gold";
                         subtitle: "Earned May 11 · 100 pts";
-                        clicked => { root.row-pressed("heart-of-gold"); }
+                        clicked => {
+                            root.pin1 = !root.pin1;
+                            root.set-status(root.pin1 ? "Pinned Heart of gold" : "Unpinned", root.pin1, false);
+                            root.row-pressed("heart-of-gold");
+                        }
                         Image {
                             width: 16px;
                             height: 16px;
@@ -94,12 +356,17 @@ export component AchievementsPage inherits Window {
                         }
                     }
                     Divider { }
+
                     SettingRow {
                         icon: @image-url("@mobile-components/icons/check.svg");
                         tone: Tone.success;
-                        title: "Streak holder";
+                        title: (root.pin2 ? "★ " : "") + "Streak holder";
                         subtitle: "Earned May 09 · 75 pts";
-                        clicked => { root.row-pressed("streak"); }
+                        clicked => {
+                            root.pin2 = !root.pin2;
+                            root.set-status(root.pin2 ? "Pinned Streak holder" : "Unpinned", root.pin2, false);
+                            root.row-pressed("streak");
+                        }
                         Image {
                             width: 16px;
                             height: 16px;
@@ -109,12 +376,17 @@ export component AchievementsPage inherits Window {
                         }
                     }
                     Divider { }
+
                     SettingRow {
                         icon: @image-url("@mobile-components/icons/star.svg");
                         tone: Tone.info;
-                        title: "Explorer";
+                        title: (root.pin3 ? "★ " : "") + "Explorer";
                         subtitle: "Earned May 07 · 50 pts";
-                        clicked => { root.row-pressed("explorer"); }
+                        clicked => {
+                            root.pin3 = !root.pin3;
+                            root.set-status(root.pin3 ? "Pinned Explorer" : "Unpinned", root.pin3, false);
+                            root.row-pressed("explorer");
+                        }
                         Image {
                             width: 16px;
                             height: 16px;
@@ -124,12 +396,17 @@ export component AchievementsPage inherits Window {
                         }
                     }
                     Divider { }
+
                     SettingRow {
                         icon: @image-url("@mobile-components/icons/pin.svg");
                         tone: Tone.warning;
-                        title: "Globe trotter";
+                        title: (root.pin4 ? "★ " : "") + "Globe trotter";
                         subtitle: "Earned May 03 · 200 pts";
-                        clicked => { root.row-pressed("globe"); }
+                        clicked => {
+                            root.pin4 = !root.pin4;
+                            root.set-status(root.pin4 ? "Pinned Globe trotter" : "Unpinned", root.pin4, false);
+                            root.row-pressed("globe");
+                        }
                         Image {
                             width: 16px;
                             height: 16px;
@@ -141,63 +418,176 @@ export component AchievementsPage inherits Window {
                 }
 
                 // ----- In progress ----------------------------------------
-                FormSection {
+                if root.show-progress(): FormSection {
                     title: "IN PROGRESS";
 
                     SettingRow {
                         icon: @image-url("@mobile-components/icons/star.svg");
                         title: "Power user";
-                        subtitle: "3 / 10 · 30 %";
-                        clicked => { root.row-pressed("power-user"); }
-                        Text {
-                            text: "30%";
-                            color: Theme.muted;
-                            font-size: Theme.font-size-body;
-                            font-weight: 600;
-                            vertical-alignment: center;
+                        subtitle: root.prog-power + " / 10 · " + root.pct(root.prog-power, 10) + " %";
+                        clicked => {
+                            root.bump("power");
+                        }
+                        ClaimPill {
+                            label: root.claimed-power ? "Claimed" : (root.prog-power >= 10 ? "Claim +100" : root.pct(root.prog-power, 10) + "%");
+                            ready: root.prog-power >= 10 && !root.claimed-power;
+                            clicked => {
+                                root.claim("power", 100);
+                            }
                         }
                     }
                     Divider { }
+
                     SettingRow {
                         icon: @image-url("@mobile-components/icons/check.svg");
                         title: "Marathoner";
-                        subtitle: "12 / 25 · 48 %";
-                        clicked => { root.row-pressed("marathoner"); }
-                        Text {
-                            text: "48%";
-                            color: Theme.muted;
-                            font-size: Theme.font-size-body;
-                            font-weight: 600;
-                            vertical-alignment: center;
+                        subtitle: root.prog-marathon + " / 25 · " + root.pct(root.prog-marathon, 25) + " %";
+                        clicked => {
+                            root.bump("marathon");
+                        }
+                        ClaimPill {
+                            label: root.claimed-marathon ? "Claimed" : (root.prog-marathon >= 25 ? "Claim +250" : root.pct(root.prog-marathon, 25) + "%");
+                            ready: root.prog-marathon >= 25 && !root.claimed-marathon;
+                            clicked => {
+                                root.claim("marathon", 250);
+                            }
                         }
                     }
                     Divider { }
+
                     SettingRow {
                         icon: @image-url("@mobile-components/icons/heart.svg");
                         title: "Community pillar";
-                        subtitle: "7 / 20 · 35 %";
-                        clicked => { root.row-pressed("community"); }
-                        Text {
-                            text: "35%";
-                            color: Theme.muted;
-                            font-size: Theme.font-size-body;
-                            font-weight: 600;
-                            vertical-alignment: center;
+                        subtitle: root.prog-community + " / 20 · " + root.pct(root.prog-community, 20) + " %";
+                        clicked => {
+                            root.bump("community");
+                        }
+                        ClaimPill {
+                            label: root.claimed-community ? "Claimed" : (root.prog-community >= 20 ? "Claim +200" : root.pct(root.prog-community, 20) + "%");
+                            ready: root.prog-community >= 20 && !root.claimed-community;
+                            clicked => {
+                                root.claim("community", 200);
+                            }
                         }
                     }
                     Divider { }
+
                     SettingRow {
                         icon: @image-url("@mobile-components/icons/pin.svg");
                         title: "Cartographer";
-                        subtitle: "4 / 50 · 8 %";
-                        clicked => { root.row-pressed("cartographer"); }
-                        Text {
-                            text: "8%";
-                            color: Theme.muted;
-                            font-size: Theme.font-size-body;
-                            font-weight: 600;
-                            vertical-alignment: center;
+                        subtitle: root.prog-cartograph + " / 50 · " + root.pct(root.prog-cartograph, 50) + " %";
+                        clicked => {
+                            root.bump("cartograph");
                         }
+                        ClaimPill {
+                            label: root.claimed-cartograph ? "Claimed" : (root.prog-cartograph >= 50 ? "Claim +500" : root.pct(root.prog-cartograph, 50) + "%");
+                            ready: root.prog-cartograph >= 50 && !root.claimed-cartograph;
+                            clicked => {
+                                root.claim("cartograph", 500);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ===================== Bottom sheet =====================
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+                root.confirm-reset = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: Theme.surface-2;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.muted;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: "Achievements menu";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 700;
+                    }
+                }
+                SheetRow {
+                    label: "Cheat: complete all in-progress";
+                    clicked => {
+                        root.prog-power = 10;
+                        root.prog-marathon = 25;
+                        root.prog-community = 20;
+                        root.prog-cartograph = 50;
+                        root.set-status("All ready to claim", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Clear all pins";
+                    clicked => {
+                        root.pin0 = false;
+                        root.pin1 = false;
+                        root.pin2 = false;
+                        root.pin3 = false;
+                        root.pin4 = false;
+                        root.set-status("Pins cleared", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                Divider { }
+
+                SheetRow {
+                    label: root.confirm-reset ? "Confirm: reset progress" : "Reset progress";
+                    destructive: true;
+                    clicked => {
+                        if (root.confirm-reset) {
+                            root.prog-power = 0;
+                            root.prog-marathon = 0;
+                            root.prog-community = 0;
+                            root.prog-cartograph = 0;
+                            root.claimed-power = false;
+                            root.claimed-marathon = false;
+                            root.claimed-community = false;
+                            root.claimed-cartograph = false;
+                            root.points = 1200;
+                            root.earned-count = 23;
+                            root.set-status("Progress reset", false, true);
+                            root.sheet-open = false;
+                            root.confirm-reset = false;
+                        } else {
+                            root.confirm-reset = true;
+                        }
+                    }
+                }
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.sheet-open = false;
+                        root.confirm-reset = false;
                     }
                 }
             }

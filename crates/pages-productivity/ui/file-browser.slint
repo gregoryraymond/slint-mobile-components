@@ -1,31 +1,374 @@
 // FileBrowserPage
 // =====================================================================
-//
-// Hierarchical file listing. Breadcrumb + sort segmented control on
-// top, then a FOLDERS section and a FILES section — both built from
-// `SettingRow` so every leading icon, title, subtitle, and trailing
-// glyph aligns to the same grid.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { HeadingStyle } from "@mobile-components/heading.slint";
 import { SegmentedControl } from "@mobile-components/segmented-control.slint";
 import { FormSection } from "@mobile-components/form-section.slint";
-import { SettingRow } from "@mobile-components/setting-row.slint";
-import { MetaRow, MetaChip } from "@mobile-components/meta-row.slint";
 import { Divider } from "@mobile-components/divider.slint";
 import { ScrollView } from "std-widgets.slint";
+
+component FolderRow inherits Rectangle {
+    in property <string> name;
+    in property <string> meta;
+    in property <int> tone-i: 0;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 56px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 36px;
+                height: 36px;
+                border-radius: 8px;
+                background: root.tone-i == 1 ? Theme.accent-info.with-alpha(0.22) : (root.tone-i == 2 ? Theme.accent-warning.with-alpha(0.22) : (root.tone-i == 3 ? Theme.accent-success.with-alpha(0.22) : Theme.surface-2));
+                Image {
+                    width: 18px;
+                    height: 18px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: @image-url("@mobile-components/icons/menu.svg");
+                    colorize: root.tone-i == 1 ? Theme.accent-info : (root.tone-i == 2 ? Theme.accent-warning : (root.tone-i == 3 ? Theme.accent-success : Theme.muted));
+                    image-fit: contain;
+                }
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: root.name;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 700;
+                overflow: elide;
+            }
+            Text {
+                text: root.meta;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+                overflow: elide;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Image {
+                width: 16px;
+                height: 16px;
+                source: @image-url("@mobile-components/icons/chevron-right.svg");
+                colorize: Theme.muted;
+                image-fit: contain;
+            }
+        }
+    }
+}
+
+component FileRow inherits Rectangle {
+    in property <string> name;
+    in property <string> meta;
+    in property <int> tone-i: 0;
+    in property <bool> selectable: false;
+    in property <bool> selected: false;
+    in property <bool> starred: false;
+    in property <bool> deleted: false;
+    callback row-clicked();
+    callback star-clicked();
+    callback delete-clicked();
+    callback select-toggled();
+
+    horizontal-stretch: 1;
+    min-height: 56px;
+    opacity: root.deleted ? 0.45 : 1.0;
+    background: root.selected ? Theme.accent-info.with-alpha(0.10) : (ta.has-hover ? Theme.surface-2 : transparent);
+    ta := TouchArea {
+        clicked => {
+            if (root.selectable) {
+                root.select-toggled();
+            } else {
+                root.row-clicked();
+            }
+        }
+    }
+
+    HorizontalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+        if root.selectable: VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 22px;
+                height: 22px;
+                border-radius: 4px;
+                border-width: 2px;
+                border-color: root.selected ? Theme.accent-info : Theme.muted;
+                background: root.selected ? Theme.accent-info : transparent;
+                Text {
+                    text: root.selected ? "✓" : "";
+                    color: Theme.on-primary;
+                    font-size: 12px;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 36px;
+                height: 36px;
+                border-radius: 8px;
+                background: root.tone-i == 1 ? Theme.accent-info.with-alpha(0.22) : (root.tone-i == 2 ? Theme.accent-warning.with-alpha(0.22) : (root.tone-i == 3 ? Theme.accent-success.with-alpha(0.22) : (root.tone-i == 4 ? Theme.accent-danger.with-alpha(0.22) : Theme.surface-2)));
+                Image {
+                    width: 18px;
+                    height: 18px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: @image-url("@mobile-components/icons/queue.svg");
+                    colorize: root.tone-i == 1 ? Theme.accent-info : (root.tone-i == 2 ? Theme.accent-warning : (root.tone-i == 3 ? Theme.accent-success : (root.tone-i == 4 ? Theme.accent-danger : Theme.muted)));
+                    image-fit: contain;
+                }
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: (root.starred ? "★ " : "") + root.name + (root.deleted ? " · deleted" : "");
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+                overflow: elide;
+            }
+            Text {
+                text: root.meta;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+                overflow: elide;
+            }
+        }
+        if !root.selectable: Rectangle {
+            width: 32px;
+            height: 32px;
+            border-radius: 16px;
+            background: root.starred ? Theme.accent-warning.with-alpha(0.22) : Theme.surface-2;
+            Text {
+                text: "★";
+                color: root.starred ? Theme.accent-warning : Theme.muted;
+                font-size: 14px;
+                font-weight: 800;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                width: parent.width;
+                height: parent.height;
+            }
+            TouchArea {
+                clicked => {
+                    root.star-clicked();
+                }
+            }
+        }
+        if !root.selectable: Rectangle {
+            width: 32px;
+            height: 32px;
+            border-radius: 16px;
+            background: root.deleted ? Theme.accent-success.with-alpha(0.22) : Theme.accent-danger.with-alpha(0.22);
+            Text {
+                text: root.deleted ? "↺" : "✕";
+                color: root.deleted ? Theme.accent-success : Theme.accent-danger;
+                font-size: 14px;
+                font-weight: 800;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                width: parent.width;
+                height: parent.height;
+            }
+            TouchArea {
+                clicked => {
+                    root.delete-clicked();
+                }
+            }
+        }
+    }
+}
+
+component Crumb inherits Rectangle {
+    in property <string> label;
+    in property <bool> current: false;
+    callback clicked();
+
+    horizontal-stretch: 0;
+    height: 26px;
+    border-radius: 13px;
+    background: root.current ? Theme.surface-2 : transparent;
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-sm;
+        padding-right: Theme.spacing-sm;
+        alignment: center;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.current ? Theme.on-surface : Theme.accent-info;
+                font-size: Theme.font-size-caption;
+                font-weight: 700;
+            }
+        }
+    }
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.destructive ? Theme.accent-danger : Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+        }
+    }
+}
 
 export component FileBrowserPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
 
     in-out property <int> sort-index: 0;
+    in-out property <int> folder-idx: 0; // 0 root, 1 Receipts, 2 Invoices, 3 Statements
+    in-out property <bool> select-mode: false;
+    in-out property <bool> star1: false;
+    in-out property <bool> star2: false;
+    in-out property <bool> star3: true;
+    in-out property <bool> star4: false;
+    in-out property <bool> star5: false;
+    in-out property <bool> star6: false;
+    in-out property <bool> del1: false;
+    in-out property <bool> del2: false;
+    in-out property <bool> del3: false;
+    in-out property <bool> del4: false;
+    in-out property <bool> del5: false;
+    in-out property <bool> del6: false;
+    in-out property <bool> sel1: false;
+    in-out property <bool> sel2: false;
+    in-out property <bool> sel3: false;
+    in-out property <bool> sel4: false;
+    in-out property <bool> sel5: false;
+    in-out property <bool> sel6: false;
+    in-out property <int> new-folders: 0;
+    in-out property <bool> sheet-open: false;
+    in-out property <bool> confirm-bulk: false;
+    in-out property <string> status-msg: "";
+    in-out property <bool> status-success: false;
+    in-out property <bool> status-danger: false;
 
     callback back-pressed();
     callback overflow-pressed();
-    callback folder-pressed(string);
+    callback folder-pressed(int);
     callback file-pressed(string);
+
+    function folder-name() -> string {
+        return root.folder-idx == 0 ? "Tax 2025" : (root.folder-idx == 1 ? "Receipts" : (root.folder-idx == 2 ? "Invoices" : "Statements"));
+    }
+    function selected-count() -> int {
+        return (root.sel1 ? 1 : 0) + (root.sel2 ? 1 : 0) + (root.sel3 ? 1 : 0) + (root.sel4 ? 1 : 0) + (root.sel5 ? 1 : 0) + (root.sel6 ? 1 : 0);
+    }
+    function set-status(m: string, ok: bool, bad: bool) {
+        root.status-msg = m;
+        root.status-success = ok;
+        root.status-danger = bad;
+    }
+    function clear-selection() {
+        root.sel1 = false;
+        root.sel2 = false;
+        root.sel3 = false;
+        root.sel4 = false;
+        root.sel5 = false;
+        root.sel6 = false;
+    }
+    function toggle-sel(i: int) {
+        if (i == 1) {
+            root.sel1 = !root.sel1;
+        }
+        if (i == 2) {
+            root.sel2 = !root.sel2;
+        }
+        if (i == 3) {
+            root.sel3 = !root.sel3;
+        }
+        if (i == 4) {
+            root.sel4 = !root.sel4;
+        }
+        if (i == 5) {
+            root.sel5 = !root.sel5;
+        }
+        if (i == 6) {
+            root.sel6 = !root.sel6;
+        }
+    }
+    function delete-selected() {
+        if (root.sel1) {
+            root.del1 = true;
+        }
+        if (root.sel2) {
+            root.del2 = true;
+        }
+        if (root.sel3) {
+            root.del3 = true;
+        }
+        if (root.sel4) {
+            root.del4 = true;
+        }
+        if (root.sel5) {
+            root.del5 = true;
+        }
+        if (root.sel6) {
+            root.del6 = true;
+        }
+        root.clear-selection();
+    }
 
     background: Theme.background;
 
@@ -33,12 +376,149 @@ export component FileBrowserPage inherits Window {
         spacing: 0;
 
         AppBar {
-            title: "Documents";
+            title: root.folder-name() + (root.select-mode ? " · " + root.selected-count() + " selected" : "");
             title-style: HeadingStyle.plex-medium;
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
-            leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.overflow-pressed(); }
+            leading-pressed => {
+                if (root.folder-idx != 0) {
+                    root.folder-idx = 0;
+                    root.set-status("Back to Tax 2025", true, false);
+                } else if (root.select-mode) {
+                    root.select-mode = false;
+                    root.clear-selection();
+                    root.set-status("Select mode off", false, false);
+                } else {
+                    root.back-pressed();
+                }
+            }
+            trailing-pressed => {
+                root.sheet-open = true;
+            }
+        }
+
+        // Status banner.
+        if !root.status-msg.is-empty: Rectangle {
+            height: 28px;
+            background: root.status-success ? Theme.accent-success.with-alpha(0.16) : (root.status-danger ? Theme.accent-danger.with-alpha(0.16) : Theme.surface-2);
+            HorizontalLayout {
+                alignment: center;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.status-msg;
+                        color: root.status-success ? Theme.accent-success : (root.status-danger ? Theme.accent-danger : Theme.on-surface);
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                    }
+                }
+            }
+        }
+
+        // Selection action bar.
+        if root.select-mode: Rectangle {
+            background: Theme.accent-info.with-alpha(0.16);
+            height: 44px;
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                spacing: Theme.spacing-sm;
+                alignment: stretch;
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    Text {
+                        text: root.selected-count() + " selected";
+                        color: Theme.accent-info;
+                        font-size: Theme.font-size-body;
+                        font-weight: 800;
+                    }
+                }
+                Rectangle {
+                    horizontal-stretch: 0;
+                    height: 30px;
+                    border-radius: 15px;
+                    background: Theme.surface-2;
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-sm;
+                        padding-right: Theme.spacing-sm;
+                        alignment: center;
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: "Select all";
+                                color: Theme.on-surface;
+                                font-size: Theme.font-size-caption;
+                                font-weight: 700;
+                            }
+                        }
+                    }
+                    TouchArea {
+                        clicked => {
+                            root.sel1 = true;
+                            root.sel2 = true;
+                            root.sel3 = true;
+                            root.sel4 = true;
+                            root.sel5 = true;
+                            root.sel6 = true;
+                            root.set-status("All selected", true, false);
+                        }
+                    }
+                }
+                Rectangle {
+                    horizontal-stretch: 0;
+                    height: 30px;
+                    border-radius: 15px;
+                    background: Theme.accent-danger;
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-sm;
+                        padding-right: Theme.spacing-sm;
+                        alignment: center;
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: "Delete";
+                                color: Theme.on-primary;
+                                font-size: Theme.font-size-caption;
+                                font-weight: 700;
+                            }
+                        }
+                    }
+                    TouchArea {
+                        clicked => {
+                            root.delete-selected();
+                            root.set-status("Deleted selection", false, true);
+                        }
+                    }
+                }
+                Rectangle {
+                    horizontal-stretch: 0;
+                    height: 30px;
+                    border-radius: 15px;
+                    background: Theme.surface-2;
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-sm;
+                        padding-right: Theme.spacing-sm;
+                        alignment: center;
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: "Cancel";
+                                color: Theme.on-surface;
+                                font-size: Theme.font-size-caption;
+                                font-weight: 700;
+                            }
+                        }
+                    }
+                    TouchArea {
+                        clicked => {
+                            root.select-mode = false;
+                            root.clear-selection();
+                            root.set-status("Select mode off", false, false);
+                        }
+                    }
+                }
+            }
         }
 
         ScrollView {
@@ -51,165 +531,423 @@ export component FileBrowserPage inherits Window {
                 alignment: start;
 
                 // ----- Breadcrumb -----------------------------------
-                MetaRow {
-                    items: [
-                        { icon: @image-url("@mobile-components/icons/home.svg"), text: "Home" },
-                        { text: "Documents" },
-                        { text: "Tax 2025" },
-                    ];
-                    separator: "/";
+                HorizontalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    spacing: 4px;
+                    alignment: start;
+                    Crumb {
+                        label: "Home";
+                        clicked => {
+                            root.folder-idx = 0;
+                        }
+                    }
+                    Text {
+                        text: "/";
+                        color: Theme.muted;
+                        vertical-alignment: center;
+                    }
+                    Crumb {
+                        label: "Documents";
+                        clicked => {
+                            root.folder-idx = 0;
+                        }
+                    }
+                    Text {
+                        text: "/";
+                        color: Theme.muted;
+                        vertical-alignment: center;
+                    }
+                    Crumb {
+                        label: "Tax 2025";
+                        current: root.folder-idx == 0;
+                        clicked => {
+                            root.folder-idx = 0;
+                        }
+                    }
+                    if root.folder-idx != 0: Text {
+                        text: "/";
+                        color: Theme.muted;
+                        vertical-alignment: center;
+                    }
+                    if root.folder-idx != 0: Crumb {
+                        label: root.folder-name();
+                        current: true;
+                        clicked => { }
+                    }
                 }
 
-                // ----- Sort -----------------------------------------
+                // ----- Sort + Select toggle -------------------------
+                HorizontalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    spacing: Theme.spacing-sm;
+                    alignment: stretch;
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        SegmentedControl {
+                            options: ["Name", "Date", "Size"];
+                            selected-index <=> root.sort-index;
+                            changed(i) => {
+                                root.set-status("Sort: " + (i == 0 ? "Name" : (i == 1 ? "Date" : "Size")), true, false);
+                            }
+                        }
+                    }
+                    Rectangle {
+                        horizontal-stretch: 0;
+                        width: 80px;
+                        height: 36px;
+                        border-radius: 18px;
+                        background: root.select-mode ? Theme.accent-info : Theme.surface-2;
+                        HorizontalLayout {
+                            alignment: center;
+                            VerticalLayout {
+                                alignment: center;
+                                Text {
+                                    text: root.select-mode ? "Done" : "Select";
+                                    color: root.select-mode ? Theme.on-primary : Theme.on-surface;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 700;
+                                }
+                            }
+                        }
+                        TouchArea {
+                            clicked => {
+                                root.select-mode = !root.select-mode;
+                                root.clear-selection();
+                                root.set-status(root.select-mode ? "Select mode" : "Select off", root.select-mode, !root.select-mode);
+                            }
+                        }
+                    }
+                }
+
+                // ----- Folders (only in root) ----------------------
+                if root.folder-idx == 0: FormSection {
+                    title: "FOLDERS" + (root.new-folders > 0 ? " · +" + root.new-folders : "");
+
+                    FolderRow {
+                        name: "Receipts";
+                        meta: "23 items · 4.2 MB";
+                        tone-i: 1;
+                        clicked => {
+                            root.folder-idx = 1;
+                            root.set-status("Opened Receipts", true, false);
+                            root.folder-pressed(1);
+                        }
+                    }
+                    Divider { }
+
+                    FolderRow {
+                        name: "Invoices";
+                        meta: "14 items · 2.1 MB";
+                        tone-i: 2;
+                        clicked => {
+                            root.folder-idx = 2;
+                            root.set-status("Opened Invoices", true, false);
+                            root.folder-pressed(2);
+                        }
+                    }
+                    Divider { }
+
+                    FolderRow {
+                        name: "Statements";
+                        meta: "9 items · 1.3 MB";
+                        tone-i: 3;
+                        clicked => {
+                            root.folder-idx = 3;
+                            root.set-status("Opened Statements", true, false);
+                            root.folder-pressed(3);
+                        }
+                    }
+                    for nf[i] in [{ idx: 1 }, { idx: 2 }]: VerticalLayout {
+                        spacing: 0;
+                        if nf.idx <= root.new-folders: Divider { }
+                        if nf.idx <= root.new-folders: FolderRow {
+                            name: "Untitled folder " + nf.idx;
+                            meta: "0 items";
+                            tone-i: 0;
+                            clicked => {
+                                root.set-status("Opened folder", true, false);
+                            }
+                        }
+                    }
+                }
+
+                // ----- Files ---------------------------------------
+                FormSection {
+                    title: root.folder-idx == 0 ? "FILES" : "FILES · IN " + root.folder-name();
+
+                    FileRow {
+                        name: "Tax_return_2025.pdf";
+                        meta: root.sort-index == 1 ? "today 14:32" : (root.sort-index == 2 ? "412 KB" : "PDF · 412 KB · today 14:32");
+                        tone-i: 1;
+                        selectable: root.select-mode;
+                        selected: root.sel1;
+                        starred: root.star1;
+                        deleted: root.del1;
+                        row-clicked => {
+                            root.set-status("Opened Tax return", true, false);
+                            root.file-pressed("tax");
+                        }
+                        star-clicked => {
+                            root.star1 = !root.star1;
+                            root.set-status(root.star1 ? "Starred" : "Unstarred", root.star1, false);
+                        }
+                        delete-clicked => {
+                            root.del1 = !root.del1;
+                            root.set-status(root.del1 ? "Deleted" : "Restored", !root.del1, root.del1);
+                        }
+                        select-toggled => {
+                            root.toggle-sel(1);
+                        }
+                    }
+                    Divider { }
+
+                    FileRow {
+                        name: "P60_employer.pdf";
+                        meta: root.sort-index == 1 ? "today 09:15" : (root.sort-index == 2 ? "98 KB" : "PDF · 98 KB · today 09:15");
+                        tone-i: 0;
+                        selectable: root.select-mode;
+                        selected: root.sel2;
+                        starred: root.star2;
+                        deleted: root.del2;
+                        row-clicked => {
+                            root.set-status("Opened P60", true, false);
+                            root.file-pressed("p60");
+                        }
+                        star-clicked => {
+                            root.star2 = !root.star2;
+                            root.set-status(root.star2 ? "Starred" : "Unstarred", root.star2, false);
+                        }
+                        delete-clicked => {
+                            root.del2 = !root.del2;
+                            root.set-status(root.del2 ? "Deleted" : "Restored", !root.del2, root.del2);
+                        }
+                        select-toggled => {
+                            root.toggle-sel(2);
+                        }
+                    }
+                    Divider { }
+
+                    FileRow {
+                        name: "Charity_donations.xlsx";
+                        meta: root.sort-index == 1 ? "yesterday 17:48" : (root.sort-index == 2 ? "64 KB" : "XLSX · 64 KB · yesterday 17:48");
+                        tone-i: 2;
+                        selectable: root.select-mode;
+                        selected: root.sel3;
+                        starred: root.star3;
+                        deleted: root.del3;
+                        row-clicked => {
+                            root.set-status("Opened Charity", true, false);
+                            root.file-pressed("charity");
+                        }
+                        star-clicked => {
+                            root.star3 = !root.star3;
+                            root.set-status(root.star3 ? "Starred" : "Unstarred", root.star3, false);
+                        }
+                        delete-clicked => {
+                            root.del3 = !root.del3;
+                            root.set-status(root.del3 ? "Deleted" : "Restored", !root.del3, root.del3);
+                        }
+                        select-toggled => {
+                            root.toggle-sel(3);
+                        }
+                    }
+                    Divider { }
+
+                    FileRow {
+                        name: "Investment_summary.csv";
+                        meta: root.sort-index == 1 ? "12 May 11:02" : (root.sort-index == 2 ? "22 KB" : "CSV · 22 KB · 12 May 11:02");
+                        tone-i: 0;
+                        selectable: root.select-mode;
+                        selected: root.sel4;
+                        starred: root.star4;
+                        deleted: root.del4;
+                        row-clicked => {
+                            root.set-status("Opened Investment", true, false);
+                            root.file-pressed("invest");
+                        }
+                        star-clicked => {
+                            root.star4 = !root.star4;
+                            root.set-status(root.star4 ? "Starred" : "Unstarred", root.star4, false);
+                        }
+                        delete-clicked => {
+                            root.del4 = !root.del4;
+                            root.set-status(root.del4 ? "Deleted" : "Restored", !root.del4, root.del4);
+                        }
+                        select-toggled => {
+                            root.toggle-sel(4);
+                        }
+                    }
+                    Divider { }
+
+                    FileRow {
+                        name: "Receipt_amazon.pdf";
+                        meta: root.sort-index == 1 ? "09 May 13:21" : (root.sort-index == 2 ? "38 KB" : "PDF · 38 KB · 09 May 13:21");
+                        tone-i: 3;
+                        selectable: root.select-mode;
+                        selected: root.sel5;
+                        starred: root.star5;
+                        deleted: root.del5;
+                        row-clicked => {
+                            root.set-status("Opened Receipt", true, false);
+                            root.file-pressed("amazon");
+                        }
+                        star-clicked => {
+                            root.star5 = !root.star5;
+                            root.set-status(root.star5 ? "Starred" : "Unstarred", root.star5, false);
+                        }
+                        delete-clicked => {
+                            root.del5 = !root.del5;
+                            root.set-status(root.del5 ? "Deleted" : "Restored", !root.del5, root.del5);
+                        }
+                        select-toggled => {
+                            root.toggle-sel(5);
+                        }
+                    }
+                    Divider { }
+
+                    FileRow {
+                        name: "Notes_to_accountant.txt";
+                        meta: root.sort-index == 1 ? "02 May 08:10" : (root.sort-index == 2 ? "4 KB" : "TXT · 4 KB · 02 May 08:10");
+                        tone-i: 4;
+                        selectable: root.select-mode;
+                        selected: root.sel6;
+                        starred: root.star6;
+                        deleted: root.del6;
+                        row-clicked => {
+                            root.set-status("Opened Notes", true, false);
+                            root.file-pressed("notes");
+                        }
+                        star-clicked => {
+                            root.star6 = !root.star6;
+                            root.set-status(root.star6 ? "Starred" : "Unstarred", root.star6, false);
+                        }
+                        delete-clicked => {
+                            root.del6 = !root.del6;
+                            root.set-status(root.del6 ? "Deleted" : "Restored", !root.del6, root.del6);
+                        }
+                        select-toggled => {
+                            root.toggle-sel(6);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ===================== Bottom sheet =====================
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+                root.confirm-bulk = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: Theme.surface-2;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.muted;
+                    }
+                }
                 VerticalLayout {
                     padding-left: Theme.spacing-md;
                     padding-right: Theme.spacing-md;
-                    SegmentedControl {
-                        options: ["Name", "Date", "Size"];
-                        selected-index <=> root.sort-index;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: root.folder-name() + " menu";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 700;
                     }
                 }
-
-                // ----- Folders --------------------------------------
-                FormSection {
-                    title: "FOLDERS";
-
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/menu.svg");
-                        tone: Tone.info;
-                        title: "Receipts";
-                        subtitle: "23 items · 4.2 MB";
-                        clicked => { root.folder-pressed("receipts"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
-                        }
+                SheetRow {
+                    label: "New folder";
+                    clicked => {
+                        root.new-folders = min(2, root.new-folders + 1);
+                        root.set-status("Folder created", true, false);
+                        root.sheet-open = false;
                     }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/menu.svg");
-                        tone: Tone.warning;
-                        title: "Invoices";
-                        subtitle: "14 items · 2.1 MB";
-                        clicked => { root.folder-pressed("invoices"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
-                        }
+                }
+                SheetRow {
+                    label: root.select-mode ? "Exit selection mode" : "Enter selection mode";
+                    clicked => {
+                        root.select-mode = !root.select-mode;
+                        root.clear-selection();
+                        root.set-status(root.select-mode ? "Select on" : "Select off", root.select-mode, !root.select-mode);
+                        root.sheet-open = false;
                     }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/menu.svg");
-                        tone: Tone.success;
-                        title: "Statements";
-                        subtitle: "9 items · 1.3 MB";
-                        clicked => { root.folder-pressed("statements"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
+                }
+                SheetRow {
+                    label: "Restore all deleted";
+                    clicked => {
+                        root.del1 = false;
+                        root.del2 = false;
+                        root.del3 = false;
+                        root.del4 = false;
+                        root.del5 = false;
+                        root.del6 = false;
+                        root.set-status("Restored all files", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Clear stars";
+                    clicked => {
+                        root.star1 = false;
+                        root.star2 = false;
+                        root.star3 = false;
+                        root.star4 = false;
+                        root.star5 = false;
+                        root.star6 = false;
+                        root.set-status("Stars cleared", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                Divider { }
+
+                SheetRow {
+                    label: root.confirm-bulk ? "Confirm: delete all files" : "Delete all files";
+                    destructive: true;
+                    clicked => {
+                        if (root.confirm-bulk) {
+                            root.del1 = true;
+                            root.del2 = true;
+                            root.del3 = true;
+                            root.del4 = true;
+                            root.del5 = true;
+                            root.del6 = true;
+                            root.set-status("All files deleted", false, true);
+                            root.sheet-open = false;
+                            root.confirm-bulk = false;
+                        } else {
+                            root.confirm-bulk = true;
                         }
                     }
                 }
-
-                // ----- Files ----------------------------------------
-                FormSection {
-                    title: "FILES";
-
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/queue.svg");
-                        tone: Tone.info;
-                        title: "Tax_return_2025.pdf";
-                        subtitle: "PDF · 412 KB · today 14:32";
-                        clicked => { root.file-pressed("tax"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/more-vertical.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
-                        }
-                    }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/queue.svg");
-                        title: "P60_employer.pdf";
-                        subtitle: "PDF · 98 KB · today 09:15";
-                        clicked => { root.file-pressed("p60"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/more-vertical.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
-                        }
-                    }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/star.svg");
-                        tone: Tone.warning;
-                        title: "Charity_donations.xlsx";
-                        subtitle: "XLSX · 64 KB · yesterday 17:48";
-                        clicked => { root.file-pressed("charity"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/more-vertical.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
-                        }
-                    }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/menu.svg");
-                        title: "Investment_summary.csv";
-                        subtitle: "CSV · 22 KB · 12 May 11:02";
-                        clicked => { root.file-pressed("invest"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/more-vertical.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
-                        }
-                    }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/queue.svg");
-                        tone: Tone.success;
-                        title: "Receipt_amazon.pdf";
-                        subtitle: "PDF · 38 KB · 09 May 13:21";
-                        clicked => { root.file-pressed("amazon"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/more-vertical.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
-                        }
-                    }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/menu.svg");
-                        tone: Tone.danger;
-                        title: "Notes_to_accountant.txt";
-                        subtitle: "TXT · 4 KB · 02 May 08:10";
-                        clicked => { root.file-pressed("notes"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/more-vertical.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
-                        }
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.sheet-open = false;
+                        root.confirm-bulk = false;
                     }
                 }
             }

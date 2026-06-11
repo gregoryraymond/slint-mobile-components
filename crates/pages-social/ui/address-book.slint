@@ -1,28 +1,329 @@
 // AddressBookPage
 // =====================================================================
-//
-// Contacts list with alphabet section headers acting as the implicit
-// jump index. Every contact row is a `SettingRow` so the leading-tile
-// width, title baseline, subtitle alignment, and trailing chevron all
-// line up across the whole list.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
-import { FormField } from "@mobile-components/form-field.slint";
 import { FormSection } from "@mobile-components/form-section.slint";
-import { SettingRow } from "@mobile-components/setting-row.slint";
-import { TextField } from "@mobile-components/text-field.slint";
 import { Divider } from "@mobile-components/divider.slint";
 import { ScrollView } from "std-widgets.slint";
+
+component Chip2 inherits Rectangle {
+    in property <string> label;
+    in property <bool> active: false;
+    callback clicked();
+
+    horizontal-stretch: 0;
+    height: 28px;
+    border-radius: 14px;
+    background: root.active ? Theme.primary : Theme.surface-2;
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: center;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.active ? Theme.on-primary : Theme.on-surface;
+                font-size: Theme.font-size-caption;
+                font-weight: 700;
+            }
+        }
+    }
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component ContactRow inherits Rectangle {
+    in property <string> name;
+    in property <string> phone;
+    in property <string> email;
+    in property <int> tone-i: 0;
+    in property <bool> favourite: false;
+    in property <bool> muted: false;
+    callback row-clicked();
+    callback fav-clicked();
+    callback call-clicked();
+    callback msg-clicked();
+    callback mail-clicked();
+
+    horizontal-stretch: 1;
+    min-height: 72px;
+    opacity: root.muted ? 0.55 : 1.0;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.row-clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 40px;
+                height: 40px;
+                border-radius: 20px;
+                background: root.tone-i == 1 ? Theme.accent-info.with-alpha(0.22) : (root.tone-i == 2 ? Theme.accent-success.with-alpha(0.22) : (root.tone-i == 3 ? Theme.accent-warning.with-alpha(0.22) : (root.tone-i == 4 ? Theme.accent-danger.with-alpha(0.22) : Theme.surface-2)));
+                Image {
+                    width: 18px;
+                    height: 18px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: @image-url("@mobile-components/icons/profile.svg");
+                    colorize: root.tone-i == 1 ? Theme.accent-info : (root.tone-i == 2 ? Theme.accent-success : (root.tone-i == 3 ? Theme.accent-warning : (root.tone-i == 4 ? Theme.accent-danger : Theme.muted)));
+                    image-fit: contain;
+                }
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: (root.favourite ? "★ " : "") + root.name + (root.muted ? " · muted" : "");
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 700;
+                overflow: elide;
+            }
+            Text {
+                text: root.phone + " · " + root.email;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+                overflow: elide;
+            }
+            HorizontalLayout {
+                spacing: 4px;
+                padding-top: 2px;
+                Rectangle {
+                    horizontal-stretch: 0;
+                    height: 22px;
+                    border-radius: 11px;
+                    background: Theme.accent-success.with-alpha(0.22);
+                    HorizontalLayout {
+                        padding-left: 6px;
+                        padding-right: 6px;
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: "☎";
+                                color: Theme.accent-success;
+                                font-size: 10px;
+                                font-weight: 800;
+                            }
+                        }
+                    }
+                    TouchArea {
+                        clicked => {
+                            root.call-clicked();
+                        }
+                    }
+                }
+                Rectangle {
+                    horizontal-stretch: 0;
+                    height: 22px;
+                    border-radius: 11px;
+                    background: Theme.accent-info.with-alpha(0.22);
+                    HorizontalLayout {
+                        padding-left: 6px;
+                        padding-right: 6px;
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: "💬";
+                                color: Theme.accent-info;
+                                font-size: 10px;
+                                font-weight: 800;
+                            }
+                        }
+                    }
+                    TouchArea {
+                        clicked => {
+                            root.msg-clicked();
+                        }
+                    }
+                }
+                Rectangle {
+                    horizontal-stretch: 0;
+                    height: 22px;
+                    border-radius: 11px;
+                    background: Theme.surface-2;
+                    HorizontalLayout {
+                        padding-left: 6px;
+                        padding-right: 6px;
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: "✉";
+                                color: Theme.muted;
+                                font-size: 10px;
+                                font-weight: 800;
+                            }
+                        }
+                    }
+                    TouchArea {
+                        clicked => {
+                            root.mail-clicked();
+                        }
+                    }
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 32px;
+                height: 32px;
+                border-radius: 16px;
+                background: root.favourite ? Theme.accent-warning.with-alpha(0.22) : Theme.surface-2;
+                Text {
+                    text: "★";
+                    color: root.favourite ? Theme.accent-warning : Theme.muted;
+                    font-size: 14px;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+                TouchArea {
+                    clicked => {
+                        root.fav-clicked();
+                    }
+                }
+            }
+        }
+    }
+}
+
+component LetterJump inherits Rectangle {
+    in property <string> letter;
+    in property <bool> active: false;
+    callback clicked();
+
+    width: 22px;
+    height: 22px;
+    border-radius: 11px;
+    background: root.active ? Theme.primary : transparent;
+    Text {
+        text: root.letter;
+        color: root.active ? Theme.on-primary : Theme.muted;
+        font-size: 10px;
+        font-weight: 800;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: parent.width;
+        height: parent.height;
+    }
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.destructive ? Theme.accent-danger : Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+        }
+    }
+}
 
 export component AddressBookPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
 
-    in-out property <string> query;
+    in-out property <int> filter: 0; // 0 All 1 Favourites 2 Active
+    in-out property <string> letter-filter: "";
+    in-out property <bool> fav0: false;
+    in-out property <bool> fav1: true;
+    in-out property <bool> fav2: false;
+    in-out property <bool> fav3: false;
+    in-out property <bool> fav4: false;
+    in-out property <bool> fav5: false;
+    in-out property <bool> fav6: false;
+    in-out property <bool> fav7: false;
+    in-out property <bool> mute0: false;
+    in-out property <bool> mute1: false;
+    in-out property <bool> mute2: false;
+    in-out property <bool> mute3: false;
+    in-out property <bool> mute4: false;
+    in-out property <bool> mute5: false;
+    in-out property <bool> mute6: false;
+    in-out property <bool> mute7: false;
+    in-out property <int> new-contacts: 0;
+    in-out property <bool> sheet-open: false;
+    in-out property <bool> confirm-clear: false;
+    in-out property <string> status-msg: "";
+    in-out property <bool> status-success: false;
+    in-out property <bool> status-danger: false;
+
     callback back-pressed();
     callback add-pressed();
-    callback contact-pressed(string);
+    callback contact-pressed(int);
+
+    function fav-count() -> int {
+        return (root.fav0 ? 1 : 0) + (root.fav1 ? 1 : 0) + (root.fav2 ? 1 : 0) + (root.fav3 ? 1 : 0) + (root.fav4 ? 1 : 0) + (root.fav5 ? 1 : 0) + (root.fav6 ? 1 : 0) + (root.fav7 ? 1 : 0);
+    }
+    function active-count() -> int {
+        return 8 - ((root.mute0 ? 1 : 0) + (root.mute1 ? 1 : 0) + (root.mute2 ? 1 : 0) + (root.mute3 ? 1 : 0) + (root.mute4 ? 1 : 0) + (root.mute5 ? 1 : 0) + (root.mute6 ? 1 : 0) + (root.mute7 ? 1 : 0));
+    }
+    function total-count() -> int {
+        return 8 + root.new-contacts;
+    }
+    function set-status(m: string, ok: bool, bad: bool) {
+        root.status-msg = m;
+        root.status-success = ok;
+        root.status-danger = bad;
+    }
+    function row-visible(idx: int, letter: string) -> bool {
+        if (root.letter-filter != "" && letter != root.letter-filter) {
+            return false;
+        }
+        if (root.filter == 1) {
+            return idx == 0 ? root.fav0 : (idx == 1 ? root.fav1 : (idx == 2 ? root.fav2 : (idx == 3 ? root.fav3 : (idx == 4 ? root.fav4 : (idx == 5 ? root.fav5 : (idx == 6 ? root.fav6 : root.fav7))))));
+        }
+        if (root.filter == 2) {
+            return !(idx == 0 ? root.mute0 : (idx == 1 ? root.mute1 : (idx == 2 ? root.mute2 : (idx == 3 ? root.mute3 : (idx == 4 ? root.mute4 : (idx == 5 ? root.mute5 : (idx == 6 ? root.mute6 : root.mute7)))))));
+        }
+        return true;
+    }
+    function pick-letter(l: string) {
+        root.letter-filter = root.letter-filter == l ? "" : l;
+        root.set-status(root.letter-filter == "" ? "Showing all" : "Jumped to " + l, true, false);
+    }
 
     background: Theme.background;
 
@@ -30,178 +331,535 @@ export component AddressBookPage inherits Window {
         spacing: 0;
 
         AppBar {
-            title: "Contacts";
+            title: "Contacts · " + root.total-count();
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
-            trailing-icon: @image-url("@mobile-components/icons/plus.svg");
-            leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.add-pressed(); }
+            trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
+            leading-pressed => {
+                root.back-pressed();
+            }
+            trailing-pressed => {
+                root.sheet-open = true;
+            }
         }
 
-        ScrollView {
-            vertical-stretch: 1;
+        if !root.status-msg.is-empty: Rectangle {
+            height: 28px;
+            background: root.status-success ? Theme.accent-success.with-alpha(0.16) : (root.status-danger ? Theme.accent-danger.with-alpha(0.16) : Theme.surface-2);
+            HorizontalLayout {
+                alignment: center;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.status-msg;
+                        color: root.status-success ? Theme.accent-success : (root.status-danger ? Theme.accent-danger : Theme.on-surface);
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                    }
+                }
+            }
+        }
+
+        // Filter chips + add.
+        HorizontalLayout {
+            padding-left: Theme.spacing-md;
+            padding-right: Theme.spacing-md;
+            padding-top: Theme.spacing-sm;
+            padding-bottom: Theme.spacing-sm;
+            spacing: Theme.spacing-sm;
+            Chip2 {
+                label: "All · " + root.total-count();
+                active: root.filter == 0;
+                clicked => {
+                    root.filter = 0;
+                }
+            }
+            Chip2 {
+                label: "★ Favs · " + root.fav-count();
+                active: root.filter == 1;
+                clicked => {
+                    root.filter = 1;
+                }
+            }
+            Chip2 {
+                label: "Active · " + root.active-count();
+                active: root.filter == 2;
+                clicked => {
+                    root.filter = 2;
+                }
+            }
+            Rectangle {
+                horizontal-stretch: 1;
+            }
+            Rectangle {
+                horizontal-stretch: 0;
+                width: 32px;
+                height: 28px;
+                border-radius: 14px;
+                background: Theme.accent-success;
+                Text {
+                    text: "+";
+                    color: Theme.on-primary;
+                    font-size: 16px;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+                TouchArea {
+                    clicked => {
+                        root.new-contacts = root.new-contacts + 1;
+                        root.set-status("Contact added (+" + root.new-contacts + ")", true, false);
+                        root.add-pressed();
+                    }
+                }
+            }
+        }
+
+        HorizontalLayout {
+            alignment: stretch;
+            spacing: 0;
+
+            ScrollView {
+                horizontal-stretch: 1;
+                vertical-stretch: 1;
+                VerticalLayout {
+                    padding-bottom: Theme.spacing-xl;
+                    spacing: Theme.spacing-md;
+                    alignment: start;
+
+                    if root.row-visible(0, "A") || root.row-visible(1, "A") || root.row-visible(2, "A"): FormSection {
+                        title: "A";
+                        if root.row-visible(0, "A"): ContactRow {
+                            name: "Ada Lovelace";
+                            phone: "+32 478 12 34";
+                            email: "ada@analyticalengine.uk";
+                            tone-i: 1;
+                            favourite: root.fav0;
+                            muted: root.mute0;
+                            row-clicked => {
+                                root.set-status("Opened Ada", true, false);
+                                root.contact-pressed(0);
+                            }
+                            fav-clicked => {
+                                root.fav0 = !root.fav0;
+                                root.set-status(root.fav0 ? "★ Ada" : "Unstarred", root.fav0, false);
+                            }
+                            call-clicked => {
+                                root.set-status("Calling Ada…", true, false);
+                            }
+                            msg-clicked => {
+                                root.set-status("Messaging Ada…", true, false);
+                            }
+                            mail-clicked => {
+                                root.mute0 = !root.mute0;
+                                root.set-status(root.mute0 ? "Ada muted" : "Ada un-muted", !root.mute0, root.mute0);
+                            }
+                        }
+                        if root.row-visible(0, "A") && (root.row-visible(1, "A") || root.row-visible(2, "A")): Divider { }
+
+                        if root.row-visible(1, "A"): ContactRow {
+                            name: "Anika Ravi";
+                            phone: "+44 207 555 18";
+                            email: "anika@slint.dev";
+                            tone-i: 2;
+                            favourite: root.fav1;
+                            muted: root.mute1;
+                            row-clicked => {
+                                root.set-status("Opened Anika", true, false);
+                                root.contact-pressed(1);
+                            }
+                            fav-clicked => {
+                                root.fav1 = !root.fav1;
+                                root.set-status(root.fav1 ? "★ Anika" : "Unstarred", root.fav1, false);
+                            }
+                            call-clicked => {
+                                root.set-status("Calling Anika…", true, false);
+                            }
+                            msg-clicked => {
+                                root.set-status("Messaging Anika…", true, false);
+                            }
+                            mail-clicked => {
+                                root.mute1 = !root.mute1;
+                                root.set-status(root.mute1 ? "Anika muted" : "Anika un-muted", !root.mute1, root.mute1);
+                            }
+                        }
+                        if root.row-visible(1, "A") && root.row-visible(2, "A"): Divider { }
+
+                        if root.row-visible(2, "A"): ContactRow {
+                            name: "Aurélien Mercier";
+                            phone: "+33 6 12 88 04";
+                            email: "a.mercier@beton.fr";
+                            tone-i: 3;
+                            favourite: root.fav2;
+                            muted: root.mute2;
+                            row-clicked => {
+                                root.set-status("Opened Aurélien", true, false);
+                                root.contact-pressed(2);
+                            }
+                            fav-clicked => {
+                                root.fav2 = !root.fav2;
+                                root.set-status(root.fav2 ? "★ Aurélien" : "Unstarred", root.fav2, false);
+                            }
+                            call-clicked => {
+                                root.set-status("Calling Aurélien…", true, false);
+                            }
+                            msg-clicked => {
+                                root.set-status("Messaging Aurélien…", true, false);
+                            }
+                            mail-clicked => {
+                                root.mute2 = !root.mute2;
+                                root.set-status(root.mute2 ? "Aurélien muted" : "Un-muted", !root.mute2, root.mute2);
+                            }
+                        }
+                    }
+
+                    if root.row-visible(3, "B") || root.row-visible(4, "B"): FormSection {
+                        title: "B";
+                        if root.row-visible(3, "B"): ContactRow {
+                            name: "Bao Nguyen";
+                            phone: "+84 28 3927 11";
+                            email: "bao@ricecreek.vn";
+                            tone-i: 0;
+                            favourite: root.fav3;
+                            muted: root.mute3;
+                            row-clicked => {
+                                root.set-status("Opened Bao", true, false);
+                                root.contact-pressed(3);
+                            }
+                            fav-clicked => {
+                                root.fav3 = !root.fav3;
+                                root.set-status(root.fav3 ? "★ Bao" : "Unstarred", root.fav3, false);
+                            }
+                            call-clicked => {
+                                root.set-status("Calling Bao…", true, false);
+                            }
+                            msg-clicked => {
+                                root.set-status("Messaging Bao…", true, false);
+                            }
+                            mail-clicked => {
+                                root.mute3 = !root.mute3;
+                                root.set-status(root.mute3 ? "Bao muted" : "Un-muted", !root.mute3, root.mute3);
+                            }
+                        }
+                        if root.row-visible(3, "B") && root.row-visible(4, "B"): Divider { }
+
+                        if root.row-visible(4, "B"): ContactRow {
+                            name: "Beatriz Salgado";
+                            phone: "+351 21 887 02";
+                            email: "beatriz@porto.pt";
+                            tone-i: 4;
+                            favourite: root.fav4;
+                            muted: root.mute4;
+                            row-clicked => {
+                                root.set-status("Opened Beatriz", true, false);
+                                root.contact-pressed(4);
+                            }
+                            fav-clicked => {
+                                root.fav4 = !root.fav4;
+                                root.set-status(root.fav4 ? "★ Beatriz" : "Unstarred", root.fav4, false);
+                            }
+                            call-clicked => {
+                                root.set-status("Calling Beatriz…", true, false);
+                            }
+                            msg-clicked => {
+                                root.set-status("Messaging Beatriz…", true, false);
+                            }
+                            mail-clicked => {
+                                root.mute4 = !root.mute4;
+                                root.set-status(root.mute4 ? "Beatriz muted" : "Un-muted", !root.mute4, root.mute4);
+                            }
+                        }
+                    }
+
+                    if root.row-visible(5, "C") || root.row-visible(6, "C") || root.row-visible(7, "C"): FormSection {
+                        title: "C";
+                        if root.row-visible(5, "C"): ContactRow {
+                            name: "Camille Dupont";
+                            phone: "+32 478 41 22";
+                            email: "camille@brussels.be";
+                            tone-i: 1;
+                            favourite: root.fav5;
+                            muted: root.mute5;
+                            row-clicked => {
+                                root.set-status("Opened Camille", true, false);
+                                root.contact-pressed(5);
+                            }
+                            fav-clicked => {
+                                root.fav5 = !root.fav5;
+                                root.set-status(root.fav5 ? "★ Camille" : "Unstarred", root.fav5, false);
+                            }
+                            call-clicked => {
+                                root.set-status("Calling Camille…", true, false);
+                            }
+                            msg-clicked => {
+                                root.set-status("Messaging Camille…", true, false);
+                            }
+                            mail-clicked => {
+                                root.mute5 = !root.mute5;
+                                root.set-status(root.mute5 ? "Camille muted" : "Un-muted", !root.mute5, root.mute5);
+                            }
+                        }
+                        if root.row-visible(5, "C") && (root.row-visible(6, "C") || root.row-visible(7, "C")): Divider { }
+
+                        if root.row-visible(6, "C"): ContactRow {
+                            name: "Chen Wei";
+                            phone: "+86 138 0011 23";
+                            email: "chen@shanghai.cn";
+                            tone-i: 2;
+                            favourite: root.fav6;
+                            muted: root.mute6;
+                            row-clicked => {
+                                root.set-status("Opened Chen", true, false);
+                                root.contact-pressed(6);
+                            }
+                            fav-clicked => {
+                                root.fav6 = !root.fav6;
+                                root.set-status(root.fav6 ? "★ Chen" : "Unstarred", root.fav6, false);
+                            }
+                            call-clicked => {
+                                root.set-status("Calling Chen…", true, false);
+                            }
+                            msg-clicked => {
+                                root.set-status("Messaging Chen…", true, false);
+                            }
+                            mail-clicked => {
+                                root.mute6 = !root.mute6;
+                                root.set-status(root.mute6 ? "Chen muted" : "Un-muted", !root.mute6, root.mute6);
+                            }
+                        }
+                        if root.row-visible(6, "C") && root.row-visible(7, "C"): Divider { }
+
+                        if root.row-visible(7, "C"): ContactRow {
+                            name: "Cosmin Ardelean";
+                            phone: "+40 730 22 19";
+                            email: "cosmin@cluj.ro";
+                            tone-i: 3;
+                            favourite: root.fav7;
+                            muted: root.mute7;
+                            row-clicked => {
+                                root.set-status("Opened Cosmin", true, false);
+                                root.contact-pressed(7);
+                            }
+                            fav-clicked => {
+                                root.fav7 = !root.fav7;
+                                root.set-status(root.fav7 ? "★ Cosmin" : "Unstarred", root.fav7, false);
+                            }
+                            call-clicked => {
+                                root.set-status("Calling Cosmin…", true, false);
+                            }
+                            msg-clicked => {
+                                root.set-status("Messaging Cosmin…", true, false);
+                            }
+                            mail-clicked => {
+                                root.mute7 = !root.mute7;
+                                root.set-status(root.mute7 ? "Cosmin muted" : "Un-muted", !root.mute7, root.mute7);
+                            }
+                        }
+                    }
+
+                    if root.new-contacts > 0: FormSection {
+                        title: "NEW THIS SESSION · +" + root.new-contacts;
+                        for nc[i] in [{ idx: 1 }, { idx: 2 }, { idx: 3 }]: VerticalLayout {
+                            spacing: 0;
+                            if nc.idx <= root.new-contacts: ContactRow {
+                                name: "Untitled contact " + nc.idx;
+                                phone: "+00 0 000 00";
+                                email: "new@example.com";
+                                tone-i: 0;
+                                favourite: false;
+                                muted: false;
+                                row-clicked => {
+                                    root.set-status("Opened new contact", true, false);
+                                }
+                                fav-clicked => { }
+                                call-clicked => { }
+                                msg-clicked => { }
+                                mail-clicked => { }
+                            }
+                            if nc.idx <= root.new-contacts && nc.idx < root.new-contacts: Divider { }
+                        }
+                    }
+                }
+            }
+
+            // Alphabet jump sidebar (right edge).
+            Rectangle {
+                horizontal-stretch: 0;
+                width: 28px;
+                background: Theme.background;
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 2px;
+                    HorizontalLayout {
+                        alignment: center;
+                        LetterJump {
+                            letter: "A";
+                            active: root.letter-filter == "A";
+                            clicked => {
+                                root.pick-letter("A");
+                            }
+                        }
+                    }
+                    HorizontalLayout {
+                        alignment: center;
+                        LetterJump {
+                            letter: "B";
+                            active: root.letter-filter == "B";
+                            clicked => {
+                                root.pick-letter("B");
+                            }
+                        }
+                    }
+                    HorizontalLayout {
+                        alignment: center;
+                        LetterJump {
+                            letter: "C";
+                            active: root.letter-filter == "C";
+                            clicked => {
+                                root.pick-letter("C");
+                            }
+                        }
+                    }
+                    HorizontalLayout {
+                        alignment: center;
+                        LetterJump {
+                            letter: "★";
+                            active: root.filter == 1;
+                            clicked => {
+                                root.filter = root.filter == 1 ? 0 : 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ===================== Bottom sheet =====================
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+                root.confirm-clear = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: Theme.surface-2;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
 
             VerticalLayout {
-                padding-top: Theme.spacing-md;
-                padding-bottom: Theme.spacing-xl;
-                spacing: Theme.spacing-md;
-                alignment: start;
-
-                // ----- Search ------------------------------------------------
-                FormField {
-                    label: "";
-                    TextField {
-                        placeholder: "Search";
-                        text <=> root.query;
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.muted;
                     }
                 }
-
-                // ----- A -----------------------------------------------------
-                FormSection {
-                    title: "A";
-
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/profile.svg");
-                        tone: Tone.info;
-                        title: "Ada Lovelace";
-                        subtitle: "+32 478 12 34 · ada@analyticalengine.uk";
-                        clicked => { root.contact-pressed("ada"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
-                        }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: "Contacts menu";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 700;
                     }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/profile.svg");
-                        tone: Tone.success;
-                        title: "Anika Ravi";
-                        subtitle: "+44 207 555 18 · anika@slint.dev";
-                        clicked => { root.contact-pressed("anika"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
-                        }
+                }
+                SheetRow {
+                    label: "Star all";
+                    clicked => {
+                        root.fav0 = true;
+                        root.fav1 = true;
+                        root.fav2 = true;
+                        root.fav3 = true;
+                        root.fav4 = true;
+                        root.fav5 = true;
+                        root.fav6 = true;
+                        root.fav7 = true;
+                        root.set-status("All favourites", true, false);
+                        root.sheet-open = false;
                     }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/profile.svg");
-                        tone: Tone.warning;
-                        title: "Aurélien Mercier";
-                        subtitle: "+33 6 12 88 04 · a.mercier@beton.fr";
-                        clicked => { root.contact-pressed("aurelien"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
+                }
+                SheetRow {
+                    label: "Unstar all";
+                    clicked => {
+                        root.fav0 = false;
+                        root.fav1 = false;
+                        root.fav2 = false;
+                        root.fav3 = false;
+                        root.fav4 = false;
+                        root.fav5 = false;
+                        root.fav6 = false;
+                        root.fav7 = false;
+                        root.set-status("Favourites cleared", false, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Unmute everyone";
+                    clicked => {
+                        root.mute0 = false;
+                        root.mute1 = false;
+                        root.mute2 = false;
+                        root.mute3 = false;
+                        root.mute4 = false;
+                        root.mute5 = false;
+                        root.mute6 = false;
+                        root.mute7 = false;
+                        root.set-status("All unmuted", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Show all letters";
+                    clicked => {
+                        root.letter-filter = "";
+                        root.set-status("Showing all", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                Divider { }
+
+                SheetRow {
+                    label: root.confirm-clear ? "Confirm: mute everyone" : "Mute everyone";
+                    destructive: true;
+                    clicked => {
+                        if (root.confirm-clear) {
+                            root.mute0 = true;
+                            root.mute1 = true;
+                            root.mute2 = true;
+                            root.mute3 = true;
+                            root.mute4 = true;
+                            root.mute5 = true;
+                            root.mute6 = true;
+                            root.mute7 = true;
+                            root.set-status("All muted", false, true);
+                            root.sheet-open = false;
+                            root.confirm-clear = false;
+                        } else {
+                            root.confirm-clear = true;
                         }
                     }
                 }
-
-                // ----- B -----------------------------------------------------
-                FormSection {
-                    title: "B";
-
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/profile.svg");
-                        tone: Tone.default;
-                        title: "Bao Nguyen";
-                        subtitle: "+84 28 3927 11 · bao@ricecreek.vn";
-                        clicked => { root.contact-pressed("bao"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
-                        }
-                    }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/profile.svg");
-                        tone: Tone.danger;
-                        title: "Beatriz Salgado";
-                        subtitle: "+351 21 887 02 · beatriz@porto.pt";
-                        clicked => { root.contact-pressed("beatriz"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
-                        }
-                    }
-                }
-
-                // ----- C -----------------------------------------------------
-                FormSection {
-                    title: "C";
-
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/profile.svg");
-                        tone: Tone.info;
-                        title: "Camille Dupont";
-                        subtitle: "+32 478 41 22 · camille@brussels.be";
-                        clicked => { root.contact-pressed("camille"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
-                        }
-                    }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/profile.svg");
-                        tone: Tone.success;
-                        title: "Chen Wei";
-                        subtitle: "+86 138 0011 23 · chen@shanghai.cn";
-                        clicked => { root.contact-pressed("chen"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
-                        }
-                    }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/profile.svg");
-                        tone: Tone.warning;
-                        title: "Cosmin Ardelean";
-                        subtitle: "+40 730 22 19 · cosmin@cluj.ro";
-                        clicked => { root.contact-pressed("cosmin"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
-                        }
-                    }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/profile.svg");
-                        tone: Tone.default;
-                        title: "Cyril Mortemarte";
-                        subtitle: "+33 1 47 22 80 · cyril@cinq.fr";
-                        clicked => { root.contact-pressed("cyril"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
-                        }
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.sheet-open = false;
+                        root.confirm-clear = false;
                     }
                 }
             }

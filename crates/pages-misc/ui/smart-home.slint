@@ -1,10 +1,5 @@
 // SmartHomePage
 // =====================================================================
-//
-// Whole-home control dashboard. A row of four StatTiles (indoor,
-// outdoor, air quality, power), then FormSections for ROOMS (SettingRow
-// with device-count + chevron trailing), SCENES (SettingRow with
-// chevron trailing), and AUTOMATIONS (SettingRow + MobileSwitch).
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
@@ -16,17 +11,252 @@ import { MobileSwitch } from "@mobile-components/switch.slint";
 import { Divider } from "@mobile-components/divider.slint";
 import { ScrollView } from "std-widgets.slint";
 
+component RoomRow inherits Rectangle {
+    in property <string> name;
+    in property <string> meta;
+    in property <int> lights-on;
+    in property <int> lights-total;
+    in property <int> tone-i: 0; // 0..4
+    callback row-clicked();
+    callback minus();
+    callback plus();
+
+    horizontal-stretch: 1;
+    min-height: 64px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.row-clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 36px;
+                height: 36px;
+                border-radius: 8px;
+                background: root.tone-i == 1 ? Theme.accent-info.with-alpha(0.22) : (root.tone-i == 2 ? Theme.accent-warning.with-alpha(0.22) : (root.tone-i == 3 ? Theme.accent-success.with-alpha(0.22) : (root.tone-i == 4 ? Theme.accent-danger.with-alpha(0.22) : Theme.surface-2)));
+                Image {
+                    width: 18px;
+                    height: 18px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: @image-url("@mobile-components/icons/home.svg");
+                    colorize: root.tone-i == 1 ? Theme.accent-info : (root.tone-i == 2 ? Theme.accent-warning : (root.tone-i == 3 ? Theme.accent-success : (root.tone-i == 4 ? Theme.accent-danger : Theme.muted)));
+                    image-fit: contain;
+                }
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: root.name;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 700;
+            }
+            Text {
+                text: root.meta + " · " + root.lights-on + "/" + root.lights-total + " lights";
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+            }
+        }
+        // Minus.
+        Rectangle {
+            width: 32px;
+            height: 32px;
+            border-radius: 16px;
+            background: Theme.surface-2;
+            Text {
+                text: "−";
+                color: Theme.on-surface;
+                font-size: 18px;
+                font-weight: 700;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                width: parent.width;
+                height: parent.height;
+            }
+            TouchArea {
+                clicked => {
+                    root.minus();
+                }
+            }
+        }
+        // Count badge.
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                horizontal-stretch: 0;
+                height: 28px;
+                border-radius: 14px;
+                background: root.lights-on > 0 ? Theme.accent-warning.with-alpha(0.22) : Theme.surface-2;
+                HorizontalLayout {
+                    padding-left: Theme.spacing-sm;
+                    padding-right: Theme.spacing-sm;
+                    alignment: center;
+                    VerticalLayout {
+                        alignment: center;
+                        Text {
+                            text: "💡 " + root.lights-on;
+                            color: root.lights-on > 0 ? Theme.accent-warning : Theme.muted;
+                            font-size: Theme.font-size-caption;
+                            font-weight: 800;
+                        }
+                    }
+                }
+            }
+        }
+        // Plus.
+        Rectangle {
+            width: 32px;
+            height: 32px;
+            border-radius: 16px;
+            background: Theme.surface-2;
+            Text {
+                text: "+";
+                color: Theme.on-surface;
+                font-size: 18px;
+                font-weight: 700;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                width: parent.width;
+                height: parent.height;
+            }
+            TouchArea {
+                clicked => {
+                    root.plus();
+                }
+            }
+        }
+    }
+}
+
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.destructive ? Theme.accent-danger : Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+        }
+    }
+}
+
 export component SmartHomePage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
 
     in-out property <bool> sunset-automation: true;
     in-out property <bool> leave-automation: true;
+    in-out property <int> active-scene: -1; // -1 none, 0 movie, 1 goodnight, 2 wake
+    in-out property <int> lr-lights: 4;
+    in-out property <int> kt-lights: 2;
+    in-out property <int> bd-lights: 0;
+    in-out property <int> of-lights: 1;
+    in-out property <int> gr-lights: 0;
+    in-out property <int> indoor-c: 21;
+    in-out property <int> outdoor-c: 12;
+    in-out property <int> air-q: 76;
+    in-out property <bool> sheet-open: false;
+    in-out property <bool> confirm-arm: false;
+    in-out property <string> status-msg: "";
+    in-out property <bool> status-success: false;
+    in-out property <bool> status-danger: false;
 
     callback back-pressed();
     callback add-pressed();
     callback room-pressed(string);
     callback scene-pressed(string);
+
+    function total-lights-on() -> int {
+        return root.lr-lights + root.kt-lights + root.bd-lights + root.of-lights + root.gr-lights;
+    }
+    function power-w() -> int {
+        return 80 + root.total-lights-on() * 12 + (root.indoor-c < 20 ? 120 : 0);
+    }
+    function scene-label() -> string {
+        return root.active-scene == -1 ? "no scene" : (root.active-scene == 0 ? "Movie night" : (root.active-scene == 1 ? "Goodnight" : "Wake up"));
+    }
+    function set-status(m: string, ok: bool, bad: bool) {
+        root.status-msg = m;
+        root.status-success = ok;
+        root.status-danger = bad;
+    }
+    function apply-scene(s: int) {
+        root.active-scene = s;
+        if (s == 0) {
+            // Movie: 1 light LR, off elsewhere.
+            root.lr-lights = 1;
+            root.kt-lights = 0;
+            root.bd-lights = 0;
+            root.of-lights = 0;
+            root.gr-lights = 0;
+            root.set-status("🎬 Movie night activated", true, false);
+        }
+        if (s == 1) {
+            // Goodnight: all off, blinds closed (implied).
+            root.lr-lights = 0;
+            root.kt-lights = 0;
+            root.bd-lights = 0;
+            root.of-lights = 0;
+            root.gr-lights = 0;
+            root.set-status("🌙 Goodnight activated — lights off", true, false);
+        }
+        if (s == 2) {
+            // Wake up: bedroom + kitchen on.
+            root.lr-lights = 0;
+            root.kt-lights = 4;
+            root.bd-lights = 3;
+            root.of-lights = 0;
+            root.gr-lights = 0;
+            root.set-status("☀ Wake up activated", true, false);
+        }
+        root.scene-pressed(s == 0 ? "movie" : (s == 1 ? "goodnight" : "wake"));
+    }
+
+    tick := Timer {
+        interval: 4s;
+        running: true;
+        triggered => {
+            // Indoor drifts toward 21.
+            if (root.indoor-c < 21) {
+                root.indoor-c = root.indoor-c + 1;
+            } else if (root.indoor-c > 21) {
+                root.indoor-c = root.indoor-c - 1;
+            }
+            // Air quality drift.
+            root.air-q = max(60, min(95, root.air-q + (mod(root.indoor-c, 3) - 1)));
+        }
+    }
 
     background: Theme.background;
 
@@ -37,9 +267,31 @@ export component SmartHomePage inherits Window {
             title: "My home";
             title-style: HeadingStyle.plex-medium;
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
-            trailing-icon: @image-url("@mobile-components/icons/plus.svg");
-            leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.add-pressed(); }
+            trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
+            leading-pressed => {
+                root.back-pressed();
+            }
+            trailing-pressed => {
+                root.sheet-open = true;
+            }
+        }
+
+        // Status banner.
+        if !root.status-msg.is-empty: Rectangle {
+            height: 28px;
+            background: root.status-success ? Theme.accent-success.with-alpha(0.16) : (root.status-danger ? Theme.accent-danger.with-alpha(0.16) : Theme.surface-2);
+            HorizontalLayout {
+                alignment: center;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.status-msg;
+                        color: root.status-success ? Theme.accent-success : (root.status-danger ? Theme.accent-danger : Theme.on-surface);
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                    }
+                }
+            }
         }
 
         ScrollView {
@@ -57,122 +309,179 @@ export component SmartHomePage inherits Window {
                     padding-right: Theme.spacing-md;
                     spacing: Theme.spacing-sm;
 
-                    StatTile { value: "21°"; label: "INDOOR"; }
-                    StatTile { value: "12°"; label: "OUTDOOR"; tone: Tone.info; }
-                    StatTile { value: "76%"; label: "AIR QUAL"; tone: Tone.success; }
-                    StatTile { value: "245 W"; label: "POWER"; tone: Tone.warning; }
+                    StatTile {
+                        value: root.indoor-c + "°";
+                        label: "INDOOR";
+                    }
+                    StatTile {
+                        value: root.outdoor-c + "°";
+                        label: "OUTDOOR";
+                        tone: Tone.info;
+                    }
+                    StatTile {
+                        value: root.air-q + "%";
+                        label: "AIR QUAL";
+                        tone: Tone.success;
+                    }
+                    StatTile {
+                        value: root.power-w() + " W";
+                        label: "POWER";
+                        tone: Tone.warning;
+                    }
+                }
+
+                // ----- Active scene bar ---------------------------------
+                if root.active-scene >= 0: VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    Rectangle {
+                        background: Theme.accent-info.with-alpha(0.16);
+                        border-radius: Theme.radius-md;
+                        height: 44px;
+                        HorizontalLayout {
+                            padding-left: Theme.spacing-md;
+                            padding-right: Theme.spacing-md;
+                            alignment: stretch;
+                            VerticalLayout {
+                                alignment: center;
+                                horizontal-stretch: 1;
+                                Text {
+                                    text: "Active scene: " + root.scene-label();
+                                    color: Theme.accent-info;
+                                    font-size: Theme.font-size-body;
+                                    font-weight: 700;
+                                }
+                            }
+                            Rectangle {
+                                horizontal-stretch: 0;
+                                height: 28px;
+                                border-radius: 14px;
+                                background: Theme.accent-info;
+                                HorizontalLayout {
+                                    padding-left: Theme.spacing-md;
+                                    padding-right: Theme.spacing-md;
+                                    alignment: center;
+                                    VerticalLayout {
+                                        alignment: center;
+                                        Text {
+                                            text: "Stop";
+                                            color: Theme.on-primary;
+                                            font-size: Theme.font-size-caption;
+                                            font-weight: 800;
+                                        }
+                                    }
+                                }
+                                TouchArea {
+                                    clicked => {
+                                        root.active-scene = -1;
+                                        root.set-status("Scene stopped", false, false);
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
 
                 // ----- Rooms ------------------------------------------
                 FormSection {
-                    title: "ROOMS";
+                    title: "ROOMS · " + root.total-lights-on() + " lights on";
 
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/home.svg");
-                        tone: Tone.info;
-                        title: "Living room";
-                        subtitle: "21° · 4 lights on · TV";
-                        clicked => { root.room-pressed("living"); }
-                        Text {
-                            text: "5";
-                            color: Theme.muted;
-                            font-size: Theme.font-size-body;
-                            font-weight: 600;
-                            vertical-alignment: center;
+                    RoomRow {
+                        name: "Living room";
+                        meta: "21°";
+                        lights-on: root.lr-lights;
+                        lights-total: 5;
+                        tone-i: 1;
+                        row-clicked => {
+                            root.lr-lights = root.lr-lights > 0 ? 0 : 5;
+                            root.set-status(root.lr-lights > 0 ? "Living room on" : "Living room off", root.lr-lights > 0, root.lr-lights == 0);
+                            root.room-pressed("living");
                         }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
+                        minus => {
+                            root.lr-lights = max(0, root.lr-lights - 1);
+                        }
+                        plus => {
+                            root.lr-lights = min(5, root.lr-lights + 1);
                         }
                     }
                     Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/home.svg");
-                        tone: Tone.warning;
-                        title: "Kitchen";
-                        subtitle: "23° · oven idle · 2 lights on";
-                        clicked => { root.room-pressed("kitchen"); }
-                        Text {
-                            text: "4";
-                            color: Theme.muted;
-                            font-size: Theme.font-size-body;
-                            font-weight: 600;
-                            vertical-alignment: center;
+
+                    RoomRow {
+                        name: "Kitchen";
+                        meta: "23°";
+                        lights-on: root.kt-lights;
+                        lights-total: 4;
+                        tone-i: 2;
+                        row-clicked => {
+                            root.kt-lights = root.kt-lights > 0 ? 0 : 4;
+                            root.set-status(root.kt-lights > 0 ? "Kitchen on" : "Kitchen off", root.kt-lights > 0, root.kt-lights == 0);
+                            root.room-pressed("kitchen");
                         }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
+                        minus => {
+                            root.kt-lights = max(0, root.kt-lights - 1);
+                        }
+                        plus => {
+                            root.kt-lights = min(4, root.kt-lights + 1);
                         }
                     }
                     Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/home.svg");
-                        tone: Tone.success;
-                        title: "Bedroom";
-                        subtitle: "19° · blinds closed";
-                        clicked => { root.room-pressed("bedroom"); }
-                        Text {
-                            text: "3";
-                            color: Theme.muted;
-                            font-size: Theme.font-size-body;
-                            font-weight: 600;
-                            vertical-alignment: center;
+
+                    RoomRow {
+                        name: "Bedroom";
+                        meta: "19°";
+                        lights-on: root.bd-lights;
+                        lights-total: 3;
+                        tone-i: 3;
+                        row-clicked => {
+                            root.bd-lights = root.bd-lights > 0 ? 0 : 3;
+                            root.set-status(root.bd-lights > 0 ? "Bedroom on" : "Bedroom off", root.bd-lights > 0, root.bd-lights == 0);
+                            root.room-pressed("bedroom");
                         }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
+                        minus => {
+                            root.bd-lights = max(0, root.bd-lights - 1);
+                        }
+                        plus => {
+                            root.bd-lights = min(3, root.bd-lights + 1);
                         }
                     }
                     Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/home.svg");
-                        tone: Tone.danger;
-                        title: "Office";
-                        subtitle: "22° · desk lamp on";
-                        clicked => { root.room-pressed("office"); }
-                        Text {
-                            text: "2";
-                            color: Theme.muted;
-                            font-size: Theme.font-size-body;
-                            font-weight: 600;
-                            vertical-alignment: center;
+
+                    RoomRow {
+                        name: "Office";
+                        meta: "22°";
+                        lights-on: root.of-lights;
+                        lights-total: 2;
+                        tone-i: 4;
+                        row-clicked => {
+                            root.of-lights = root.of-lights > 0 ? 0 : 2;
+                            root.set-status(root.of-lights > 0 ? "Office on" : "Office off", root.of-lights > 0, root.of-lights == 0);
+                            root.room-pressed("office");
                         }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
+                        minus => {
+                            root.of-lights = max(0, root.of-lights - 1);
+                        }
+                        plus => {
+                            root.of-lights = min(2, root.of-lights + 1);
                         }
                     }
                     Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/home.svg");
-                        title: "Garage";
-                        subtitle: "11° · door closed";
-                        clicked => { root.room-pressed("garage"); }
-                        Text {
-                            text: "1";
-                            color: Theme.muted;
-                            font-size: Theme.font-size-body;
-                            font-weight: 600;
-                            vertical-alignment: center;
+
+                    RoomRow {
+                        name: "Garage";
+                        meta: "11°";
+                        lights-on: root.gr-lights;
+                        lights-total: 1;
+                        tone-i: 0;
+                        row-clicked => {
+                            root.gr-lights = root.gr-lights > 0 ? 0 : 1;
+                            root.set-status(root.gr-lights > 0 ? "Garage on" : "Garage off", root.gr-lights > 0, root.gr-lights == 0);
+                            root.room-pressed("garage");
                         }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
+                        minus => {
+                            root.gr-lights = max(0, root.gr-lights - 1);
+                        }
+                        plus => {
+                            root.gr-lights = min(1, root.gr-lights + 1);
                         }
                     }
                 }
@@ -183,10 +492,12 @@ export component SmartHomePage inherits Window {
 
                     SettingRow {
                         icon: @image-url("@mobile-components/icons/star.svg");
-                        tone: Tone.warning;
-                        title: "Movie night";
-                        subtitle: "Tap to activate";
-                        clicked => { root.scene-pressed("movie"); }
+                        tone: root.active-scene == 0 ? Tone.success : Tone.warning;
+                        title: root.active-scene == 0 ? "Movie night · ACTIVE" : "Movie night";
+                        subtitle: "Dims LR to 1 light; everything else off";
+                        clicked => {
+                            root.apply-scene(0);
+                        }
                         Image {
                             width: 16px;
                             height: 16px;
@@ -196,12 +507,15 @@ export component SmartHomePage inherits Window {
                         }
                     }
                     Divider { }
+
                     SettingRow {
                         icon: @image-url("@mobile-components/icons/pin.svg");
-                        tone: Tone.info;
-                        title: "Goodnight";
-                        subtitle: "Tap to activate";
-                        clicked => { root.scene-pressed("goodnight"); }
+                        tone: root.active-scene == 1 ? Tone.success : Tone.info;
+                        title: root.active-scene == 1 ? "Goodnight · ACTIVE" : "Goodnight";
+                        subtitle: "All lights off, security arm at 22:30";
+                        clicked => {
+                            root.apply-scene(1);
+                        }
                         Image {
                             width: 16px;
                             height: 16px;
@@ -211,12 +525,15 @@ export component SmartHomePage inherits Window {
                         }
                     }
                     Divider { }
+
                     SettingRow {
                         icon: @image-url("@mobile-components/icons/heart.svg");
-                        tone: Tone.success;
-                        title: "Wake up";
-                        subtitle: "Tap to activate";
-                        clicked => { root.scene-pressed("wake"); }
+                        tone: root.active-scene == 2 ? Tone.success : Tone.success;
+                        title: root.active-scene == 2 ? "Wake up · ACTIVE" : "Wake up";
+                        subtitle: "Kitchen + bedroom lights on, blinds open";
+                        clicked => {
+                            root.apply-scene(2);
+                        }
                         Image {
                             width: 16px;
                             height: 16px;
@@ -235,16 +552,122 @@ export component SmartHomePage inherits Window {
                         icon: @image-url("@mobile-components/icons/bell.svg");
                         tone: Tone.info;
                         title: "Sunset → close blinds";
-                        subtitle: "Every day · about 21:14";
-                        MobileSwitch { checked <=> root.sunset-automation; }
+                        subtitle: root.sunset-automation ? "Active · about 21:14" : "Disabled";
+                        MobileSwitch {
+                            checked <=> root.sunset-automation;
+                        }
                     }
                     Divider { }
+
                     SettingRow {
                         icon: @image-url("@mobile-components/icons/lock.svg");
                         tone: Tone.success;
                         title: "Leave home → arm security";
-                        subtitle: "When all phones leave geofence";
-                        MobileSwitch { checked <=> root.leave-automation; }
+                        subtitle: root.leave-automation ? "Active · geofence ready" : "Disabled";
+                        MobileSwitch {
+                            checked <=> root.leave-automation;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ===================== Bottom sheet =====================
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+                root.confirm-arm = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: Theme.surface-2;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.muted;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: "Home actions";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 700;
+                    }
+                }
+                SheetRow {
+                    label: "All lights on";
+                    clicked => {
+                        root.lr-lights = 5;
+                        root.kt-lights = 4;
+                        root.bd-lights = 3;
+                        root.of-lights = 2;
+                        root.gr-lights = 1;
+                        root.set-status("All lights on", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "All lights off";
+                    clicked => {
+                        root.lr-lights = 0;
+                        root.kt-lights = 0;
+                        root.bd-lights = 0;
+                        root.of-lights = 0;
+                        root.gr-lights = 0;
+                        root.set-status("All lights off", false, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Add new device";
+                    clicked => {
+                        root.set-status("Searching for new devices…", true, false);
+                        root.sheet-open = false;
+                        root.add-pressed();
+                    }
+                }
+                Divider { }
+
+                SheetRow {
+                    label: root.confirm-arm ? "Confirm: arm security now" : "Arm security now";
+                    destructive: true;
+                    clicked => {
+                        if (root.confirm-arm) {
+                            root.set-status("🔒 Security armed", false, true);
+                            root.sheet-open = false;
+                            root.confirm-arm = false;
+                        } else {
+                            root.confirm-arm = true;
+                        }
+                    }
+                }
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.sheet-open = false;
+                        root.confirm-arm = false;
                     }
                 }
             }

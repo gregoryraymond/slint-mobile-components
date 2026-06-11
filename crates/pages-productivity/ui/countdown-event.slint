@@ -1,9 +1,5 @@
 // CountdownEventPage
 // =====================================================================
-//
-// A big-numeral countdown to a future event, with a precise
-// days/hours/min/sec StatTile row and a stack of grouped sections for
-// event details, description, and reminder toggles.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
@@ -17,6 +13,67 @@ import { MobileSwitch } from "@mobile-components/switch.slint";
 import { MobileButton, TextButton } from "@mobile-components/button.slint";
 import { ScrollView } from "std-widgets.slint";
 
+component EventChip inherits Rectangle {
+    in property <string> label;
+    in property <bool> active: false;
+    callback clicked();
+
+    horizontal-stretch: 0;
+    height: 30px;
+    border-radius: 15px;
+    background: root.active ? Theme.primary : Theme.surface-2;
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: center;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.active ? Theme.on-primary : Theme.on-surface;
+                font-size: Theme.font-size-caption;
+                font-weight: 700;
+            }
+        }
+    }
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.destructive ? Theme.accent-danger : Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+        }
+    }
+}
+
 export component CountdownEventPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
@@ -24,11 +81,82 @@ export component CountdownEventPage inherits Window {
     in-out property <bool> remind-day: true;
     in-out property <bool> remind-week: true;
     in-out property <bool> remind-month: false;
+    in-out property <int> event-idx: 0;
+    in-out property <int> total-secs: 2832432; // 32d 18h 47m 12s
+    in-out property <bool> running: true;
+    in-out property <bool> added-to-cal: false;
+    in-out property <int> share-mode: 0; // 0 share 1 copied 2 messaged 3 emailed
+    in-out property <int> rsvp: 0; // 0 going 1 maybe 2 not
+    in-out property <bool> sheet-open: false;
+    in-out property <bool> confirm-snooze: false;
+    in-out property <bool> snoozed: false;
+    in-out property <string> status-msg: "";
+    in-out property <bool> status-success: false;
+    in-out property <bool> status-danger: false;
 
     callback back-pressed();
     callback share-pressed();
     callback add-calendar-pressed();
     callback share-countdown-pressed();
+
+    function event-name() -> string {
+        return root.event-idx == 0 ? "Atlas Conference 2026" : (root.event-idx == 1 ? "Greg's birthday party" : "Brussels Marathon");
+    }
+    function event-date() -> string {
+        return root.event-idx == 0 ? "Sat · 18 Jun 2026" : (root.event-idx == 1 ? "Fri · 14 Aug 2026" : "Sun · 04 Oct 2026");
+    }
+    function event-time() -> string {
+        return root.event-idx == 0 ? "09:00 — 18:00" : (root.event-idx == 1 ? "19:00 — late" : "08:00 — 14:00");
+    }
+    function event-loc() -> string {
+        return root.event-idx == 0 ? "BOZAR, Brussels" : (root.event-idx == 1 ? "Café Belga, Ixelles" : "Cinquantenaire Park");
+    }
+    function event-tz() -> string {
+        return "Europe/Brussels";
+    }
+    function event-base-secs() -> int {
+        return root.event-idx == 0 ? 2832432 : (root.event-idx == 1 ? 7430412 : 12131412);
+    }
+    function days-left() -> int {
+        return floor(root.total-secs / 86400);
+    }
+    function hours-left() -> int {
+        return floor(mod(root.total-secs, 86400) / 3600);
+    }
+    function mins-left() -> int {
+        return floor(mod(root.total-secs, 3600) / 60);
+    }
+    function secs-left() -> int {
+        return mod(root.total-secs, 60);
+    }
+    function share-label() -> string {
+        return root.share-mode == 0 ? "Share countdown" : (root.share-mode == 1 ? "Link copied ✓" : (root.share-mode == 2 ? "Sent via Messages ✓" : "Emailed ✓"));
+    }
+    function rsvp-label() -> string {
+        return root.rsvp == 0 ? "Going" : (root.rsvp == 1 ? "Maybe" : "Not going");
+    }
+    function reminder-count() -> int {
+        return (root.remind-day ? 1 : 0) + (root.remind-week ? 1 : 0) + (root.remind-month ? 1 : 0);
+    }
+    function set-status(m: string, ok: bool, bad: bool) {
+        root.status-msg = m;
+        root.status-success = ok;
+        root.status-danger = bad;
+    }
+    function switch-event(i: int) {
+        root.event-idx = i;
+        root.total-secs = root.event-base-secs();
+        root.added-to-cal = false;
+        root.set-status("Now counting: " + root.event-name(), true, false);
+    }
+
+    tick := Timer {
+        interval: 1s;
+        running: root.running && root.total-secs > 0;
+        triggered => {
+            root.total-secs = root.total-secs - 1;
+        }
+    }
 
     background: Theme.background;
 
@@ -39,9 +167,30 @@ export component CountdownEventPage inherits Window {
             title: "Countdown";
             title-style: HeadingStyle.plex-medium;
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
-            trailing-icon: @image-url("@mobile-components/icons/send.svg");
-            leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.share-pressed(); }
+            trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
+            leading-pressed => {
+                root.back-pressed();
+            }
+            trailing-pressed => {
+                root.sheet-open = true;
+            }
+        }
+
+        if !root.status-msg.is-empty: Rectangle {
+            height: 28px;
+            background: root.status-success ? Theme.accent-success.with-alpha(0.16) : (root.status-danger ? Theme.accent-danger.with-alpha(0.16) : Theme.surface-2);
+            HorizontalLayout {
+                alignment: center;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.status-msg;
+                        color: root.status-success ? Theme.accent-success : (root.status-danger ? Theme.accent-danger : Theme.on-surface);
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                    }
+                }
+            }
         }
 
         ScrollView {
@@ -53,6 +202,34 @@ export component CountdownEventPage inherits Window {
                 spacing: Theme.spacing-lg;
                 alignment: start;
 
+                // Event chips.
+                HorizontalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    spacing: Theme.spacing-sm;
+                    EventChip {
+                        label: "Atlas Conf";
+                        active: root.event-idx == 0;
+                        clicked => {
+                            root.switch-event(0);
+                        }
+                    }
+                    EventChip {
+                        label: "Birthday";
+                        active: root.event-idx == 1;
+                        clicked => {
+                            root.switch-event(1);
+                        }
+                    }
+                    EventChip {
+                        label: "Marathon";
+                        active: root.event-idx == 2;
+                        clicked => {
+                            root.switch-event(2);
+                        }
+                    }
+                }
+
                 // ----- Hero numeral -----------------------------------------
                 VerticalLayout {
                     padding-left: Theme.spacing-md;
@@ -63,8 +240,8 @@ export component CountdownEventPage inherits Window {
                     HorizontalLayout {
                         alignment: center;
                         Text {
-                            text: "32";
-                            color: Theme.on-background;
+                            text: "" + root.days-left();
+                            color: root.total-secs <= 0 ? Theme.accent-success : Theme.on-background;
                             font-family: "Fraunces 9pt";
                             font-size: 80px;
                             font-weight: 400;
@@ -74,8 +251,8 @@ export component CountdownEventPage inherits Window {
                     HorizontalLayout {
                         alignment: center;
                         Text {
-                            text: "DAYS REMAINING";
-                            color: Theme.muted;
+                            text: root.total-secs <= 0 ? "EVENT STARTED" : "DAYS REMAINING";
+                            color: root.total-secs <= 0 ? Theme.accent-success : Theme.muted;
                             font-size: 10px;
                             font-weight: 800;
                             letter-spacing: 1px;
@@ -84,10 +261,76 @@ export component CountdownEventPage inherits Window {
                     HorizontalLayout {
                         alignment: center;
                         Text {
-                            text: "Atlas Conference 2026";
+                            text: root.event-name();
                             color: Theme.on-background;
                             font-size: Theme.font-size-body-large;
                             font-weight: 600;
+                        }
+                    }
+                    HorizontalLayout {
+                        alignment: center;
+                        spacing: Theme.spacing-sm;
+                        padding-top: Theme.spacing-xs;
+                        Rectangle {
+                            horizontal-stretch: 0;
+                            height: 32px;
+                            border-radius: 16px;
+                            background: root.running ? Theme.accent-danger.with-alpha(0.22) : Theme.surface-2;
+                            HorizontalLayout {
+                                padding-left: Theme.spacing-sm;
+                                padding-right: Theme.spacing-sm;
+                                spacing: 4px;
+                                alignment: center;
+                                if root.running: Rectangle {
+                                    y: (parent.height - self.height) / 2;
+                                    width: 8px;
+                                    height: 8px;
+                                    border-radius: 4px;
+                                    background: Theme.accent-danger;
+                                }
+                                VerticalLayout {
+                                    alignment: center;
+                                    Text {
+                                        text: root.running ? "LIVE" : "PAUSED";
+                                        color: root.running ? Theme.accent-danger : Theme.muted;
+                                        font-size: Theme.font-size-caption;
+                                        font-weight: 800;
+                                        letter-spacing: 0.5px;
+                                    }
+                                }
+                            }
+                            TouchArea {
+                                clicked => {
+                                    root.running = !root.running;
+                                    root.set-status(root.running ? "Counting" : "Paused", root.running, !root.running);
+                                }
+                            }
+                        }
+                        Rectangle {
+                            horizontal-stretch: 0;
+                            height: 32px;
+                            border-radius: 16px;
+                            background: Theme.surface-2;
+                            HorizontalLayout {
+                                padding-left: Theme.spacing-sm;
+                                padding-right: Theme.spacing-sm;
+                                alignment: center;
+                                VerticalLayout {
+                                    alignment: center;
+                                    Text {
+                                        text: "Reset";
+                                        color: Theme.accent-warning;
+                                        font-size: Theme.font-size-caption;
+                                        font-weight: 800;
+                                    }
+                                }
+                            }
+                            TouchArea {
+                                clicked => {
+                                    root.total-secs = root.event-base-secs();
+                                    root.set-status("Countdown reset", true, false);
+                                }
+                            }
                         }
                     }
                 }
@@ -99,10 +342,69 @@ export component CountdownEventPage inherits Window {
                     spacing: Theme.spacing-sm;
                     alignment: stretch;
 
-                    StatTile { value: "32"; label: "DAYS"; }
-                    StatTile { value: "18"; label: "HOURS"; tone: Tone.info; }
-                    StatTile { value: "47"; label: "MIN"; }
-                    StatTile { value: "12"; label: "SEC"; tone: Tone.warning; }
+                    StatTile {
+                        value: "" + root.days-left();
+                        label: "DAYS";
+                    }
+                    StatTile {
+                        value: "" + root.hours-left();
+                        label: "HOURS";
+                        tone: Tone.info;
+                    }
+                    StatTile {
+                        value: "" + root.mins-left();
+                        label: "MIN";
+                    }
+                    StatTile {
+                        value: "" + root.secs-left();
+                        label: "SEC";
+                        tone: Tone.warning;
+                    }
+                }
+
+                // ----- RSVP row --------------------------------------------
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    spacing: Theme.spacing-xs;
+                    Text {
+                        text: "YOUR RSVP · " + root.rsvp-label();
+                        color: Theme.muted;
+                        font-size: 11px;
+                        font-weight: 800;
+                        letter-spacing: 2px;
+                    }
+                    HorizontalLayout {
+                        spacing: Theme.spacing-sm;
+                        for opt[i] in [
+                            { label: "Going" },
+                            { label: "Maybe" },
+                            { label: "Not going" },
+                        ]: Rectangle {
+                            horizontal-stretch: 1;
+                            height: 36px;
+                            border-radius: 18px;
+                            background: root.rsvp == i ? (i == 0 ? Theme.accent-success : (i == 1 ? Theme.accent-warning : Theme.accent-danger)) : Theme.surface-2;
+                            HorizontalLayout {
+                                alignment: center;
+                                VerticalLayout {
+                                    alignment: center;
+                                    Text {
+                                        text: opt.label;
+                                        color: root.rsvp == i ? Theme.on-primary : Theme.on-surface;
+                                        font-size: Theme.font-size-caption;
+                                        font-weight: 700;
+                                    }
+                                }
+                            }
+                            TouchArea {
+                                clicked => {
+                                    root.rsvp = i;
+                                    root.set-status("RSVP: " + root.rsvp-label(), root.rsvp == 0, root.rsvp == 2);
+                                }
+                            }
+                        }
+                    }
                 }
 
                 // ----- Event details ---------------------------------------
@@ -111,22 +413,25 @@ export component CountdownEventPage inherits Window {
 
                     KeyValueRow {
                         label: "Date";
-                        value: "Sat · 18 Jun 2026";
+                        value: root.event-date();
                     }
                     Divider { }
+
                     KeyValueRow {
                         label: "Time";
-                        value: "09:00 — 18:00";
+                        value: root.event-time();
                     }
                     Divider { }
+
                     KeyValueRow {
                         label: "Location";
-                        value: "BOZAR, Brussels";
+                        value: root.event-loc();
                     }
                     Divider { }
+
                     KeyValueRow {
                         label: "Time zone";
-                        value: "Europe/Brussels";
+                        value: root.event-tz();
                     }
                 }
 
@@ -138,35 +443,43 @@ export component CountdownEventPage inherits Window {
                         icon: @image-url("@mobile-components/icons/menu.svg");
                         tone: Tone.info;
                         title: "About this event";
-                        subtitle: "An all-day gathering for the Atlas community. Keynote, workshops, and an evening reception. Doors open 08:30.";
+                        subtitle: root.event-idx == 0 ? "An all-day gathering for the Atlas community. Keynote, workshops, and an evening reception. Doors open 08:30." : (root.event-idx == 1 ? "Casual party with drinks and snacks. Bring something to share." : "21.0975 km route through central Brussels. Bib pickup the day before.");
                     }
                 }
 
                 // ----- Reminders -------------------------------------------
                 FormSection {
-                    title: "REMINDERS";
+                    title: "REMINDERS · " + root.reminder-count() + " ACTIVE" + (root.snoozed ? " (snoozed)" : "");
 
                     SettingRow {
                         icon: @image-url("@mobile-components/icons/bell.svg");
                         tone: Tone.info;
                         title: "1 day before";
                         subtitle: "Push + email";
-                        MobileSwitch { checked <=> root.remind-day; }
+                        MobileSwitch {
+                            checked <=> root.remind-day;
+                        }
                     }
                     Divider { }
+
                     SettingRow {
                         icon: @image-url("@mobile-components/icons/bell.svg");
                         tone: Tone.warning;
                         title: "1 week before";
                         subtitle: "Push only";
-                        MobileSwitch { checked <=> root.remind-week; }
+                        MobileSwitch {
+                            checked <=> root.remind-week;
+                        }
                     }
                     Divider { }
+
                     SettingRow {
                         icon: @image-url("@mobile-components/icons/bell.svg");
                         title: "1 month before";
                         subtitle: "Push only";
-                        MobileSwitch { checked <=> root.remind-month; }
+                        MobileSwitch {
+                            checked <=> root.remind-month;
+                        }
                     }
                 }
 
@@ -178,12 +491,127 @@ export component CountdownEventPage inherits Window {
                     alignment: stretch;
 
                     MobileButton {
-                        text: "Add to calendar";
-                        clicked => { root.add-calendar-pressed(); }
+                        text: root.added-to-cal ? "Added to calendar ✓" : "Add to calendar";
+                        tone: root.added-to-cal ? Tone.success : Tone.default;
+                        clicked => {
+                            root.added-to-cal = !root.added-to-cal;
+                            root.set-status(root.added-to-cal ? "Added to calendar" : "Removed", root.added-to-cal, !root.added-to-cal);
+                            root.add-calendar-pressed();
+                        }
                     }
                     TextButton {
-                        text: "Share countdown";
-                        clicked => { root.share-countdown-pressed(); }
+                        text: root.share-label();
+                        clicked => {
+                            root.share-mode = mod(root.share-mode + 1, 4);
+                            root.set-status(root.share-label(), root.share-mode != 0, false);
+                            root.share-countdown-pressed();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ===================== Bottom sheet =====================
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+                root.confirm-snooze = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: Theme.surface-2;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.muted;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: "Countdown menu";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 700;
+                    }
+                }
+                SheetRow {
+                    label: root.running ? "Pause countdown" : "Resume countdown";
+                    clicked => {
+                        root.running = !root.running;
+                        root.set-status(root.running ? "Counting" : "Paused", root.running, !root.running);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Subtract 1 day (test)";
+                    clicked => {
+                        root.total-secs = max(0, root.total-secs - 86400);
+                        root.set-status("-1 day", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "All reminders on";
+                    clicked => {
+                        root.remind-day = true;
+                        root.remind-week = true;
+                        root.remind-month = true;
+                        root.snoozed = false;
+                        root.set-status("All reminders on", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: root.snoozed ? "Wake reminders" : "Snooze all reminders";
+                    clicked => {
+                        root.snoozed = !root.snoozed;
+                        root.set-status(root.snoozed ? "Reminders snoozed" : "Reminders active", !root.snoozed, root.snoozed);
+                        root.sheet-open = false;
+                    }
+                }
+                Divider { }
+
+                SheetRow {
+                    label: root.confirm-snooze ? "Confirm: delete countdown" : "Delete countdown";
+                    destructive: true;
+                    clicked => {
+                        if (root.confirm-snooze) {
+                            root.total-secs = 0;
+                            root.running = false;
+                            root.set-status("Countdown removed", false, true);
+                            root.sheet-open = false;
+                            root.confirm-snooze = false;
+                        } else {
+                            root.confirm-snooze = true;
+                        }
+                    }
+                }
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.sheet-open = false;
+                        root.confirm-snooze = false;
                     }
                 }
             }

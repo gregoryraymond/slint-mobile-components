@@ -93,271 +93,539 @@ export component ProductDetailPage inherits Window {
     preferred-height: 892px;
     in property <string> brand: "PATAGONIA";
     in property <string> name: "Houdini windbreaker — slate blue";
-    in property <string> price: "$129.00";
-    in property <string> old-price: "$149.00";
-    in property <string> description:
-        "A go-anywhere shell that packs into its own pocket. Recycled ripstop nylon, DWR-finished, weighs under 100 g. Sized for layering over a fleece.";
+    in property <int> price-cents: 12900;
+    in property <int> old-price-cents: 14900;
     in property <int> rating-filled: 4;
     in property <string> reviews: "238";
     in property <int> image-count: 5;
-    in property <int> current-image: 1;
+
+    in-out property <int> current-image: 0;
     in-out property <int> qty: 1;
+    in-out property <bool> is-wishlisted: false;
+    // Size 0 = XS .. 4 = XL.
+    in-out property <int> size-index: 2;
+    // Colour 0 = Slate blue, 1 = Forest, 2 = Coral, 3 = Sand.
+    in-out property <int> color-index: 0;
+    private property <int> cart-count: 0;
+    private property <bool> description-expanded: false;
+    private property <bool> bundle0-added: false;
+    private property <bool> bundle1-added: false;
+    private property <bool> bundle2-added: false;
+    private property <bool> bundle3-added: false;
+    private property <string> status-msg: "Tap thumbnails, swap variants, adjust qty";
+    private property <bool> status-is-success: false;
+    private property <bool> status-is-danger: false;
+
     callback back-pressed();
     callback heart-pressed();
     callback add-to-cart-pressed();
+    callback added-to-cart(int /* qty */);
+    callback bundle-added(string);
+    callback wishlist-toggled(bool);
+    callback variant-changed(string, string);
+
+    // ---- Helpers ----
+    function format-cents(c: int) -> string {
+        return "$" + (c / 100) + "." + (mod(c, 100) < 10 ? "0" : "") + mod(c, 100);
+    }
+    function unit-price() -> string {
+        return root.format-cents(root.price-cents);
+    }
+    function line-total() -> string {
+        return root.format-cents(root.price-cents * root.qty);
+    }
+    function size-label() -> string {
+        return root.size-index == 0 ? "XS"
+            : root.size-index == 1 ? "S"
+            : root.size-index == 2 ? "M"
+            : root.size-index == 3 ? "L"
+            : "XL";
+    }
+    function color-label() -> string {
+        return root.color-index == 0 ? "Slate blue"
+            : root.color-index == 1 ? "Forest"
+            : root.color-index == 2 ? "Coral"
+            : "Sand";
+    }
+    function hero-brush() -> brush {
+        // Hero gradient cycles through the 5 alternates the strip
+        // shows; the gradient stays consistent with the matching
+        // thumbnail.
+        return root.current-image == 0 ? @linear-gradient(135deg, #506b8e 0%, #1f2a3b 100%)
+            : root.current-image == 1 ? @linear-gradient(135deg, #6b8e50 0%, #2a3b1f 100%)
+            : root.current-image == 2 ? @linear-gradient(135deg, #8e506b 0%, #3b1f2a 100%)
+            : root.current-image == 3 ? @linear-gradient(135deg, #8e8e50 0%, #3b3b1f 100%)
+            : @linear-gradient(135deg, #506b6b 0%, #1f2a2a 100%);
+    }
+    function discount-pct() -> int {
+        return (root.old-price-cents - root.price-cents) * 100 / root.old-price-cents;
+    }
+
+    // ---- Handlers ----
+    function pick-image(i: int) {
+        root.current-image = i;
+        root.status-msg = "Photo " + (i + 1) + " of " + root.image-count;
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    function toggle-heart() {
+        root.is-wishlisted = !root.is-wishlisted;
+        root.status-msg = root.is-wishlisted
+            ? "Added to wishlist"
+            : "Removed from wishlist";
+        root.status-is-success = root.is-wishlisted;
+        root.status-is-danger = false;
+        root.heart-pressed();
+        root.wishlist-toggled(root.is-wishlisted);
+    }
+    function pick-size(i: int) {
+        root.size-index = i;
+        root.status-msg = "Size: " + root.size-label();
+        root.status-is-success = false;
+        root.status-is-danger = false;
+        root.variant-changed("size", root.size-label());
+    }
+    function pick-color(i: int) {
+        root.color-index = i;
+        root.status-msg = "Colour: " + root.color-label();
+        root.status-is-success = false;
+        root.status-is-danger = false;
+        root.variant-changed("color", root.color-label());
+    }
+    function press-add() {
+        root.cart-count = root.cart-count + root.qty;
+        root.status-msg = "Added " + root.qty + " "
+            + root.size-label() + " / " + root.color-label()
+            + " -- cart has " + root.cart-count;
+        root.status-is-success = true;
+        root.status-is-danger = false;
+        root.add-to-cart-pressed();
+        root.added-to-cart(root.qty);
+    }
+    function add-bundle(i: int, name: string) {
+        if (i == 0) { root.bundle0-added = !root.bundle0-added; }
+        if (i == 1) { root.bundle1-added = !root.bundle1-added; }
+        if (i == 2) { root.bundle2-added = !root.bundle2-added; }
+        if (i == 3) { root.bundle3-added = !root.bundle3-added; }
+        // Adjust the cart count by 1 either way.
+        if (i == 0 && root.bundle0-added) { root.cart-count = root.cart-count + 1; }
+        if (i == 1 && root.bundle1-added) { root.cart-count = root.cart-count + 1; }
+        if (i == 2 && root.bundle2-added) { root.cart-count = root.cart-count + 1; }
+        if (i == 3 && root.bundle3-added) { root.cart-count = root.cart-count + 1; }
+        if (i == 0 && !root.bundle0-added) { root.cart-count = max(0, root.cart-count - 1); }
+        if (i == 1 && !root.bundle1-added) { root.cart-count = max(0, root.cart-count - 1); }
+        if (i == 2 && !root.bundle2-added) { root.cart-count = max(0, root.cart-count - 1); }
+        if (i == 3 && !root.bundle3-added) { root.cart-count = max(0, root.cart-count - 1); }
+        root.status-msg = ((i == 0 && root.bundle0-added)
+            || (i == 1 && root.bundle1-added)
+            || (i == 2 && root.bundle2-added)
+            || (i == 3 && root.bundle3-added))
+            ? "Added bundle: " + name
+            : "Removed bundle: " + name;
+        root.status-is-success = true;
+        root.status-is-danger = false;
+        root.bundle-added(name);
+    }
+    function toggle-description() {
+        root.description-expanded = !root.description-expanded;
+    }
 
     background: Theme.background;
 
     VerticalLayout {
         spacing: 0;
 
-        // ----- Hero image with overlays -----
+        // ----- Status banner -----
         Rectangle {
-            height: 280px;
-            background: @linear-gradient(135deg, #506b8e 0%, #1f2a3b 100%);
-            clip: true;
-
-            // Back button (translucent disc).
-            Rectangle {
-                x: Theme.spacing-md;
-                y: Theme.spacing-md;
-                width: 40px;
-                height: 40px;
-                border-radius: self.width / 2;
-                background: #00000066;
-                Image {
-                    width: 20px;
-                    height: 20px;
-                    x: (parent.width - self.width) / 2;
-                    y: (parent.height - self.height) / 2;
-                    source: @image-url("@mobile-components/icons/arrow-left.svg");
-                    colorize: #ffffff;
-                    image-fit: contain;
-                }
-                TouchArea {
-                    clicked => { root.back-pressed(); }
-                }
-            }
-            // Heart button.
-            Rectangle {
-                x: parent.width - self.width - Theme.spacing-md;
-                y: Theme.spacing-md;
-                width: 40px;
-                height: 40px;
-                border-radius: self.width / 2;
-                background: #00000066;
-                Image {
-                    width: 20px;
-                    height: 20px;
-                    x: (parent.width - self.width) / 2;
-                    y: (parent.height - self.height) / 2;
-                    source: @image-url("@mobile-components/icons/heart.svg");
-                    colorize: #ffffff;
-                    image-fit: contain;
-                }
-                TouchArea {
-                    clicked => { root.heart-pressed(); }
-                }
-            }
-            // Image-counter pill.
-            Rectangle {
-                x: parent.width - self.width - Theme.spacing-md;
-                y: parent.height - self.height - Theme.spacing-md;
-                width: counter-text.preferred-width + 16px;
-                height: 24px;
-                border-radius: Theme.radius-md;
-                background: #00000099;
-                counter-text := Text {
-                    text: root.current-image + " / " + root.image-count;
-                    color: Theme.on-primary;
-                    font-size: Theme.font-size-caption;
-                    font-weight: 600;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
-                    width: parent.width;
-                    height: parent.height;
-                }
-            }
-        }
-
-        // ----- Alternate thumbnails strip -----
-        HorizontalLayout {
-            padding: Theme.spacing-md;
-            spacing: Theme.spacing-sm;
-            Rectangle {
-                width: 56px;
-                height: 56px;
-                border-radius: Theme.radius-sm;
-                background: @linear-gradient(135deg, #506b8e 0%, #1f2a3b 100%);
-                border-width: 2px;
-                border-color: Theme.primary;
-            }
-            Rectangle {
-                width: 56px;
-                height: 56px;
-                border-radius: Theme.radius-sm;
-                background: @linear-gradient(135deg, #6b8e50 0%, #2a3b1f 100%);
-            }
-            Rectangle {
-                width: 56px;
-                height: 56px;
-                border-radius: Theme.radius-sm;
-                background: @linear-gradient(135deg, #8e506b 0%, #3b1f2a 100%);
-            }
-            Rectangle {
-                width: 56px;
-                height: 56px;
-                border-radius: Theme.radius-sm;
-                background: @linear-gradient(135deg, #8e8e50 0%, #3b3b1f 100%);
-            }
-            Rectangle {
-                width: 56px;
-                height: 56px;
-                border-radius: Theme.radius-sm;
-                background: @linear-gradient(135deg, #506b6b 0%, #1f2a2a 100%);
-            }
-        }
-
-        // ----- Meta -----
-        VerticalLayout {
-            padding-left: Theme.spacing-md;
-            padding-right: Theme.spacing-md;
-            spacing: Theme.spacing-xs;
-
-            Text {
-                text: root.brand;
-                color: Theme.muted;
-                font-size: 10px;
-                font-weight: 700;
-                letter-spacing: 1px;
-            }
-            Heading {
-                text: root.name;
-                style: HeadingStyle.plex-medium;
-                font-family: "Fraunces 9pt";
-                font-size: 26px;
-                font-weight: 400;
-                wrap: word-wrap;
-            }
+            background: root.status-is-danger ? Theme.accent-danger
+                : root.status-is-success ? Theme.accent-success
+                : Theme.surface-2;
+            height: 32px;
+            animate background { duration: Theme.motion-fast; }
             HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
                 spacing: Theme.spacing-sm;
-                padding-top: Theme.spacing-xs;
                 Text {
-                    text: root.price;
-                    color: Theme.on-surface;
-                    font-size: Theme.font-size-headline;
+                    text: root.status-msg;
+                    color: (root.status-is-danger || root.status-is-success)
+                        ? Theme.on-primary
+                        : Theme.on-surface;
+                    font-size: Theme.font-size-caption;
                     font-weight: 700;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
                 }
-                VerticalLayout {
-                    alignment: end;
-                    padding-bottom: Theme.spacing-xs;
+                if root.cart-count > 0: Rectangle {
+                    width: 28px;
+                    height: 20px;
+                    border-radius: 10px;
+                    background: Theme.primary;
                     Text {
-                        text: root.old-price;
-                        color: Theme.muted;
-                        font-size: Theme.font-size-body;
-                        // Strike-through approximation handled below.
-                    }
-                }
-                Rectangle {
-                    width: save-text.preferred-width + 14px;
-                    height: 22px;
-                    border-radius: 4px;
-                    background: Theme.accent-success;
-                    save-text := Text {
-                        text: "SAVE 13%";
+                        text: root.cart-count + "";
                         color: Theme.on-primary;
-                        font-size: 10px;
-                        font-weight: 700;
-                        letter-spacing: 0.5px;
+                        font-size: 11px;
+                        font-weight: 800;
                         horizontal-alignment: center;
                         vertical-alignment: center;
+                        x: 0;
+                        y: 0;
                         width: parent.width;
                         height: parent.height;
                     }
                 }
-                Rectangle { horizontal-stretch: 1; }
-            }
-            StarRating {
-                filled: root.rating-filled;
-                review-count: root.reviews;
-            }
-            Text {
-                text: root.description;
-                color: Theme.on-surface;
-                font-size: Theme.font-size-body;
-                wrap: word-wrap;
             }
         }
 
-        // ----- Variant pickers -----
-        VerticalLayout {
-            padding: Theme.spacing-md;
-            spacing: Theme.spacing-sm;
-
-            Text {
-                text: "Size";
-                color: Theme.on-background;
-                font-size: Theme.font-size-body;
-                font-weight: 600;
-            }
-            HorizontalLayout {
-                spacing: Theme.spacing-sm;
-                Chip { label: "XS"; }
-                Chip { label: "S"; }
-                Chip { label: "M"; selected: true; }
-                Chip { label: "L"; }
-                Chip { label: "XL"; }
-            }
-            Rectangle { height: Theme.spacing-xs; }
-            Text {
-                text: "Colour";
-                color: Theme.on-background;
-                font-size: Theme.font-size-body;
-                font-weight: 600;
-            }
-            HorizontalLayout {
-                spacing: Theme.spacing-sm;
-                Chip { label: "Slate blue"; selected: true; }
-                Chip { label: "Forest"; }
-                Chip { label: "Coral"; }
-                Chip { label: "Sand"; }
-            }
-        }
-
-        SectionHeader { text: "FREQUENTLY BOUGHT TOGETHER"; }
         ScrollView {
-            height: 200px;
-            horizontal-stretch: 1;
-            viewport-width: 4 * 128px + 5 * Theme.spacing-sm;
-            viewport-height: 184px;
-            HorizontalLayout {
-                spacing: Theme.spacing-sm;
-                padding-left: Theme.spacing-md;
-                padding-right: Theme.spacing-md;
-                BundleCard {
-                    name: "Capilene base layer";
-                    price: "$45.00";
-                    thumb-fill: @linear-gradient(135deg, #6b8e50 0%, #2a3b1f 100%);
+            vertical-stretch: 1;
+
+            VerticalLayout {
+                spacing: 0;
+
+                // ----- Hero image -----
+                Rectangle {
+                    height: 280px;
+                    background: root.hero-brush();
+                    clip: true;
+                    animate background { duration: Theme.motion-base; }
+
+                    // Back button.
+                    Rectangle {
+                        x: Theme.spacing-md;
+                        y: Theme.spacing-md;
+                        width: 40px;
+                        height: 40px;
+                        border-radius: self.width / 2;
+                        background: back-touch.pressed ? #000000aa : #00000066;
+                        Image {
+                            width: 20px;
+                            height: 20px;
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                            source: @image-url("@mobile-components/icons/arrow-left.svg");
+                            colorize: #ffffff;
+                            image-fit: contain;
+                        }
+                        back-touch := TouchArea {
+                            clicked => { root.back-pressed(); }
+                        }
+                    }
+                    // Heart button.
+                    Rectangle {
+                        x: parent.width - self.width - Theme.spacing-md;
+                        y: Theme.spacing-md;
+                        width: 40px;
+                        height: 40px;
+                        border-radius: self.width / 2;
+                        background: heart-touch.pressed
+                            ? Theme.surface-pressed
+                            : (root.is-wishlisted ? Theme.accent-danger : #00000066);
+                        animate background { duration: Theme.motion-fast; }
+                        Image {
+                            width: 20px;
+                            height: 20px;
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                            source: @image-url("@mobile-components/icons/heart.svg");
+                            colorize: #ffffff;
+                            image-fit: contain;
+                        }
+                        heart-touch := TouchArea {
+                            clicked => { root.toggle-heart(); }
+                        }
+                    }
+                    // Image-counter pill.
+                    Rectangle {
+                        x: parent.width - self.width - Theme.spacing-md;
+                        y: parent.height - self.height - Theme.spacing-md;
+                        width: counter-text.preferred-width + 16px;
+                        height: 24px;
+                        border-radius: Theme.radius-md;
+                        background: #00000099;
+                        counter-text := Text {
+                            text: (root.current-image + 1) + " / " + root.image-count;
+                            color: Theme.on-primary;
+                            font-size: Theme.font-size-caption;
+                            font-weight: 600;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
+                        }
+                    }
                 }
-                BundleCard {
-                    name: "Black hole 25L";
-                    price: "$129.00";
-                    thumb-fill: @linear-gradient(135deg, #3a3a3a 0%, #1a1a1a 100%);
+
+                // ----- Alternate thumbnails (tappable) -----
+                HorizontalLayout {
+                    padding: Theme.spacing-md;
+                    spacing: Theme.spacing-sm;
+                    for n in 5: Rectangle {
+                        width: 56px;
+                        height: 56px;
+                        border-radius: Theme.radius-sm;
+                        background:
+                              n == 0 ? @linear-gradient(135deg, #506b8e 0%, #1f2a3b 100%)
+                            : n == 1 ? @linear-gradient(135deg, #6b8e50 0%, #2a3b1f 100%)
+                            : n == 2 ? @linear-gradient(135deg, #8e506b 0%, #3b1f2a 100%)
+                            : n == 3 ? @linear-gradient(135deg, #8e8e50 0%, #3b3b1f 100%)
+                            : @linear-gradient(135deg, #506b6b 0%, #1f2a2a 100%);
+                        border-width: n == root.current-image ? 2px : 0px;
+                        border-color: Theme.primary;
+                        animate border-width { duration: Theme.motion-fast; }
+                        TouchArea {
+                            clicked => { root.pick-image(n); }
+                        }
+                    }
                 }
-                BundleCard {
-                    name: "Wool buff";
-                    price: "$22.00";
-                    thumb-fill: @linear-gradient(135deg, #8e506b 0%, #3b1f2a 100%);
+
+                // ----- Meta -----
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    spacing: Theme.spacing-xs;
+
+                    Text {
+                        text: root.brand;
+                        color: Theme.muted;
+                        font-size: 10px;
+                        font-weight: 700;
+                        letter-spacing: 1px;
+                    }
+                    Heading {
+                        text: root.name;
+                        style: HeadingStyle.plex-medium;
+                        font-family: "Fraunces 9pt";
+                        font-size: 26px;
+                        font-weight: 400;
+                        wrap: word-wrap;
+                    }
+                    HorizontalLayout {
+                        spacing: Theme.spacing-sm;
+                        padding-top: Theme.spacing-xs;
+                        Text {
+                            text: root.unit-price();
+                            color: Theme.on-surface;
+                            font-size: Theme.font-size-headline;
+                            font-weight: 700;
+                        }
+                        VerticalLayout {
+                            alignment: end;
+                            padding-bottom: Theme.spacing-xs;
+                            Text {
+                                text: root.format-cents(root.old-price-cents);
+                                color: Theme.muted;
+                                font-size: Theme.font-size-body;
+                            }
+                        }
+                        Rectangle {
+                            width: save-text.preferred-width + 14px;
+                            height: 22px;
+                            border-radius: 4px;
+                            background: Theme.accent-success;
+                            save-text := Text {
+                                text: "SAVE " + root.discount-pct() + "%";
+                                color: Theme.on-primary;
+                                font-size: 10px;
+                                font-weight: 700;
+                                letter-spacing: 0.5px;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                width: parent.width;
+                                height: parent.height;
+                            }
+                        }
+                        Rectangle { horizontal-stretch: 1; }
+                    }
+                    StarRating {
+                        filled: root.rating-filled;
+                        review-count: root.reviews;
+                    }
+                    Text {
+                        text: root.description-expanded
+                            ? "A go-anywhere shell that packs into its own pocket. Recycled ripstop nylon, DWR-finished, weighs under 100 g. Sized for layering over a fleece.\n\nMade in a fair-trade-certified factory. Repair guarantee for life: send it back to Patagonia and they'll patch / re-zip / replace as needed.\n\nSelected: " + root.size-label() + " · " + root.color-label() + "."
+                            : "A go-anywhere shell that packs into its own pocket. Recycled ripstop nylon, DWR-finished, weighs under 100 g...";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-body;
+                        wrap: word-wrap;
+                    }
+                    HorizontalLayout {
+                        alignment: start;
+                        Rectangle {
+                            width: 100px;
+                            height: 28px;
+                            border-radius: 14px;
+                            background: more-touch.pressed ? Theme.surface-pressed : Theme.surface-2;
+                            animate background { duration: Theme.motion-fast; }
+                            Text {
+                                text: root.description-expanded ? "Read less" : "Read more";
+                                color: Theme.primary;
+                                font-size: Theme.font-size-caption;
+                                font-weight: 700;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                x: 0;
+                                y: 0;
+                                width: parent.width;
+                                height: parent.height;
+                            }
+                            more-touch := TouchArea {
+                                clicked => { root.toggle-description(); }
+                            }
+                        }
+                    }
                 }
-                BundleCard {
-                    name: "Trail crew socks";
-                    price: "$18.00";
-                    thumb-fill: @linear-gradient(135deg, #506b8e 0%, #1f2a3b 100%);
+
+                // ----- Variant pickers (live single-select) -----
+                VerticalLayout {
+                    padding: Theme.spacing-md;
+                    spacing: Theme.spacing-sm;
+
+                    Text {
+                        text: "Size · " + root.size-label();
+                        color: Theme.on-background;
+                        font-size: Theme.font-size-body;
+                        font-weight: 600;
+                    }
+                    HorizontalLayout {
+                        spacing: Theme.spacing-sm;
+                        Chip {
+                            label: "XS";
+                            selected: root.size-index == 0;
+                            clicked => { root.pick-size(0); }
+                        }
+                        Chip {
+                            label: "S";
+                            selected: root.size-index == 1;
+                            clicked => { root.pick-size(1); }
+                        }
+                        Chip {
+                            label: "M";
+                            selected: root.size-index == 2;
+                            clicked => { root.pick-size(2); }
+                        }
+                        Chip {
+                            label: "L";
+                            selected: root.size-index == 3;
+                            clicked => { root.pick-size(3); }
+                        }
+                        Chip {
+                            label: "XL";
+                            selected: root.size-index == 4;
+                            clicked => { root.pick-size(4); }
+                        }
+                    }
+                    Rectangle { height: Theme.spacing-xs; }
+                    Text {
+                        text: "Colour · " + root.color-label();
+                        color: Theme.on-background;
+                        font-size: Theme.font-size-body;
+                        font-weight: 600;
+                    }
+                    HorizontalLayout {
+                        spacing: Theme.spacing-sm;
+                        Chip {
+                            label: "Slate blue";
+                            selected: root.color-index == 0;
+                            clicked => { root.pick-color(0); }
+                        }
+                        Chip {
+                            label: "Forest";
+                            selected: root.color-index == 1;
+                            clicked => { root.pick-color(1); }
+                        }
+                        Chip {
+                            label: "Coral";
+                            selected: root.color-index == 2;
+                            clicked => { root.pick-color(2); }
+                        }
+                        Chip {
+                            label: "Sand";
+                            selected: root.color-index == 3;
+                            clicked => { root.pick-color(3); }
+                        }
+                    }
+                }
+
+                SectionHeader { text: "FREQUENTLY BOUGHT TOGETHER · TAP TO ADD"; }
+                ScrollView {
+                    height: 200px;
+                    horizontal-stretch: 1;
+                    viewport-width: 4 * 128px + 5 * Theme.spacing-sm;
+                    viewport-height: 184px;
+                    HorizontalLayout {
+                        spacing: Theme.spacing-sm;
+                        padding-left: Theme.spacing-md;
+                        padding-right: Theme.spacing-md;
+                        Rectangle {
+                            width: 128px;
+                            height: 184px;
+                            border-width: root.bundle0-added ? 2px : 0px;
+                            border-color: Theme.accent-success;
+                            border-radius: Theme.radius-md;
+                            animate border-width { duration: Theme.motion-fast; }
+                            BundleCard {
+                                name: root.bundle0-added ? "Capilene · ADDED" : "Capilene base layer";
+                                price: "$45.00";
+                                thumb-fill: @linear-gradient(135deg, #6b8e50 0%, #2a3b1f 100%);
+                            }
+                            TouchArea {
+                                clicked => { root.add-bundle(0, "Capilene base layer"); }
+                            }
+                        }
+                        Rectangle {
+                            width: 128px;
+                            height: 184px;
+                            border-width: root.bundle1-added ? 2px : 0px;
+                            border-color: Theme.accent-success;
+                            border-radius: Theme.radius-md;
+                            animate border-width { duration: Theme.motion-fast; }
+                            BundleCard {
+                                name: root.bundle1-added ? "Black hole · ADDED" : "Black hole 25L";
+                                price: "$129.00";
+                                thumb-fill: @linear-gradient(135deg, #3a3a3a 0%, #1a1a1a 100%);
+                            }
+                            TouchArea {
+                                clicked => { root.add-bundle(1, "Black hole 25L"); }
+                            }
+                        }
+                        Rectangle {
+                            width: 128px;
+                            height: 184px;
+                            border-width: root.bundle2-added ? 2px : 0px;
+                            border-color: Theme.accent-success;
+                            border-radius: Theme.radius-md;
+                            animate border-width { duration: Theme.motion-fast; }
+                            BundleCard {
+                                name: root.bundle2-added ? "Wool buff · ADDED" : "Wool buff";
+                                price: "$22.00";
+                                thumb-fill: @linear-gradient(135deg, #8e506b 0%, #3b1f2a 100%);
+                            }
+                            TouchArea {
+                                clicked => { root.add-bundle(2, "Wool buff"); }
+                            }
+                        }
+                        Rectangle {
+                            width: 128px;
+                            height: 184px;
+                            border-width: root.bundle3-added ? 2px : 0px;
+                            border-color: Theme.accent-success;
+                            border-radius: Theme.radius-md;
+                            animate border-width { duration: Theme.motion-fast; }
+                            BundleCard {
+                                name: root.bundle3-added ? "Socks · ADDED" : "Trail crew socks";
+                                price: "$18.00";
+                                thumb-fill: @linear-gradient(135deg, #506b8e 0%, #1f2a3b 100%);
+                            }
+                            TouchArea {
+                                clicked => { root.add-bundle(3, "Trail crew socks"); }
+                            }
+                        }
+                    }
                 }
             }
         }
-
-        Rectangle { vertical-stretch: 1; }
 
         // ----- Sticky Add-to-cart footer -----
         Rectangle {
@@ -374,10 +642,10 @@ export component ProductDetailPage inherits Window {
                     horizontal-stretch: 0;
                 }
                 MobileButton {
-                    text: "Add to cart · " + root.price;
+                    text: "Add to cart · " + root.line-total();
                     tone: Tone.info;
                     horizontal-stretch: 1;
-                    clicked => { root.add-to-cart-pressed(); }
+                    clicked => { root.press-add(); }
                 }
             }
         }

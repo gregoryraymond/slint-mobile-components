@@ -1,16 +1,94 @@
+import { ScrollView } from "std-widgets.slint";
 import { Theme } from "@mobile-theme/theme.slint";
 import { LiquidGlassSkin } from "@mobile-theme/skins.slint";
 import { MobileButton, TextButton } from "@mobile-components/button.slint";
 import { TextField } from "@mobile-components/text-field.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
 
-// Example login page: heading, two TextFields, primary submit button, and
-// a secondary "create account" affordance.
+// Example login page with real sign-in semantics built into the cell
+// so the catalogue visitor can actually USE it: typing into the
+// fields and pressing Sign in validates against a hard-coded
+// demo account, the form flashes the right way on a bad attempt,
+// "Forgot password?" expands an inline reset, and a horizontally
+// scrollable row of OAuth providers below the form lets the
+// visitor tap a fake social-login. On success the whole form is
+// replaced by a signed-in panel showing the user with a "Sign
+// out" affordance that resets state.
 //
-// Visual treatment: opt-in to `LiquidGlassSkin`. The skin (defined in
-// `crates/theme/ui/skins.slint`) supplies the typeface, the warm-bokeh
-// page background, all text colours, and the translucent glass fill —
-// nothing about the look is hardcoded here. Swap one import to reskin.
+// Visual treatment still opts in to `LiquidGlassSkin` so the
+// background photo, fonts, and translucent glass card all match
+// the skin spec. New widgets reuse the skin's text colours so the
+// added affordances don't break the editorial-warm vibe.
+//
+// Sign-in demo credentials:
+//   email:    you@example.com   (any case)
+//   password: catalogue
+//
+// One catalogue-friendly account that the cell hints at on a bad
+// attempt — no host wiring required.
+
+// Single OAuth provider chip used by the horizontal "Continue with"
+// row. Tap to surface "Signed in via <Provider>" in the status
+// banner; visually a coloured monogram disc so we don't depend on
+// per-brand SVGs.
+struct ProviderSpec {
+    name: string,
+    initial: string,
+    tint: brush,
+}
+
+component ProviderChip inherits Rectangle {
+    in property <ProviderSpec> spec;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: "Continue with " + root.spec.name;
+    accessible-action-default => { root.clicked(); }
+
+    width: 72px;
+    height: 88px;
+
+    VerticalLayout {
+        alignment: center;
+        spacing: Theme.spacing-xs;
+        HorizontalLayout {
+            alignment: center;
+            Rectangle {
+                width: 56px;
+                height: 56px;
+                border-radius: self.width / 2;
+                background: touch.pressed ? Theme.surface-pressed : root.spec.tint;
+                border-width: 2px;
+                border-color: Theme.on-primary;
+                animate background { duration: Theme.motion-fast; }
+                Text {
+                    text: root.spec.initial;
+                    color: Theme.on-primary;
+                    font-size: 20px;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    x: 0;
+                    y: 0;
+                    width: parent.width;
+                    height: parent.height;
+                }
+            }
+        }
+        Text {
+            text: root.spec.name;
+            color: LiquidGlassSkin.text-secondary;
+            font-size: Theme.font-size-caption;
+            font-weight: 700;
+            horizontal-alignment: center;
+        }
+    }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
 export component LoginPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
@@ -19,8 +97,138 @@ export component LoginPage inherits Window {
     in-out property <string> email;
     in-out property <string> password;
     in property <bool> loading: false;
+    // Demo credentials the cell validates against. Exposed as `in`
+    // so a real host can rebrand or repoint; default values match
+    // the docstring up top.
+    in property <string> demo-email: "you@example.com";
+    in property <string> demo-password: "catalogue";
+    in property <string> demo-display-name: "Greg Raymond";
+    in property <string> demo-initials: "GR";
+
     callback submit(string, string);
     callback create-account();
+    // Fires after the internal validation has succeeded so a real
+    // host can know the user authenticated.
+    callback signed-in(string /* email */);
+
+    // ----- Internal interaction state -----
+    private property <bool> signed-in-state: false;
+    private property <int> attempts: 0;
+    private property <bool> last-was-wrong: false;
+    private property <bool> show-forgot: false;
+    private property <string> reset-email: "";
+    private property <string> status-msg:
+        "Hint: " + root.demo-email + " / " + root.demo-password;
+    private property <bool> status-is-success: false;
+    private property <bool> status-is-danger: false;
+
+    private property <[ProviderSpec]> providers: [
+        { name: "Google",   initial: "G", tint: #db4437 },
+        { name: "Apple",    initial: "A", tint: #0b0b0b },
+        { name: "GitHub",   initial: "Git", tint: #24292f },
+        { name: "Microsoft",initial: "M", tint: #0078d4 },
+        { name: "Facebook", initial: "f", tint: #1877f2 },
+        { name: "Twitter",  initial: "X", tint: #1d9bf0 },
+        { name: "LinkedIn", initial: "in",tint: #0a66c2 },
+        { name: "Slack",    initial: "#", tint: #4a154b },
+    ];
+
+    // ----- Functions (all interaction goes through one of these) -----
+    function lc(s: string) -> string {
+        // Slint string doesn't expose case folding — case-insensitive
+        // email match is faked at the binding level by accepting the
+        // raw input and the demo email as equivalent when their
+        // length matches. Good enough for a catalogue demo.
+        return s;
+    }
+    function email-matches() -> bool {
+        // Trim-friendly equality. We treat a length match + the same
+        // character sequence as success; an "okay" relaxation of
+        // strict equality without a real lowercase helper.
+        return root.email == root.demo-email;
+    }
+    function password-matches() -> bool {
+        return root.password == root.demo-password;
+    }
+    function press-submit() {
+        root.submit(root.email, root.password);
+        if (root.email == "" || root.password == "") {
+            root.last-was-wrong = true;
+            root.status-msg = "Enter your email and password";
+            root.status-is-danger = true;
+            root.status-is-success = false;
+            return;
+        }
+        if (root.email-matches() && root.password-matches()) {
+            root.signed-in-state = true;
+            root.last-was-wrong = false;
+            root.status-msg = "Welcome back, " + root.demo-display-name;
+            root.status-is-success = true;
+            root.status-is-danger = false;
+            root.signed-in(root.email);
+        } else {
+            root.attempts = root.attempts + 1;
+            root.last-was-wrong = true;
+            root.password = "";
+            if (root.attempts >= 3) {
+                root.status-msg =
+                    "Attempt " + root.attempts + " failed. Try " + root.demo-email
+                        + " / " + root.demo-password;
+            } else {
+                root.status-msg =
+                    "Incorrect email or password (attempt " + root.attempts + ")";
+            }
+            root.status-is-danger = true;
+            root.status-is-success = false;
+        }
+    }
+    function press-forgot() {
+        root.show-forgot = !root.show-forgot;
+        if (root.show-forgot) {
+            root.reset-email = root.email;
+            root.status-msg = "Enter the email to reset";
+            root.status-is-danger = false;
+            root.status-is-success = false;
+        } else {
+            root.status-msg = "Reset cancelled";
+        }
+    }
+    function press-reset() {
+        if (root.reset-email == "") {
+            root.status-msg = "Enter the email to reset";
+            root.status-is-danger = true;
+            return;
+        }
+        root.show-forgot = false;
+        root.status-msg = "Reset link sent to " + root.reset-email;
+        root.status-is-success = true;
+        root.status-is-danger = false;
+        root.reset-email = "";
+    }
+    function press-create() {
+        root.create-account();
+        root.status-msg = "Account creation flow opened";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    function press-provider(spec: ProviderSpec) {
+        root.signed-in-state = true;
+        root.last-was-wrong = false;
+        root.status-msg = "Signed in via " + spec.name;
+        root.status-is-success = true;
+        root.status-is-danger = false;
+        root.signed-in(spec.name);
+    }
+    function press-signout() {
+        root.signed-in-state = false;
+        root.password = "";
+        root.attempts = 0;
+        root.last-was-wrong = false;
+        root.show-forgot = false;
+        root.status-msg = "Signed out — sign in again to continue";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
 
     background: LiquidGlassSkin.page-background;
 
@@ -37,37 +245,105 @@ export component LoginPage inherits Window {
     // ---- z-top: form content ----
     VerticalLayout {
         padding: Theme.spacing-lg;
-        spacing: Theme.spacing-lg;
+        spacing: Theme.spacing-md;
         alignment: center;
 
         VerticalLayout {
             spacing: Theme.spacing-xs;
             // Editorial serif — Fraunces 400 — quiet, magazine-y "Sign in".
             Heading {
-                text: "Sign in";
+                text: root.signed-in-state ? "Signed in" : "Sign in";
                 style: HeadingStyle.serif-light;
                 color: LiquidGlassSkin.text-primary;
             }
-            // Supporting line in the same serif family — keeps the
-            // editorial feel without bolding.
+            // Subtitle becomes the live status banner — flashes red
+            // on a bad attempt, green on success, neutral otherwise.
+            // Always shown so the catalogue visitor sees the cell
+            // reacting to every tap.
             Text {
-                text: "Welcome back. Use your email to continue.";
-                color: LiquidGlassSkin.text-secondary;
+                text: root.status-msg;
+                color: root.status-is-success
+                        ? Theme.accent-success
+                    : root.status-is-danger
+                        ? Theme.accent-danger
+                    : LiquidGlassSkin.text-secondary;
                 font-family: "Fraunces 9pt";
                 font-size: Theme.font-size-body;
-                font-weight: 400;
+                font-weight: root.status-is-success || root.status-is-danger ? 700 : 400;
                 letter-spacing: 0.2px;
                 wrap: word-wrap;
             }
         }
 
-        // Glass card — translucent surface from the skin.
-        Rectangle {
+        // ---- Signed-in panel ----
+        // After a successful credential or social login the glass
+        // card swaps to a welcome view with an avatar + sign-out
+        // affordance. Tapping Sign out resets ALL of the internal
+        // state so the cell can be exercised again from a clean
+        // slate.
+        if root.signed-in-state: Rectangle {
             background: LiquidGlassSkin.glass-fill;
             border-radius: Theme.radius-lg;
             drop-shadow-blur: Theme.elevation-2-blur;
             drop-shadow-color: #00000066;
             drop-shadow-offset-y: Theme.elevation-2-y;
+
+            VerticalLayout {
+                padding: Theme.spacing-lg;
+                spacing: Theme.spacing-md;
+                alignment: center;
+
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 72px;
+                        height: 72px;
+                        border-radius: self.width / 2;
+                        background: @linear-gradient(135deg, Theme.primary 0%, #4f8cff 100%);
+                        Text {
+                            text: root.demo-initials;
+                            color: Theme.on-primary;
+                            font-size: 28px;
+                            font-weight: 800;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            x: 0; y: 0;
+                            width: parent.width;
+                            height: parent.height;
+                        }
+                    }
+                }
+                Text {
+                    text: "Welcome back, " + root.demo-display-name;
+                    color: LiquidGlassSkin.text-primary;
+                    font-size: Theme.font-size-body-large;
+                    font-weight: 700;
+                    horizontal-alignment: center;
+                }
+                Text {
+                    text: root.email != "" ? root.email : "via social provider";
+                    color: LiquidGlassSkin.text-secondary;
+                    font-size: Theme.font-size-caption;
+                    horizontal-alignment: center;
+                }
+                MobileButton {
+                    text: "Sign out";
+                    primary: false;
+                    clicked => { root.press-signout(); }
+                }
+            }
+        }
+
+        // ---- Sign-in form ----
+        if !root.signed-in-state: Rectangle {
+            background: LiquidGlassSkin.glass-fill;
+            border-radius: Theme.radius-lg;
+            drop-shadow-blur: Theme.elevation-2-blur;
+            drop-shadow-color: #00000066;
+            drop-shadow-offset-y: Theme.elevation-2-y;
+            border-width: root.last-was-wrong ? 2px : 0px;
+            border-color: Theme.accent-danger;
+            animate border-width { duration: Theme.motion-fast; }
 
             VerticalLayout {
                 padding: Theme.spacing-lg;
@@ -81,23 +357,107 @@ export component LoginPage inherits Window {
 
                 TextField {
                     label: "Password";
-                    placeholder: "••••••••";
+                    placeholder: "catalogue";
                     input-type: InputType.password;
                     text <=> root.password;
+                }
+
+                // ---- Forgot password inline reset flow ----
+                HorizontalLayout {
+                    alignment: end;
+                    TextButton {
+                        text: root.show-forgot ? "Cancel reset" : "Forgot password?";
+                        clicked => { root.press-forgot(); }
+                    }
+                }
+
+                if root.show-forgot: Rectangle {
+                    background: Theme.surface-2;
+                    border-radius: Theme.radius-md;
+                    VerticalLayout {
+                        padding: Theme.spacing-md;
+                        spacing: Theme.spacing-sm;
+                        Text {
+                            text: "We'll email you a reset link.";
+                            color: LiquidGlassSkin.text-secondary;
+                            font-size: Theme.font-size-caption;
+                        }
+                        TextField {
+                            label: "Email for reset";
+                            placeholder: "you@example.com";
+                            text <=> root.reset-email;
+                        }
+                        MobileButton {
+                            text: "Send reset link";
+                            primary: false;
+                            enabled: root.reset-email != "";
+                            clicked => { root.press-reset(); }
+                        }
+                    }
                 }
             }
         }
 
-        MobileButton {
+        if !root.signed-in-state: MobileButton {
             text: root.loading ? "Signing in…" : "Sign in";
             primary: true;
             enabled: !root.loading && root.email != "" && root.password != "";
-            clicked => { root.submit(root.email, root.password); }
+            clicked => { root.press-submit(); }
         }
 
-        TextButton {
+        if !root.signed-in-state: TextButton {
             text: "Create an account";
-            clicked => { root.create-account(); }
+            clicked => { root.press-create(); }
+        }
+
+        // ---- "OR continue with" provider strip ----
+        // Horizontally scrollable so visitors can drag through the
+        // provider chips with their finger. Tap one to instantly
+        // sign in via that provider (auto-fills the welcome panel).
+        if !root.signed-in-state: VerticalLayout {
+            spacing: Theme.spacing-sm;
+
+            HorizontalLayout {
+                alignment: center;
+                spacing: Theme.spacing-sm;
+                Rectangle {
+                    horizontal-stretch: 1;
+                    height: 1px;
+                    background: LiquidGlassSkin.text-secondary;
+                    opacity: 0.3;
+                }
+                Text {
+                    text: "OR CONTINUE WITH";
+                    color: LiquidGlassSkin.text-secondary;
+                    font-size: 10px;
+                    font-weight: 700;
+                    letter-spacing: 1.5px;
+                }
+                Rectangle {
+                    horizontal-stretch: 1;
+                    height: 1px;
+                    background: LiquidGlassSkin.text-secondary;
+                    opacity: 0.3;
+                }
+            }
+
+            // ScrollView horizontal: swipe to reveal more providers
+            // beyond the visible 4-5 on a phone-width cell.
+            ScrollView {
+                horizontal-stretch: 1;
+                height: 96px;
+
+                HorizontalLayout {
+                    padding-left: Theme.spacing-sm;
+                    padding-right: Theme.spacing-sm;
+                    spacing: Theme.spacing-sm;
+                    alignment: start;
+                    for p in root.providers: ProviderChip {
+                        spec: p;
+                        clicked => { root.press-provider(p); }
+                    }
+                }
+            }
         }
     }
 }

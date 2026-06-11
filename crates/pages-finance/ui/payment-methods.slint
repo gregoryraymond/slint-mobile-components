@@ -6,15 +6,20 @@
 // dashboard with cards + transactions) and `CartPage` (in-progress
 // checkout). Demonstrates:
 //
-//   - Default card hero: a full-width credit-card visual at the top
-//     pinned with a DEFAULT pill in the corner so the user knows
-//     which card will be charged at checkout.
+//   - Default card hero: a full-width credit-card visual at the top —
+//     swaps brand / last-four / gradient when the user picks a new
+//     default from the saved list below.
 //   - "Saved cards" list: each row carries a thumb-shaped mini card
 //     swatch (brand-tinted) + brand + last-four + expiry + tone pill
-//     for status (EXPIRES SOON warning, EXPIRED danger).
-//   - "Quick pay" row: Apple Pay + Google Pay + PayPal + bank-transfer
-//     pills.
-//   - "Add new" row at the bottom + a Card-removal CTA.
+//     for status (EXPIRES SOON warning, EXPIRED danger). Tap a row to
+//     expand "Set as default / Remove" action pills.
+//   - "Quick pay" row: only one of Apple Pay / Google Pay / PayPal is
+//     active at a time.
+//   - "Alternatives": Bank transfer + Klarna, tappable for status.
+//   - "Add new" button increments an added-card counter (rendered in
+//     the section header).
+//   - Removed cards drop out of the list; the default cannot be
+//     removed.
 
 import { ScrollView } from "std-widgets.slint";
 import { Theme, Tone } from "@mobile-theme/theme.slint";
@@ -37,12 +42,12 @@ component DefaultCard inherits Rectangle {
     height: 200px;
     border-radius: Theme.radius-lg;
     background: root.gradient;
+    animate background { duration: Theme.motion-fast; }
     drop-shadow-blur: Theme.elevation-2-blur;
     drop-shadow-color: Theme.elevation-2-color;
     drop-shadow-offset-y: Theme.elevation-2-y;
     clip: true;
 
-    // DEFAULT pill — top-right.
     Rectangle {
         x: parent.width - self.width - Theme.spacing-md;
         y: Theme.spacing-md;
@@ -63,7 +68,6 @@ component DefaultCard inherits Rectangle {
         }
     }
 
-    // Chip + brand mark.
     Rectangle {
         x: Theme.spacing-md;
         y: Theme.spacing-md;
@@ -82,7 +86,6 @@ component DefaultCard inherits Rectangle {
         letter-spacing: 2px;
     }
 
-    // Last four + holder + expiry along the bottom.
     Heading {
         text: "•••• •••• •••• " + root.last-four;
         style: HeadingStyle.mono;
@@ -114,23 +117,28 @@ component DefaultCard inherits Rectangle {
     }
 }
 
-// One saved-card row.
+// One saved-card row — tappable.
 component CardRow inherits Rectangle {
     in property <string> brand;
     in property <string> last-four;
     in property <string> expiry;
     in property <color> swatch;
-    in property <int> state: 0;   // 0 active, 1 expires soon, 2 expired
+    in property <int> state: 0;
+    in property <bool> expanded: false;
+    callback clicked();
 
     horizontal-stretch: 1;
     min-height: 72px;
+    background: root.expanded ? Theme.surface-2
+        : touch.pressed ? Theme.surface-pressed
+        : transparent;
+    animate background { duration: Theme.motion-fast; }
 
     HorizontalLayout {
         padding: Theme.spacing-md;
         spacing: Theme.spacing-md;
         alignment: stretch;
 
-        // Mini card swatch.
         VerticalLayout {
             alignment: center;
             Rectangle {
@@ -149,7 +157,6 @@ component CardRow inherits Rectangle {
             }
         }
 
-        // Brand + last-four.
         VerticalLayout {
             horizontal-stretch: 1;
             alignment: center;
@@ -180,7 +187,6 @@ component CardRow inherits Rectangle {
             }
         }
 
-        // Status pill.
         VerticalLayout {
             alignment: center;
             if root.state > 0: Rectangle {
@@ -204,9 +210,10 @@ component CardRow inherits Rectangle {
             }
         }
     }
+    touch := TouchArea { clicked => { root.clicked(); } }
 }
 
-// Quick-pay pill — a coloured rounded badge with brand glyph + label.
+// Quick-pay pill — only-one-active per row.
 component QuickPayPill inherits Rectangle {
     in property <string> label;
     in property <image> icon;
@@ -220,10 +227,8 @@ component QuickPayPill inherits Rectangle {
 
     horizontal-stretch: 1;
     height: 60px;
-    background:
-          root.active
-        ? root.brand
-        : Theme.surface-1;
+    background: root.active ? root.brand : Theme.surface-1;
+    animate background { duration: Theme.motion-fast; }
     border-radius: Theme.radius-md;
     border-width: 1px;
     border-color: root.active ? root.brand : Theme.outline;
@@ -254,8 +259,47 @@ component QuickPayPill inherits Rectangle {
             }
         }
     }
+    TouchArea { clicked => { root.clicked(); } }
+}
+
+// Action pill for the expanded-row strip.
+component ActionPill inherits Rectangle {
+    in property <string> label;
+    in property <bool> primary: false;
+    in property <bool> danger: false;
+    in property <bool> disabled: false;
+    callback clicked();
+
+    height: 32px;
+    horizontal-stretch: 1;
+    border-radius: 16px;
+    background: root.disabled ? Theme.surface-variant
+        : root.danger ? Theme.accent-danger
+        : root.primary ? Theme.accent-info
+        : Theme.surface-1;
+    border-width: 1px;
+    border-color: (root.danger || root.primary) ? transparent : Theme.outline;
+    opacity: root.disabled ? 0.5 : 1.0;
+    animate background { duration: Theme.motion-fast; }
+
+    Text {
+        text: root.label;
+        color: (root.disabled) ? Theme.muted
+            : (root.danger || root.primary) ? Theme.on-primary
+            : Theme.on-surface;
+        font-size: Theme.font-size-caption;
+        font-weight: 700;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: parent.width;
+        height: parent.height;
+    }
     TouchArea {
-        clicked => { root.clicked(); }
+        clicked => {
+            if (!root.disabled) {
+                root.clicked();
+            }
+        }
     }
 }
 
@@ -266,6 +310,165 @@ export component PaymentMethodPage inherits Window {
     callback add-card-pressed();
     callback quick-pay-pressed(string);
     callback card-pressed(string);
+    callback card-removed(string);
+    callback default-changed(string);
+
+    // ----- Interactive state -----
+    private property <int> default-card-idx: 0; // 0..3
+    private property <int> quick-pay-active: 0; // 0=apple 1=google 2=paypal -1=none
+    private property <int> expanded-row: -1; // -1, or 0..5
+    // Per-card removed flags; default card can never be removed.
+    private property <bool> rm0: false;
+    private property <bool> rm1: false;
+    private property <bool> rm2: false;
+    private property <bool> rm3: false;
+    private property <int> added-count: 0;
+    private property <string> status-msg: "Tap a card to set as default · pick a quick-pay method";
+    private property <bool> status-is-success: false;
+    private property <bool> status-is-danger: false;
+
+    // ----- Card metadata -----
+    function card-brand-display(i: int) -> string {
+        if (i == 0) { return "VISA"; }
+        if (i == 1) { return "MASTERCARD"; }
+        if (i == 2) { return "AMERICAN EXPRESS"; }
+        return "VISA DEBIT";
+    }
+    function card-brand(i: int) -> string {
+        if (i == 0) { return "Visa"; }
+        if (i == 1) { return "Mastercard"; }
+        if (i == 2) { return "Amex"; }
+        return "Visa Debit";
+    }
+    function card-last(i: int) -> string {
+        if (i == 0) { return "4242"; }
+        if (i == 1) { return "7782"; }
+        if (i == 2) { return "1009"; }
+        return "5510";
+    }
+    function card-expiry(i: int) -> string {
+        if (i == 0) { return "08/29"; }
+        if (i == 1) { return "05/26"; }
+        if (i == 2) { return "12/27"; }
+        return "02/25";
+    }
+    function card-state(i: int) -> int {
+        if (i == 1) { return 1; }
+        if (i == 3) { return 2; }
+        return 0;
+    }
+    function card-swatch(i: int) -> color {
+        if (i == 0) { return #1e3a8a; }
+        if (i == 1) { return #b91c1c; }
+        if (i == 2) { return #1a1a1a; }
+        return #4f8cff;
+    }
+    function card-gradient(i: int) -> brush {
+        if (i == 0) { return @linear-gradient(135deg, #1e3a8a 0%, #0f1d4d 100%); }
+        if (i == 1) { return @linear-gradient(135deg, #b91c1c 0%, #7f1d1d 100%); }
+        if (i == 2) { return @linear-gradient(135deg, #1a1a1a 0%, #000000 100%); }
+        return @linear-gradient(135deg, #4f8cff 0%, #1e3a8a 100%);
+    }
+    function removed-for(i: int) -> bool {
+        if (i == 0) { return root.rm0; }
+        if (i == 1) { return root.rm1; }
+        if (i == 2) { return root.rm2; }
+        return root.rm3;
+    }
+    function row-visible(i: int) -> bool {
+        return i != root.default-card-idx && !root.removed-for(i);
+    }
+    function quick-pay-name(i: int) -> string {
+        if (i == 0) { return "Apple Pay"; }
+        if (i == 1) { return "Google Pay"; }
+        if (i == 2) { return "PayPal"; }
+        return "none";
+    }
+
+    // ----- Mutations -----
+    public function set-default(i: int) {
+        if (root.removed-for(i)) {
+            root.status-msg = root.card-brand(i) + " is removed · restore first";
+            root.status-is-success = false;
+            root.status-is-danger = true;
+            return;
+        }
+        root.default-card-idx = i;
+        root.expanded-row = -1;
+        root.default-changed(root.card-brand(i));
+        root.status-msg = "Default · " + root.card-brand(i)
+            + " •• " + root.card-last(i);
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    public function set-quick-pay(i: int) {
+        root.quick-pay-active = root.quick-pay-active == i ? -1 : i;
+        root.quick-pay-pressed(root.quick-pay-name(root.quick-pay-active));
+        root.status-msg = root.quick-pay-active == i
+            ? "Quick pay: " + root.quick-pay-name(i)
+            : "Quick pay cleared";
+        root.status-is-success = root.quick-pay-active == i;
+        root.status-is-danger = root.quick-pay-active != i;
+    }
+    public function tap-row(i: int) {
+        root.expanded-row = root.expanded-row == i ? -1 : i;
+        root.card-pressed(i < 4 ? root.card-brand(i)
+            : i == 4 ? "Bank transfer"
+            : "Klarna");
+        root.status-msg = root.expanded-row == i
+            ? (i < 4 ? root.card-brand(i) + " •• " + root.card-last(i)
+                : "Alternative · "
+                    + (i == 4 ? "Bank transfer" : "Klarna · Pay in 4"))
+            : "Collapsed";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function remove-card(i: int) {
+        if (i == root.default-card-idx) {
+            root.status-msg = "Cannot remove default · set a different card first";
+            root.status-is-success = false;
+            root.status-is-danger = true;
+            return;
+        }
+        if (i == 0) { root.rm0 = true; }
+        if (i == 1) { root.rm1 = true; }
+        if (i == 2) { root.rm2 = true; }
+        if (i == 3) { root.rm3 = true; }
+        root.expanded-row = -1;
+        root.card-removed(root.card-brand(i));
+        root.status-msg = "Removed " + root.card-brand(i)
+            + " •• " + root.card-last(i);
+        root.status-is-success = false;
+        root.status-is-danger = true;
+    }
+    public function restore-card(i: int) {
+        if (i == 0) { root.rm0 = false; }
+        if (i == 1) { root.rm1 = false; }
+        if (i == 2) { root.rm2 = false; }
+        if (i == 3) { root.rm3 = false; }
+        root.status-msg = "Restored " + root.card-brand(i);
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    public function add-card() {
+        if (root.added-count < 3) {
+            root.added-count = root.added-count + 1;
+        }
+        root.add-card-pressed();
+        root.status-msg = "Added new card · " + root.added-count + " pending";
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    public function tap-alt(name: string) {
+        root.status-msg = "Alternative · " + name;
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function tap-manage() {
+        root.status-msg = "Manage saved methods · long press to reorder";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
 
     background: Theme.background;
 
@@ -278,105 +481,270 @@ export component PaymentMethodPage inherits Window {
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             trailing-icon: @image-url("@mobile-components/icons/plus.svg");
             leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.add-card-pressed(); }
+            trailing-pressed => { root.add-card(); }
         }
 
-        // Default card hero + quick-pay + 5 saved-card rows overflow a
-        // single 892-px screen, so the middle region scrolls between the
-        // pinned AppBar and the sticky add-new footer below.
+        // ----- Status banner ---------------------------------------
+        Rectangle {
+            height: 32px;
+            background: root.status-is-danger ? Theme.accent-danger
+                : root.status-is-success ? Theme.accent-success
+                : Theme.surface-2;
+            animate background { duration: Theme.motion-fast; }
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                Text {
+                    text: root.status-msg;
+                    color: (root.status-is-danger || root.status-is-success)
+                        ? Theme.on-primary
+                        : Theme.on-surface;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+            }
+        }
+
         ScrollView {
             vertical-stretch: 1;
 
             VerticalLayout {
                 spacing: 0;
 
-        VerticalLayout {
-            padding: Theme.spacing-md;
-            spacing: Theme.spacing-md;
-            alignment: start;
+                VerticalLayout {
+                    padding: Theme.spacing-md;
+                    spacing: Theme.spacing-md;
+                    alignment: start;
 
-            // Default card hero.
-            DefaultCard {
-                brand: "VISA";
-                last-four: "4242";
-                holder: "GREG RAYMOND";
-                expiry: "08/29";
-                gradient: @linear-gradient(135deg, #1e3a8a 0%, #0f1d4d 100%);
-            }
+                    // Default card hero — swaps with default-card-idx.
+                    DefaultCard {
+                        brand: root.card-brand-display(root.default-card-idx);
+                        last-four: root.card-last(root.default-card-idx);
+                        holder: "GREG RAYMOND";
+                        expiry: root.card-expiry(root.default-card-idx);
+                        gradient: root.card-gradient(root.default-card-idx);
+                    }
 
-            // Quick pay row.
-            Text {
-                text: "Quick pay";
-                color: Theme.on-background;
-                font-size: Theme.font-size-body;
-                font-weight: 700;
-            }
-            HorizontalLayout {
-                spacing: Theme.spacing-sm;
-                QuickPayPill {
-                    label: "Apple Pay";
-                    icon: @image-url("@mobile-components/icons/heart.svg");
-                    brand: #000000;
-                    active: true;
-                    clicked => { root.quick-pay-pressed("apple"); }
+                    // Quick pay row.
+                    Text {
+                        text: "Quick pay · "
+                            + (root.quick-pay-active >= 0
+                                ? root.quick-pay-name(root.quick-pay-active) + " active"
+                                : "none active");
+                        color: Theme.on-background;
+                        font-size: Theme.font-size-body;
+                        font-weight: 700;
+                    }
+                    HorizontalLayout {
+                        spacing: Theme.spacing-sm;
+                        QuickPayPill {
+                            label: "Apple Pay";
+                            icon: @image-url("@mobile-components/icons/heart.svg");
+                            brand: #000000;
+                            active: root.quick-pay-active == 0;
+                            clicked => { root.set-quick-pay(0); }
+                        }
+                        QuickPayPill {
+                            label: "Google Pay";
+                            icon: @image-url("@mobile-components/icons/check.svg");
+                            brand: #4285f4;
+                            active: root.quick-pay-active == 1;
+                            clicked => { root.set-quick-pay(1); }
+                        }
+                        QuickPayPill {
+                            label: "PayPal";
+                            icon: @image-url("@mobile-components/icons/send.svg");
+                            brand: #003087;
+                            active: root.quick-pay-active == 2;
+                            clicked => { root.set-quick-pay(2); }
+                        }
+                    }
                 }
-                QuickPayPill {
-                    label: "Google Pay";
-                    icon: @image-url("@mobile-components/icons/check.svg");
-                    brand: #4285f4;
-                    clicked => { root.quick-pay-pressed("google"); }
+
+                SectionHeader {
+                    text: root.added-count > 0
+                        ? "OTHER CARDS · " + root.added-count + " ADDED"
+                        : "OTHER  CARDS";
                 }
-                QuickPayPill {
-                    label: "PayPal";
-                    icon: @image-url("@mobile-components/icons/send.svg");
-                    brand: #003087;
-                    clicked => { root.quick-pay-pressed("paypal"); }
+
+                // Cards 0..3 — render each whenever it's not the current
+                // default and not removed.
+                if root.row-visible(0): CardRow {
+                    brand: root.card-brand(0);
+                    last-four: root.card-last(0);
+                    expiry: root.card-expiry(0);
+                    state: root.card-state(0);
+                    swatch: root.card-swatch(0);
+                    expanded: root.expanded-row == 0;
+                    clicked => { root.tap-row(0); }
+                }
+                if root.expanded-row == 0 && root.row-visible(0): Rectangle {
+                    background: Theme.surface-2;
+                    HorizontalLayout {
+                        padding: Theme.spacing-md;
+                        spacing: Theme.spacing-sm;
+                        ActionPill {
+                            label: "Set as default";
+                            primary: true;
+                            clicked => { root.set-default(0); }
+                        }
+                        ActionPill {
+                            label: "Remove";
+                            danger: true;
+                            clicked => { root.remove-card(0); }
+                        }
+                    }
+                }
+                if root.row-visible(0) && (root.row-visible(1)
+                    || root.row-visible(2) || root.row-visible(3)): Divider { }
+
+                if root.row-visible(1): CardRow {
+                    brand: root.card-brand(1);
+                    last-four: root.card-last(1);
+                    expiry: root.card-expiry(1);
+                    state: root.card-state(1);
+                    swatch: root.card-swatch(1);
+                    expanded: root.expanded-row == 1;
+                    clicked => { root.tap-row(1); }
+                }
+                if root.expanded-row == 1 && root.row-visible(1): Rectangle {
+                    background: Theme.surface-2;
+                    HorizontalLayout {
+                        padding: Theme.spacing-md;
+                        spacing: Theme.spacing-sm;
+                        ActionPill {
+                            label: "Set as default";
+                            primary: true;
+                            clicked => { root.set-default(1); }
+                        }
+                        ActionPill {
+                            label: "Remove";
+                            danger: true;
+                            clicked => { root.remove-card(1); }
+                        }
+                    }
+                }
+                if root.row-visible(1) && (root.row-visible(2)
+                    || root.row-visible(3)): Divider { }
+
+                if root.row-visible(2): CardRow {
+                    brand: root.card-brand(2);
+                    last-four: root.card-last(2);
+                    expiry: root.card-expiry(2);
+                    state: root.card-state(2);
+                    swatch: root.card-swatch(2);
+                    expanded: root.expanded-row == 2;
+                    clicked => { root.tap-row(2); }
+                }
+                if root.expanded-row == 2 && root.row-visible(2): Rectangle {
+                    background: Theme.surface-2;
+                    HorizontalLayout {
+                        padding: Theme.spacing-md;
+                        spacing: Theme.spacing-sm;
+                        ActionPill {
+                            label: "Set as default";
+                            primary: true;
+                            clicked => { root.set-default(2); }
+                        }
+                        ActionPill {
+                            label: "Remove";
+                            danger: true;
+                            clicked => { root.remove-card(2); }
+                        }
+                    }
+                }
+                if root.row-visible(2) && root.row-visible(3): Divider { }
+
+                if root.row-visible(3): CardRow {
+                    brand: root.card-brand(3);
+                    last-four: root.card-last(3);
+                    expiry: root.card-expiry(3);
+                    state: root.card-state(3);
+                    swatch: root.card-swatch(3);
+                    expanded: root.expanded-row == 3;
+                    clicked => { root.tap-row(3); }
+                }
+                if root.expanded-row == 3 && root.row-visible(3): Rectangle {
+                    background: Theme.surface-2;
+                    HorizontalLayout {
+                        padding: Theme.spacing-md;
+                        spacing: Theme.spacing-sm;
+                        ActionPill {
+                            label: "Set as default";
+                            primary: true;
+                            clicked => { root.set-default(3); }
+                        }
+                        ActionPill {
+                            label: "Remove";
+                            danger: true;
+                            clicked => { root.remove-card(3); }
+                        }
+                    }
+                }
+
+                // Restore removed cards inline.
+                if root.rm0 || root.rm1 || root.rm2 || root.rm3: SectionHeader {
+                    text: "REMOVED · TAP TO RESTORE";
+                }
+                if root.rm0: CardRow {
+                    brand: root.card-brand(0);
+                    last-four: root.card-last(0);
+                    expiry: "removed";
+                    state: 0;
+                    swatch: root.card-swatch(0);
+                    clicked => { root.restore-card(0); }
+                }
+                if root.rm0 && (root.rm1 || root.rm2 || root.rm3): Divider { }
+                if root.rm1: CardRow {
+                    brand: root.card-brand(1);
+                    last-four: root.card-last(1);
+                    expiry: "removed";
+                    state: 0;
+                    swatch: root.card-swatch(1);
+                    clicked => { root.restore-card(1); }
+                }
+                if root.rm1 && (root.rm2 || root.rm3): Divider { }
+                if root.rm2: CardRow {
+                    brand: root.card-brand(2);
+                    last-four: root.card-last(2);
+                    expiry: "removed";
+                    state: 0;
+                    swatch: root.card-swatch(2);
+                    clicked => { root.restore-card(2); }
+                }
+                if root.rm2 && root.rm3: Divider { }
+                if root.rm3: CardRow {
+                    brand: root.card-brand(3);
+                    last-four: root.card-last(3);
+                    expiry: "removed";
+                    state: 0;
+                    swatch: root.card-swatch(3);
+                    clicked => { root.restore-card(3); }
+                }
+
+                SectionHeader { text: "ALTERNATIVES"; }
+                CardRow {
+                    brand: "Bank transfer";
+                    last-four: "3349";
+                    expiry: "primary checking";
+                    state: 0;
+                    swatch: Theme.accent-success;
+                    clicked => { root.tap-alt("Bank transfer · 3349"); }
+                }
+                Divider { }
+                CardRow {
+                    brand: "Klarna · Pay in 4";
+                    last-four: "active";
+                    expiry: "$1,200 limit · 0% interest";
+                    state: 0;
+                    swatch: #ffa8c5;
+                    clicked => { root.tap-alt("Klarna · Pay in 4"); }
                 }
             }
         }
-
-        SectionHeader { text: "OTHER  CARDS"; }
-        CardRow {
-            brand: "Mastercard";
-            last-four: "7782";
-            expiry: "05/26";
-            state: 1;
-            swatch: #b91c1c;
-        }
-        Divider { }
-        CardRow {
-            brand: "Amex";
-            last-four: "1009";
-            expiry: "12/27";
-            swatch: #1a1a1a;
-        }
-        Divider { }
-        CardRow {
-            brand: "Visa Debit";
-            last-four: "5510";
-            expiry: "02/25";
-            state: 2;
-            swatch: #4f8cff;
-        }
-
-        SectionHeader { text: "ALTERNATIVES"; }
-        CardRow {
-            brand: "Bank transfer";
-            last-four: "3349";
-            expiry: "primary checking";
-            state: 0;
-            swatch: Theme.accent-success;
-        }
-        Divider { }
-        CardRow {
-            brand: "Klarna · Pay in 4";
-            last-four: "active";
-            expiry: "$1,200 limit · 0% interest";
-            state: 0;
-            swatch: #ffa8c5;
-        }
-            }   // end inner VerticalLayout
-        }       // end ScrollView
 
         // Sticky add-new + manage row.
         Rectangle {
@@ -389,14 +757,17 @@ export component PaymentMethodPage inherits Window {
                 padding: Theme.spacing-md;
                 spacing: Theme.spacing-sm;
                 MobileButton {
-                    text: "Add new card or method";
+                    text: root.added-count > 0
+                        ? "Add new card or method (" + root.added-count + " pending)"
+                        : "Add new card or method";
                     tone: Tone.info;
-                    clicked => { root.add-card-pressed(); }
+                    clicked => { root.add-card(); }
                 }
                 HorizontalLayout {
                     alignment: center;
                     TextButton {
                         text: "Manage saved methods";
+                        clicked => { root.tap-manage(); }
                     }
                 }
             }

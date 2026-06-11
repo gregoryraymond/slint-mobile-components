@@ -1,29 +1,28 @@
 // CalendarPage
 // =====================================================================
-//
-// Month / week / day view with a today highlight and a list of events
-// for today + tomorrow. Pure SettingRow + FormSection discipline for
-// the event rows — every row sits at the same 56 px floor.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
 import { SegmentedControl } from "@mobile-components/segmented-control.slint";
 import { FormSection } from "@mobile-components/form-section.slint";
-import { SettingRow } from "@mobile-components/setting-row.slint";
 import { Divider } from "@mobile-components/divider.slint";
 import { ScrollView } from "std-widgets.slint";
 
-// One date cell in the month grid.
 component DateCell inherits Rectangle {
     in property <string> day;
     in property <bool> today: false;
+    in property <bool> selected: false;
     in property <bool> muted: false;
+    in property <bool> has-event: false;
+    callback clicked();
 
     width: 40px;
     height: 40px;
     border-radius: self.width / 2;
-    background: root.today ? Theme.primary : transparent;
+    background: root.selected ? Theme.primary : (root.today ? Theme.accent-info.with-alpha(0.30) : transparent);
+    border-width: root.today && !root.selected ? 2px : 0px;
+    border-color: Theme.accent-info;
 
     Text {
         x: 0;
@@ -31,13 +30,163 @@ component DateCell inherits Rectangle {
         width: parent.width;
         height: parent.height;
         text: root.day;
-        color: root.today ? Theme.on-primary
-             : root.muted ? Theme.muted
-             : Theme.on-surface;
+        color: root.selected ? Theme.on-primary : (root.muted ? Theme.muted : Theme.on-surface);
         font-size: Theme.font-size-body;
-        font-weight: root.today ? 700 : 500;
+        font-weight: root.selected || root.today ? 700 : 500;
         horizontal-alignment: center;
         vertical-alignment: center;
+    }
+    if root.has-event && !root.muted: Rectangle {
+        x: (parent.width - 6px) / 2;
+        y: parent.height - 8px;
+        width: 6px;
+        height: 6px;
+        border-radius: 3px;
+        background: root.selected ? Theme.on-primary : Theme.accent-warning;
+    }
+    TouchArea {
+        enabled: !root.muted;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component EventRow inherits Rectangle {
+    in property <string> time-str;
+    in property <string> title;
+    in property <string> place;
+    in property <int> tone-i: 0;
+    in property <bool> accepted: false;
+    in property <bool> declined: false;
+    callback row-clicked();
+    callback accept-clicked();
+    callback decline-clicked();
+
+    horizontal-stretch: 1;
+    min-height: 64px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+    opacity: root.declined ? 0.55 : 1.0;
+
+    ta := TouchArea {
+        clicked => {
+            root.row-clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 32px;
+                height: 32px;
+                border-radius: 8px;
+                background: root.tone-i == 1 ? Theme.accent-info.with-alpha(0.22) : (root.tone-i == 2 ? Theme.accent-warning.with-alpha(0.22) : (root.tone-i == 3 ? Theme.accent-success.with-alpha(0.22) : (root.tone-i == 4 ? Theme.accent-danger.with-alpha(0.22) : Theme.surface-2)));
+                Image {
+                    width: 16px;
+                    height: 16px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: @image-url("@mobile-components/icons/bell.svg");
+                    colorize: root.tone-i == 1 ? Theme.accent-info : (root.tone-i == 2 ? Theme.accent-warning : (root.tone-i == 3 ? Theme.accent-success : (root.tone-i == 4 ? Theme.accent-danger : Theme.muted)));
+                    image-fit: contain;
+                }
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: (root.accepted ? "✓ " : "") + root.time-str + "  " + root.title + (root.declined ? " · declined" : "");
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 700;
+                overflow: elide;
+            }
+            Text {
+                text: root.place;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+                overflow: elide;
+            }
+        }
+        Rectangle {
+            width: 32px;
+            height: 32px;
+            border-radius: 16px;
+            background: root.accepted ? Theme.accent-success.with-alpha(0.22) : Theme.surface-2;
+            Text {
+                text: "✓";
+                color: root.accepted ? Theme.accent-success : Theme.muted;
+                font-size: 14px;
+                font-weight: 800;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                width: parent.width;
+                height: parent.height;
+            }
+            TouchArea {
+                clicked => {
+                    root.accept-clicked();
+                }
+            }
+        }
+        Rectangle {
+            width: 32px;
+            height: 32px;
+            border-radius: 16px;
+            background: root.declined ? Theme.accent-danger.with-alpha(0.22) : Theme.surface-2;
+            Text {
+                text: "✕";
+                color: root.declined ? Theme.accent-danger : Theme.muted;
+                font-size: 14px;
+                font-weight: 800;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                width: parent.width;
+                height: parent.height;
+            }
+            TouchArea {
+                clicked => {
+                    root.decline-clicked();
+                }
+            }
+        }
+    }
+}
+
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.destructive ? Theme.accent-danger : Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+        }
     }
 }
 
@@ -46,10 +195,52 @@ export component CalendarPage inherits Window {
     preferred-height: 892px;
 
     in-out property <int> view-index: 0;
+    in-out property <int> month: 4; // 0..11 (May = 4)
+    in-out property <int> selected-day: 17;
+    in-out property <bool> a-accepted: true;
+    in-out property <bool> a-declined: false;
+    in-out property <bool> b-accepted: false;
+    in-out property <bool> b-declined: false;
+    in-out property <bool> c-accepted: true;
+    in-out property <bool> c-declined: false;
+    in-out property <bool> d-accepted: false;
+    in-out property <bool> d-declined: false;
+    in-out property <bool> e-accepted: false;
+    in-out property <bool> e-declined: false;
+    in-out property <bool> f-accepted: false;
+    in-out property <bool> f-declined: false;
+    in-out property <int> custom-events: 0;
+    in-out property <bool> sheet-open: false;
+    in-out property <bool> confirm-clear: false;
+    in-out property <string> status-msg: "";
+    in-out property <bool> status-success: false;
+    in-out property <bool> status-danger: false;
 
     callback back-pressed();
     callback add-pressed();
     callback event-pressed(string);
+
+    function month-name() -> string {
+        return root.month == 0 ? "January" : (root.month == 1 ? "February" : (root.month == 2 ? "March" : (root.month == 3 ? "April" : (root.month == 4 ? "May" : (root.month == 5 ? "June" : (root.month == 6 ? "July" : (root.month == 7 ? "August" : (root.month == 8 ? "September" : (root.month == 9 ? "October" : (root.month == 10 ? "November" : "December"))))))))));
+    }
+    function header-title() -> string {
+        return root.month-name() + " 2026 · " + (root.view-index == 0 ? "Month" : (root.view-index == 1 ? "Week" : "Day"));
+    }
+    function set-status(m: string, ok: bool, bad: bool) {
+        root.status-msg = m;
+        root.status-success = ok;
+        root.status-danger = bad;
+    }
+    function event-day-events() -> bool {
+        // Days with events (visual dots): 8, 12, 15, 17, 21, 24, 29.
+        return root.selected-day == 8 || root.selected-day == 12 || root.selected-day == 15 || root.selected-day == 17 || root.selected-day == 21 || root.selected-day == 24 || root.selected-day == 29;
+    }
+    function has-event(d: string) -> bool {
+        return d == "8" || d == "12" || d == "15" || d == "17" || d == "21" || d == "24" || d == "29";
+    }
+    function today-section-title() -> string {
+        return (root.selected-day == 17 ? "TODAY · " : "") + root.month-name() + " " + root.selected-day + (root.event-day-events() ? "" : " · no events");
+    }
 
     background: Theme.background;
 
@@ -57,12 +248,34 @@ export component CalendarPage inherits Window {
         spacing: 0;
 
         AppBar {
-            title: "May 2026";
+            title: root.header-title();
             title-style: HeadingStyle.serif-display;
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
-            trailing-icon: @image-url("@mobile-components/icons/plus.svg");
-            leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.add-pressed(); }
+            trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
+            leading-pressed => {
+                root.back-pressed();
+            }
+            trailing-pressed => {
+                root.sheet-open = true;
+            }
+        }
+
+        // Status banner.
+        if !root.status-msg.is-empty: Rectangle {
+            height: 28px;
+            background: root.status-success ? Theme.accent-success.with-alpha(0.16) : (root.status-danger ? Theme.accent-danger.with-alpha(0.16) : Theme.surface-2);
+            HorizontalLayout {
+                alignment: center;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.status-msg;
+                        color: root.status-success ? Theme.accent-success : (root.status-danger ? Theme.accent-danger : Theme.on-surface);
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                    }
+                }
+            }
         }
 
         ScrollView {
@@ -81,39 +294,101 @@ export component CalendarPage inherits Window {
                     SegmentedControl {
                         options: ["Month", "Week", "Day"];
                         selected-index <=> root.view-index;
+                        changed(i) => {
+                            root.set-status("View: " + (i == 0 ? "Month" : (i == 1 ? "Week" : "Day")), true, false);
+                        }
+                    }
+                }
+
+                // ----- Month navigation row -------------------------
+                HorizontalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    alignment: stretch;
+                    Rectangle {
+                        horizontal-stretch: 0;
+                        width: 32px;
+                        height: 32px;
+                        border-radius: 16px;
+                        background: Theme.surface-2;
+                        Text {
+                            text: "◀";
+                            color: Theme.on-surface;
+                            font-size: 14px;
+                            font-weight: 800;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
+                        }
+                        TouchArea {
+                            clicked => {
+                                root.month = mod(root.month + 11, 12);
+                                root.set-status(root.month-name(), true, false);
+                            }
+                        }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        horizontal-stretch: 1;
+                        Text {
+                            text: root.month-name() + " 2026";
+                            color: Theme.on-surface;
+                            font-size: Theme.font-size-body-large;
+                            font-weight: 800;
+                            horizontal-alignment: center;
+                        }
+                    }
+                    Rectangle {
+                        horizontal-stretch: 0;
+                        width: 32px;
+                        height: 32px;
+                        border-radius: 16px;
+                        background: Theme.surface-2;
+                        Text {
+                            text: "▶";
+                            color: Theme.on-surface;
+                            font-size: 14px;
+                            font-weight: 800;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
+                        }
+                        TouchArea {
+                            clicked => {
+                                root.month = mod(root.month + 1, 12);
+                                root.set-status(root.month-name(), true, false);
+                            }
+                        }
                     }
                 }
 
                 // ----- Month grid -----------------------------------
-                VerticalLayout {
+                if root.view-index == 0: VerticalLayout {
                     padding-left: Theme.spacing-md;
                     padding-right: Theme.spacing-md;
                     spacing: Theme.spacing-xs;
 
-                    // Weekday header row.
                     HorizontalLayout {
                         spacing: 0;
                         alignment: stretch;
-                        for label in ["M", "T", "W", "T", "F", "S", "S"]:
-                            VerticalLayout {
-                                horizontal-stretch: 1;
+                        for label in ["M", "T", "W", "T", "F", "S", "S"]: VerticalLayout {
+                            horizontal-stretch: 1;
+                            alignment: center;
+                            HorizontalLayout {
                                 alignment: center;
-                                HorizontalLayout {
-                                    alignment: center;
-                                    Text {
-                                        text: label;
-                                        color: Theme.muted;
-                                        font-size: 10px;
-                                        font-weight: 700;
-                                        letter-spacing: 0.5px;
-                                    }
+                                Text {
+                                    text: label;
+                                    color: Theme.muted;
+                                    font-size: 10px;
+                                    font-weight: 700;
+                                    letter-spacing: 0.5px;
                                 }
                             }
+                        }
                     }
 
-                    // 5 rows × 7 columns covers May 2026.
-                    // May 1 2026 is a Friday → leading 4 blanks
-                    // (Mon..Thu), then 1..31.
                     for row in [
                         ["", "", "", "", "1", "2", "3"],
                         ["4", "5", "6", "7", "8", "9", "10"],
@@ -130,111 +405,419 @@ export component CalendarPage inherits Window {
                                 alignment: center;
                                 DateCell {
                                     day: day;
-                                    today: day == "17";
+                                    today: day == "17" && root.month == 4;
+                                    selected: day == "" + root.selected-day && root.month == 4 && day != "";
                                     muted: day == "";
+                                    has-event: root.has-event(day);
+                                    clicked => {
+                                        root.selected-day = day.to-float();
+                                        root.set-status("Selected May " + day, true, false);
+                                    }
                                 }
                             }
                         }
                     }
                 }
 
-                // ----- Today's events -------------------------------
-                FormSection {
-                    title: "TODAY · MAY 17";
-
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/bell.svg");
-                        tone: Tone.info;
-                        title: "09:00  Team sync";
-                        subtitle: "Conference Room A · 30 min";
-                        clicked => { root.event-pressed("sync"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
-                        }
-                    }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/heart.svg");
-                        tone: Tone.warning;
-                        title: "11:30  Design review";
-                        subtitle: "Zoom · 45 min · with Atlas team";
-                        clicked => { root.event-pressed("review"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
-                        }
-                    }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/pin.svg");
-                        tone: Tone.success;
-                        title: "13:00  Lunch with Sam";
-                        subtitle: "Le Pain Quotidien · 60 min";
-                        clicked => { root.event-pressed("lunch"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
-                        }
-                    }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/star.svg");
-                        tone: Tone.info;
-                        title: "16:00  1:1 with Maya";
-                        subtitle: "Meet · 30 min";
-                        clicked => { root.event-pressed("oneonone"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
+                // ----- Week view -------------------------------------
+                if root.view-index == 1: VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    spacing: Theme.spacing-xs;
+                    HorizontalLayout {
+                        spacing: Theme.spacing-xs;
+                        for day[i] in [
+                            { d: "Mon 11", n: 11 },
+                            { d: "Tue 12", n: 12 },
+                            { d: "Wed 13", n: 13 },
+                            { d: "Thu 14", n: 14 },
+                            { d: "Fri 15", n: 15 },
+                            { d: "Sat 16", n: 16 },
+                            { d: "Sun 17", n: 17 },
+                        ]: Rectangle {
+                            horizontal-stretch: 1;
+                            height: 60px;
+                            border-radius: 8px;
+                            background: root.selected-day == day.n ? Theme.primary : Theme.surface-1;
+                            VerticalLayout {
+                                alignment: center;
+                                Text {
+                                    text: day.d;
+                                    color: root.selected-day == day.n ? Theme.on-primary : Theme.on-surface;
+                                    font-size: 10px;
+                                    font-weight: 700;
+                                    horizontal-alignment: center;
+                                }
+                                if root.has-event(day.n == 17 ? "17" : (day.n == 12 ? "12" : (day.n == 15 ? "15" : ""))): Rectangle {
+                                    width: 6px;
+                                    height: 6px;
+                                    border-radius: 3px;
+                                    background: root.selected-day == day.n ? Theme.on-primary : Theme.accent-warning;
+                                }
+                            }
+                            TouchArea {
+                                clicked => {
+                                    root.selected-day = day.n;
+                                    root.set-status("Selected May " + day.n, true, false);
+                                }
+                            }
                         }
                     }
                 }
 
-                // ----- Tomorrow -------------------------------------
-                FormSection {
-                    title: "TOMORROW";
+                // ----- Day view (timeline) ---------------------------
+                if root.view-index == 2: VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    spacing: 0;
+                    for hour[i] in [9, 11, 13, 16]: Rectangle {
+                        min-height: 56px;
+                        HorizontalLayout {
+                            padding: Theme.spacing-sm;
+                            spacing: Theme.spacing-md;
+                            VerticalLayout {
+                                alignment: center;
+                                width: 48px;
+                                Text {
+                                    text: hour + ":00";
+                                    color: Theme.muted;
+                                    font-family: "JetBrains Mono";
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 700;
+                                }
+                            }
+                            Rectangle {
+                                horizontal-stretch: 1;
+                                background: i == 0 ? Theme.accent-info.with-alpha(0.22) : (i == 1 ? Theme.accent-warning.with-alpha(0.22) : (i == 2 ? Theme.accent-success.with-alpha(0.22) : Theme.accent-info.with-alpha(0.22)));
+                                border-radius: 8px;
+                                VerticalLayout {
+                                    padding: Theme.spacing-sm;
+                                    Text {
+                                        text: i == 0 ? "Team sync · 30 min" : (i == 1 ? "Design review · 45 min" : (i == 2 ? "Lunch with Sam · 60 min" : "1:1 with Maya · 30 min"));
+                                        color: Theme.on-surface;
+                                        font-size: Theme.font-size-body;
+                                        font-weight: 700;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
 
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/bell.svg");
-                        tone: Tone.info;
-                        title: "08:30  Sprint planning";
-                        subtitle: "Conference Room B · 90 min";
-                        clicked => { root.event-pressed("planning"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
+                if root.event-day-events(): FormSection {
+                    title: root.today-section-title();
+
+                    EventRow {
+                        time-str: "09:00";
+                        title: "Team sync";
+                        place: "Conference Room A · 30 min";
+                        tone-i: 1;
+                        accepted: root.a-accepted;
+                        declined: root.a-declined;
+                        row-clicked => {
+                            root.set-status("Opened Team sync", true, false);
+                            root.event-pressed("sync");
+                        }
+                        accept-clicked => {
+                            root.a-accepted = !root.a-accepted;
+                            if (root.a-accepted) {
+                                root.a-declined = false;
+                            }
+                            root.set-status(root.a-accepted ? "Accepted" : "Cleared", root.a-accepted, false);
+                        }
+                        decline-clicked => {
+                            root.a-declined = !root.a-declined;
+                            if (root.a-declined) {
+                                root.a-accepted = false;
+                            }
+                            root.set-status(root.a-declined ? "Declined" : "Restored", false, root.a-declined);
                         }
                     }
                     Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/heart.svg");
-                        tone: Tone.danger;
-                        title: "15:00  Doctor's appointment";
-                        subtitle: "Clinique Saint-Jean · 45 min";
-                        clicked => { root.event-pressed("doctor"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
+
+                    EventRow {
+                        time-str: "11:30";
+                        title: "Design review";
+                        place: "Zoom · 45 min · with Atlas team";
+                        tone-i: 2;
+                        accepted: root.b-accepted;
+                        declined: root.b-declined;
+                        row-clicked => {
+                            root.set-status("Opened Design review", true, false);
+                            root.event-pressed("review");
                         }
+                        accept-clicked => {
+                            root.b-accepted = !root.b-accepted;
+                            if (root.b-accepted) {
+                                root.b-declined = false;
+                            }
+                            root.set-status(root.b-accepted ? "Accepted" : "Cleared", root.b-accepted, false);
+                        }
+                        decline-clicked => {
+                            root.b-declined = !root.b-declined;
+                            if (root.b-declined) {
+                                root.b-accepted = false;
+                            }
+                            root.set-status(root.b-declined ? "Declined" : "Restored", false, root.b-declined);
+                        }
+                    }
+                    Divider { }
+
+                    EventRow {
+                        time-str: "13:00";
+                        title: "Lunch with Sam";
+                        place: "Le Pain Quotidien · 60 min";
+                        tone-i: 3;
+                        accepted: root.c-accepted;
+                        declined: root.c-declined;
+                        row-clicked => {
+                            root.set-status("Opened Lunch", true, false);
+                            root.event-pressed("lunch");
+                        }
+                        accept-clicked => {
+                            root.c-accepted = !root.c-accepted;
+                            if (root.c-accepted) {
+                                root.c-declined = false;
+                            }
+                            root.set-status(root.c-accepted ? "Accepted" : "Cleared", root.c-accepted, false);
+                        }
+                        decline-clicked => {
+                            root.c-declined = !root.c-declined;
+                            if (root.c-declined) {
+                                root.c-accepted = false;
+                            }
+                            root.set-status(root.c-declined ? "Declined" : "Restored", false, root.c-declined);
+                        }
+                    }
+                    Divider { }
+
+                    EventRow {
+                        time-str: "16:00";
+                        title: "1:1 with Maya";
+                        place: "Meet · 30 min";
+                        tone-i: 1;
+                        accepted: root.d-accepted;
+                        declined: root.d-declined;
+                        row-clicked => {
+                            root.set-status("Opened 1:1", true, false);
+                            root.event-pressed("oneonone");
+                        }
+                        accept-clicked => {
+                            root.d-accepted = !root.d-accepted;
+                            if (root.d-accepted) {
+                                root.d-declined = false;
+                            }
+                            root.set-status(root.d-accepted ? "Accepted" : "Cleared", root.d-accepted, false);
+                        }
+                        decline-clicked => {
+                            root.d-declined = !root.d-declined;
+                            if (root.d-declined) {
+                                root.d-accepted = false;
+                            }
+                            root.set-status(root.d-declined ? "Declined" : "Restored", false, root.d-declined);
+                        }
+                    }
+                }
+
+                FormSection {
+                    title: "TOMORROW · MAY 18";
+
+                    EventRow {
+                        time-str: "08:30";
+                        title: "Sprint planning";
+                        place: "Conference Room B · 90 min";
+                        tone-i: 1;
+                        accepted: root.e-accepted;
+                        declined: root.e-declined;
+                        row-clicked => {
+                            root.set-status("Opened Sprint planning", true, false);
+                            root.event-pressed("planning");
+                        }
+                        accept-clicked => {
+                            root.e-accepted = !root.e-accepted;
+                            if (root.e-accepted) {
+                                root.e-declined = false;
+                            }
+                            root.set-status(root.e-accepted ? "Accepted" : "Cleared", root.e-accepted, false);
+                        }
+                        decline-clicked => {
+                            root.e-declined = !root.e-declined;
+                            if (root.e-declined) {
+                                root.e-accepted = false;
+                            }
+                            root.set-status(root.e-declined ? "Declined" : "Restored", false, root.e-declined);
+                        }
+                    }
+                    Divider { }
+
+                    EventRow {
+                        time-str: "15:00";
+                        title: "Doctor's appointment";
+                        place: "Clinique Saint-Jean · 45 min";
+                        tone-i: 4;
+                        accepted: root.f-accepted;
+                        declined: root.f-declined;
+                        row-clicked => {
+                            root.set-status("Opened Doctor", true, false);
+                            root.event-pressed("doctor");
+                        }
+                        accept-clicked => {
+                            root.f-accepted = !root.f-accepted;
+                            if (root.f-accepted) {
+                                root.f-declined = false;
+                            }
+                            root.set-status(root.f-accepted ? "Accepted" : "Cleared", root.f-accepted, false);
+                        }
+                        decline-clicked => {
+                            root.f-declined = !root.f-declined;
+                            if (root.f-declined) {
+                                root.f-accepted = false;
+                            }
+                            root.set-status(root.f-declined ? "Declined" : "Restored", false, root.f-declined);
+                        }
+                    }
+                }
+
+                // Custom-events counter.
+                if root.custom-events > 0: VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    Rectangle {
+                        background: Theme.accent-success.with-alpha(0.16);
+                        border-radius: Theme.radius-md;
+                        height: 44px;
+                        HorizontalLayout {
+                            padding: Theme.spacing-md;
+                            VerticalLayout {
+                                alignment: center;
+                                horizontal-stretch: 1;
+                                Text {
+                                    text: "Added " + root.custom-events + " event" + (root.custom-events == 1 ? "" : "s") + " this session";
+                                    color: Theme.accent-success;
+                                    font-size: Theme.font-size-body;
+                                    font-weight: 700;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ===================== Bottom sheet =====================
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+                root.confirm-clear = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: Theme.surface-2;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.muted;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: "Calendar menu";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 700;
+                    }
+                }
+                SheetRow {
+                    label: "Add event on May " + root.selected-day;
+                    clicked => {
+                        root.custom-events = root.custom-events + 1;
+                        root.set-status("Event added", true, false);
+                        root.sheet-open = false;
+                        root.add-pressed();
+                    }
+                }
+                SheetRow {
+                    label: "Jump to today (May 17)";
+                    clicked => {
+                        root.month = 4;
+                        root.selected-day = 17;
+                        root.set-status("Jumped to today", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Accept all visible";
+                    clicked => {
+                        root.a-accepted = true;
+                        root.b-accepted = true;
+                        root.c-accepted = true;
+                        root.d-accepted = true;
+                        root.e-accepted = true;
+                        root.f-accepted = true;
+                        root.a-declined = false;
+                        root.b-declined = false;
+                        root.c-declined = false;
+                        root.d-declined = false;
+                        root.e-declined = false;
+                        root.f-declined = false;
+                        root.set-status("All events accepted", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                Divider { }
+
+                SheetRow {
+                    label: root.confirm-clear ? "Confirm: clear RSVPs" : "Clear all RSVPs";
+                    destructive: true;
+                    clicked => {
+                        if (root.confirm-clear) {
+                            root.a-accepted = false;
+                            root.b-accepted = false;
+                            root.c-accepted = false;
+                            root.d-accepted = false;
+                            root.e-accepted = false;
+                            root.f-accepted = false;
+                            root.a-declined = false;
+                            root.b-declined = false;
+                            root.c-declined = false;
+                            root.d-declined = false;
+                            root.e-declined = false;
+                            root.f-declined = false;
+                            root.custom-events = 0;
+                            root.set-status("RSVPs cleared", false, true);
+                            root.sheet-open = false;
+                            root.confirm-clear = false;
+                        } else {
+                            root.confirm-clear = true;
+                        }
+                    }
+                }
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.sheet-open = false;
+                        root.confirm-clear = false;
                     }
                 }
             }

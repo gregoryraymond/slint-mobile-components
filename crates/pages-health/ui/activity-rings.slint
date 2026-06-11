@@ -2,27 +2,17 @@
 // =====================================================================
 //
 // Three concentric activity rings (Move / Exercise / Stand) + a stat
-// grid + a recent-workouts list. Demonstrates how to compose a multi-
-// arc ring visualisation in pure Slint without an SVG dependency:
-// each ring is a circle outline (full ring at low opacity) plus a
-// `rotation-angle`-rotated wedge that paints the "progress" arc.
+// grid + a recent-workouts list. Demonstrates:
 //
-// Pure-Slint approximation note
-// -----------------------------
-// Slint doesn't ship an arc primitive — the visualisation here is a
-// stylised three-band concentric ring made of stacked Rectangles with
-// circular border-radius. Real activity-ring SVGs would carry the
-// arc-segment-by-rotation trick; for this template the goal is
-// "looks like the ring at-a-glance" rather than animating progress.
-//
-// Layout
-// ------
-//
-//   AppBar — "Activity" with profile trailing
-//   Rings hero — three concentric rings + ring-legend (Move/Exercise/Stand)
-//   Stat grid — 2×2: Steps / Distance / Calories / Heart rate
-//   Section header: "RECENT WORKOUTS"
-//   Workout row × N
+//   - Ring progress derives from live state (Move-kcal / Exercise-min /
+//     Stand-hr) — quick-add workout buttons bump those stats and the
+//     rings + stat tiles update.
+//   - Tappable ring-legend rows highlight one ring and report the
+//     current value in the status banner.
+//   - Quick-add workout strip (Run / Lift / Yoga / Walk +5 min) bumps
+//     stats and prepends a "fresh" workout row to the recent list.
+//   - Recent-workout rows are tappable to expand Repeat / Share / Hide
+//     action pills.
 
 import { ScrollView } from "std-widgets.slint";
 import { Theme, Tone } from "@mobile-theme/theme.slint";
@@ -31,11 +21,6 @@ import { SectionHeader } from "@mobile-components/section-header.slint";
 import { Divider } from "@mobile-components/divider.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
 
-// One concentric ring band. `track-color` sits behind the progress arc;
-// `fill-color` is the ring's accent. Since Slint doesn't ship an arc
-// primitive, the "incomplete" portion is approximated by clipping the
-// fill rectangle with the muted track behind it — the visual reads as
-// a ring at-a-glance rather than a precise arc.
 component RingBand inherits Rectangle {
     in property <length> radius;
     in property <length> stroke: 18px;
@@ -46,7 +31,6 @@ component RingBand inherits Rectangle {
     width: 2 * root.radius;
     height: 2 * root.radius;
 
-    // Track (full ring, low opacity).
     Rectangle {
         width: parent.width;
         height: parent.height;
@@ -55,12 +39,6 @@ component RingBand inherits Rectangle {
         border-color: root.track-color;
         background: transparent;
     }
-    // Progress arc — approximated by a clip-rotated bright ring on top
-    // (we draw the full circle in the fill colour, then mask the
-    // remaining portion with the track via opacity blending). This
-    // intentionally renders as a "saturation tinted" ring rather than
-    // a strict arc; precise arc rendering needs a path primitive that
-    // isn't available in the Slint version this library targets.
     Rectangle {
         width: parent.width;
         height: parent.height;
@@ -69,17 +47,29 @@ component RingBand inherits Rectangle {
         border-color: root.fill-color;
         opacity: root.progress;
         background: transparent;
+        animate opacity { duration: Theme.motion-fast; }
     }
 }
 
-// One small ring-legend row — "● Move  420 / 500".
+// Tappable legend row with optional active-highlight background.
 component RingLegend inherits Rectangle {
     in property <string> label;
     in property <string> value;
     in property <color> dot-color;
+    in property <bool> active: false;
+    callback clicked();
 
-    height: 22px;
+    horizontal-stretch: 1;
+    height: 30px;
+    border-radius: 6px;
+    background: root.active ? Theme.surface-2
+        : touch.pressed ? Theme.surface-pressed
+        : transparent;
+    animate background { duration: Theme.motion-fast; }
+
     HorizontalLayout {
+        padding-left: Theme.spacing-sm;
+        padding-right: Theme.spacing-sm;
         spacing: Theme.spacing-sm;
         alignment: start;
         VerticalLayout {
@@ -93,9 +83,9 @@ component RingLegend inherits Rectangle {
         }
         Text {
             text: root.label;
-            color: Theme.on-background;
+            color: root.active ? Theme.accent-info : Theme.on-background;
             font-size: Theme.font-size-body;
-            font-weight: 600;
+            font-weight: root.active ? 800 : 600;
             vertical-alignment: center;
             width: 80px;
         }
@@ -107,17 +97,20 @@ component RingLegend inherits Rectangle {
             horizontal-stretch: 1;
         }
     }
+    touch := TouchArea { clicked => { root.clicked(); } }
 }
 
-// One stat tile in the 2×2 grid.
+// One stat tile — tappable.
 component StatTile inherits Rectangle {
     in property <string> label;
     in property <string> value;
     in property <string> unit;
     in property <Tone> tone: Tone.default;
+    callback clicked();
 
     height: 96px;
-    background: Theme.surface-1;
+    background: touch.pressed ? Theme.surface-pressed : Theme.surface-1;
+    animate background { duration: Theme.motion-fast; }
     border-radius: Theme.radius-md;
     drop-shadow-blur: Theme.elevation-1-blur;
     drop-shadow-color: Theme.elevation-1-color;
@@ -142,8 +135,8 @@ component StatTile inherits Rectangle {
                 color:
                       root.tone == Tone.success ? Theme.accent-success
                     : root.tone == Tone.warning ? Theme.accent-warning
-                    : root.tone == Tone.danger  ? Theme.accent-danger
-                    : root.tone == Tone.info    ? Theme.accent-info
+                    : root.tone == Tone.danger ? Theme.accent-danger
+                    : root.tone == Tone.info ? Theme.accent-info
                     : Theme.on-surface;
                 font-size: Theme.font-size-headline;
                 font-weight: 700;
@@ -159,17 +152,29 @@ component StatTile inherits Rectangle {
             }
         }
     }
+    touch := TouchArea { clicked => { root.clicked(); } }
 }
 
-// One recent-workout row.
+// One workout row — tappable.
 component WorkoutRow inherits Rectangle {
     in property <string> name;
     in property <string> when;
     in property <string> duration;
     in property <string> calories;
     in property <color> accent: Theme.accent-success;
+    in property <bool> expanded: false;
+    in property <bool> hidden-row: false;
+    in property <bool> fresh: false;
+    callback clicked();
 
     min-height: 64px;
+    background: root.expanded ? Theme.surface-2
+        : root.fresh ? Theme.accent-success.with-alpha(0.12)
+        : touch.pressed ? Theme.surface-pressed
+        : transparent;
+    opacity: root.hidden-row ? 0.4 : 1.0;
+    animate background { duration: Theme.motion-fast; }
+    animate opacity { duration: Theme.motion-fast; }
 
     HorizontalLayout {
         padding: Theme.spacing-md;
@@ -199,11 +204,49 @@ component WorkoutRow inherits Rectangle {
             horizontal-stretch: 1;
             alignment: center;
             spacing: 2px;
-            Text {
-                text: root.name;
-                color: Theme.on-surface;
-                font-size: Theme.font-size-body-large;
-                font-weight: 500;
+            HorizontalLayout {
+                spacing: Theme.spacing-xs;
+                Text {
+                    text: root.name;
+                    color: Theme.on-surface;
+                    font-size: Theme.font-size-body-large;
+                    font-weight: 500;
+                    vertical-alignment: center;
+                }
+                if root.fresh: Rectangle {
+                    width: nm.preferred-width + 12px;
+                    height: 18px;
+                    border-radius: 4px;
+                    background: Theme.accent-success;
+                    nm := Text {
+                        text: "NEW";
+                        color: Theme.on-primary;
+                        font-size: 9px;
+                        font-weight: 800;
+                        letter-spacing: 0.5px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                }
+                if root.hidden-row: Rectangle {
+                    width: hm.preferred-width + 12px;
+                    height: 18px;
+                    border-radius: 4px;
+                    background: Theme.muted;
+                    hm := Text {
+                        text: "HIDDEN";
+                        color: Theme.on-primary;
+                        font-size: 9px;
+                        font-weight: 800;
+                        letter-spacing: 0.5px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                }
             }
             Text {
                 text: root.when + " · " + root.duration;
@@ -223,6 +266,62 @@ component WorkoutRow inherits Rectangle {
             }
         }
     }
+    touch := TouchArea { clicked => { root.clicked(); } }
+}
+
+// Quick-add pill.
+component QuickAddPill inherits Rectangle {
+    in property <string> label;
+    in property <color> accent;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    height: 48px;
+    border-radius: Theme.radius-md;
+    background: touch.pressed ? root.accent.darker(0.15) : root.accent;
+    animate background { duration: Theme.motion-fast; }
+
+    Text {
+        text: root.label;
+        color: Theme.on-primary;
+        font-size: Theme.font-size-caption;
+        font-weight: 800;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: parent.width;
+        height: parent.height;
+    }
+    touch := TouchArea { clicked => { root.clicked(); } }
+}
+
+// Action pill for the expanded-row strip.
+component ActionPill inherits Rectangle {
+    in property <string> label;
+    in property <bool> primary: false;
+    in property <bool> danger: false;
+    callback clicked();
+
+    height: 32px;
+    horizontal-stretch: 1;
+    border-radius: 16px;
+    background: root.danger ? Theme.accent-danger
+        : root.primary ? Theme.accent-info
+        : Theme.surface-1;
+    border-width: 1px;
+    border-color: (root.danger || root.primary) ? transparent : Theme.outline;
+    animate background { duration: Theme.motion-fast; }
+
+    Text {
+        text: root.label;
+        color: (root.danger || root.primary) ? Theme.on-primary : Theme.on-surface;
+        font-size: Theme.font-size-caption;
+        font-weight: 700;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: parent.width;
+        height: parent.height;
+    }
+    TouchArea { clicked => { root.clicked(); } }
 }
 
 export component ActivityRingsPage inherits Window {
@@ -231,6 +330,184 @@ export component ActivityRingsPage inherits Window {
     in property <string> greeting: "Good afternoon";
     callback back-pressed();
     callback profile-pressed();
+    callback workout-added(string);
+    callback workout-pressed(string);
+    callback workout-hidden(string);
+
+    // ----- Interactive state -----
+    // Targets: Move 500 kcal, Exercise 30 min, Stand 12 hr.
+    private property <int> move-kcal: 420;
+    private property <int> exercise-min: 19;
+    private property <int> stand-hr: 11;
+    private property <int> steps: 7842;
+    private property <int> distance-tenths: 54; // 5.4 km
+    private property <int> avg-hr: 94;
+    private property <int> highlighted-ring: -1; // -1 / 0=Move / 1=Exercise / 2=Stand
+    private property <int> expanded-workout: -1;
+    private property <bool> hw0: false;
+    private property <bool> hw1: false;
+    private property <bool> hw2: false;
+    // Up to 3 fresh workouts (kind 0=Run 1=Lift 2=Yoga 3=Walk).
+    private property <int> fw-count: 0;
+    private property <int> fw1-kind: 0;
+    private property <int> fw1-kcal: 0;
+    private property <int> fw2-kind: 0;
+    private property <int> fw2-kcal: 0;
+    private property <int> fw3-kind: 0;
+    private property <int> fw3-kcal: 0;
+    private property <string> status-msg: "Tap a ring legend · use Quick add to log a 5-minute session";
+    private property <bool> status-is-success: false;
+    private property <bool> status-is-danger: false;
+
+    // ----- Derived helpers -----
+    function move-progress() -> float { return min(1.0, root.move-kcal / 500.0); }
+    function exercise-progress() -> float {
+        return min(1.0, root.exercise-min / 30.0);
+    }
+    function stand-progress() -> float { return min(1.0, root.stand-hr / 12.0); }
+    function distance-display() -> string {
+        return floor(root.distance-tenths / 10) + "." + mod(root.distance-tenths, 10);
+    }
+    function zpad3(n: int) -> string {
+        return n < 10 ? "00" + n : n < 100 ? "0" + n : "" + n;
+    }
+    function add-commas(n: int) -> string {
+        return n < 1000 ? "" + n
+            : floor(n / 1000) + "," + root.zpad3(mod(n, 1000));
+    }
+    function fw-name(k: int) -> string {
+        if (k == 0) { return "Quick run"; }
+        if (k == 1) { return "Quick lift"; }
+        if (k == 2) { return "Quick yoga"; }
+        return "Quick walk";
+    }
+    function fw-accent(k: int) -> color {
+        if (k == 0) { return Theme.accent-danger; }
+        if (k == 1) { return Theme.accent-success; }
+        if (k == 2) { return Theme.accent-info; }
+        return Theme.accent-warning;
+    }
+
+    // ----- Mutations -----
+    public function highlight-ring(i: int) {
+        root.highlighted-ring = root.highlighted-ring == i ? -1 : i;
+        if (root.highlighted-ring == 0) {
+            root.status-msg = "Move · " + root.move-kcal + " / 500 kcal";
+        } else if (root.highlighted-ring == 1) {
+            root.status-msg = "Exercise · " + root.exercise-min + " / 30 min";
+        } else if (root.highlighted-ring == 2) {
+            root.status-msg = "Stand · " + root.stand-hr + " / 12 hr";
+        } else {
+            root.status-msg = "Highlight cleared";
+        }
+        root.status-is-success = root.highlighted-ring >= 0;
+        root.status-is-danger = false;
+    }
+    public function tap-stat(label: string, value: string) {
+        root.status-msg = label + " · " + value;
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function quick-add(kind: int) {
+        // Bump stats per workout kind.
+        if (kind == 0) {
+            // Run +5
+            root.move-kcal = root.move-kcal + 50;
+            root.exercise-min = root.exercise-min + 5;
+            root.steps = root.steps + 600;
+            root.distance-tenths = root.distance-tenths + 5;
+            root.avg-hr = root.avg-hr + 1;
+        }
+        if (kind == 1) {
+            // Lift +5
+            root.move-kcal = root.move-kcal + 35;
+            root.exercise-min = root.exercise-min + 5;
+            root.avg-hr = root.avg-hr + 2;
+        }
+        if (kind == 2) {
+            // Yoga +5
+            root.move-kcal = root.move-kcal + 20;
+            root.exercise-min = root.exercise-min + 5;
+        }
+        if (kind == 3) {
+            // Walk +5
+            root.move-kcal = root.move-kcal + 25;
+            root.exercise-min = root.exercise-min + 5;
+            root.steps = root.steps + 400;
+            root.distance-tenths = root.distance-tenths + 4;
+        }
+        // Stand sometimes increments.
+        if (root.stand-hr < 12) {
+            root.stand-hr = root.stand-hr + 1;
+        }
+        // Capture a fresh row if there's a slot.
+        if (root.fw-count < 3) {
+            root.fw-count = root.fw-count + 1;
+            if (root.fw-count == 1) {
+                root.fw1-kind = kind;
+                root.fw1-kcal = kind == 0 ? 50
+                    : kind == 1 ? 35
+                    : kind == 2 ? 20
+                    : 25;
+            }
+            if (root.fw-count == 2) {
+                root.fw2-kind = kind;
+                root.fw2-kcal = kind == 0 ? 50
+                    : kind == 1 ? 35
+                    : kind == 2 ? 20
+                    : 25;
+            }
+            if (root.fw-count == 3) {
+                root.fw3-kind = kind;
+                root.fw3-kcal = kind == 0 ? 50
+                    : kind == 1 ? 35
+                    : kind == 2 ? 20
+                    : 25;
+            }
+        }
+        root.workout-added(root.fw-name(kind));
+        root.status-msg = "Logged " + root.fw-name(kind) + " · "
+            + root.move-kcal + " kcal · "
+            + root.exercise-min + " ex-min · "
+            + root.stand-hr + " stand-hr";
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    public function tap-workout(i: int) {
+        root.expanded-workout = root.expanded-workout == i ? -1 : i;
+        root.workout-pressed("workout-" + i);
+        root.status-msg = root.expanded-workout == i
+            ? "Workout · pick an action"
+            : "Collapsed";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function hide-workout(i: int) {
+        if (i == 0) { root.hw0 = true; }
+        if (i == 1) { root.hw1 = true; }
+        if (i == 2) { root.hw2 = true; }
+        root.workout-hidden("workout-" + i);
+        root.status-msg = "Workout hidden";
+        root.status-is-success = false;
+        root.status-is-danger = true;
+        root.expanded-workout = -1;
+    }
+    public function repeat-workout() {
+        root.status-msg = "Workout queued to repeat tomorrow";
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    public function share-workout() {
+        root.status-msg = "Workout shared with friends";
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    public function tap-profile() {
+        root.profile-pressed();
+        root.status-msg = "Profile · settings + goals";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
 
     background: Theme.background;
 
@@ -243,158 +520,353 @@ export component ActivityRingsPage inherits Window {
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             trailing-icon: @image-url("@mobile-components/icons/profile.svg");
             leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.profile-pressed(); }
+            trailing-pressed => { root.tap-profile(); }
         }
 
-        // Rings hero + 2×2 stat grid + recent-workouts list overflow a
-        // single 892-px screen, so everything below the pinned AppBar
-        // scrolls.
+        // ----- Status banner ---------------------------------------
+        Rectangle {
+            height: 32px;
+            background: root.status-is-danger ? Theme.accent-danger
+                : root.status-is-success ? Theme.accent-success
+                : Theme.surface-2;
+            animate background { duration: Theme.motion-fast; }
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                Text {
+                    text: root.status-msg;
+                    color: (root.status-is-danger || root.status-is-success)
+                        ? Theme.on-primary
+                        : Theme.on-surface;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+            }
+        }
+
         ScrollView {
             vertical-stretch: 1;
 
             VerticalLayout {
                 spacing: 0;
 
-        // ----- Rings hero -----
-        VerticalLayout {
-            padding-top: Theme.spacing-lg;
-            padding-bottom: Theme.spacing-lg;
-            spacing: Theme.spacing-md;
+                // ----- Rings hero -----
+                VerticalLayout {
+                    padding-top: Theme.spacing-lg;
+                    padding-bottom: Theme.spacing-lg;
+                    spacing: Theme.spacing-md;
 
-            HorizontalLayout {
-                alignment: center;
-                Heading {
-                    text: root.greeting + ", Greg";
-                    style: HeadingStyle.serif-display;
-                    horizontal-alignment: center;
-                }
-            }
-            // Concentric rings — outer Move, middle Exercise, inner Stand.
-            HorizontalLayout {
-                alignment: center;
-                Rectangle {
-                    width: 200px;
-                    height: 200px;
-                    RingBand {
-                        x: 0;
-                        y: 0;
-                        radius: 100px;
-                        stroke: 18px;
-                        fill-color: Theme.accent-danger;
-                        progress: 0.84;
+                    HorizontalLayout {
+                        alignment: center;
+                        Heading {
+                            text: root.greeting + ", Greg";
+                            style: HeadingStyle.serif-display;
+                            horizontal-alignment: center;
+                        }
                     }
-                    RingBand {
-                        x: 24px;
-                        y: 24px;
-                        radius: 76px;
-                        stroke: 18px;
-                        fill-color: Theme.accent-success;
-                        progress: 0.62;
+                    HorizontalLayout {
+                        alignment: center;
+                        Rectangle {
+                            width: 200px;
+                            height: 200px;
+                            RingBand {
+                                x: 0;
+                                y: 0;
+                                radius: 100px;
+                                stroke: 18px;
+                                fill-color: Theme.accent-danger;
+                                progress: root.move-progress();
+                            }
+                            RingBand {
+                                x: 24px;
+                                y: 24px;
+                                radius: 76px;
+                                stroke: 18px;
+                                fill-color: Theme.accent-success;
+                                progress: root.exercise-progress();
+                            }
+                            RingBand {
+                                x: 48px;
+                                y: 48px;
+                                radius: 52px;
+                                stroke: 18px;
+                                fill-color: Theme.accent-info;
+                                progress: root.stand-progress();
+                            }
+                        }
                     }
-                    RingBand {
-                        x: 48px;
-                        y: 48px;
-                        radius: 52px;
-                        stroke: 18px;
-                        fill-color: Theme.accent-info;
-                        progress: 0.92;
+
+                    // Tappable legend.
+                    VerticalLayout {
+                        padding-left: Theme.spacing-lg + Theme.spacing-md;
+                        padding-right: Theme.spacing-lg + Theme.spacing-md;
+                        spacing: Theme.spacing-xs;
+                        RingLegend {
+                            label: "Move";
+                            value: root.move-kcal + " / 500 kcal";
+                            dot-color: Theme.accent-danger;
+                            active: root.highlighted-ring == 0;
+                            clicked => { root.highlight-ring(0); }
+                        }
+                        RingLegend {
+                            label: "Exercise";
+                            value: root.exercise-min + " / 30 min";
+                            dot-color: Theme.accent-success;
+                            active: root.highlighted-ring == 1;
+                            clicked => { root.highlight-ring(1); }
+                        }
+                        RingLegend {
+                            label: "Stand";
+                            value: root.stand-hr + " / 12 hr";
+                            dot-color: Theme.accent-info;
+                            active: root.highlighted-ring == 2;
+                            clicked => { root.highlight-ring(2); }
+                        }
+                    }
+                }
+
+                // ----- Quick-add strip -----
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-bottom: Theme.spacing-sm;
+                    spacing: Theme.spacing-sm;
+                    Text {
+                        text: "QUICK ADD · " + root.fw-count + " logged today";
+                        color: Theme.muted;
+                        font-size: 10px;
+                        font-weight: 800;
+                        letter-spacing: 0.5px;
+                    }
+                    HorizontalLayout {
+                        spacing: Theme.spacing-sm;
+                        QuickAddPill {
+                            label: "+ Run 5min";
+                            accent: Theme.accent-danger;
+                            clicked => { root.quick-add(0); }
+                        }
+                        QuickAddPill {
+                            label: "+ Lift 5min";
+                            accent: Theme.accent-success;
+                            clicked => { root.quick-add(1); }
+                        }
+                    }
+                    HorizontalLayout {
+                        spacing: Theme.spacing-sm;
+                        QuickAddPill {
+                            label: "+ Yoga 5min";
+                            accent: Theme.accent-info;
+                            clicked => { root.quick-add(2); }
+                        }
+                        QuickAddPill {
+                            label: "+ Walk 5min";
+                            accent: Theme.accent-warning;
+                            clicked => { root.quick-add(3); }
+                        }
+                    }
+                }
+
+                // ----- Stat grid -----
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-bottom: Theme.spacing-md;
+                    spacing: Theme.spacing-sm;
+
+                    HorizontalLayout {
+                        spacing: Theme.spacing-sm;
+                        StatTile {
+                            horizontal-stretch: 1;
+                            label: "STEPS";
+                            value: root.add-commas(root.steps);
+                            unit: "";
+                            tone: Tone.default;
+                            clicked => { root.tap-stat("Steps", root.add-commas(root.steps)); }
+                        }
+                        StatTile {
+                            horizontal-stretch: 1;
+                            label: "DISTANCE";
+                            value: root.distance-display();
+                            unit: "km";
+                            tone: Tone.info;
+                            clicked => { root.tap-stat("Distance", root.distance-display() + " km"); }
+                        }
+                    }
+                    HorizontalLayout {
+                        spacing: Theme.spacing-sm;
+                        StatTile {
+                            horizontal-stretch: 1;
+                            label: "ACTIVE KCAL";
+                            value: "" + root.move-kcal;
+                            unit: "";
+                            tone: Tone.danger;
+                            clicked => { root.tap-stat("Active kcal", root.move-kcal + " kcal"); }
+                        }
+                        StatTile {
+                            horizontal-stretch: 1;
+                            label: "AVG HR";
+                            value: "" + root.avg-hr;
+                            unit: "bpm";
+                            tone: Tone.success;
+                            clicked => { root.tap-stat("Avg HR", root.avg-hr + " bpm"); }
+                        }
+                    }
+                }
+
+                SectionHeader { text: "RECENT WORKOUTS"; }
+
+                // Fresh workouts first (most recent on top).
+                if root.fw-count >= 3: VerticalLayout {
+                    spacing: 0;
+                    WorkoutRow {
+                        name: root.fw-name(root.fw3-kind);
+                        when: "just now";
+                        duration: "5 min";
+                        calories: root.fw3-kcal + " kcal";
+                        accent: root.fw-accent(root.fw3-kind);
+                        fresh: true;
+                        expanded: root.expanded-workout == 100;
+                        clicked => { root.tap-workout(100); }
+                    }
+                }
+                if root.fw-count >= 3: Divider { }
+                if root.fw-count >= 2: VerticalLayout {
+                    spacing: 0;
+                    WorkoutRow {
+                        name: root.fw-name(root.fw2-kind);
+                        when: "just now";
+                        duration: "5 min";
+                        calories: root.fw2-kcal + " kcal";
+                        accent: root.fw-accent(root.fw2-kind);
+                        fresh: true;
+                        expanded: root.expanded-workout == 101;
+                        clicked => { root.tap-workout(101); }
+                    }
+                }
+                if root.fw-count >= 2: Divider { }
+                if root.fw-count >= 1: VerticalLayout {
+                    spacing: 0;
+                    WorkoutRow {
+                        name: root.fw-name(root.fw1-kind);
+                        when: "just now";
+                        duration: "5 min";
+                        calories: root.fw1-kcal + " kcal";
+                        accent: root.fw-accent(root.fw1-kind);
+                        fresh: true;
+                        expanded: root.expanded-workout == 102;
+                        clicked => { root.tap-workout(102); }
+                    }
+                }
+                if root.fw-count >= 1: Divider { }
+
+                // Static workouts.
+                if !root.hw0: VerticalLayout {
+                    spacing: 0;
+                    WorkoutRow {
+                        name: "Morning run";
+                        when: "today";
+                        duration: "32 min";
+                        calories: "284 kcal";
+                        accent: Theme.accent-danger;
+                        expanded: root.expanded-workout == 0;
+                        clicked => { root.tap-workout(0); }
+                    }
+                    if root.expanded-workout == 0: Rectangle {
+                        background: Theme.surface-2;
+                        HorizontalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-sm;
+                            ActionPill {
+                                label: "Repeat";
+                                primary: true;
+                                clicked => { root.repeat-workout(); }
+                            }
+                            ActionPill {
+                                label: "Share";
+                                clicked => { root.share-workout(); }
+                            }
+                            ActionPill {
+                                label: "Hide";
+                                danger: true;
+                                clicked => { root.hide-workout(0); }
+                            }
+                        }
+                    }
+                }
+                if !root.hw0 && (!root.hw1 || !root.hw2): Divider { }
+
+                if !root.hw1: VerticalLayout {
+                    spacing: 0;
+                    WorkoutRow {
+                        name: "Strength training";
+                        when: "yesterday";
+                        duration: "48 min";
+                        calories: "312 kcal";
+                        accent: Theme.accent-success;
+                        expanded: root.expanded-workout == 1;
+                        clicked => { root.tap-workout(1); }
+                    }
+                    if root.expanded-workout == 1: Rectangle {
+                        background: Theme.surface-2;
+                        HorizontalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-sm;
+                            ActionPill {
+                                label: "Repeat";
+                                primary: true;
+                                clicked => { root.repeat-workout(); }
+                            }
+                            ActionPill {
+                                label: "Share";
+                                clicked => { root.share-workout(); }
+                            }
+                            ActionPill {
+                                label: "Hide";
+                                danger: true;
+                                clicked => { root.hide-workout(1); }
+                            }
+                        }
+                    }
+                }
+                if !root.hw1 && !root.hw2: Divider { }
+
+                if !root.hw2: VerticalLayout {
+                    spacing: 0;
+                    WorkoutRow {
+                        name: "Yoga · Vinyasa flow";
+                        when: "Sunday";
+                        duration: "55 min";
+                        calories: "190 kcal";
+                        accent: Theme.accent-info;
+                        expanded: root.expanded-workout == 2;
+                        clicked => { root.tap-workout(2); }
+                    }
+                    if root.expanded-workout == 2: Rectangle {
+                        background: Theme.surface-2;
+                        HorizontalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-sm;
+                            ActionPill {
+                                label: "Repeat";
+                                primary: true;
+                                clicked => { root.repeat-workout(); }
+                            }
+                            ActionPill {
+                                label: "Share";
+                                clicked => { root.share-workout(); }
+                            }
+                            ActionPill {
+                                label: "Hide";
+                                danger: true;
+                                clicked => { root.hide-workout(2); }
+                            }
+                        }
                     }
                 }
             }
-
-            // Legend.
-            VerticalLayout {
-                padding-left: Theme.spacing-lg + Theme.spacing-md;
-                padding-right: Theme.spacing-lg + Theme.spacing-md;
-                spacing: Theme.spacing-xs;
-                RingLegend {
-                    label: "Move";
-                    value: "420 / 500 kcal";
-                    dot-color: Theme.accent-danger;
-                }
-                RingLegend {
-                    label: "Exercise";
-                    value: "19 / 30 min";
-                    dot-color: Theme.accent-success;
-                }
-                RingLegend {
-                    label: "Stand";
-                    value: "11 / 12 hr";
-                    dot-color: Theme.accent-info;
-                }
-            }
         }
-
-        // ----- Stat grid -----
-        VerticalLayout {
-            padding-left: Theme.spacing-md;
-            padding-right: Theme.spacing-md;
-            padding-bottom: Theme.spacing-md;
-            spacing: Theme.spacing-sm;
-
-            HorizontalLayout {
-                spacing: Theme.spacing-sm;
-                StatTile {
-                    horizontal-stretch: 1;
-                    label: "STEPS";
-                    value: "7,842";
-                    unit: "";
-                    tone: Tone.default;
-                }
-                StatTile {
-                    horizontal-stretch: 1;
-                    label: "DISTANCE";
-                    value: "5.4";
-                    unit: "km";
-                    tone: Tone.info;
-                }
-            }
-            HorizontalLayout {
-                spacing: Theme.spacing-sm;
-                StatTile {
-                    horizontal-stretch: 1;
-                    label: "ACTIVE KCAL";
-                    value: "420";
-                    unit: "";
-                    tone: Tone.danger;
-                }
-                StatTile {
-                    horizontal-stretch: 1;
-                    label: "AVG HR";
-                    value: "94";
-                    unit: "bpm";
-                    tone: Tone.success;
-                }
-            }
-        }
-
-        // ----- Recent workouts -----
-        SectionHeader { text: "RECENT WORKOUTS"; }
-
-        WorkoutRow {
-            name: "Morning run";
-            when: "today";
-            duration: "32 min";
-            calories: "284 kcal";
-            accent: Theme.accent-danger;
-        }
-        Divider { }
-        WorkoutRow {
-            name: "Strength training";
-            when: "yesterday";
-            duration: "48 min";
-            calories: "312 kcal";
-            accent: Theme.accent-success;
-        }
-        Divider { }
-        WorkoutRow {
-            name: "Yoga · Vinyasa flow";
-            when: "Sunday";
-            duration: "55 min";
-            calories: "190 kcal";
-            accent: Theme.accent-info;
-        }
-            }   // end inner VerticalLayout
-        }       // end ScrollView
     }
 }

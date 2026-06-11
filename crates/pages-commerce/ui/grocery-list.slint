@@ -24,17 +24,25 @@ import { Checkbox } from "@mobile-components/checkbox.slint";
 import { Divider } from "@mobile-components/divider.slint";
 import { Fab } from "@mobile-components/button.slint";
 
-// One grocery item row.
+import { TextField } from "@mobile-components/text-field.slint";
+import { MobileButton, TextButton } from "@mobile-components/button.slint";
+
+// One grocery item row. `removable` controls whether a small × in
+// the top-right shows up — used by the user-added custom items.
 component GroceryRow inherits Rectangle {
     in property <string> name;
     in property <string> qty;
     in property <string> assignee;
+    in property <bool> removable: false;
     in-out property <bool> done: false;
     callback toggled();
+    callback assignee-tapped();
+    callback removed();
 
     horizontal-stretch: 1;
     min-height: 52px;
     opacity: root.done ? 0.5 : 1.0;
+    animate opacity { duration: Theme.motion-fast; }
 
     HorizontalLayout {
         padding-left: Theme.spacing-md;
@@ -99,12 +107,48 @@ component GroceryRow inherits Rectangle {
             }
         }
 
-        // Assignee avatar.
+        // Assignee avatar — tap to reassign.
         VerticalLayout {
             alignment: center;
-            Avatar {
-                fallback: root.assignee;
-                size: 24px;
+            Rectangle {
+                width: 32px;
+                height: 32px;
+                border-radius: self.width / 2;
+                background: avatar-touch.pressed ? Theme.surface-pressed : transparent;
+                animate background { duration: Theme.motion-fast; }
+                Avatar {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    fallback: root.assignee;
+                    size: 24px;
+                }
+                avatar-touch := TouchArea {
+                    clicked => { root.assignee-tapped(); }
+                }
+            }
+        }
+
+        // Remove × for custom items only.
+        if root.removable: VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 24px;
+                height: 24px;
+                border-radius: self.width / 2;
+                background: remove-touch.pressed ? Theme.surface-pressed : transparent;
+                animate background { duration: Theme.motion-fast; }
+                Image {
+                    width: 12px;
+                    height: 12px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: @image-url("@mobile-components/icons/close.svg");
+                    colorize: Theme.accent-danger;
+                    image-fit: contain;
+                }
+                remove-touch := TouchArea {
+                    clicked => { root.removed(); }
+                }
             }
         }
     }
@@ -117,6 +161,263 @@ export component GroceryListPage inherits Window {
     callback back-pressed();
     callback share-pressed();
     callback add-pressed();
+    callback shared-with(string);
+    callback item-toggled(string);
+    callback item-added(string);
+
+    // ----- Per-item state for the 11 baked-in items -----
+    in-out property <bool> done0: true;   // Avocados
+    in-out property <bool> done1: false;  // Baby spinach
+    in-out property <bool> done2: true;   // Lemons
+    in-out property <bool> done3: false;  // Cherry tomatoes
+    in-out property <bool> done4: true;   // Whole milk
+    in-out property <bool> done5: false;  // Greek yogurt
+    in-out property <bool> done6: false;  // Pasture eggs
+    in-out property <bool> done7: true;   // Aged cheddar
+    in-out property <bool> done8: false;  // Sourdough loaf
+    in-out property <bool> done9: true;   // Olive oil
+    in-out property <bool> done10: false; // Quinoa
+
+    // Per-item assignee — taps cycle between the two collaborators.
+    in-out property <string> a0: "GR";
+    in-out property <string> a1: "LE";
+    in-out property <string> a2: "GR";
+    in-out property <string> a3: "LE";
+    in-out property <string> a4: "GR";
+    in-out property <string> a5: "LE";
+    in-out property <string> a6: "GR";
+    in-out property <string> a7: "LE";
+    in-out property <string> a8: "GR";
+    in-out property <string> a9: "LE";
+    in-out property <string> a10: "GR";
+
+    // ----- Custom (user-added) slots — 5 max -----
+    private property <bool> c0-present: false;
+    private property <bool> c1-present: false;
+    private property <bool> c2-present: false;
+    private property <bool> c3-present: false;
+    private property <bool> c4-present: false;
+    in-out property <bool> c0-done: false;
+    in-out property <bool> c1-done: false;
+    in-out property <bool> c2-done: false;
+    in-out property <bool> c3-done: false;
+    in-out property <bool> c4-done: false;
+    in-out property <string> c0-name: "";
+    in-out property <string> c1-name: "";
+    in-out property <string> c2-name: "";
+    in-out property <string> c3-name: "";
+    in-out property <string> c4-name: "";
+    in-out property <string> c0-qty: "";
+    in-out property <string> c1-qty: "";
+    in-out property <string> c2-qty: "";
+    in-out property <string> c3-qty: "";
+    in-out property <string> c4-qty: "";
+    in-out property <string> c0-asg: "GR";
+    in-out property <string> c1-asg: "GR";
+    in-out property <string> c2-asg: "GR";
+    in-out property <string> c3-asg: "GR";
+    in-out property <string> c4-asg: "GR";
+
+    // ----- UI state -----
+    // 0 = All, 1 = Remaining, 2 = In cart
+    private property <int> filter-mode: 0;
+    private property <bool> show-add: false;
+    private property <bool> show-share: false;
+    in-out property <string> add-name: "";
+    in-out property <string> add-qty: "1";
+    private property <[string]> share-targets: [
+        "Messages",
+        "Slack",
+        "Mail",
+        "Copy link",
+    ];
+
+    // ----- Status banner -----
+    private property <string> status-msg: "Tap items to check them off -- counts update live";
+    private property <bool> status-is-success: false;
+    private property <bool> status-is-danger: false;
+
+    // ----- Helpers -----
+    function present-bool(b: bool) -> int {
+        return b ? 1 : 0;
+    }
+    function total-count() -> int {
+        return 11
+            + root.present-bool(root.c0-present)
+            + root.present-bool(root.c1-present)
+            + root.present-bool(root.c2-present)
+            + root.present-bool(root.c3-present)
+            + root.present-bool(root.c4-present);
+    }
+    function done-count() -> int {
+        return root.present-bool(root.done0)
+            + root.present-bool(root.done1)
+            + root.present-bool(root.done2)
+            + root.present-bool(root.done3)
+            + root.present-bool(root.done4)
+            + root.present-bool(root.done5)
+            + root.present-bool(root.done6)
+            + root.present-bool(root.done7)
+            + root.present-bool(root.done8)
+            + root.present-bool(root.done9)
+            + root.present-bool(root.done10)
+            + root.present-bool(root.c0-present && root.c0-done)
+            + root.present-bool(root.c1-present && root.c1-done)
+            + root.present-bool(root.c2-present && root.c2-done)
+            + root.present-bool(root.c3-present && root.c3-done)
+            + root.present-bool(root.c4-present && root.c4-done);
+    }
+    function progress() -> float {
+        return root.total-count() > 0
+            ? (root.done-count() * 1.0 / root.total-count())
+            : 0;
+    }
+    function show-item(done: bool) -> bool {
+        // Filter visibility logic for individual items.
+        return root.filter-mode == 0
+            || (root.filter-mode == 1 && !done)
+            || (root.filter-mode == 2 && done);
+    }
+    function cycle-assignee(current: string) -> string {
+        return current == "GR" ? "LE" : "GR";
+    }
+
+    // ----- Handlers -----
+    function set-filter(m: int) {
+        root.filter-mode = m;
+        root.status-msg = m == 0
+            ? "Showing all items"
+            : m == 1
+                ? "Showing remaining items"
+                : "Showing in-cart items";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    function clear-cart() {
+        root.done0 = false;
+        root.done1 = false;
+        root.done2 = false;
+        root.done3 = false;
+        root.done4 = false;
+        root.done5 = false;
+        root.done6 = false;
+        root.done7 = false;
+        root.done8 = false;
+        root.done9 = false;
+        root.done10 = false;
+        root.c0-done = false;
+        root.c1-done = false;
+        root.c2-done = false;
+        root.c3-done = false;
+        root.c4-done = false;
+        root.status-msg = "Cleared cart -- everything is back on the list";
+        root.status-is-success = false;
+        root.status-is-danger = true;
+    }
+    function press-toggle(name: string, now-done: bool) {
+        root.status-msg = now-done
+            ? "Checked: " + name
+            : "Un-checked: " + name;
+        root.status-is-success = now-done;
+        root.status-is-danger = false;
+        root.item-toggled(name);
+    }
+    function press-reassign-fixed(i: int) {
+        if (i == 0) { root.a0 = root.cycle-assignee(root.a0); root.status-msg = "Avocados -> " + root.a0; }
+        if (i == 1) { root.a1 = root.cycle-assignee(root.a1); root.status-msg = "Baby spinach -> " + root.a1; }
+        if (i == 2) { root.a2 = root.cycle-assignee(root.a2); root.status-msg = "Lemons -> " + root.a2; }
+        if (i == 3) { root.a3 = root.cycle-assignee(root.a3); root.status-msg = "Cherry tomatoes -> " + root.a3; }
+        if (i == 4) { root.a4 = root.cycle-assignee(root.a4); root.status-msg = "Whole milk -> " + root.a4; }
+        if (i == 5) { root.a5 = root.cycle-assignee(root.a5); root.status-msg = "Greek yogurt -> " + root.a5; }
+        if (i == 6) { root.a6 = root.cycle-assignee(root.a6); root.status-msg = "Pasture eggs -> " + root.a6; }
+        if (i == 7) { root.a7 = root.cycle-assignee(root.a7); root.status-msg = "Aged cheddar -> " + root.a7; }
+        if (i == 8) { root.a8 = root.cycle-assignee(root.a8); root.status-msg = "Sourdough loaf -> " + root.a8; }
+        if (i == 9) { root.a9 = root.cycle-assignee(root.a9); root.status-msg = "Olive oil -> " + root.a9; }
+        if (i == 10) { root.a10 = root.cycle-assignee(root.a10); root.status-msg = "Quinoa -> " + root.a10; }
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    function press-reassign-custom(i: int) {
+        if (i == 0) { root.c0-asg = root.cycle-assignee(root.c0-asg); root.status-msg = root.c0-name + " -> " + root.c0-asg; }
+        if (i == 1) { root.c1-asg = root.cycle-assignee(root.c1-asg); root.status-msg = root.c1-name + " -> " + root.c1-asg; }
+        if (i == 2) { root.c2-asg = root.cycle-assignee(root.c2-asg); root.status-msg = root.c2-name + " -> " + root.c2-asg; }
+        if (i == 3) { root.c3-asg = root.cycle-assignee(root.c3-asg); root.status-msg = root.c3-name + " -> " + root.c3-asg; }
+        if (i == 4) { root.c4-asg = root.cycle-assignee(root.c4-asg); root.status-msg = root.c4-name + " -> " + root.c4-asg; }
+    }
+    function press-remove-custom(i: int) {
+        if (i == 0) { root.c0-present = false; root.c0-name = ""; root.c0-done = false; }
+        if (i == 1) { root.c1-present = false; root.c1-name = ""; root.c1-done = false; }
+        if (i == 2) { root.c2-present = false; root.c2-name = ""; root.c2-done = false; }
+        if (i == 3) { root.c3-present = false; root.c3-name = ""; root.c3-done = false; }
+        if (i == 4) { root.c4-present = false; root.c4-name = ""; root.c4-done = false; }
+        root.status-msg = "Removed custom item";
+        root.status-is-success = false;
+        root.status-is-danger = true;
+    }
+    function toggle-add() {
+        root.show-add = !root.show-add;
+        if (root.show-add) {
+            root.add-name = "";
+            root.add-qty = "1";
+            root.status-msg = "Type an item to add";
+            root.status-is-success = false;
+            root.status-is-danger = false;
+        }
+    }
+    function submit-add() {
+        root.add-pressed();
+        if (root.add-name == "") {
+            root.status-msg = "Type a name first";
+            root.status-is-success = false;
+            root.status-is-danger = true;
+            return;
+        }
+        // Find first empty custom slot.
+        if (!root.c0-present) {
+            root.c0-present = true;
+            root.c0-name = root.add-name;
+            root.c0-qty = root.add-qty;
+        } else if (!root.c1-present) {
+            root.c1-present = true;
+            root.c1-name = root.add-name;
+            root.c1-qty = root.add-qty;
+        } else if (!root.c2-present) {
+            root.c2-present = true;
+            root.c2-name = root.add-name;
+            root.c2-qty = root.add-qty;
+        } else if (!root.c3-present) {
+            root.c3-present = true;
+            root.c3-name = root.add-name;
+            root.c3-qty = root.add-qty;
+        } else if (!root.c4-present) {
+            root.c4-present = true;
+            root.c4-name = root.add-name;
+            root.c4-qty = root.add-qty;
+        } else {
+            root.status-msg = "Custom-items list is full (max 5)";
+            root.status-is-success = false;
+            root.status-is-danger = true;
+            return;
+        }
+        root.status-msg = "Added: " + root.add-name;
+        root.status-is-success = true;
+        root.status-is-danger = false;
+        root.item-added(root.add-name);
+        root.add-name = "";
+        root.add-qty = "1";
+        root.show-add = false;
+    }
+    function toggle-share() {
+        root.show-share = !root.show-share;
+        root.share-pressed();
+    }
+    function pick-share(target: string) {
+        root.show-share = false;
+        root.status-msg = "Shared via " + target;
+        root.status-is-success = true;
+        root.status-is-danger = false;
+        root.shared-with(target);
+    }
 
     background: Theme.background;
 
@@ -129,144 +430,544 @@ export component GroceryListPage inherits Window {
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             trailing-icon: @image-url("@mobile-components/icons/send.svg");
             leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.share-pressed(); }
+            trailing-pressed => { root.toggle-share(); }
         }
 
-        // The list overflows a single 892-px screen (3 aisle sections,
-        // ~11 rows). Wrap everything below the pinned AppBar in a
-        // ScrollView so the lower aisles + add-item row stay reachable.
+        // ----- Status banner -----
+        Rectangle {
+            background: root.status-is-danger ? Theme.accent-danger
+                : root.status-is-success ? Theme.accent-success
+                : Theme.surface-2;
+            height: 32px;
+            animate background { duration: Theme.motion-fast; }
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                Text {
+                    text: root.status-msg;
+                    color: (root.status-is-danger || root.status-is-success)
+                        ? Theme.on-primary
+                        : Theme.on-surface;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+            }
+        }
+
         ScrollView {
             vertical-stretch: 1;
 
             VerticalLayout {
                 spacing: 0;
 
-        // Progress hero.
-        Rectangle {
-            background: Theme.surface-1;
-            drop-shadow-blur: Theme.elevation-1-blur;
-            drop-shadow-color: Theme.elevation-1-color;
-            drop-shadow-offset-y: Theme.elevation-1-y;
-            VerticalLayout {
-                padding: Theme.spacing-md;
-                spacing: Theme.spacing-sm;
-                HorizontalLayout {
-                    spacing: Theme.spacing-sm;
-                    alignment: stretch;
+                // ----- Progress hero (live counts) -----
+                Rectangle {
+                    background: Theme.surface-1;
+                    drop-shadow-blur: Theme.elevation-1-blur;
+                    drop-shadow-color: Theme.elevation-1-color;
+                    drop-shadow-offset-y: Theme.elevation-1-y;
                     VerticalLayout {
-                        horizontal-stretch: 1;
-                        spacing: 2px;
-                        Heading {
-                            text: "8 of 21 in cart";
-                            style: HeadingStyle.serif-display;
-                            color: Theme.on-surface;
-                            font-size: 22px;
+                        padding: Theme.spacing-md;
+                        spacing: Theme.spacing-sm;
+                        HorizontalLayout {
+                            spacing: Theme.spacing-sm;
+                            alignment: stretch;
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                spacing: 2px;
+                                Heading {
+                                    text: root.done-count() + " of " + root.total-count() + " in cart";
+                                    style: HeadingStyle.serif-display;
+                                    color: Theme.on-surface;
+                                    font-size: 22px;
+                                }
+                                Text {
+                                    text: "Shared with Léa · live updates";
+                                    color: Theme.muted;
+                                    font-size: Theme.font-size-caption;
+                                }
+                            }
+                            HorizontalLayout {
+                                spacing: Theme.spacing-xs;
+                                alignment: end;
+                                Avatar { fallback: "GR"; size: 32px; }
+                                Avatar { fallback: "LE"; size: 32px; }
+                            }
                         }
-                        Text {
-                            text: "Shared with Léa · last edited 4 min ago";
-                            color: Theme.muted;
-                            font-size: Theme.font-size-caption;
+                        Rectangle {
+                            height: 6px;
+                            background: Theme.surface-variant;
+                            border-radius: 3px;
+                            Rectangle {
+                                x: 0;
+                                y: 0;
+                                width: parent.width * root.progress();
+                                height: parent.height;
+                                background: Theme.accent-success;
+                                border-radius: 3px;
+                                animate width { duration: Theme.motion-fast; }
+                            }
+                        }
+
+                        // ----- Filter chips + clear-cart -----
+                        HorizontalLayout {
+                            spacing: Theme.spacing-sm;
+                            alignment: stretch;
+                            // Filter pills (All / Remaining / In cart).
+                            Rectangle {
+                                horizontal-stretch: 1;
+                                height: 32px;
+                                border-radius: 16px;
+                                background: root.filter-mode == 0
+                                    ? Theme.primary
+                                    : (all-touch.pressed ? Theme.surface-pressed : Theme.surface-2);
+                                animate background { duration: Theme.motion-fast; }
+                                Text {
+                                    text: "All";
+                                    color: root.filter-mode == 0
+                                        ? Theme.on-primary
+                                        : Theme.on-surface;
+                                    font-size: 11px;
+                                    font-weight: 800;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    x: 0;
+                                    y: 0;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                                all-touch := TouchArea {
+                                    clicked => { root.set-filter(0); }
+                                }
+                            }
+                            Rectangle {
+                                horizontal-stretch: 1;
+                                height: 32px;
+                                border-radius: 16px;
+                                background: root.filter-mode == 1
+                                    ? Theme.primary
+                                    : (rem-touch.pressed ? Theme.surface-pressed : Theme.surface-2);
+                                animate background { duration: Theme.motion-fast; }
+                                Text {
+                                    text: "Remaining (" + (root.total-count() - root.done-count()) + ")";
+                                    color: root.filter-mode == 1
+                                        ? Theme.on-primary
+                                        : Theme.on-surface;
+                                    font-size: 11px;
+                                    font-weight: 800;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    x: 0;
+                                    y: 0;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                                rem-touch := TouchArea {
+                                    clicked => { root.set-filter(1); }
+                                }
+                            }
+                            Rectangle {
+                                horizontal-stretch: 1;
+                                height: 32px;
+                                border-radius: 16px;
+                                background: root.filter-mode == 2
+                                    ? Theme.primary
+                                    : (cart-touch.pressed ? Theme.surface-pressed : Theme.surface-2);
+                                animate background { duration: Theme.motion-fast; }
+                                Text {
+                                    text: "In cart (" + root.done-count() + ")";
+                                    color: root.filter-mode == 2
+                                        ? Theme.on-primary
+                                        : Theme.on-surface;
+                                    font-size: 11px;
+                                    font-weight: 800;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    x: 0;
+                                    y: 0;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                                cart-touch := TouchArea {
+                                    clicked => { root.set-filter(2); }
+                                }
+                            }
+                        }
+
+                        // Clear cart button — destructive, only enabled
+                        // when at least one item is in the cart.
+                        if root.done-count() > 0: HorizontalLayout {
+                            alignment: end;
+                            TextButton {
+                                text: "Clear cart (" + root.done-count() + ")";
+                                clicked => { root.clear-cart(); }
+                            }
                         }
                     }
+                }
+
+                // ----- PRODUCE -----
+                SectionHeader { text: "PRODUCE"; }
+                if root.show-item(root.done0): GroceryRow {
+                    name: "Avocados";
+                    qty: "×4";
+                    assignee: root.a0;
+                    done <=> root.done0;
+                    toggled => { root.press-toggle("Avocados", root.done0); }
+                    assignee-tapped => { root.press-reassign-fixed(0); }
+                }
+                if root.show-item(root.done0) && root.show-item(root.done1): Divider { }
+                if root.show-item(root.done1): GroceryRow {
+                    name: "Baby spinach";
+                    qty: "1 bag";
+                    assignee: root.a1;
+                    done <=> root.done1;
+                    toggled => { root.press-toggle("Baby spinach", root.done1); }
+                    assignee-tapped => { root.press-reassign-fixed(1); }
+                }
+                if root.show-item(root.done1) && root.show-item(root.done2): Divider { }
+                if root.show-item(root.done2): GroceryRow {
+                    name: "Lemons";
+                    qty: "×6";
+                    assignee: root.a2;
+                    done <=> root.done2;
+                    toggled => { root.press-toggle("Lemons", root.done2); }
+                    assignee-tapped => { root.press-reassign-fixed(2); }
+                }
+                if root.show-item(root.done2) && root.show-item(root.done3): Divider { }
+                if root.show-item(root.done3): GroceryRow {
+                    name: "Cherry tomatoes";
+                    qty: "2 punnets";
+                    assignee: root.a3;
+                    done <=> root.done3;
+                    toggled => { root.press-toggle("Cherry tomatoes", root.done3); }
+                    assignee-tapped => { root.press-reassign-fixed(3); }
+                }
+
+                // ----- DAIRY & EGGS -----
+                SectionHeader { text: "DAIRY & EGGS"; }
+                if root.show-item(root.done4): GroceryRow {
+                    name: "Whole milk";
+                    qty: "2 L";
+                    assignee: root.a4;
+                    done <=> root.done4;
+                    toggled => { root.press-toggle("Whole milk", root.done4); }
+                    assignee-tapped => { root.press-reassign-fixed(4); }
+                }
+                if root.show-item(root.done4) && root.show-item(root.done5): Divider { }
+                if root.show-item(root.done5): GroceryRow {
+                    name: "Greek yogurt";
+                    qty: "1 tub";
+                    assignee: root.a5;
+                    done <=> root.done5;
+                    toggled => { root.press-toggle("Greek yogurt", root.done5); }
+                    assignee-tapped => { root.press-reassign-fixed(5); }
+                }
+                if root.show-item(root.done5) && root.show-item(root.done6): Divider { }
+                if root.show-item(root.done6): GroceryRow {
+                    name: "Pasture eggs";
+                    qty: "1 dozen";
+                    assignee: root.a6;
+                    done <=> root.done6;
+                    toggled => { root.press-toggle("Pasture eggs", root.done6); }
+                    assignee-tapped => { root.press-reassign-fixed(6); }
+                }
+                if root.show-item(root.done6) && root.show-item(root.done7): Divider { }
+                if root.show-item(root.done7): GroceryRow {
+                    name: "Aged cheddar";
+                    qty: "200 g";
+                    assignee: root.a7;
+                    done <=> root.done7;
+                    toggled => { root.press-toggle("Aged cheddar", root.done7); }
+                    assignee-tapped => { root.press-reassign-fixed(7); }
+                }
+
+                // ----- PANTRY -----
+                SectionHeader { text: "PANTRY"; }
+                if root.show-item(root.done8): GroceryRow {
+                    name: "Sourdough loaf";
+                    qty: "×1";
+                    assignee: root.a8;
+                    done <=> root.done8;
+                    toggled => { root.press-toggle("Sourdough loaf", root.done8); }
+                    assignee-tapped => { root.press-reassign-fixed(8); }
+                }
+                if root.show-item(root.done8) && root.show-item(root.done9): Divider { }
+                if root.show-item(root.done9): GroceryRow {
+                    name: "Olive oil";
+                    qty: "500 ml";
+                    assignee: root.a9;
+                    done <=> root.done9;
+                    toggled => { root.press-toggle("Olive oil", root.done9); }
+                    assignee-tapped => { root.press-reassign-fixed(9); }
+                }
+                if root.show-item(root.done9) && root.show-item(root.done10): Divider { }
+                if root.show-item(root.done10): GroceryRow {
+                    name: "Quinoa";
+                    qty: "1 kg";
+                    assignee: root.a10;
+                    done <=> root.done10;
+                    toggled => { root.press-toggle("Quinoa", root.done10); }
+                    assignee-tapped => { root.press-reassign-fixed(10); }
+                }
+
+                // ----- CUSTOM ITEMS (added by the visitor) -----
+                if root.c0-present || root.c1-present || root.c2-present || root.c3-present || root.c4-present:
+                    SectionHeader { text: "CUSTOM"; }
+                if root.c0-present && root.show-item(root.c0-done): GroceryRow {
+                    name: root.c0-name;
+                    qty: root.c0-qty;
+                    assignee: root.c0-asg;
+                    removable: true;
+                    done <=> root.c0-done;
+                    toggled => { root.press-toggle(root.c0-name, root.c0-done); }
+                    assignee-tapped => { root.press-reassign-custom(0); }
+                    removed => { root.press-remove-custom(0); }
+                }
+                if root.c1-present && root.show-item(root.c1-done): GroceryRow {
+                    name: root.c1-name;
+                    qty: root.c1-qty;
+                    assignee: root.c1-asg;
+                    removable: true;
+                    done <=> root.c1-done;
+                    toggled => { root.press-toggle(root.c1-name, root.c1-done); }
+                    assignee-tapped => { root.press-reassign-custom(1); }
+                    removed => { root.press-remove-custom(1); }
+                }
+                if root.c2-present && root.show-item(root.c2-done): GroceryRow {
+                    name: root.c2-name;
+                    qty: root.c2-qty;
+                    assignee: root.c2-asg;
+                    removable: true;
+                    done <=> root.c2-done;
+                    toggled => { root.press-toggle(root.c2-name, root.c2-done); }
+                    assignee-tapped => { root.press-reassign-custom(2); }
+                    removed => { root.press-remove-custom(2); }
+                }
+                if root.c3-present && root.show-item(root.c3-done): GroceryRow {
+                    name: root.c3-name;
+                    qty: root.c3-qty;
+                    assignee: root.c3-asg;
+                    removable: true;
+                    done <=> root.c3-done;
+                    toggled => { root.press-toggle(root.c3-name, root.c3-done); }
+                    assignee-tapped => { root.press-reassign-custom(3); }
+                    removed => { root.press-remove-custom(3); }
+                }
+                if root.c4-present && root.show-item(root.c4-done): GroceryRow {
+                    name: root.c4-name;
+                    qty: root.c4-qty;
+                    assignee: root.c4-asg;
+                    removable: true;
+                    done <=> root.c4-done;
+                    toggled => { root.press-toggle(root.c4-name, root.c4-done); }
+                    assignee-tapped => { root.press-reassign-custom(4); }
+                    removed => { root.press-remove-custom(4); }
+                }
+
+                // ----- Inline "Add item" CTA / form -----
+                Divider { }
+                if !root.show-add: Rectangle {
+                    min-height: 48px;
                     HorizontalLayout {
-                        spacing: Theme.spacing-xs;
-                        alignment: end;
-                        Avatar { fallback: "GR"; size: 32px; }
-                        Avatar { fallback: "LE"; size: 32px; }
+                        padding-left: Theme.spacing-md;
+                        padding-right: Theme.spacing-md;
+                        spacing: Theme.spacing-md;
+                        alignment: stretch;
+                        VerticalLayout {
+                            alignment: center;
+                            Rectangle {
+                                width: 22px;
+                                height: 22px;
+                                border-radius: Theme.radius-sm;
+                                border-width: 1px;
+                                border-color: Theme.outline;
+                                background: transparent;
+                                Image {
+                                    width: 12px;
+                                    height: 12px;
+                                    x: (parent.width - self.width) / 2;
+                                    y: (parent.height - self.height) / 2;
+                                    source: @image-url("@mobile-components/icons/plus.svg");
+                                    colorize: Theme.accent-info;
+                                    image-fit: contain;
+                                }
+                            }
+                        }
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            alignment: center;
+                            Text {
+                                text: "Add item to the list...";
+                                color: Theme.accent-info;
+                                font-size: Theme.font-size-body;
+                                font-weight: 600;
+                            }
+                        }
+                    }
+                    TouchArea {
+                        clicked => { root.toggle-add(); }
+                    }
+                }
+                if root.show-add: Rectangle {
+                    background: Theme.surface-1;
+                    border-radius: Theme.radius-md;
+                    VerticalLayout {
+                        padding: Theme.spacing-md;
+                        spacing: Theme.spacing-sm;
+                        HorizontalLayout {
+                            spacing: Theme.spacing-sm;
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                TextField {
+                                    label: "";
+                                    placeholder: "Item name (e.g. Oat milk)";
+                                    text <=> root.add-name;
+                                }
+                            }
+                            VerticalLayout {
+                                width: 90px;
+                                TextField {
+                                    label: "";
+                                    placeholder: "Qty";
+                                    text <=> root.add-qty;
+                                }
+                            }
+                        }
+                        HorizontalLayout {
+                            spacing: Theme.spacing-sm;
+                            MobileButton {
+                                text: "Cancel";
+                                primary: false;
+                                clicked => { root.toggle-add(); }
+                            }
+                            MobileButton {
+                                text: "Add";
+                                primary: true;
+                                enabled: root.add-name != "";
+                                clicked => { root.submit-add(); }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ----- Share bottom sheet -----
+    if root.show-share: Rectangle {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+        background: #00000099;
+
+        Rectangle {
+            x: 0;
+            y: parent.height - self.height;
+            width: parent.width;
+            height: 240px;
+            background: Theme.surface-1;
+            border-radius: Theme.radius-lg;
+            drop-shadow-blur: 24px;
+            drop-shadow-color: #00000077;
+            drop-shadow-offset-y: -2px;
+
+            VerticalLayout {
+                padding: Theme.spacing-lg;
+                spacing: Theme.spacing-md;
+                Text {
+                    text: "Share this list";
+                    color: Theme.on-surface;
+                    font-size: Theme.font-size-body-large;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                }
+                HorizontalLayout {
+                    spacing: Theme.spacing-md;
+                    alignment: center;
+                    for target in root.share-targets: Rectangle {
+                        width: 72px;
+                        height: 88px;
+                        border-radius: Theme.radius-md;
+                        background: target-touch.pressed
+                            ? Theme.surface-pressed
+                            : Theme.surface-2;
+                        animate background { duration: Theme.motion-fast; }
+                        VerticalLayout {
+                            padding: Theme.spacing-sm;
+                            alignment: center;
+                            spacing: Theme.spacing-xs;
+                            HorizontalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: 36px;
+                                    height: 36px;
+                                    border-radius: self.width / 2;
+                                    background: Theme.accent-info;
+                                    Text {
+                                        text: target;
+                                        color: Theme.on-primary;
+                                        font-size: 10px;
+                                        font-weight: 800;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                        x: 0;
+                                        y: 0;
+                                        width: parent.width;
+                                        height: parent.height;
+                                        overflow: elide;
+                                    }
+                                }
+                            }
+                            Text {
+                                text: target;
+                                color: Theme.on-surface;
+                                font-size: 10px;
+                                font-weight: 700;
+                                horizontal-alignment: center;
+                            }
+                        }
+                        target-touch := TouchArea {
+                            clicked => { root.pick-share(target); }
+                        }
                     }
                 }
                 Rectangle {
-                    height: 6px;
-                    background: Theme.surface-variant;
-                    border-radius: 3px;
-                    Rectangle {
+                    height: 40px;
+                    border-radius: 20px;
+                    background: cancel-touch.pressed
+                        ? Theme.surface-pressed
+                        : Theme.surface-2;
+                    animate background { duration: Theme.motion-fast; }
+                    Text {
+                        text: "Cancel";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-body;
+                        font-weight: 700;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
                         x: 0;
                         y: 0;
-                        width: parent.width * 0.38;
+                        width: parent.width;
                         height: parent.height;
-                        background: Theme.accent-success;
-                        border-radius: 3px;
+                    }
+                    cancel-touch := TouchArea {
+                        clicked => { root.show-share = false; }
                     }
                 }
             }
         }
-
-        SectionHeader { text: "PRODUCE"; }
-        GroceryRow { name: "Avocados"; qty: "×4"; assignee: "GR"; done: true; }
-        Divider { }
-        GroceryRow { name: "Baby spinach"; qty: "1 bag"; assignee: "LE"; }
-        Divider { }
-        GroceryRow { name: "Lemons"; qty: "×6"; assignee: "GR"; done: true; }
-        Divider { }
-        GroceryRow { name: "Cherry tomatoes"; qty: "2 punnets"; assignee: "LE"; }
-
-        SectionHeader { text: "DAIRY & EGGS"; }
-        GroceryRow { name: "Whole milk"; qty: "2 L"; assignee: "GR"; done: true; }
-        Divider { }
-        GroceryRow { name: "Greek yogurt"; qty: "1 tub"; assignee: "LE"; }
-        Divider { }
-        GroceryRow { name: "Pasture eggs"; qty: "1 dozen"; assignee: "GR"; }
-        Divider { }
-        GroceryRow { name: "Aged cheddar"; qty: "200 g"; assignee: "LE"; done: true; }
-
-        SectionHeader { text: "PANTRY"; }
-        GroceryRow { name: "Sourdough loaf"; qty: "×1"; assignee: "GR"; }
-        Divider { }
-        GroceryRow { name: "Olive oil"; qty: "500 ml"; assignee: "LE"; done: true; }
-        Divider { }
-        GroceryRow { name: "Quinoa"; qty: "1 kg"; assignee: "GR"; }
-        Divider { }
-        // Inline add-item row.
-        Rectangle {
-            min-height: 48px;
-            HorizontalLayout {
-                padding-left: Theme.spacing-md;
-                padding-right: Theme.spacing-md;
-                spacing: Theme.spacing-md;
-                alignment: stretch;
-                VerticalLayout {
-                    alignment: center;
-                    Rectangle {
-                        width: 22px;
-                        height: 22px;
-                        border-radius: Theme.radius-sm;
-                        border-width: 1px;
-                        border-color: Theme.outline;
-                        background: transparent;
-                        Image {
-                            width: 12px;
-                            height: 12px;
-                            x: (parent.width - self.width) / 2;
-                            y: (parent.height - self.height) / 2;
-                            source: @image-url("@mobile-components/icons/plus.svg");
-                            colorize: Theme.accent-info;
-                            image-fit: contain;
-                        }
-                    }
-                }
-                VerticalLayout {
-                    horizontal-stretch: 1;
-                    alignment: center;
-                    Text {
-                        text: "Add item to Pantry…";
-                        color: Theme.accent-info;
-                        font-size: Theme.font-size-body;
-                        font-weight: 600;
-                    }
-                }
-            }
-            TouchArea {
-                clicked => { root.add-pressed(); }
-            }
-        }
-            }   // end inner VerticalLayout
-        }       // end ScrollView
     }
 
+    // ----- Quick-add FAB -----
     Fab {
         x: root.width - self.width - Theme.spacing-md;
         y: root.height - self.height - Theme.spacing-md;
         accessible-label: "Quick add item";
-        clicked => { root.add-pressed(); }
+        clicked => { root.toggle-add(); }
     }
 }

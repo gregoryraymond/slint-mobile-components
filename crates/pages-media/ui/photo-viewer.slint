@@ -1,27 +1,23 @@
 // PhotoViewerPage
 // =====================================================================
 //
-// Single-photo viewer with EXIF + edit actions — Apple Photos / Google
-// Photos "tap into a photo" detail screen. Distinct from
-// `PhotoGridPage` (browse) and `PostCreatorPage` (compose). The
-// surface is dim by default so the photo content carries the eye;
-// the chrome floats on translucent dark backdrops.
+// Single-photo viewer, now interactive.
 //
-// Demonstrates:
-//
-//   - Full-bleed photo placeholder filling the viewport (centred via
-//     letterboxing if the photo isn't 4:3).
-//   - Top action row (close × / share / overflow) on translucent dark
-//     pills.
-//   - Capture metadata strip beneath the photo: timestamp + place +
-//     EXIF chips (f-stop / shutter / ISO / focal).
-//   - Bottom action row: Heart / Edit / Share / Delete each rendered
-//     as `MiniAction` (icon + caption), with Heart in danger-tone
-//     when liked.
+//   - Status banner at the top (translucent black).
+//   - Tap the left edge of the photo to go to the previous one; tap the
+//     right edge for the next; tap centre to cycle zoom 1× / 2× / 4×.
+//   - Capture + place + EXIF all derive from `photo-idx`.
+//   - Each photo has its own Like state. Tapping the heart icon in the
+//     metadata header toggles it too.
+//   - Edit opens a 4-filter chip strip; picking a filter tints the
+//     photo placeholder.
+//   - Delete uses two-tap confirm. After confirm, the photo overlays
+//     a "DELETED · tap to restore" badge.
+//   - EXIF chips are tappable for an explanation.
+//   - Close / Share / More wire status updates.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 
-// One bottom action button — vertical icon + caption stack.
 component MiniAction inherits Rectangle {
     in property <image> icon;
     in property <string> label;
@@ -43,8 +39,8 @@ component MiniAction inherits Rectangle {
             ? (
                   root.tone == Tone.success ? Theme.accent-success
                 : root.tone == Tone.warning ? Theme.accent-warning
-                : root.tone == Tone.danger  ? Theme.accent-danger
-                : root.tone == Tone.info    ? Theme.accent-info
+                : root.tone == Tone.danger ? Theme.accent-danger
+                : root.tone == Tone.info ? Theme.accent-info
                 : Theme.primary
               )
             : Theme.on-surface;
@@ -78,15 +74,21 @@ component MiniAction inherits Rectangle {
     }
 }
 
-// One EXIF chip — small label + value.
 component ExifChip inherits Rectangle {
     in property <string> label;
     in property <string> value;
+    in property <bool> highlighted: false;
+    callback clicked();
 
     horizontal-stretch: 1;
     height: 44px;
-    background: Theme.surface-1;
+    background: root.highlighted
+        ? Theme.accent-info.with-alpha(0.3)
+        : Theme.surface-1;
     border-radius: Theme.radius-sm;
+    border-width: root.highlighted ? 2px : 0px;
+    border-color: Theme.accent-info;
+    animate background { duration: Theme.motion-fast; }
     VerticalLayout {
         spacing: 0;
         alignment: center;
@@ -108,20 +110,220 @@ component ExifChip inherits Rectangle {
             horizontal-alignment: center;
         }
     }
+    TouchArea { clicked => { root.clicked(); } }
 }
 
 export component PhotoViewerPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
-    in property <string> captured: "May 12, 2026 · 18:42";
-    in property <string> place: "Ocean Beach · San Francisco";
-    in-out property <bool> liked: false;
     callback close-pressed();
     callback share-pressed();
     callback more-pressed();
     callback heart-pressed();
     callback edit-pressed();
     callback delete-pressed();
+    callback photo-changed(int);
+    callback photo-restored(int);
+
+    // ----- Interactive state -----
+    private property <int> photo-idx: 0;
+    private property <int> zoom-level: 0; // 0=1× 1=2× 2=4×
+    private property <bool> l0: false;
+    private property <bool> l1: false;
+    private property <bool> l2: false;
+    private property <bool> d0: false;
+    private property <bool> d1: false;
+    private property <bool> d2: false;
+    private property <bool> edit-mode: false;
+    private property <int> filter-idx: 0; // 0=Original 1=BW 2=Sepia 3=Vivid
+    private property <bool> delete-confirming: false;
+    private property <int> highlighted-exif: -1;
+    private property <string> status-msg: "Tap left/right of photo to navigate · centre cycles zoom · Edit opens filters";
+    private property <bool> status-is-success: false;
+    private property <bool> status-is-danger: false;
+
+    // ----- Photo metadata -----
+    function captured(i: int) -> string {
+        if (i == 0) { return "May 12, 2026 · 18:42"; }
+        if (i == 1) { return "May 14, 2026 · 21:18"; }
+        return "May 16, 2026 · 14:22";
+    }
+    function place(i: int) -> string {
+        if (i == 0) { return "Ocean Beach · San Francisco"; }
+        if (i == 1) { return "Mission District · San Francisco"; }
+        return "Marina Green · San Francisco";
+    }
+    function exif-aperture(i: int) -> string {
+        if (i == 0) { return "ƒ/2.8"; }
+        if (i == 1) { return "ƒ/1.8"; }
+        return "ƒ/4.0";
+    }
+    function exif-shutter(i: int) -> string {
+        if (i == 0) { return "1/250"; }
+        if (i == 1) { return "1/60"; }
+        return "1/1000";
+    }
+    function exif-iso(i: int) -> string {
+        if (i == 0) { return "200"; }
+        if (i == 1) { return "800"; }
+        return "100";
+    }
+    function exif-focal(i: int) -> string {
+        if (i == 0) { return "24mm"; }
+        if (i == 1) { return "35mm"; }
+        return "85mm";
+    }
+    function photo-gradient(i: int, f: int) -> brush {
+        // i = photo index, f = filter index
+        if (f == 1) {
+            return @linear-gradient(135deg, #888 0%, #444 100%);
+        }
+        if (f == 2) {
+            return @linear-gradient(135deg, #a78a5a 0%, #6f5736 100%);
+        }
+        // Vivid is more saturated original; Original is base.
+        if (i == 0) {
+            return f == 3
+                ? @linear-gradient(135deg, #ffa500 0%, #d97706 40%, #1a1d24 100%)
+                : @linear-gradient(135deg, #f59e0b 0%, #b45309 40%, #1a1d24 100%);
+        }
+        if (i == 1) {
+            return f == 3
+                ? @linear-gradient(135deg, #6366f1 0%, #4338ca 40%, #1a1d24 100%)
+                : @linear-gradient(135deg, #4f46e5 0%, #312e81 40%, #1a1d24 100%);
+        }
+        return f == 3
+            ? @linear-gradient(135deg, #34d399 0%, #047857 40%, #1a1d24 100%)
+            : @linear-gradient(135deg, #16a34a 0%, #14532d 40%, #1a1d24 100%);
+    }
+    function liked-for(i: int) -> bool {
+        if (i == 0) { return root.l0; }
+        if (i == 1) { return root.l1; }
+        return root.l2;
+    }
+    function deleted-for(i: int) -> bool {
+        if (i == 0) { return root.d0; }
+        if (i == 1) { return root.d1; }
+        return root.d2;
+    }
+    function zoom-percent() -> float {
+        if (root.zoom-level == 0) { return 1.0; }
+        if (root.zoom-level == 1) { return 2.0; }
+        return 4.0;
+    }
+    function filter-name(f: int) -> string {
+        if (f == 0) { return "Original"; }
+        if (f == 1) { return "B&W"; }
+        if (f == 2) { return "Sepia"; }
+        return "Vivid";
+    }
+
+    // ----- Mutations -----
+    public function prev-photo() {
+        root.photo-idx = mod(root.photo-idx + 2, 3);
+        root.zoom-level = 0;
+        root.delete-confirming = false;
+        root.photo-changed(root.photo-idx);
+        root.status-msg = "← Photo " + (root.photo-idx + 1) + " / 3";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function next-photo() {
+        root.photo-idx = mod(root.photo-idx + 1, 3);
+        root.zoom-level = 0;
+        root.delete-confirming = false;
+        root.photo-changed(root.photo-idx);
+        root.status-msg = "Photo " + (root.photo-idx + 1) + " / 3 →";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function cycle-zoom() {
+        root.zoom-level = mod(root.zoom-level + 1, 3);
+        root.status-msg = "Zoom · "
+            + (root.zoom-level == 0 ? "1×"
+                : root.zoom-level == 1 ? "2×"
+                : "4×");
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function toggle-like() {
+        if (root.photo-idx == 0) { root.l0 = !root.l0; }
+        if (root.photo-idx == 1) { root.l1 = !root.l1; }
+        if (root.photo-idx == 2) { root.l2 = !root.l2; }
+        root.heart-pressed();
+        root.status-msg = root.liked-for(root.photo-idx)
+            ? "♥ Liked photo " + (root.photo-idx + 1)
+            : "Unliked photo " + (root.photo-idx + 1);
+        root.status-is-success = root.liked-for(root.photo-idx);
+        root.status-is-danger = !root.liked-for(root.photo-idx);
+    }
+    public function tap-edit() {
+        root.edit-mode = !root.edit-mode;
+        root.edit-pressed();
+        root.status-msg = root.edit-mode
+            ? "Edit mode · pick a filter"
+            : "Edit closed";
+        root.status-is-success = root.edit-mode;
+        root.status-is-danger = false;
+    }
+    public function set-filter(f: int) {
+        root.filter-idx = f;
+        root.status-msg = "Filter · " + root.filter-name(f);
+        root.status-is-success = f != 0;
+        root.status-is-danger = false;
+    }
+    public function tap-delete() {
+        if (!root.delete-confirming) {
+            root.delete-confirming = true;
+            root.status-msg = "Tap Delete again to confirm";
+            root.status-is-success = false;
+            root.status-is-danger = true;
+            return;
+        }
+        root.delete-confirming = false;
+        if (root.photo-idx == 0) { root.d0 = true; }
+        if (root.photo-idx == 1) { root.d1 = true; }
+        if (root.photo-idx == 2) { root.d2 = true; }
+        root.delete-pressed();
+        root.status-msg = "Photo " + (root.photo-idx + 1) + " deleted";
+        root.status-is-success = false;
+        root.status-is-danger = true;
+    }
+    public function restore-photo() {
+        if (root.photo-idx == 0) { root.d0 = false; }
+        if (root.photo-idx == 1) { root.d1 = false; }
+        if (root.photo-idx == 2) { root.d2 = false; }
+        root.photo-restored(root.photo-idx);
+        root.status-msg = "Photo " + (root.photo-idx + 1) + " restored";
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    public function tap-share() {
+        root.share-pressed();
+        root.status-msg = "Sharing photo " + (root.photo-idx + 1);
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    public function tap-more() {
+        root.more-pressed();
+        root.status-msg = "Options · adjust · info · slideshow";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function tap-close() {
+        root.close-pressed();
+        root.status-msg = "Closing viewer";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function tap-exif(i: int, value: string, name: string) {
+        root.highlighted-exif = root.highlighted-exif == i ? -1 : i;
+        root.status-msg = root.highlighted-exif == i
+            ? name + " · " + value
+            : "Cleared EXIF highlight";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
 
     background: #0a0d12;
 
@@ -134,13 +336,84 @@ export component PhotoViewerPage inherits Window {
             background: #0a0d12;
             clip: true;
 
-            // Photo placeholder centred at 4:3.
+            // Photo placeholder.
             Rectangle {
                 x: 0;
                 y: (parent.height - self.height) / 2;
                 width: parent.width;
                 height: parent.width * 3 / 4;
-                background: @linear-gradient(135deg, #f59e0b 0%, #b45309 40%, #1a1d24 100%);
+                background: root.photo-gradient(root.photo-idx, root.filter-idx);
+                animate background { duration: Theme.motion-fast; }
+                transform-scale-x: root.zoom-percent();
+                transform-scale-y: root.zoom-percent();
+                animate transform-scale-x { duration: Theme.motion-fast; }
+                animate transform-scale-y { duration: Theme.motion-fast; }
+
+                if root.deleted-for(root.photo-idx): Rectangle {
+                    width: parent.width;
+                    height: parent.height;
+                    background: #00000088;
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: Theme.spacing-md;
+                        HorizontalLayout {
+                            alignment: center;
+                            Text {
+                                text: "DELETED";
+                                color: Theme.accent-danger;
+                                font-size: 32px;
+                                font-weight: 800;
+                                letter-spacing: 4px;
+                            }
+                        }
+                        HorizontalLayout {
+                            alignment: center;
+                            Rectangle {
+                                width: 160px;
+                                height: 40px;
+                                border-radius: 20px;
+                                background: Theme.accent-success;
+                                Text {
+                                    text: "↺ Restore";
+                                    color: Theme.on-primary;
+                                    font-size: Theme.font-size-body;
+                                    font-weight: 800;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                                TouchArea {
+                                    clicked => { root.restore-photo(); }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Tap zones for navigation + zoom. Left/right thirds for
+            // prev/next; centre third for zoom cycle.
+            TouchArea {
+                x: 0;
+                y: 64px;
+                width: parent.width / 3;
+                height: parent.height - 64px;
+                clicked => { root.prev-photo(); }
+            }
+            TouchArea {
+                x: parent.width / 3;
+                y: 64px;
+                width: parent.width / 3;
+                height: parent.height - 64px;
+                clicked => { root.cycle-zoom(); }
+            }
+            TouchArea {
+                x: parent.width * 2 / 3;
+                y: 64px;
+                width: parent.width / 3;
+                height: parent.height - 64px;
+                clicked => { root.next-photo(); }
             }
 
             // Top action row.
@@ -166,11 +439,28 @@ export component PhotoViewerPage inherits Window {
                         colorize: #ffffff;
                         image-fit: contain;
                     }
-                    TouchArea {
-                        clicked => { root.close-pressed(); }
-                    }
+                    TouchArea { clicked => { root.tap-close(); } }
                 }
                 Rectangle { horizontal-stretch: 1; }
+                // Photo counter pill.
+                Rectangle {
+                    width: ct.preferred-width + 18px;
+                    height: 28px;
+                    border-radius: 14px;
+                    background: #00000099;
+                    y: 4px;
+                    ct := Text {
+                        text: (root.photo-idx + 1) + " / 3 · " + root.filter-name(root.filter-idx);
+                        color: #ffffff;
+                        font-size: Theme.font-size-caption;
+                        font-weight: 800;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                }
+                Rectangle { width: 8px; }
                 Rectangle {
                     width: 36px;
                     height: 36px;
@@ -185,9 +475,7 @@ export component PhotoViewerPage inherits Window {
                         colorize: #ffffff;
                         image-fit: contain;
                     }
-                    TouchArea {
-                        clicked => { root.share-pressed(); }
-                    }
+                    TouchArea { clicked => { root.tap-share(); } }
                 }
                 Rectangle {
                     width: 36px;
@@ -203,8 +491,31 @@ export component PhotoViewerPage inherits Window {
                         colorize: #ffffff;
                         image-fit: contain;
                     }
-                    TouchArea {
-                        clicked => { root.more-pressed(); }
+                    TouchArea { clicked => { root.tap-more(); } }
+                }
+            }
+
+            // Status banner — translucent ribbon under the top row.
+            Rectangle {
+                x: 0;
+                y: 64px;
+                width: parent.width;
+                height: 32px;
+                background: root.status-is-danger ? Theme.accent-danger.with-alpha(0.85)
+                    : root.status-is-success ? Theme.accent-success.with-alpha(0.85)
+                    : #00000099;
+                animate background { duration: Theme.motion-fast; }
+                HorizontalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    Text {
+                        text: root.status-msg;
+                        color: #ffffff;
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                        overflow: elide;
                     }
                 }
             }
@@ -216,24 +527,37 @@ export component PhotoViewerPage inherits Window {
             spacing: Theme.spacing-xs;
             HorizontalLayout {
                 Text {
-                    text: root.captured;
+                    text: root.captured(root.photo-idx);
                     color: Theme.on-primary;
                     font-family: "IBM Plex Sans";
                     font-size: Theme.font-size-title;
                     font-weight: 700;
                     horizontal-stretch: 1;
                 }
-                Image {
-                    width: 16px;
-                    height: 16px;
-                    source: @image-url("@mobile-components/icons/heart.svg");
-                    colorize: root.liked ? Theme.accent-danger : #ffffff88;
-                    image-fit: contain;
-                    vertical-alignment: center;
+                Rectangle {
+                    width: 28px;
+                    height: 28px;
+                    border-radius: 14px;
+                    background: heart-touch.pressed
+                        ? #ffffff22
+                        : transparent;
+                    animate background { duration: Theme.motion-fast; }
+                    Image {
+                        width: 16px;
+                        height: 16px;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        source: @image-url("@mobile-components/icons/heart.svg");
+                        colorize: root.liked-for(root.photo-idx)
+                            ? Theme.accent-danger
+                            : #ffffff88;
+                        image-fit: contain;
+                    }
+                    heart-touch := TouchArea { clicked => { root.toggle-like(); } }
                 }
             }
             Text {
-                text: root.place;
+                text: root.place(root.photo-idx);
                 color: #ffffffcc;
                 font-family: "IBM Plex Sans";
                 font-size: Theme.font-size-caption;
@@ -242,10 +566,70 @@ export component PhotoViewerPage inherits Window {
             HorizontalLayout {
                 spacing: Theme.spacing-xs;
                 padding-top: Theme.spacing-xs;
-                ExifChip { label: "APERTURE"; value: "ƒ/2.8"; }
-                ExifChip { label: "SHUTTER"; value: "1/250"; }
-                ExifChip { label: "ISO"; value: "200"; }
-                ExifChip { label: "FOCAL"; value: "24mm"; }
+                ExifChip {
+                    label: "APERTURE";
+                    value: root.exif-aperture(root.photo-idx);
+                    highlighted: root.highlighted-exif == 0;
+                    clicked => {
+                        root.tap-exif(0, root.exif-aperture(root.photo-idx), "Aperture");
+                    }
+                }
+                ExifChip {
+                    label: "SHUTTER";
+                    value: root.exif-shutter(root.photo-idx);
+                    highlighted: root.highlighted-exif == 1;
+                    clicked => {
+                        root.tap-exif(1, root.exif-shutter(root.photo-idx), "Shutter speed");
+                    }
+                }
+                ExifChip {
+                    label: "ISO";
+                    value: root.exif-iso(root.photo-idx);
+                    highlighted: root.highlighted-exif == 2;
+                    clicked => {
+                        root.tap-exif(2, root.exif-iso(root.photo-idx), "ISO");
+                    }
+                }
+                ExifChip {
+                    label: "FOCAL";
+                    value: root.exif-focal(root.photo-idx);
+                    highlighted: root.highlighted-exif == 3;
+                    clicked => {
+                        root.tap-exif(3, root.exif-focal(root.photo-idx), "Focal length");
+                    }
+                }
+            }
+        }
+
+        // ----- Filter strip (visible while editing) -----
+        if root.edit-mode: Rectangle {
+            background: Theme.surface-2;
+            height: 56px;
+            HorizontalLayout {
+                padding: Theme.spacing-sm;
+                spacing: Theme.spacing-xs;
+                for filter-i in 4 : Rectangle {
+                    horizontal-stretch: 1;
+                    height: 40px;
+                    border-radius: 20px;
+                    background: root.filter-idx == filter-i
+                        ? Theme.accent-info
+                        : Theme.surface-1;
+                    animate background { duration: Theme.motion-fast; }
+                    Text {
+                        text: root.filter-name(filter-i);
+                        color: root.filter-idx == filter-i
+                            ? Theme.on-primary
+                            : Theme.on-surface;
+                        font-size: Theme.font-size-caption;
+                        font-weight: 800;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                    TouchArea { clicked => { root.set-filter(filter-i); } }
+                }
             }
         }
 
@@ -262,27 +646,26 @@ export component PhotoViewerPage inherits Window {
                     icon: @image-url("@mobile-components/icons/heart.svg");
                     label: "LIKE";
                     tone: Tone.danger;
-                    active: root.liked;
-                    clicked => {
-                        root.liked = !root.liked;
-                        root.heart-pressed();
-                    }
+                    active: root.liked-for(root.photo-idx);
+                    clicked => { root.toggle-like(); }
                 }
                 MiniAction {
                     icon: @image-url("@mobile-components/icons/pencil.svg");
-                    label: "EDIT";
-                    clicked => { root.edit-pressed(); }
+                    label: root.edit-mode ? "DONE" : "EDIT";
+                    active: root.edit-mode;
+                    clicked => { root.tap-edit(); }
                 }
                 MiniAction {
                     icon: @image-url("@mobile-components/icons/send.svg");
                     label: "SHARE";
-                    clicked => { root.share-pressed(); }
+                    clicked => { root.tap-share(); }
                 }
                 MiniAction {
                     icon: @image-url("@mobile-components/icons/close.svg");
-                    label: "DELETE";
+                    label: root.delete-confirming ? "CONFIRM?" : "DELETE";
                     tone: Tone.danger;
-                    clicked => { root.delete-pressed(); }
+                    active: root.delete-confirming;
+                    clicked => { root.tap-delete(); }
                 }
             }
         }

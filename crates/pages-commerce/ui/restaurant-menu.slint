@@ -18,7 +18,6 @@
 //   - Persistent footer: "View cart · 3 items · $34.50".
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
-import { AppBar } from "@mobile-components/app-bar.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
 import { SectionHeader } from "@mobile-components/section-header.slint";
 import { Chip } from "@mobile-components/chip.slint";
@@ -26,14 +25,19 @@ import { Divider } from "@mobile-components/divider.slint";
 import { MobileButton } from "@mobile-components/button.slint";
 import { ScrollView } from "std-widgets.slint";
 
-// One menu item row.
+// One menu item row. Now stateful — shows current quantity in the
+// corner badge / pill and surfaces a separate `add-clicked()` callback
+// for the + button (the rest of the row still emits `clicked()` to open
+// the detail sheet).
 component DishRow inherits Rectangle {
     in property <string> name;
     in property <string> description;
     in property <string> price;
     in property <bool> popular: false;
+    in property <int> quantity: 0;
     in property <brush> thumb-fill;
     callback clicked();
+    callback add-clicked();
 
     accessible-role: button;
     accessible-label: root.name;
@@ -41,8 +45,14 @@ component DishRow inherits Rectangle {
 
     horizontal-stretch: 1;
     min-height: 112px;
-    background: touch.pressed ? Theme.surface-pressed : transparent;
+    background: row-touch.pressed ? Theme.surface-pressed : transparent;
     animate background { duration: Theme.motion-fast; }
+
+    // Row-wide touch — declared FIRST so the nested + button TouchArea
+    // declared later (inside the thumb) wins clicks within its bounds.
+    row-touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
 
     HorizontalLayout {
         padding: Theme.spacing-md;
@@ -81,6 +91,23 @@ component DishRow inherits Rectangle {
                         height: parent.height;
                     }
                 }
+                if root.quantity > 0: Rectangle {
+                    width: qty-text.preferred-width + 12px;
+                    height: 18px;
+                    border-radius: 4px;
+                    background: Theme.accent-success;
+                    qty-text := Text {
+                        text: "IN CART × " + root.quantity;
+                        color: Theme.on-primary;
+                        font-size: 9px;
+                        font-weight: 700;
+                        letter-spacing: 0.5px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                }
             }
             Text {
                 text: root.description;
@@ -96,25 +123,27 @@ component DishRow inherits Rectangle {
             }
         }
 
-        // Thumbnail with a + glyph corner.
+        // Thumbnail with a + glyph corner (becomes a number badge once
+        // the dish is in the cart).
         Rectangle {
             width: 88px;
             height: 88px;
             border-radius: Theme.radius-md;
             background: root.thumb-fill;
             clip: true;
-            // Add button — bottom-right corner of the thumb.
+            // Add (+) button or quantity badge — bottom-right of thumb.
             Rectangle {
                 x: parent.width - self.width - 6px;
                 y: parent.height - self.height - 6px;
                 width: 28px;
                 height: 28px;
                 border-radius: self.width / 2;
-                background: Theme.surface-1;
+                background: root.quantity > 0 ? Theme.accent-success : Theme.surface-1;
+                animate background { duration: Theme.motion-fast; }
                 drop-shadow-blur: Theme.elevation-1-blur;
                 drop-shadow-color: Theme.elevation-1-color;
                 drop-shadow-offset-y: Theme.elevation-1-y;
-                Image {
+                if root.quantity == 0: Image {
                     width: 14px;
                     height: 14px;
                     x: (parent.width - self.width) / 2;
@@ -123,12 +152,21 @@ component DishRow inherits Rectangle {
                     colorize: Theme.on-surface;
                     image-fit: contain;
                 }
+                if root.quantity > 0: Text {
+                    text: root.quantity;
+                    color: Theme.on-primary;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+                TouchArea {
+                    clicked => { root.add-clicked(); }
+                }
             }
         }
-    }
-
-    touch := TouchArea {
-        clicked => { root.clicked(); }
     }
 }
 
@@ -139,12 +177,146 @@ export component RestaurantMenuPage inherits Window {
     in property <string> cuisine: "Bakery · Brunch · Café";
     in property <string> rating: "★ 4.7 (2,341)";
     in property <string> eta: "20–30 min · 0.4 mi";
-    in property <int> cart-count: 3;
-    in property <string> cart-total: "$34.50";
+
+    // ----- Interactive state -----
+    private property <bool> saved: false;
+    private property <int> cat-index: 0; // 0=Popular .. 6=Desserts
+    // Per-dish quantities (no [int] model — slint can't mutate model
+    // entries from expressions in the way we'd need).
+    private property <int> q0: 1; // avocado toast
+    private property <int> q1: 1; // morning bun
+    private property <int> q2: 0; // soft scramble
+    private property <int> q3: 1; // granola bowl
+    private property <int> q4: 0; // cortado
+    private property <int> selected-dish: -1; // -1 = no detail sheet open
+    private property <bool> cart-confirming: false;
+    private property <string> status-msg: "Tap a chip to filter · tap + to add a dish";
+    private property <bool> status-is-success: false;
+    private property <bool> status-is-danger: false;
+
     callback back-pressed();
     callback heart-pressed();
     callback dish-pressed(string);
     callback view-cart-pressed();
+    callback checkout-pressed();
+    callback saved-changed(bool);
+    callback cart-changed(int, string); // count, total
+
+    // ----- Derived helpers -----
+    function cart-count() -> int {
+        return root.q0 + root.q1 + root.q2 + root.q3 + root.q4;
+    }
+    function cart-cents() -> int {
+        return 1400 * root.q0 + 550 * root.q1 + 1500 * root.q2 + 1150 * root.q3 + 475 * root.q4;
+    }
+    function fmt-money(c: int) -> string {
+        return "$" + floor(c / 100) + "."
+            + (mod(c, 100) < 10 ? "0" + mod(c, 100) : "" + mod(c, 100));
+    }
+    function cart-total-str() -> string { return root.fmt-money(root.cart-cents()); }
+
+    function cat-name(i: int) -> string {
+        if (i == 0) { return "Popular"; }
+        if (i == 1) { return "Breakfast"; }
+        if (i == 2) { return "Pastries"; }
+        if (i == 3) { return "Sandwiches"; }
+        if (i == 4) { return "Salads"; }
+        if (i == 5) { return "Drinks"; }
+        return "Desserts";
+    }
+    function cat-header(i: int) -> string {
+        if (i == 0) { return "POPULAR"; }
+        if (i == 1) { return "BREAKFAST"; }
+        if (i == 2) { return "PASTRIES"; }
+        if (i == 3) { return "SANDWICHES"; }
+        if (i == 4) { return "SALADS"; }
+        if (i == 5) { return "DRINKS"; }
+        return "DESSERTS";
+    }
+
+    // Per-dish visibility against the active chip filter.
+    function d0-visible() -> bool { return root.cat-index == 0 || root.cat-index == 1; }
+    function d1-visible() -> bool { return root.cat-index == 0 || root.cat-index == 2; }
+    function d2-visible() -> bool { return root.cat-index == 1; }
+    function d3-visible() -> bool { return root.cat-index == 1; }
+    function d4-visible() -> bool { return root.cat-index == 5; }
+    function any-visible() -> bool {
+        return root.d0-visible() || root.d1-visible() || root.d2-visible()
+            || root.d3-visible() || root.d4-visible();
+    }
+
+    function dish-name(i: int) -> string {
+        if (i == 0) { return "Avocado toast"; }
+        if (i == 1) { return "Morning bun"; }
+        if (i == 2) { return "Soft scramble + sourdough"; }
+        if (i == 3) { return "Granola bowl"; }
+        return "Cortado";
+    }
+    function dish-desc(i: int) -> string {
+        if (i == 0) { return "Country bread, smashed avocado, lemon, sea salt, chili crisp."; }
+        if (i == 1) { return "House-laminated croissant dough, sugar + cardamom + orange zest."; }
+        if (i == 2) { return "Three pasture eggs, slow scrambled with butter, served on toast."; }
+        if (i == 3) { return "House granola, seasonal compote, yogurt, raw honey, mint."; }
+        return "Equal parts espresso + steamed milk, served in a 4 oz glass.";
+    }
+    function dish-price(i: int) -> string {
+        if (i == 0) { return "$14.00"; }
+        if (i == 1) { return "$5.50"; }
+        if (i == 2) { return "$15.00"; }
+        if (i == 3) { return "$11.50"; }
+        return "$4.75";
+    }
+    function dish-qty(i: int) -> int {
+        if (i == 0) { return root.q0; }
+        if (i == 1) { return root.q1; }
+        if (i == 2) { return root.q2; }
+        if (i == 3) { return root.q3; }
+        return root.q4;
+    }
+
+    // ----- Mutating actions -----
+    public function add-dish(i: int) {
+        if (i == 0) { root.q0 = root.q0 + 1; }
+        if (i == 1) { root.q1 = root.q1 + 1; }
+        if (i == 2) { root.q2 = root.q2 + 1; }
+        if (i == 3) { root.q3 = root.q3 + 1; }
+        if (i == 4) { root.q4 = root.q4 + 1; }
+        root.status-msg = "Added: " + root.dish-name(i)
+            + " · " + root.cart-count() + " items · " + root.cart-total-str();
+        root.status-is-success = true;
+        root.status-is-danger = false;
+        root.cart-confirming = false;
+        root.cart-changed(root.cart-count(), root.cart-total-str());
+    }
+    public function remove-dish(i: int) {
+        if (root.dish-qty(i) <= 0) { return; }
+        if (i == 0) { root.q0 = root.q0 - 1; }
+        if (i == 1) { root.q1 = root.q1 - 1; }
+        if (i == 2) { root.q2 = root.q2 - 1; }
+        if (i == 3) { root.q3 = root.q3 - 1; }
+        if (i == 4) { root.q4 = root.q4 - 1; }
+        root.status-msg = "Removed: " + root.dish-name(i)
+            + " · " + root.cart-count() + " items · " + root.cart-total-str();
+        root.status-is-success = false;
+        root.status-is-danger = true;
+        root.cart-confirming = false;
+        root.cart-changed(root.cart-count(), root.cart-total-str());
+    }
+    public function select-cat(i: int) {
+        root.cat-index = i;
+        root.status-msg = "Filter: " + root.cat-name(i);
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function toggle-saved() {
+        root.saved = !root.saved;
+        root.status-msg = root.saved
+            ? "Saved to favourites"
+            : "Removed from favourites";
+        root.status-is-success = root.saved;
+        root.status-is-danger = !root.saved;
+        root.saved-changed(root.saved);
+    }
 
     background: Theme.background;
 
@@ -157,7 +329,7 @@ export component RestaurantMenuPage inherits Window {
             background: @linear-gradient(135deg, #d4751a 0%, #7a2e0a 100%);
             clip: true;
 
-            // Translucent back / heart buttons.
+            // Translucent back button.
             Rectangle {
                 x: Theme.spacing-md;
                 y: Theme.spacing-md;
@@ -178,13 +350,15 @@ export component RestaurantMenuPage inherits Window {
                     clicked => { root.back-pressed(); }
                 }
             }
+            // Heart button — turns red when saved.
             Rectangle {
                 x: parent.width - self.width - Theme.spacing-md;
                 y: Theme.spacing-md;
                 width: 40px;
                 height: 40px;
                 border-radius: self.width / 2;
-                background: #00000066;
+                background: root.saved ? Theme.accent-danger : #00000066;
+                animate background { duration: Theme.motion-fast; }
                 Image {
                     width: 20px;
                     height: 20px;
@@ -195,7 +369,34 @@ export component RestaurantMenuPage inherits Window {
                     image-fit: contain;
                 }
                 TouchArea {
-                    clicked => { root.heart-pressed(); }
+                    clicked => {
+                        root.heart-pressed();
+                        root.toggle-saved();
+                    }
+                }
+            }
+        }
+
+        // ----- Status banner -----
+        Rectangle {
+            height: 32px;
+            background: root.status-is-danger ? Theme.accent-danger
+                : root.status-is-success ? Theme.accent-success
+                : Theme.surface-2;
+            animate background { duration: Theme.motion-fast; }
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                Text {
+                    text: root.status-msg;
+                    color: (root.status-is-danger || root.status-is-success)
+                        ? Theme.on-primary
+                        : Theme.on-surface;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
                 }
             }
         }
@@ -231,7 +432,7 @@ export component RestaurantMenuPage inherits Window {
             }
         }
 
-        // ----- Category chip strip -----
+        // ----- Category chip strip (each chip is tappable) -----
         ScrollView {
             height: 56px;
             horizontal-stretch: 1;
@@ -240,59 +441,128 @@ export component RestaurantMenuPage inherits Window {
             HorizontalLayout {
                 spacing: Theme.spacing-sm;
                 padding: Theme.spacing-sm;
-                Chip { label: "Popular"; selected: true; }
-                Chip { label: "Breakfast"; }
-                Chip { label: "Pastries"; }
-                Chip { label: "Sandwiches"; }
-                Chip { label: "Salads"; }
-                Chip { label: "Drinks"; }
-                Chip { label: "Desserts"; }
+                Rectangle {
+                    Chip { label: "Popular"; selected: root.cat-index == 0; }
+                    TouchArea { clicked => { root.select-cat(0); } }
+                }
+                Rectangle {
+                    Chip { label: "Breakfast"; selected: root.cat-index == 1; }
+                    TouchArea { clicked => { root.select-cat(1); } }
+                }
+                Rectangle {
+                    Chip { label: "Pastries"; selected: root.cat-index == 2; }
+                    TouchArea { clicked => { root.select-cat(2); } }
+                }
+                Rectangle {
+                    Chip { label: "Sandwiches"; selected: root.cat-index == 3; }
+                    TouchArea { clicked => { root.select-cat(3); } }
+                }
+                Rectangle {
+                    Chip { label: "Salads"; selected: root.cat-index == 4; }
+                    TouchArea { clicked => { root.select-cat(4); } }
+                }
+                Rectangle {
+                    Chip { label: "Drinks"; selected: root.cat-index == 5; }
+                    TouchArea { clicked => { root.select-cat(5); } }
+                }
+                Rectangle {
+                    Chip { label: "Desserts"; selected: root.cat-index == 6; }
+                    TouchArea { clicked => { root.select-cat(6); } }
+                }
             }
         }
 
-        SectionHeader { text: "POPULAR"; }
-        DishRow {
+        // Dynamic section header reflects the active chip.
+        SectionHeader { text: root.cat-header(root.cat-index); }
+
+        // Dishes — each `if` guards a row + the divider between
+        // consecutive visible rows.
+        if root.d0-visible(): DishRow {
             name: "Avocado toast";
             description: "Country bread, smashed avocado, lemon, sea salt, chili crisp.";
             price: "$14.00";
             popular: true;
+            quantity: root.q0;
             thumb-fill: @linear-gradient(135deg, #6dba63 0%, #2f5a2b 100%);
-            clicked => { root.dish-pressed(self.name); }
+            clicked => {
+                root.selected-dish = 0;
+                root.dish-pressed("Avocado toast");
+            }
+            add-clicked => { root.add-dish(0); }
         }
-        Divider { }
-        DishRow {
+        if root.d0-visible() && root.d1-visible(): Divider { }
+        if root.d1-visible(): DishRow {
             name: "Morning bun";
             description: "House-laminated croissant dough, sugar + cardamom + orange zest.";
             price: "$5.50";
             popular: true;
+            quantity: root.q1;
             thumb-fill: @linear-gradient(135deg, #f2b75e 0%, #a3621e 100%);
-            clicked => { root.dish-pressed(self.name); }
+            clicked => {
+                root.selected-dish = 1;
+                root.dish-pressed("Morning bun");
+            }
+            add-clicked => { root.add-dish(1); }
         }
-
-        SectionHeader { text: "BREAKFAST"; }
-        DishRow {
+        if root.d2-visible(): DishRow {
             name: "Soft scramble + sourdough";
             description: "Three pasture eggs, slow scrambled with butter, served on toast.";
             price: "$15.00";
+            quantity: root.q2;
             thumb-fill: @linear-gradient(135deg, #f5d97e 0%, #c69e26 100%);
-            clicked => { root.dish-pressed(self.name); }
+            clicked => {
+                root.selected-dish = 2;
+                root.dish-pressed("Soft scramble + sourdough");
+            }
+            add-clicked => { root.add-dish(2); }
         }
-        Divider { }
-        DishRow {
+        if root.d2-visible() && root.d3-visible(): Divider { }
+        if root.d3-visible(): DishRow {
             name: "Granola bowl";
             description: "House granola, seasonal compote, yogurt, raw honey, mint.";
             price: "$11.50";
+            quantity: root.q3;
             thumb-fill: @linear-gradient(135deg, #c486e4 0%, #6b3da0 100%);
-            clicked => { root.dish-pressed(self.name); }
+            clicked => {
+                root.selected-dish = 3;
+                root.dish-pressed("Granola bowl");
+            }
+            add-clicked => { root.add-dish(3); }
         }
-
-        SectionHeader { text: "DRINKS"; }
-        DishRow {
+        if root.d4-visible(): DishRow {
             name: "Cortado";
             description: "Equal parts espresso + steamed milk, served in a 4 oz glass.";
             price: "$4.75";
+            quantity: root.q4;
             thumb-fill: @linear-gradient(135deg, #6b3e1a 0%, #2b1707 100%);
-            clicked => { root.dish-pressed(self.name); }
+            clicked => {
+                root.selected-dish = 4;
+                root.dish-pressed("Cortado");
+            }
+            add-clicked => { root.add-dish(4); }
+        }
+
+        // Empty-state copy when the active chip filters every dish out.
+        if !root.any-visible(): Rectangle {
+            min-height: 160px;
+            VerticalLayout {
+                padding: Theme.spacing-lg;
+                spacing: Theme.spacing-xs;
+                alignment: center;
+                Text {
+                    text: "No items in " + root.cat-name(root.cat-index) + " yet";
+                    color: Theme.muted;
+                    font-size: Theme.font-size-body;
+                    font-weight: 600;
+                    horizontal-alignment: center;
+                }
+                Text {
+                    text: "Tap a different chip above to keep browsing";
+                    color: Theme.muted;
+                    font-size: Theme.font-size-caption;
+                    horizontal-alignment: center;
+                }
+            }
         }
 
         Rectangle { vertical-stretch: 1; }
@@ -306,9 +576,163 @@ export component RestaurantMenuPage inherits Window {
             HorizontalLayout {
                 padding: Theme.spacing-md;
                 MobileButton {
-                    text: "View cart · " + root.cart-count + " items · " + root.cart-total;
+                    text: root.cart-count() == 0
+                        ? "Cart empty — tap + on a dish"
+                        : root.cart-confirming
+                            ? "Tap again to checkout · " + root.cart-total-str()
+                            : "View cart · " + root.cart-count() + " items · " + root.cart-total-str();
+                    tone: root.cart-confirming ? Tone.success : Tone.info;
+                    enabled: root.cart-count() > 0;
+                    clicked => {
+                        if (root.cart-confirming) {
+                            root.checkout-pressed();
+                            root.status-msg = "Checkout · " + root.cart-count()
+                                + " items · " + root.cart-total-str();
+                            root.status-is-success = true;
+                            root.status-is-danger = false;
+                            root.cart-confirming = false;
+                        } else {
+                            root.cart-confirming = true;
+                            root.view-cart-pressed();
+                            root.status-msg = "Confirm checkout · " + root.cart-count()
+                                + " items · " + root.cart-total-str();
+                            root.status-is-success = false;
+                            root.status-is-danger = false;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ----- Dish detail bottom sheet -----
+    // Window root supports stacking children outside the layout — this
+    // sheet sits on top of everything when `selected-dish >= 0`.
+    if root.selected-dish >= 0: Rectangle {
+        // Backdrop — tap to dismiss.
+        Rectangle {
+            background: #00000099;
+            TouchArea {
+                clicked => { root.selected-dish = -1; }
+            }
+        }
+
+        // Sheet — anchored to the bottom of the page.
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            height: 320px;
+            background: Theme.surface-1;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            // No-op TouchArea so taps inside the sheet don't fall
+            // through to the backdrop dismiss.
+            TouchArea { }
+
+            VerticalLayout {
+                padding: Theme.spacing-lg;
+                spacing: Theme.spacing-md;
+
+                // Drag handle visual.
+                Rectangle {
+                    width: 40px;
+                    height: 4px;
+                    border-radius: 2px;
+                    background: Theme.muted;
+                }
+
+                HorizontalLayout {
+                    spacing: Theme.spacing-md;
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        spacing: 2px;
+                        Heading {
+                            text: root.dish-name(root.selected-dish);
+                            style: HeadingStyle.grotesk-bold;
+                            font-size: Theme.font-size-headline;
+                        }
+                        Text {
+                            text: root.dish-desc(root.selected-dish);
+                            color: Theme.muted;
+                            font-size: Theme.font-size-caption;
+                            wrap: word-wrap;
+                        }
+                    }
+                    Text {
+                        text: root.dish-price(root.selected-dish);
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-body-large;
+                        font-weight: 700;
+                        vertical-alignment: top;
+                    }
+                }
+
+                Rectangle { vertical-stretch: 1; }
+
+                // Quantity stepper.
+                HorizontalLayout {
+                    spacing: Theme.spacing-md;
+                    alignment: center;
+                    Rectangle {
+                        width: 48px;
+                        height: 48px;
+                        border-radius: 24px;
+                        background: root.dish-qty(root.selected-dish) > 0
+                            ? Theme.accent-danger
+                            : Theme.surface-2;
+                        animate background { duration: Theme.motion-fast; }
+                        Text {
+                            text: "−";
+                            color: root.dish-qty(root.selected-dish) > 0
+                                ? Theme.on-primary
+                                : Theme.muted;
+                            font-size: 24px;
+                            font-weight: 700;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
+                        }
+                        TouchArea {
+                            clicked => { root.remove-dish(root.selected-dish); }
+                        }
+                    }
+                    Text {
+                        text: root.dish-qty(root.selected-dish);
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 700;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        min-width: 64px;
+                    }
+                    Rectangle {
+                        width: 48px;
+                        height: 48px;
+                        border-radius: 24px;
+                        background: Theme.accent-success;
+                        Text {
+                            text: "+";
+                            color: Theme.on-primary;
+                            font-size: 24px;
+                            font-weight: 700;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
+                        }
+                        TouchArea {
+                            clicked => { root.add-dish(root.selected-dish); }
+                        }
+                    }
+                }
+
+                MobileButton {
+                    text: "Done";
                     tone: Tone.info;
-                    clicked => { root.view-cart-pressed(); }
+                    clicked => { root.selected-dish = -1; }
                 }
             }
         }

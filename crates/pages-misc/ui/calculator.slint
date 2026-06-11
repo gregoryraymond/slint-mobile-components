@@ -1,64 +1,36 @@
 // CalculatorPage
 // =====================================================================
 //
-// Standard phone calculator — the canonical iOS / Android / PCalc-style
-// screen. Single-purpose surface where most of the canvas is buttons.
-// Demonstrates:
-//
-//   - Big right-aligned display anchored to the top: prior expression
-//     in muted text + current result in giant 64 px Light.
-//   - 4-column × 5-row button grid: top row is utility (AC / +/− / %)
-//     and the rightmost column carries operators (÷ × − +) in a
-//     warning-toned column so it's easy to scan.
-//   - "=" key spans an entire row width as the primary CTA (info-tone).
-//   - "0" key wider than the other digit keys, matching Apple's
-//     calculator layout.
+// Standard phone calculator.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { HeadingStyle } from "@mobile-components/heading.slint";
+import { Divider } from "@mobile-components/divider.slint";
+import { ScrollView } from "std-widgets.slint";
 
-// One calculator button.
-//
-// `kind`:
-//   0 = digit (surface-1)
-//   1 = utility (surface-2 / muted text)
-//   2 = operator (warning tint)
-//   3 = primary (info tint)
 component CalcKey inherits Rectangle {
     in property <string> label;
-    in property <int> kind: 0;
+    in property <int> kind: 0; // 0 digit 1 utility 2 operator 3 primary
     in property <bool> wide: false;
+    in property <bool> active: false;
     callback clicked();
 
     accessible-role: button;
     accessible-label: root.label;
-    accessible-action-default => { root.clicked(); }
+    accessible-action-default => {
+        root.clicked();
+    }
 
     horizontal-stretch: root.wide ? 2 : 1;
     height: 72px;
     border-radius: 36px;
-    background:
-          touch.pressed
-        ? (
-              root.kind == 3 ? Theme.accent-info.darker(0.15)
-            : root.kind == 2 ? Theme.accent-warning.darker(0.15)
-            : root.kind == 1 ? Theme.surface-pressed
-            : Theme.surface-pressed
-          )
-        : (
-              root.kind == 3 ? Theme.accent-info
-            : root.kind == 2 ? Theme.accent-warning
-            : root.kind == 1 ? Theme.surface-2
-            : Theme.surface-1
-          );
+    background: touch.pressed ? (root.kind == 3 ? Theme.accent-info.darker(0.15) : (root.kind == 2 ? Theme.accent-warning.darker(0.15) : (root.kind == 1 ? Theme.surface-pressed : Theme.surface-pressed))) : (root.active ? Theme.on-surface : (root.kind == 3 ? Theme.accent-info : (root.kind == 2 ? Theme.accent-warning : (root.kind == 1 ? Theme.surface-2 : Theme.surface-1))));
     animate background { duration: Theme.motion-fast; }
 
     Text {
         text: root.label;
-        color:
-              root.kind >= 2 ? Theme.on-primary
-            : Theme.on-surface;
+        color: root.active ? (root.kind == 2 ? Theme.accent-warning : Theme.on-primary) : (root.kind >= 2 ? Theme.on-primary : Theme.on-surface);
         font-size: root.kind == 1 ? 22px : 26px;
         font-weight: root.kind >= 2 ? 800 : 500;
         horizontal-alignment: center;
@@ -68,18 +40,293 @@ component CalcKey inherits Rectangle {
     }
 
     touch := TouchArea {
-        clicked => { root.clicked(); }
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component HistoryRow inherits Rectangle {
+    in property <string> expr;
+    in property <string> result;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            Text {
+                text: root.expr;
+                color: Theme.muted;
+                font-family: "JetBrains Mono";
+                font-size: Theme.font-size-caption;
+                overflow: elide;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: "= " + root.result;
+                color: Theme.on-surface;
+                font-family: "JetBrains Mono";
+                font-size: Theme.font-size-body;
+                font-weight: 700;
+            }
+        }
+    }
+}
+
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.destructive ? Theme.accent-danger : Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+        }
     }
 }
 
 export component CalculatorPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
-    in property <string> expression: "248 × 14";
-    in property <string> result: "3,472";
+
+    // Numeric state.
+    in-out property <string> buffer: "0";
+    in-out property <bool> negative: false;
+    in-out property <bool> has-dot: false;
+    in-out property <float> accum: 0;
+    in-out property <string> pending-op: "";
+    in-out property <bool> reset-on-digit: false;
+    in-out property <bool> error: false;
+    in-out property <bool> degrees: true;
+
+    // Memory.
+    in-out property <float> memory: 0;
+    in-out property <bool> has-memory: false;
+
+    // History (5 ring slots).
+    in-out property <int> hist-count: 0;
+    in-out property <string> hist0-expr;
+    in-out property <string> hist0-res;
+    in-out property <string> hist1-expr;
+    in-out property <string> hist1-res;
+    in-out property <string> hist2-expr;
+    in-out property <string> hist2-res;
+    in-out property <string> hist3-expr;
+    in-out property <string> hist3-res;
+    in-out property <string> hist4-expr;
+    in-out property <string> hist4-res;
+
+    in-out property <bool> sheet-open: false;
+    in-out property <bool> history-open: false;
+    in-out property <bool> confirm-clear: false;
+
     callback back-pressed();
     callback key-pressed(string);
     callback equals-pressed();
+
+    // ----- Helpers -----
+    function fmt-num(x: float) -> string {
+        return x >= 0 ? (floor(x) == x ? "" + floor(x) : "" + x) : "−" + (floor(-x) == -x ? "" + floor(-x) : "" + (-x));
+    }
+    function display-text() -> string {
+        return root.error ? "Error" : (root.negative ? "−" + root.buffer : root.buffer);
+    }
+    function display-value() -> float {
+        return root.negative ? -root.buffer.to-float() : root.buffer.to-float();
+    }
+    function expression-text() -> string {
+        return root.pending-op == "" ? (root.has-memory ? "M = " + root.fmt-num(root.memory) : " ") : root.fmt-num(root.accum) + " " + root.pending-op;
+    }
+    function apply-op(a: float, b: float, op: string) -> float {
+        return op == "+" ? a + b : (op == "−" ? a - b : (op == "×" ? a * b : (op == "÷" ? (b == 0 ? 0 : a / b) : b)));
+    }
+    function push-history(expr: string, res: string) {
+        root.hist4-expr = root.hist3-expr;
+        root.hist4-res = root.hist3-res;
+        root.hist3-expr = root.hist2-expr;
+        root.hist3-res = root.hist2-res;
+        root.hist2-expr = root.hist1-expr;
+        root.hist2-res = root.hist1-res;
+        root.hist1-expr = root.hist0-expr;
+        root.hist1-res = root.hist0-res;
+        root.hist0-expr = expr;
+        root.hist0-res = res;
+        if (root.hist-count < 5) {
+            root.hist-count = root.hist-count + 1;
+        }
+    }
+
+    function press-digit(d: string) {
+        if (root.error) {
+            root.error = false;
+            root.buffer = "0";
+            root.negative = false;
+            root.has-dot = false;
+        }
+        if (root.reset-on-digit) {
+            root.buffer = "0";
+            root.negative = false;
+            root.has-dot = false;
+            root.reset-on-digit = false;
+        }
+        if (d == ".") {
+            if (!root.has-dot) {
+                root.buffer = root.buffer + ".";
+                root.has-dot = true;
+            }
+        } else {
+            if (root.buffer == "0") {
+                root.buffer = d;
+            } else {
+                root.buffer = root.buffer + d;
+            }
+        }
+        root.key-pressed(d);
+    }
+
+    function press-op(op: string) {
+        if (root.error) {
+            return;
+        }
+        if (root.pending-op == "" || root.reset-on-digit) {
+            root.accum = root.display-value();
+        } else {
+            root.accum = root.apply-op(root.accum, root.display-value(), root.pending-op);
+        }
+        root.pending-op = op;
+        root.reset-on-digit = true;
+        root.key-pressed(op);
+    }
+
+    function press-equals() {
+        if (root.error) {
+            return;
+        }
+        if (root.pending-op != "") {
+            // Build expression label.
+            root.push-history(root.fmt-num(root.accum) + " " + root.pending-op + " " + root.display-text(), "");
+            root.accum = root.apply-op(root.accum, root.display-value(), root.pending-op);
+            if (root.pending-op == "÷" && root.display-value() == 0) {
+                root.error = true;
+            }
+            // Update most-recent history result.
+            root.hist0-res = root.error ? "Error" : root.fmt-num(root.accum);
+            root.buffer = root.error ? "0" : root.fmt-num(root.accum >= 0 ? root.accum : -root.accum);
+            root.negative = root.accum < 0;
+            root.has-dot = floor(root.accum) != root.accum;
+            root.pending-op = "";
+            root.reset-on-digit = true;
+        }
+        root.equals-pressed();
+    }
+
+    function press-clear() {
+        root.buffer = "0";
+        root.negative = false;
+        root.has-dot = false;
+        root.accum = 0;
+        root.pending-op = "";
+        root.reset-on-digit = false;
+        root.error = false;
+    }
+
+    function press-sign() {
+        if (root.buffer != "0") {
+            root.negative = !root.negative;
+        }
+    }
+
+    function press-percent() {
+        if (root.error) {
+            return;
+        }
+        root.buffer = root.fmt-num((root.display-value() / 100) >= 0 ? root.display-value() / 100 : -(root.display-value() / 100));
+        root.negative = root.display-value() / 100 < 0;
+        root.has-dot = true;
+        root.reset-on-digit = false;
+    }
+
+    function press-backspace() {
+        if (root.error) {
+            root.press-clear();
+            return;
+        }
+        if (root.buffer.character-count <= 1) {
+            root.buffer = "0";
+            root.negative = false;
+            root.has-dot = false;
+        } else {
+            // Slint has no string slicing. We rebuild via numeric.
+            // Approximation: divide off last digit if integer; else drop a char by re-parsing.
+            // We fall back to clearing for decimal numbers.
+            if (!root.has-dot) {
+                root.buffer = "" + floor(root.buffer.to-float() / 10);
+                if (root.buffer == "0") {
+                    root.negative = false;
+                }
+            } else {
+                // Drop dot fast path.
+                root.buffer = "" + floor(root.buffer.to-float());
+                root.has-dot = false;
+            }
+        }
+    }
+
+    function press-mem-plus() {
+        root.memory = root.memory + root.display-value();
+        root.has-memory = true;
+    }
+    function press-mem-minus() {
+        root.memory = root.memory - root.display-value();
+        root.has-memory = true;
+    }
+    function press-mem-recall() {
+        if (root.has-memory) {
+            root.buffer = root.fmt-num(root.memory >= 0 ? root.memory : -root.memory);
+            root.negative = root.memory < 0;
+            root.has-dot = floor(root.memory) != root.memory;
+            root.reset-on-digit = true;
+        }
+    }
+    function press-mem-clear() {
+        root.memory = 0;
+        root.has-memory = false;
+    }
 
     background: Theme.background;
 
@@ -91,10 +338,88 @@ export component CalculatorPage inherits Window {
             title-style: HeadingStyle.mono;
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
-            leading-pressed => { root.back-pressed(); }
+            leading-pressed => {
+                root.back-pressed();
+            }
+            trailing-pressed => {
+                root.sheet-open = true;
+            }
         }
 
-        // ----- Display -----
+        // ----- Memory / mode bar -----
+        Rectangle {
+            height: 36px;
+            background: Theme.surface-1;
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                spacing: Theme.spacing-sm;
+                alignment: stretch;
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    Text {
+                        text: root.has-memory ? "M " + root.fmt-num(root.memory) : "M empty";
+                        color: root.has-memory ? Theme.accent-info : Theme.muted;
+                        font-family: "JetBrains Mono";
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                    }
+                }
+                Rectangle {
+                    horizontal-stretch: 0;
+                    height: 24px;
+                    border-radius: 12px;
+                    background: Theme.surface-2;
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-sm;
+                        padding-right: Theme.spacing-sm;
+                        alignment: center;
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: root.degrees ? "DEG" : "RAD";
+                                color: Theme.on-surface;
+                                font-size: Theme.font-size-caption;
+                                font-weight: 700;
+                            }
+                        }
+                    }
+                    TouchArea {
+                        clicked => {
+                            root.degrees = !root.degrees;
+                        }
+                    }
+                }
+                Rectangle {
+                    horizontal-stretch: 0;
+                    height: 24px;
+                    border-radius: 12px;
+                    background: root.history-open ? Theme.primary : Theme.surface-2;
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-sm;
+                        padding-right: Theme.spacing-sm;
+                        alignment: center;
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: "History (" + root.hist-count + ")";
+                                color: root.history-open ? Theme.on-primary : Theme.on-surface;
+                                font-size: Theme.font-size-caption;
+                                font-weight: 700;
+                            }
+                        }
+                    }
+                    TouchArea {
+                        clicked => {
+                            root.history-open = !root.history-open;
+                        }
+                    }
+                }
+            }
+        }
+
+        // ----- Display (tap to copy / open history) -----
         Rectangle {
             horizontal-stretch: 1;
             vertical-stretch: 1;
@@ -104,7 +429,7 @@ export component CalculatorPage inherits Window {
                 alignment: end;
                 HorizontalLayout {
                     Text {
-                        text: root.expression;
+                        text: root.expression-text();
                         color: Theme.muted;
                         font-family: "JetBrains Mono";
                         font-size: Theme.font-size-body-large;
@@ -116,8 +441,8 @@ export component CalculatorPage inherits Window {
                 }
                 HorizontalLayout {
                     Text {
-                        text: root.result;
-                        color: Theme.on-background;
+                        text: root.display-text();
+                        color: root.error ? Theme.accent-danger : Theme.on-background;
                         font-family: "JetBrains Mono";
                         font-size: 64px;
                         font-weight: 400;
@@ -127,6 +452,186 @@ export component CalculatorPage inherits Window {
                     }
                 }
             }
+            TouchArea {
+                clicked => {
+                    root.press-backspace();
+                }
+            }
+        }
+
+        // ----- History drawer -----
+        if root.history-open: Rectangle {
+            height: 200px;
+            background: Theme.surface-1;
+            VerticalLayout {
+                spacing: 0;
+                Rectangle {
+                    height: 32px;
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-md;
+                        padding-right: Theme.spacing-md;
+                        alignment: stretch;
+                        VerticalLayout {
+                            alignment: center;
+                            horizontal-stretch: 1;
+                            Text {
+                                text: "HISTORY";
+                                color: Theme.muted;
+                                font-family: "JetBrains Mono";
+                                font-size: 11px;
+                                font-weight: 700;
+                                letter-spacing: 2px;
+                            }
+                        }
+                        Rectangle {
+                            horizontal-stretch: 0;
+                            height: 22px;
+                            border-radius: 11px;
+                            background: Theme.surface-2;
+                            HorizontalLayout {
+                                padding-left: Theme.spacing-sm;
+                                padding-right: Theme.spacing-sm;
+                                alignment: center;
+                                VerticalLayout {
+                                    alignment: center;
+                                    Text {
+                                        text: "Clear";
+                                        color: Theme.accent-danger;
+                                        font-size: Theme.font-size-caption;
+                                        font-weight: 700;
+                                    }
+                                }
+                            }
+                            TouchArea {
+                                clicked => {
+                                    root.hist0-expr = "";
+                                    root.hist0-res = "";
+                                    root.hist1-expr = "";
+                                    root.hist1-res = "";
+                                    root.hist2-expr = "";
+                                    root.hist2-res = "";
+                                    root.hist3-expr = "";
+                                    root.hist3-res = "";
+                                    root.hist4-expr = "";
+                                    root.hist4-res = "";
+                                    root.hist-count = 0;
+                                }
+                            }
+                        }
+                    }
+                }
+                Divider { }
+
+                ScrollView {
+                    vertical-stretch: 1;
+                    VerticalLayout {
+                        spacing: 0;
+                        if root.hist-count == 0: Rectangle {
+                            min-height: 48px;
+                            VerticalLayout {
+                                alignment: center;
+                                Text {
+                                    text: "No history yet — try a calculation";
+                                    color: Theme.muted;
+                                    font-size: Theme.font-size-caption;
+                                    horizontal-alignment: center;
+                                }
+                            }
+                        }
+                        if root.hist-count > 0: HistoryRow {
+                            expr: root.hist0-expr;
+                            result: root.hist0-res;
+                            clicked => {
+                                root.buffer = root.hist0-res;
+                                root.negative = false;
+                                root.has-dot = floor(root.hist0-res.to-float()) != root.hist0-res.to-float();
+                                root.reset-on-digit = true;
+                            }
+                        }
+                        if root.hist-count > 1: Divider { }
+                        if root.hist-count > 1: HistoryRow {
+                            expr: root.hist1-expr;
+                            result: root.hist1-res;
+                            clicked => {
+                                root.buffer = root.hist1-res;
+                                root.negative = false;
+                                root.has-dot = floor(root.hist1-res.to-float()) != root.hist1-res.to-float();
+                                root.reset-on-digit = true;
+                            }
+                        }
+                        if root.hist-count > 2: Divider { }
+                        if root.hist-count > 2: HistoryRow {
+                            expr: root.hist2-expr;
+                            result: root.hist2-res;
+                            clicked => {
+                                root.buffer = root.hist2-res;
+                                root.negative = false;
+                                root.has-dot = floor(root.hist2-res.to-float()) != root.hist2-res.to-float();
+                                root.reset-on-digit = true;
+                            }
+                        }
+                        if root.hist-count > 3: Divider { }
+                        if root.hist-count > 3: HistoryRow {
+                            expr: root.hist3-expr;
+                            result: root.hist3-res;
+                            clicked => {
+                                root.buffer = root.hist3-res;
+                                root.negative = false;
+                                root.has-dot = floor(root.hist3-res.to-float()) != root.hist3-res.to-float();
+                                root.reset-on-digit = true;
+                            }
+                        }
+                        if root.hist-count > 4: Divider { }
+                        if root.hist-count > 4: HistoryRow {
+                            expr: root.hist4-expr;
+                            result: root.hist4-res;
+                            clicked => {
+                                root.buffer = root.hist4-res;
+                                root.negative = false;
+                                root.has-dot = floor(root.hist4-res.to-float()) != root.hist4-res.to-float();
+                                root.reset-on-digit = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ----- Memory row -----
+        HorizontalLayout {
+            padding-left: Theme.spacing-md;
+            padding-right: Theme.spacing-md;
+            padding-top: Theme.spacing-sm;
+            spacing: Theme.spacing-sm;
+            CalcKey {
+                label: "MC";
+                kind: 1;
+                clicked => {
+                    root.press-mem-clear();
+                }
+            }
+            CalcKey {
+                label: "MR";
+                kind: 1;
+                active: root.has-memory;
+                clicked => {
+                    root.press-mem-recall();
+                }
+            }
+            CalcKey {
+                label: "M+";
+                kind: 1;
+                clicked => {
+                    root.press-mem-plus();
+                }
+            }
+            CalcKey {
+                label: "M−";
+                kind: 1;
+                clicked => {
+                    root.press-mem-minus();
+                }
+            }
         }
 
         // ----- Keypad -----
@@ -134,44 +639,260 @@ export component CalculatorPage inherits Window {
             padding: Theme.spacing-md;
             spacing: Theme.spacing-sm;
 
-            // Utility row: AC / +/− / % / ÷
             HorizontalLayout {
                 spacing: Theme.spacing-sm;
-                CalcKey { label: "AC";  kind: 1; clicked => { root.key-pressed(self.label); } }
-                CalcKey { label: "+/−"; kind: 1; clicked => { root.key-pressed(self.label); } }
-                CalcKey { label: "%";   kind: 1; clicked => { root.key-pressed(self.label); } }
-                CalcKey { label: "÷";   kind: 2; clicked => { root.key-pressed(self.label); } }
+                CalcKey {
+                    label: "AC";
+                    kind: 1;
+                    clicked => {
+                        root.press-clear();
+                    }
+                }
+                CalcKey {
+                    label: "+/−";
+                    kind: 1;
+                    clicked => {
+                        root.press-sign();
+                    }
+                }
+                CalcKey {
+                    label: "%";
+                    kind: 1;
+                    clicked => {
+                        root.press-percent();
+                    }
+                }
+                CalcKey {
+                    label: "÷";
+                    kind: 2;
+                    active: root.pending-op == "÷";
+                    clicked => {
+                        root.press-op("÷");
+                    }
+                }
             }
-            // 7 8 9 ×
             HorizontalLayout {
                 spacing: Theme.spacing-sm;
-                CalcKey { label: "7"; kind: 0; clicked => { root.key-pressed(self.label); } }
-                CalcKey { label: "8"; kind: 0; clicked => { root.key-pressed(self.label); } }
-                CalcKey { label: "9"; kind: 0; clicked => { root.key-pressed(self.label); } }
-                CalcKey { label: "×"; kind: 2; clicked => { root.key-pressed(self.label); } }
+                CalcKey {
+                    label: "7";
+                    kind: 0;
+                    clicked => {
+                        root.press-digit("7");
+                    }
+                }
+                CalcKey {
+                    label: "8";
+                    kind: 0;
+                    clicked => {
+                        root.press-digit("8");
+                    }
+                }
+                CalcKey {
+                    label: "9";
+                    kind: 0;
+                    clicked => {
+                        root.press-digit("9");
+                    }
+                }
+                CalcKey {
+                    label: "×";
+                    kind: 2;
+                    active: root.pending-op == "×";
+                    clicked => {
+                        root.press-op("×");
+                    }
+                }
             }
-            // 4 5 6 −
             HorizontalLayout {
                 spacing: Theme.spacing-sm;
-                CalcKey { label: "4"; kind: 0; clicked => { root.key-pressed(self.label); } }
-                CalcKey { label: "5"; kind: 0; clicked => { root.key-pressed(self.label); } }
-                CalcKey { label: "6"; kind: 0; clicked => { root.key-pressed(self.label); } }
-                CalcKey { label: "−"; kind: 2; clicked => { root.key-pressed(self.label); } }
+                CalcKey {
+                    label: "4";
+                    kind: 0;
+                    clicked => {
+                        root.press-digit("4");
+                    }
+                }
+                CalcKey {
+                    label: "5";
+                    kind: 0;
+                    clicked => {
+                        root.press-digit("5");
+                    }
+                }
+                CalcKey {
+                    label: "6";
+                    kind: 0;
+                    clicked => {
+                        root.press-digit("6");
+                    }
+                }
+                CalcKey {
+                    label: "−";
+                    kind: 2;
+                    active: root.pending-op == "−";
+                    clicked => {
+                        root.press-op("−");
+                    }
+                }
             }
-            // 1 2 3 +
             HorizontalLayout {
                 spacing: Theme.spacing-sm;
-                CalcKey { label: "1"; kind: 0; clicked => { root.key-pressed(self.label); } }
-                CalcKey { label: "2"; kind: 0; clicked => { root.key-pressed(self.label); } }
-                CalcKey { label: "3"; kind: 0; clicked => { root.key-pressed(self.label); } }
-                CalcKey { label: "+"; kind: 2; clicked => { root.key-pressed(self.label); } }
+                CalcKey {
+                    label: "1";
+                    kind: 0;
+                    clicked => {
+                        root.press-digit("1");
+                    }
+                }
+                CalcKey {
+                    label: "2";
+                    kind: 0;
+                    clicked => {
+                        root.press-digit("2");
+                    }
+                }
+                CalcKey {
+                    label: "3";
+                    kind: 0;
+                    clicked => {
+                        root.press-digit("3");
+                    }
+                }
+                CalcKey {
+                    label: "+";
+                    kind: 2;
+                    active: root.pending-op == "+";
+                    clicked => {
+                        root.press-op("+");
+                    }
+                }
             }
-            // wide 0, ., =
             HorizontalLayout {
                 spacing: Theme.spacing-sm;
-                CalcKey { label: "0"; kind: 0; wide: true; clicked => { root.key-pressed(self.label); } }
-                CalcKey { label: "."; kind: 0; clicked => { root.key-pressed(self.label); } }
-                CalcKey { label: "="; kind: 3; clicked => { root.equals-pressed(); } }
+                CalcKey {
+                    label: "0";
+                    kind: 0;
+                    wide: true;
+                    clicked => {
+                        root.press-digit("0");
+                    }
+                }
+                CalcKey {
+                    label: ".";
+                    kind: 0;
+                    clicked => {
+                        root.press-digit(".");
+                    }
+                }
+                CalcKey {
+                    label: "=";
+                    kind: 3;
+                    clicked => {
+                        root.press-equals();
+                    }
+                }
+            }
+        }
+    }
+
+    // ===================== Bottom sheet =====================
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+                root.confirm-clear = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: Theme.surface-2;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.muted;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: "Calculator menu";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 700;
+                    }
+                }
+                SheetRow {
+                    label: root.history-open ? "Hide history" : "Show history";
+                    clicked => {
+                        root.history-open = !root.history-open;
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Toggle DEG / RAD (now " + (root.degrees ? "DEG" : "RAD") + ")";
+                    clicked => {
+                        root.degrees = !root.degrees;
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Recall memory (" + (root.has-memory ? root.fmt-num(root.memory) : "empty") + ")";
+                    clicked => {
+                        root.press-mem-recall();
+                        root.sheet-open = false;
+                    }
+                }
+                Divider { }
+
+                SheetRow {
+                    label: root.confirm-clear ? "Confirm: clear all" : "Clear everything";
+                    destructive: true;
+                    clicked => {
+                        if (root.confirm-clear) {
+                            root.press-clear();
+                            root.press-mem-clear();
+                            root.hist0-expr = "";
+                            root.hist0-res = "";
+                            root.hist1-expr = "";
+                            root.hist1-res = "";
+                            root.hist2-expr = "";
+                            root.hist2-res = "";
+                            root.hist3-expr = "";
+                            root.hist3-res = "";
+                            root.hist4-expr = "";
+                            root.hist4-res = "";
+                            root.hist-count = 0;
+                            root.sheet-open = false;
+                            root.confirm-clear = false;
+                        } else {
+                            root.confirm-clear = true;
+                        }
+                    }
+                }
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.sheet-open = false;
+                        root.confirm-clear = false;
+                    }
+                }
             }
         }
     }

@@ -371,37 +371,51 @@ export component WasmViewer inherits Window {
                     horizontal-stretch: 1;
 
                     VerticalLayout {
-                        padding-top: root.mobile-gap;
+                        // No padding-top / spacing on the outer
+                        // layout: each per-row slot folds its own
+                        // `mobile-gap` into its height (as
+                        // padding-top of the inner cell wrapper), so
+                        // VerticalLayout's automatic inter-child
+                        // spacing — which would otherwise apply to
+                        // ALL 145 placeholder rows regardless of
+                        // whether they were 0-height — never enters
+                        // the scroll-geometry math. With this layout
+                        // the feed's `viewport-height` is exactly
+                        // `shown-count * (mobile-cell-h +
+                        // mobile-gap)` plus the trailing widgets,
+                        // which is what the rail's thumb ratio and
+                        // the scroll clamp assume.
+                        padding-top: 0;
                         padding-bottom: root.mobile-gap;
-                        spacing: root.mobile-gap;
+                        spacing: 0;
                         alignment: start;
 
                         for cell[i] in root.cells: Rectangle {
-                            // Slot height collapses to 0 past
-                            // `shown-count` so the feed's total
-                            // height equals the visible page count
-                            // — the rail thumb shrinks/grows as
-                            // more pages are revealed, and unloaded
-                            // cells take no scroll real estate. For
-                            // rows up to `shown-count`, the slot
-                            // keeps the constant `mobile-cell-h` so
-                            // the visible-window math stays accurate
-                            // even when the PageCell isn't currently
-                            // rendered into the slot.
+                            // Slot collapses to 0 dp past
+                            // `shown-count`. Visible slots are
+                            // `cell-h + gap` so the gap rides in
+                            // each slot rather than being added by
+                            // the layout — that's what makes hidden
+                            // slots truly invisible to the scroll
+                            // math.
                             height: i < mobile-feed.shown-count
-                                ? root.mobile-cell-h
+                                ? root.mobile-cell-h + root.mobile-gap
                                 : 0px;
 
                             if i < mobile-feed.shown-count
                                 && i >= mobile-feed.visible-start
                                 && i <= mobile-feed.visible-end:
-                                HorizontalLayout {
-                                    alignment: center;
-                                    PageCell {
-                                        title: root.titles[i];
-                                        page-factory: cell;
-                                        scale: root.mobile-scale;
-                                        show-header: false;
+                                VerticalLayout {
+                                    padding-top: root.mobile-gap;
+                                    spacing: 0;
+                                    HorizontalLayout {
+                                        alignment: center;
+                                        PageCell {
+                                            title: root.titles[i];
+                                            page-factory: cell;
+                                            scale: root.mobile-scale;
+                                            show-header: false;
+                                        }
                                     }
                                 }
                         }

@@ -4,27 +4,22 @@
 // Stack of credit-card visualisations + a recent-transactions list.
 // Demonstrates two patterns that don't surface elsewhere in the catalogue:
 //
-//   - Dramatic layered card visualisation. The top card sits prominently
-//     forward, with the next two cards peeking from behind it; each
-//     subsequent card is `y` offset down + slightly horizontally inset.
+//   - Dramatic layered card visualisation. Three cards stacked with
+//     the topmost prominently forward; the back two peek. Tap any
+//     peeking card to swap it to the front (the gradient + brand mark
+//     swaps via `card-at-rank` helpers, not by reordering elements).
 //   - Right-aligned currency in a list row. Transaction amounts use a
 //     tabular treatment so columns of figures line up — Theme.muted for
 //     debits, Theme.accent-success for incoming credits.
-//
-// Layout
-// ------
-//
-//   AppBar — "Wallet" with + trailing icon
-//   Card stack (top card forward, 2 behind)
-//     - Each card: brand mark, account number, holder, expiry
-//   Section header: "RECENT"
-//   TransactionRow × N
+//   - Filter chips (All / Debits / Credits) drive row visibility.
+//   - Tap a row to expand Repeat / Dispute / Hide action pills.
 
 import { ScrollView } from "std-widgets.slint";
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
 import { SectionHeader } from "@mobile-components/section-header.slint";
+import { Chip } from "@mobile-components/chip.slint";
 import { Divider } from "@mobile-components/divider.slint";
 
 // One credit card visual.
@@ -33,8 +28,7 @@ component CreditCard inherits Rectangle {
     in property <string> last-four: "4242";
     in property <string> holder: "GREG RAYMOND";
     in property <string> expiry: "08/29";
-    in property <brush> gradient:
-        @linear-gradient(135deg, #1e3a8a 0%, #0f1d4d 100%);
+    in property <brush> gradient: @linear-gradient(135deg, #1e3a8a 0%, #0f1d4d 100%);
 
     width: 320px;
     height: 180px;
@@ -43,9 +37,9 @@ component CreditCard inherits Rectangle {
     drop-shadow-blur: Theme.elevation-2-blur;
     drop-shadow-color: Theme.elevation-2-color;
     drop-shadow-offset-y: Theme.elevation-2-y;
+    animate background { duration: Theme.motion-fast; }
     clip: true;
 
-    // Brand mark — top-right.
     Text {
         text: root.brand;
         x: parent.width - self.preferred-width - Theme.spacing-md;
@@ -55,8 +49,6 @@ component CreditCard inherits Rectangle {
         font-weight: 700;
         letter-spacing: 2px;
     }
-
-    // Chip placeholder — top-left.
     Rectangle {
         x: Theme.spacing-md;
         y: Theme.spacing-md + 32px;
@@ -65,8 +57,6 @@ component CreditCard inherits Rectangle {
         border-radius: 4px;
         background: @linear-gradient(135deg, #d4af37 0%, #a07e1a 100%);
     }
-
-    // Card number block — •••• •••• •••• 4242.
     Heading {
         text: "•••• •••• •••• " + root.last-four;
         style: HeadingStyle.mono;
@@ -76,8 +66,6 @@ component CreditCard inherits Rectangle {
         font-size: Theme.font-size-body-large;
         letter-spacing: 2px;
     }
-
-    // Holder + expiry along the bottom.
     HorizontalLayout {
         x: Theme.spacing-md;
         y: parent.height - 28px;
@@ -101,17 +89,16 @@ component CreditCard inherits Rectangle {
     }
 }
 
-// One transaction row — merchant + category + amount.
+// One transaction row.
 component TransactionRow inherits Rectangle {
     in property <string> merchant;
-    // Single-letter glyph for the leading badge. Slint strings aren't
-    // indexable so we can't derive `merchant[0]` at the binding site;
-    // callers pass the badge letter explicitly.
     in property <string> badge;
     in property <string> category;
     in property <string> when;
     in property <string> amount;
     in property <bool> credit: false;
+    in property <bool> expanded: false;
+    in property <bool> hidden-row: false;
     callback clicked();
 
     accessible-role: button;
@@ -120,16 +107,18 @@ component TransactionRow inherits Rectangle {
 
     horizontal-stretch: 1;
     min-height: 64px;
-    background: touch.pressed ? Theme.surface-pressed : transparent;
-
+    background: root.expanded ? Theme.surface-2
+        : touch.pressed ? Theme.surface-pressed
+        : transparent;
+    opacity: root.hidden-row ? 0.4 : 1.0;
     animate background { duration: Theme.motion-fast; }
+    animate opacity { duration: Theme.motion-fast; }
 
     HorizontalLayout {
         padding: Theme.spacing-md;
         spacing: Theme.spacing-md;
         alignment: stretch;
 
-        // Category badge — small tone-tinted circle with first letter.
         VerticalLayout {
             alignment: center;
             Rectangle {
@@ -150,17 +139,37 @@ component TransactionRow inherits Rectangle {
             }
         }
 
-        // Merchant + category.
         VerticalLayout {
             horizontal-stretch: 1;
             alignment: center;
             spacing: 2px;
-            Text {
-                text: root.merchant;
-                color: Theme.on-surface;
-                font-size: Theme.font-size-body-large;
-                font-weight: 500;
-                overflow: elide;
+            HorizontalLayout {
+                spacing: Theme.spacing-xs;
+                Text {
+                    text: root.merchant;
+                    color: Theme.on-surface;
+                    font-size: Theme.font-size-body-large;
+                    font-weight: 500;
+                    overflow: elide;
+                    vertical-alignment: center;
+                }
+                if root.hidden-row: Rectangle {
+                    width: hf.preferred-width + 12px;
+                    height: 18px;
+                    border-radius: 4px;
+                    background: Theme.muted;
+                    hf := Text {
+                        text: "HIDDEN";
+                        color: Theme.on-primary;
+                        font-size: 9px;
+                        font-weight: 800;
+                        letter-spacing: 0.5px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                }
             }
             Text {
                 text: root.category + " · " + root.when;
@@ -170,7 +179,6 @@ component TransactionRow inherits Rectangle {
             }
         }
 
-        // Amount.
         VerticalLayout {
             alignment: center;
             Text {
@@ -189,12 +197,221 @@ component TransactionRow inherits Rectangle {
     }
 }
 
+// Action pill for the expanded-row strip.
+component ActionPill inherits Rectangle {
+    in property <string> label;
+    in property <bool> primary: false;
+    in property <bool> danger: false;
+    callback clicked();
+
+    height: 32px;
+    horizontal-stretch: 1;
+    border-radius: 16px;
+    background: root.danger ? Theme.accent-danger
+        : root.primary ? Theme.accent-info
+        : Theme.surface-1;
+    border-width: 1px;
+    border-color: (root.danger || root.primary) ? transparent : Theme.outline;
+    animate background { duration: Theme.motion-fast; }
+
+    Text {
+        text: root.label;
+        color: (root.danger || root.primary) ? Theme.on-primary : Theme.on-surface;
+        font-size: Theme.font-size-caption;
+        font-weight: 700;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: parent.width;
+        height: parent.height;
+    }
+    TouchArea { clicked => { root.clicked(); } }
+}
+
 export component WalletPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
     callback back-pressed();
     callback add-card-pressed();
     callback transaction-pressed(string);
+    callback card-fronted(string);
+    callback transaction-hidden(string);
+    callback transaction-disputed(string);
+    callback transaction-repeated(string);
+
+    // ----- Interactive state -----
+    private property <int> front-card-idx: 0; // 0=Visa 1=Mastercard 2=Amex
+    private property <int> filter-mode: 0;    // 0=All 1=Debits 2=Credits
+    private property <int> expanded-txn: -1;
+    private property <bool> h0: false;
+    private property <bool> h1: false;
+    private property <bool> h2: false;
+    private property <bool> h3: false;
+    private property <bool> h4: false;
+    private property <bool> h5: false;
+    private property <int> add-count: 0;
+    private property <string> status-msg: "Tap a peek card to bring it forward · tap a row to manage";
+    private property <bool> status-is-success: false;
+    private property <bool> status-is-danger: false;
+
+    // ----- Card metadata -----
+    function card-brand(i: int) -> string {
+        if (i == 0) { return "VISA"; }
+        if (i == 1) { return "MASTERCARD"; }
+        return "AMEX";
+    }
+    function card-name(i: int) -> string {
+        if (i == 0) { return "Visa"; }
+        if (i == 1) { return "Mastercard"; }
+        return "Amex";
+    }
+    function card-last(i: int) -> string {
+        if (i == 0) { return "4242"; }
+        if (i == 1) { return "7782"; }
+        return "1009";
+    }
+    function card-expiry(i: int) -> string {
+        if (i == 0) { return "08/29"; }
+        if (i == 1) { return "05/28"; }
+        return "12/27";
+    }
+    function card-gradient(i: int) -> brush {
+        if (i == 0) { return @linear-gradient(135deg, #1e3a8a 0%, #0f1d4d 100%); }
+        if (i == 1) { return @linear-gradient(135deg, #b91c1c 0%, #7f1d1d 100%); }
+        return @linear-gradient(135deg, #3a3a3a 0%, #1a1a1a 100%);
+    }
+    function card-at-rank(rank: int) -> int {
+        // rank 0 = front, 1 = mid, 2 = back.
+        if (rank == 0) { return root.front-card-idx; }
+        if (rank == 1) {
+            // mid slot: the "next" card in 0→1→2 cycle that isn't front
+            if (root.front-card-idx == 0) { return 1; }
+            if (root.front-card-idx == 1) { return 0; }
+            return 0; // front=2 → mid=0
+        }
+        // rank 2: back slot
+        if (root.front-card-idx == 0) { return 2; }
+        if (root.front-card-idx == 1) { return 2; }
+        return 1; // front=2 → back=1
+    }
+
+    // ----- Transaction metadata -----
+    function txn-merchant(i: int) -> string {
+        if (i == 0) { return "Whole Foods Market"; }
+        if (i == 1) { return "Uber"; }
+        if (i == 2) { return "Payroll deposit"; }
+        if (i == 3) { return "Spotify"; }
+        if (i == 4) { return "Blue Bottle Coffee"; }
+        return "Refund — Patagonia";
+    }
+    function txn-credit(i: int) -> bool {
+        return i == 2 || i == 5;
+    }
+    function txn-hidden(i: int) -> bool {
+        if (i == 0) { return root.h0; }
+        if (i == 1) { return root.h1; }
+        if (i == 2) { return root.h2; }
+        if (i == 3) { return root.h3; }
+        if (i == 4) { return root.h4; }
+        return root.h5;
+    }
+    function txn-shown(i: int) -> bool {
+        if (root.txn-hidden(i)) { return false; }
+        if (root.filter-mode == 0) { return true; }
+        if (root.filter-mode == 1) { return !root.txn-credit(i); }
+        return root.txn-credit(i);
+    }
+    function visible-count() -> int {
+        return (root.txn-shown(0) ? 1 : 0) + (root.txn-shown(1) ? 1 : 0)
+            + (root.txn-shown(2) ? 1 : 0) + (root.txn-shown(3) ? 1 : 0)
+            + (root.txn-shown(4) ? 1 : 0) + (root.txn-shown(5) ? 1 : 0);
+    }
+    function hidden-count() -> int {
+        return (root.h0 ? 1 : 0) + (root.h1 ? 1 : 0) + (root.h2 ? 1 : 0)
+            + (root.h3 ? 1 : 0) + (root.h4 ? 1 : 0) + (root.h5 ? 1 : 0);
+    }
+    function filter-name(m: int) -> string {
+        if (m == 0) { return "All"; }
+        if (m == 1) { return "Debits"; }
+        return "Credits";
+    }
+
+    // ----- Mutations -----
+    public function set-front(card-idx: int) {
+        if (card-idx == root.front-card-idx) {
+            root.status-msg = root.card-name(card-idx) + " is already front";
+            root.status-is-success = false;
+            root.status-is-danger = false;
+            return;
+        }
+        root.front-card-idx = card-idx;
+        root.card-fronted(root.card-name(card-idx));
+        root.status-msg = "Brought " + root.card-name(card-idx)
+            + " •• " + root.card-last(card-idx) + " to the front";
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    public function set-filter(m: int) {
+        root.filter-mode = m;
+        root.expanded-txn = -1;
+        root.status-msg = "Filter · " + root.filter-name(m)
+            + " · " + root.visible-count() + " visible";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function tap-row(i: int) {
+        root.expanded-txn = root.expanded-txn == i ? -1 : i;
+        root.transaction-pressed(root.txn-merchant(i));
+        root.status-msg = root.expanded-txn == i
+            ? root.txn-merchant(i) + " · pick an action"
+            : "Collapsed " + root.txn-merchant(i);
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function hide-row(i: int) {
+        if (i == 0) { root.h0 = true; }
+        if (i == 1) { root.h1 = true; }
+        if (i == 2) { root.h2 = true; }
+        if (i == 3) { root.h3 = true; }
+        if (i == 4) { root.h4 = true; }
+        if (i == 5) { root.h5 = true; }
+        root.transaction-hidden(root.txn-merchant(i));
+        root.expanded-txn = -1;
+        root.status-msg = "Hidden " + root.txn-merchant(i);
+        root.status-is-success = false;
+        root.status-is-danger = true;
+    }
+    public function show-all-hidden() {
+        root.h0 = false;
+        root.h1 = false;
+        root.h2 = false;
+        root.h3 = false;
+        root.h4 = false;
+        root.h5 = false;
+        root.status-msg = "All hidden transactions restored";
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    public function repeat-row(i: int) {
+        root.transaction-repeated(root.txn-merchant(i));
+        root.status-msg = "Repeating " + root.txn-merchant(i)
+            + " · pending review";
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    public function dispute-row(i: int) {
+        root.transaction-disputed(root.txn-merchant(i));
+        root.status-msg = "Disputed " + root.txn-merchant(i)
+            + " · case opened";
+        root.status-is-success = false;
+        root.status-is-danger = true;
+    }
+    public function tap-add() {
+        root.add-count = root.add-count + 1;
+        root.add-card-pressed();
+        root.status-msg = "Add card · " + root.add-count + " pending";
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
 
     background: Theme.background;
 
@@ -207,125 +424,376 @@ export component WalletPage inherits Window {
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             trailing-icon: @image-url("@mobile-components/icons/plus.svg");
             leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.add-card-pressed(); }
+            trailing-pressed => { root.tap-add(); }
         }
 
-        // Card stack + recent-transactions list overflow a single
-        // 892-px screen as the history grows, so everything below the
-        // pinned AppBar scrolls.
+        // ----- Status banner ---------------------------------------
+        Rectangle {
+            height: 32px;
+            background: root.status-is-danger ? Theme.accent-danger
+                : root.status-is-success ? Theme.accent-success
+                : Theme.surface-2;
+            animate background { duration: Theme.motion-fast; }
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                Text {
+                    text: root.status-msg;
+                    color: (root.status-is-danger || root.status-is-success)
+                        ? Theme.on-primary
+                        : Theme.on-surface;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+            }
+        }
+
         ScrollView {
             vertical-stretch: 1;
 
             VerticalLayout {
                 spacing: 0;
 
-        // ----- Layered card stack -----
-        //
-        // The stack is rendered inside a fixed-height Rectangle so the
-        // overlapping cards can be absolute-positioned. The bottom-most
-        // card sits behind and lower; the top card is centered.
-        Rectangle {
-            // 180 (front card) + 2 × 40 (two more cards fanned 40px each)
-            // + 12 padding so the last card's shadow has breathing room.
-            height: 280px;
-            // Card 3 (back). Fanned 80 px below the front card so the
-            // brand mark / last-four are clearly visible above it.
-            CreditCard {
-                x: (parent.width - self.width) / 2;
-                y: 80px;
-                width: 280px;
-                height: 180px;
-                opacity: 0.55;
-                brand: "AMEX";
-                last-four: "1009";
-                holder: "GREG RAYMOND";
-                expiry: "12/27";
-                gradient: @linear-gradient(135deg, #3a3a3a 0%, #1a1a1a 100%);
-            }
-            // Card 2 (mid). Fanned 40 px below the front.
-            CreditCard {
-                x: (parent.width - self.width) / 2;
-                y: 40px;
-                width: 300px;
-                height: 180px;
-                opacity: 0.8;
-                brand: "MASTERCARD";
-                last-four: "7782";
-                holder: "GREG RAYMOND";
-                expiry: "05/28";
-                gradient: @linear-gradient(135deg, #b91c1c 0%, #7f1d1d 100%);
-            }
-            // Card 1 (front).
-            CreditCard {
-                x: (parent.width - self.width) / 2;
-                y: 0;
-                brand: "VISA";
-                last-four: "4242";
-                holder: "GREG RAYMOND";
-                expiry: "08/29";
-                gradient: @linear-gradient(135deg, #1e3a8a 0%, #0f1d4d 100%);
-            }
-        }
+                // ----- Layered card stack — gradients swap per rank
+                // (no element reordering required).
+                Rectangle {
+                    height: 280px;
+                    // Back slot (rank 2)
+                    CreditCard {
+                        x: (parent.width - self.width) / 2;
+                        y: 80px;
+                        width: 280px;
+                        height: 180px;
+                        opacity: 0.55;
+                        brand: root.card-brand(root.card-at-rank(2));
+                        last-four: root.card-last(root.card-at-rank(2));
+                        holder: "GREG RAYMOND";
+                        expiry: root.card-expiry(root.card-at-rank(2));
+                        gradient: root.card-gradient(root.card-at-rank(2));
+                        TouchArea {
+                            clicked => {
+                                root.set-front(root.card-at-rank(2));
+                            }
+                        }
+                    }
+                    // Mid slot (rank 1)
+                    CreditCard {
+                        x: (parent.width - self.width) / 2;
+                        y: 40px;
+                        width: 300px;
+                        height: 180px;
+                        opacity: 0.8;
+                        brand: root.card-brand(root.card-at-rank(1));
+                        last-four: root.card-last(root.card-at-rank(1));
+                        holder: "GREG RAYMOND";
+                        expiry: root.card-expiry(root.card-at-rank(1));
+                        gradient: root.card-gradient(root.card-at-rank(1));
+                        TouchArea {
+                            clicked => {
+                                root.set-front(root.card-at-rank(1));
+                            }
+                        }
+                    }
+                    // Front slot (rank 0)
+                    CreditCard {
+                        x: (parent.width - self.width) / 2;
+                        y: 0;
+                        brand: root.card-brand(root.card-at-rank(0));
+                        last-four: root.card-last(root.card-at-rank(0));
+                        holder: "GREG RAYMOND";
+                        expiry: root.card-expiry(root.card-at-rank(0));
+                        gradient: root.card-gradient(root.card-at-rank(0));
+                    }
+                }
 
-        // ----- Recent transactions -----
-        SectionHeader { text: "Recent"; }
+                // Filter chips above the section.
+                HorizontalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    spacing: Theme.spacing-sm;
+                    Rectangle {
+                        Chip { label: "All"; selected: root.filter-mode == 0; }
+                        TouchArea { clicked => { root.set-filter(0); } }
+                    }
+                    Rectangle {
+                        Chip { label: "Debits"; selected: root.filter-mode == 1; }
+                        TouchArea { clicked => { root.set-filter(1); } }
+                    }
+                    Rectangle {
+                        Chip { label: "Credits"; selected: root.filter-mode == 2; }
+                        TouchArea { clicked => { root.set-filter(2); } }
+                    }
+                    if root.hidden-count() > 0: Rectangle {
+                        background: hidden-touch.pressed
+                            ? Theme.surface-pressed
+                            : transparent;
+                        animate background { duration: Theme.motion-fast; }
+                        border-radius: 14px;
+                        Text {
+                            text: "Show " + root.hidden-count() + " hidden ↺";
+                            color: Theme.accent-info;
+                            font-size: Theme.font-size-caption;
+                            font-weight: 700;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
+                        }
+                        hidden-touch := TouchArea {
+                            clicked => { root.show-all-hidden(); }
+                        }
+                    }
+                }
 
-        TransactionRow {
-            merchant: "Whole Foods Market";
-            badge: "W";
-            category: "Groceries";
-            when: "today";
-            amount: "−$48.21";
-            clicked => { root.transaction-pressed(self.merchant); }
+                SectionHeader {
+                    text: "Recent · " + root.filter-name(root.filter-mode)
+                        + " · " + root.visible-count();
+                }
+
+                if root.txn-shown(0): VerticalLayout {
+                    spacing: 0;
+                    TransactionRow {
+                        merchant: "Whole Foods Market";
+                        badge: "W";
+                        category: "Groceries";
+                        when: "today";
+                        amount: "−$48.21";
+                        expanded: root.expanded-txn == 0;
+                        clicked => { root.tap-row(0); }
+                    }
+                    if root.expanded-txn == 0: Rectangle {
+                        background: Theme.surface-2;
+                        HorizontalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-sm;
+                            ActionPill {
+                                label: "Repeat";
+                                primary: true;
+                                clicked => { root.repeat-row(0); }
+                            }
+                            ActionPill {
+                                label: "Dispute";
+                                clicked => { root.dispute-row(0); }
+                            }
+                            ActionPill {
+                                label: "Hide";
+                                danger: true;
+                                clicked => { root.hide-row(0); }
+                            }
+                        }
+                    }
+                }
+                if root.txn-shown(0) && (root.txn-shown(1) || root.txn-shown(2)
+                    || root.txn-shown(3) || root.txn-shown(4)
+                    || root.txn-shown(5)): Divider { }
+
+                if root.txn-shown(1): VerticalLayout {
+                    spacing: 0;
+                    TransactionRow {
+                        merchant: "Uber";
+                        badge: "U";
+                        category: "Transport";
+                        when: "today";
+                        amount: "−$12.40";
+                        expanded: root.expanded-txn == 1;
+                        clicked => { root.tap-row(1); }
+                    }
+                    if root.expanded-txn == 1: Rectangle {
+                        background: Theme.surface-2;
+                        HorizontalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-sm;
+                            ActionPill {
+                                label: "Repeat";
+                                primary: true;
+                                clicked => { root.repeat-row(1); }
+                            }
+                            ActionPill {
+                                label: "Dispute";
+                                clicked => { root.dispute-row(1); }
+                            }
+                            ActionPill {
+                                label: "Hide";
+                                danger: true;
+                                clicked => { root.hide-row(1); }
+                            }
+                        }
+                    }
+                }
+                if root.txn-shown(1) && (root.txn-shown(2) || root.txn-shown(3)
+                    || root.txn-shown(4) || root.txn-shown(5)): Divider { }
+
+                if root.txn-shown(2): VerticalLayout {
+                    spacing: 0;
+                    TransactionRow {
+                        merchant: "Payroll deposit";
+                        badge: "P";
+                        category: "Income";
+                        when: "yesterday";
+                        amount: "+$3,820.00";
+                        credit: true;
+                        expanded: root.expanded-txn == 2;
+                        clicked => { root.tap-row(2); }
+                    }
+                    if root.expanded-txn == 2: Rectangle {
+                        background: Theme.surface-2;
+                        HorizontalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-sm;
+                            ActionPill {
+                                label: "Repeat";
+                                primary: true;
+                                clicked => { root.repeat-row(2); }
+                            }
+                            ActionPill {
+                                label: "Dispute";
+                                clicked => { root.dispute-row(2); }
+                            }
+                            ActionPill {
+                                label: "Hide";
+                                danger: true;
+                                clicked => { root.hide-row(2); }
+                            }
+                        }
+                    }
+                }
+                if root.txn-shown(2) && (root.txn-shown(3) || root.txn-shown(4)
+                    || root.txn-shown(5)): Divider { }
+
+                if root.txn-shown(3): VerticalLayout {
+                    spacing: 0;
+                    TransactionRow {
+                        merchant: "Spotify";
+                        badge: "S";
+                        category: "Entertainment";
+                        when: "yesterday";
+                        amount: "−$11.99";
+                        expanded: root.expanded-txn == 3;
+                        clicked => { root.tap-row(3); }
+                    }
+                    if root.expanded-txn == 3: Rectangle {
+                        background: Theme.surface-2;
+                        HorizontalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-sm;
+                            ActionPill {
+                                label: "Repeat";
+                                primary: true;
+                                clicked => { root.repeat-row(3); }
+                            }
+                            ActionPill {
+                                label: "Dispute";
+                                clicked => { root.dispute-row(3); }
+                            }
+                            ActionPill {
+                                label: "Hide";
+                                danger: true;
+                                clicked => { root.hide-row(3); }
+                            }
+                        }
+                    }
+                }
+                if root.txn-shown(3) && (root.txn-shown(4)
+                    || root.txn-shown(5)): Divider { }
+
+                if root.txn-shown(4): VerticalLayout {
+                    spacing: 0;
+                    TransactionRow {
+                        merchant: "Blue Bottle Coffee";
+                        badge: "B";
+                        category: "Food & drink";
+                        when: "Tue";
+                        amount: "−$6.50";
+                        expanded: root.expanded-txn == 4;
+                        clicked => { root.tap-row(4); }
+                    }
+                    if root.expanded-txn == 4: Rectangle {
+                        background: Theme.surface-2;
+                        HorizontalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-sm;
+                            ActionPill {
+                                label: "Repeat";
+                                primary: true;
+                                clicked => { root.repeat-row(4); }
+                            }
+                            ActionPill {
+                                label: "Dispute";
+                                clicked => { root.dispute-row(4); }
+                            }
+                            ActionPill {
+                                label: "Hide";
+                                danger: true;
+                                clicked => { root.hide-row(4); }
+                            }
+                        }
+                    }
+                }
+                if root.txn-shown(4) && root.txn-shown(5): Divider { }
+
+                if root.txn-shown(5): VerticalLayout {
+                    spacing: 0;
+                    TransactionRow {
+                        merchant: "Refund — Patagonia";
+                        badge: "R";
+                        category: "Shopping";
+                        when: "Mon";
+                        amount: "+$94.00";
+                        credit: true;
+                        expanded: root.expanded-txn == 5;
+                        clicked => { root.tap-row(5); }
+                    }
+                    if root.expanded-txn == 5: Rectangle {
+                        background: Theme.surface-2;
+                        HorizontalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-sm;
+                            ActionPill {
+                                label: "Repeat";
+                                primary: true;
+                                clicked => { root.repeat-row(5); }
+                            }
+                            ActionPill {
+                                label: "Dispute";
+                                clicked => { root.dispute-row(5); }
+                            }
+                            ActionPill {
+                                label: "Hide";
+                                danger: true;
+                                clicked => { root.hide-row(5); }
+                            }
+                        }
+                    }
+                }
+
+                if root.visible-count() == 0: Rectangle {
+                    min-height: 140px;
+                    VerticalLayout {
+                        padding: Theme.spacing-lg;
+                        spacing: Theme.spacing-xs;
+                        alignment: center;
+                        Text {
+                            text: "No " + root.filter-name(root.filter-mode) + " to show";
+                            color: Theme.muted;
+                            font-size: Theme.font-size-body;
+                            font-weight: 700;
+                            horizontal-alignment: center;
+                        }
+                        Text {
+                            text: root.hidden-count() > 0
+                                ? "Tap \"Show N hidden\" above to restore them."
+                                : "Pick a different filter chip.";
+                            color: Theme.muted;
+                            font-size: Theme.font-size-caption;
+                            horizontal-alignment: center;
+                        }
+                    }
+                }
+            }
         }
-        Divider { }
-        TransactionRow {
-            merchant: "Uber";
-            badge: "U";
-            category: "Transport";
-            when: "today";
-            amount: "−$12.40";
-            clicked => { root.transaction-pressed(self.merchant); }
-        }
-        Divider { }
-        TransactionRow {
-            merchant: "Payroll deposit";
-            badge: "P";
-            category: "Income";
-            when: "yesterday";
-            amount: "+$3,820.00";
-            credit: true;
-            clicked => { root.transaction-pressed(self.merchant); }
-        }
-        Divider { }
-        TransactionRow {
-            merchant: "Spotify";
-            badge: "S";
-            category: "Entertainment";
-            when: "yesterday";
-            amount: "−$11.99";
-            clicked => { root.transaction-pressed(self.merchant); }
-        }
-        Divider { }
-        TransactionRow {
-            merchant: "Blue Bottle Coffee";
-            badge: "B";
-            category: "Food & drink";
-            when: "Tue";
-            amount: "−$6.50";
-            clicked => { root.transaction-pressed(self.merchant); }
-        }
-        Divider { }
-        TransactionRow {
-            merchant: "Refund — Patagonia";
-            badge: "R";
-            category: "Shopping";
-            when: "Mon";
-            amount: "+$94.00";
-            credit: true;
-            clicked => { root.transaction-pressed(self.merchant); }
-        }
-            }   // end inner VerticalLayout
-        }       // end ScrollView
     }
 }

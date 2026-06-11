@@ -2,19 +2,16 @@
 // =====================================================================
 //
 // Mid-session workout screen — Strong / Hevy / Apple Fitness-style.
-// Distinct from `ActivityRingsPage` (daily ring summary) and
-// `TimerPage` (single pomodoro). This is the live "you're in set 2
-// of 4" surface. Demonstrates:
+// Now wired to live state:
 //
-//   - Top header strip: workout name + total elapsed + abandon (×).
-//   - Big rest-timer ring with seconds remaining when between sets;
-//     when actively lifting, the ring slot is replaced by a "REPS"
-//     counter card.
-//   - Current-exercise card: exercise name + tone-tinted set-number
-//     pill ("SET 2 / 4") + weight × reps fields + Done / Skip buttons.
-//   - Set log table for the exercise (Set 1: 80 kg × 8, Set 2: 80 kg ×
-//     8 done, Set 3: pending).
-//   - Upcoming exercises list at the bottom.
+//   - A `Timer` increments `elapsed-sec` while not paused and
+//     decrements `rest-sec` toward zero. Tap the ring to pause/resume.
+//   - `Skip rest` zeroes the rest seconds; `Done · log set` marks the
+//     current set done, advances `current-set` (state machine 0/1/2),
+//     and restarts the 90 s rest.
+//   - ± 2.5 kg buttons mutate the current set's weight; the in-progress
+//     row + the set log update live.
+//   - AppBar close (×) uses two-tap confirm to abandon the workout.
 
 import { ScrollView } from "std-widgets.slint";
 import { Theme, Tone } from "@mobile-theme/theme.slint";
@@ -24,8 +21,6 @@ import { Divider } from "@mobile-components/divider.slint";
 import { MobileButton } from "@mobile-components/button.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
 
-// Reusable ring band (also used elsewhere — kept local so this page
-// doesn't reach across into TimerPage's internals).
 component RingBand inherits Rectangle {
     in property <length> radius;
     in property <length> stroke: 14px;
@@ -51,15 +46,15 @@ component RingBand inherits Rectangle {
         border-color: root.fill-color;
         opacity: root.progress;
         background: transparent;
+        animate opacity { duration: Theme.motion-fast; }
     }
 }
 
-// One set row in the log.
 component SetRow inherits Rectangle {
     in property <int> set-no;
     in property <string> weight;
     in property <string> reps;
-    in property <int> state: 0;     // 0 pending, 1 in-progress, 2 done
+    in property <int> state: 0;
 
     horizontal-stretch: 1;
     min-height: 44px;
@@ -67,6 +62,7 @@ component SetRow inherits Rectangle {
           root.state == 2 ? #22c55e1a
         : root.state == 1 ? #4f8cff1a
         : transparent;
+    animate background { duration: Theme.motion-fast; }
     border-radius: Theme.radius-sm;
 
     HorizontalLayout {
@@ -117,13 +113,15 @@ component SetRow inherits Rectangle {
     }
 }
 
-// One upcoming-exercise row.
 component UpcomingRow inherits Rectangle {
     in property <string> name;
     in property <string> meta;
     in property <Tone> tone: Tone.default;
+    callback clicked();
 
     min-height: 56px;
+    background: touch.pressed ? Theme.surface-pressed : transparent;
+    animate background { duration: Theme.motion-fast; }
     HorizontalLayout {
         padding-left: Theme.spacing-md;
         padding-right: Theme.spacing-md;
@@ -138,8 +136,8 @@ component UpcomingRow inherits Rectangle {
                 background:
                       root.tone == Tone.success ? Theme.accent-success
                     : root.tone == Tone.warning ? Theme.accent-warning
-                    : root.tone == Tone.danger  ? Theme.accent-danger
-                    : root.tone == Tone.info    ? Theme.accent-info
+                    : root.tone == Tone.danger ? Theme.accent-danger
+                    : root.tone == Tone.info ? Theme.accent-info
                     : Theme.surface-variant;
                 Image {
                     width: 16px;
@@ -169,22 +167,194 @@ component UpcomingRow inherits Rectangle {
             }
         }
     }
+    touch := TouchArea { clicked => { root.clicked(); } }
 }
 
 export component WorkoutSessionPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
     in property <string> workout-name: "Push day · A2";
-    in property <string> elapsed: "27:14";
     in property <string> exercise: "Bench press";
-    in property <int> set-current: 2;
-    in property <int> set-total: 4;
-    in property <string> rest-remaining: "1:18";
-    in property <float> rest-progress: 0.42;
     callback abandon-pressed();
     callback done-pressed();
     callback skip-pressed();
     callback adjust-pressed();
+    callback set-logged(int, int); // set-no, weight-tenths
+    callback workout-completed();
+    callback upcoming-tapped(string);
+
+    // ----- Interactive state -----
+    private property <int> elapsed-sec: 1634; // 27:14
+    private property <int> rest-sec: 78;      // 1:18
+    private property <int> rest-total: 90;
+    private property <bool> rest-active: true;
+    private property <bool> paused: false;
+    private property <int> current-set: 3; // 1..4
+    private property <int> s1-state: 2;
+    private property <int> s2-state: 2;
+    private property <int> s3-state: 1;
+    private property <int> s4-state: 0;
+    private property <int> s1-weight-t: 800;
+    private property <int> s2-weight-t: 800;
+    private property <int> s3-weight-t: 825;
+    private property <int> s4-weight-t: 825;
+    private property <int> s3-reps: 8;
+    private property <int> s4-reps: 8;
+    private property <bool> abandon-confirming: false;
+    private property <bool> workout-done: false;
+    private property <string> status-msg: "Tap the ring to pause · Done logs the set and restarts rest";
+    private property <bool> status-is-success: false;
+    private property <bool> status-is-danger: false;
+
+    // ----- Timer drives elapsed + rest. -----
+    Timer {
+        interval: 1s;
+        running: !root.paused && !root.workout-done;
+        triggered => {
+            root.elapsed-sec = root.elapsed-sec + 1;
+            if (root.rest-sec > 0) {
+                root.rest-sec = root.rest-sec - 1;
+                if (root.rest-sec == 0) {
+                    root.rest-active = false;
+                }
+            }
+        }
+    }
+
+    // ----- Helpers -----
+    function fmt-time(t: int) -> string {
+        return (floor(t / 60) < 10 ? "0" + floor(t / 60) : "" + floor(t / 60))
+            + ":"
+            + (mod(t, 60) < 10 ? "0" + mod(t, 60) : "" + mod(t, 60));
+    }
+    function fmt-rest(t: int) -> string {
+        return floor(t / 60) + ":"
+            + (mod(t, 60) < 10 ? "0" + mod(t, 60) : "" + mod(t, 60));
+    }
+    function rest-progress() -> float {
+        return root.rest-total == 0 ? 0.0 : root.rest-sec * 1.0 / root.rest-total;
+    }
+    function fmt-weight(t: int) -> string {
+        return mod(t, 10) == 0
+            ? floor(t / 10) + " kg"
+            : floor(t / 10) + "." + mod(t, 10) + " kg";
+    }
+    function reps-display(set-no: int) -> string {
+        if (set-no == 1) {
+            return root.s1-state == 2 ? "8" : "—";
+        }
+        if (set-no == 2) {
+            return root.s2-state == 2 ? "8" : "—";
+        }
+        if (set-no == 3) {
+            return root.s3-state == 2 ? "" + root.s3-reps : "—";
+        }
+        return root.s4-state == 2 ? "" + root.s4-reps : "—";
+    }
+    function current-weight-t() -> int {
+        if (root.current-set == 1) { return root.s1-weight-t; }
+        if (root.current-set == 2) { return root.s2-weight-t; }
+        if (root.current-set == 3) { return root.s3-weight-t; }
+        return root.s4-weight-t;
+    }
+
+    // ----- Mutations -----
+    public function toggle-pause() {
+        root.paused = !root.paused;
+        root.status-msg = root.paused
+            ? "Paused · " + root.fmt-time(root.elapsed-sec)
+            : "Playing · " + root.fmt-time(root.elapsed-sec);
+        root.status-is-success = !root.paused;
+        root.status-is-danger = false;
+    }
+    public function skip-rest() {
+        root.rest-sec = 0;
+        root.rest-active = false;
+        root.skip-pressed();
+        root.status-msg = "Skipped rest · ready for set "
+            + root.current-set;
+        root.status-is-success = false;
+        root.status-is-danger = true;
+    }
+    public function log-set() {
+        if (root.workout-done) {
+            root.status-msg = "Workout already complete";
+            root.status-is-success = false;
+            root.status-is-danger = true;
+            return;
+        }
+        // Mark current set done.
+        if (root.current-set == 1) { root.s1-state = 2; }
+        if (root.current-set == 2) { root.s2-state = 2; }
+        if (root.current-set == 3) { root.s3-state = 2; }
+        if (root.current-set == 4) { root.s4-state = 2; }
+        root.set-logged(root.current-set, root.current-weight-t());
+        root.done-pressed();
+        if (root.current-set == 4) {
+            root.workout-done = true;
+            root.workout-completed();
+            root.status-msg = "Workout complete! 4 of 4 sets done";
+            root.status-is-success = true;
+            root.status-is-danger = false;
+            return;
+        }
+        // Advance.
+        root.current-set = root.current-set + 1;
+        if (root.current-set == 2) { root.s2-state = 1; }
+        if (root.current-set == 3) { root.s3-state = 1; }
+        if (root.current-set == 4) { root.s4-state = 1; }
+        // Restart rest.
+        root.rest-sec = root.rest-total;
+        root.rest-active = true;
+        root.status-msg = "Logged set " + (root.current-set - 1)
+            + " · rest " + root.rest-total + "s for set " + root.current-set;
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    public function adjust-weight(delta-t: int) {
+        if (root.current-set == 1) {
+            root.s1-weight-t = max(0, root.s1-weight-t + delta-t);
+        }
+        if (root.current-set == 2) {
+            root.s2-weight-t = max(0, root.s2-weight-t + delta-t);
+        }
+        if (root.current-set == 3) {
+            root.s3-weight-t = max(0, root.s3-weight-t + delta-t);
+        }
+        if (root.current-set == 4) {
+            root.s4-weight-t = max(0, root.s4-weight-t + delta-t);
+        }
+        root.adjust-pressed();
+        root.status-msg = "Set " + root.current-set + " · "
+            + root.fmt-weight(root.current-weight-t());
+        root.status-is-success = delta-t > 0;
+        root.status-is-danger = delta-t < 0;
+    }
+    public function do-abandon() {
+        if (!root.abandon-confirming) {
+            root.abandon-confirming = true;
+            root.status-msg = "Tap × again to abandon this workout";
+            root.status-is-success = false;
+            root.status-is-danger = true;
+            return;
+        }
+        root.abandon-confirming = false;
+        root.abandon-pressed();
+        root.status-msg = "Workout abandoned";
+        root.status-is-success = false;
+        root.status-is-danger = true;
+    }
+    public function tap-upcoming(name: string) {
+        root.upcoming-tapped(name);
+        root.status-msg = "Queued · " + name;
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function tap-more() {
+        root.status-msg = "Workout options · plate calculator · history";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
 
     background: Theme.background;
 
@@ -196,191 +366,278 @@ export component WorkoutSessionPage inherits Window {
             title-style: HeadingStyle.mono;
             leading-icon: @image-url("@mobile-components/icons/close.svg");
             trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
-            leading-pressed => { root.abandon-pressed(); }
+            leading-pressed => { root.do-abandon(); }
+            trailing-pressed => { root.tap-more(); }
         }
 
-        // Rest-timer hero + current-exercise card (set log) + UP NEXT
-        // list overflow a single 892-px screen, so everything below the
-        // pinned AppBar scrolls.
+        // ----- Status banner ---------------------------------------
+        Rectangle {
+            height: 32px;
+            background: root.status-is-danger ? Theme.accent-danger
+                : root.status-is-success ? Theme.accent-success
+                : Theme.surface-2;
+            animate background { duration: Theme.motion-fast; }
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                Text {
+                    text: root.status-msg;
+                    color: (root.status-is-danger || root.status-is-success)
+                        ? Theme.on-primary
+                        : Theme.on-surface;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+            }
+        }
+
         ScrollView {
             vertical-stretch: 1;
 
             VerticalLayout {
                 spacing: 0;
 
-        // ----- Hero: elapsed + rest ring -----
-        VerticalLayout {
-            padding-top: Theme.spacing-sm;
-            spacing: Theme.spacing-sm;
-
-            HorizontalLayout {
-                alignment: center;
-                Text {
-                    text: "ELAPSED · " + root.elapsed;
-                    color: Theme.muted;
-                    font-size: 10px;
-                    font-weight: 800;
-                    letter-spacing: 0.5px;
-                }
-            }
-            HorizontalLayout {
-                alignment: center;
-                Rectangle {
-                    width: 200px;
-                    height: 200px;
-                    RingBand {
-                        x: 0;
-                        y: 0;
-                        radius: 100px;
-                        stroke: 14px;
-                        fill-color: Theme.accent-warning;
-                        progress: root.rest-progress;
-                    }
-                    VerticalLayout {
-                        x: (parent.width - self.width) / 2;
-                        y: (parent.height - self.height) / 2;
-                        width: parent.width - 60px;
-                        height: parent.height - 60px;
-                        alignment: center;
-                        spacing: 2px;
-                        HorizontalLayout {
-                            alignment: center;
-                            Rectangle {
-                                width: rest-text.preferred-width + 12px;
-                                height: 18px;
-                                border-radius: 9px;
-                                background: Theme.surface-2;
-                                rest-text := Text {
-                                    text: "REST";
-                                    color: Theme.accent-warning;
-                                    font-size: 10px;
-                                    font-weight: 800;
-                                    letter-spacing: 0.5px;
-                                    horizontal-alignment: center;
-                                    vertical-alignment: center;
-                                    width: parent.width;
-                                    height: parent.height;
-                                }
-                            }
-                        }
-                        HorizontalLayout {
-                            alignment: center;
-                            Heading {
-                                text: root.rest-remaining;
-                                style: HeadingStyle.serif-light;
-                                color: Theme.on-background;
-                                font-size: 48px;
-                            }
-                        }
-                        HorizontalLayout {
-                            alignment: center;
-                            Text {
-                                text: "Next: Set " + root.set-current + " of " + root.set-total;
-                                color: Theme.muted;
-                                font-size: Theme.font-size-caption;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // ----- Current exercise card -----
-        VerticalLayout {
-            padding-left: Theme.spacing-md;
-            padding-right: Theme.spacing-md;
-            padding-top: Theme.spacing-md;
-            spacing: Theme.spacing-sm;
-
-            Rectangle {
-                background: Theme.surface-1;
-                border-radius: Theme.radius-md;
-                drop-shadow-blur: Theme.elevation-1-blur;
-                drop-shadow-color: Theme.elevation-1-color;
-                drop-shadow-offset-y: Theme.elevation-1-y;
-
+                // ----- Hero: elapsed + rest ring -----
                 VerticalLayout {
-                    padding: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
                     spacing: Theme.spacing-sm;
 
                     HorizontalLayout {
-                        spacing: Theme.spacing-sm;
-                        alignment: stretch;
-                        VerticalLayout {
-                            horizontal-stretch: 1;
-                            Heading {
-                                text: root.exercise;
-                                style: HeadingStyle.bold-impact;
-                                color: Theme.on-surface;
-                                font-size: 22px;
-                            }
+                        alignment: center;
+                        Text {
+                            text: "ELAPSED · " + root.fmt-time(root.elapsed-sec)
+                                + (root.paused ? " · PAUSED" : "");
+                            color: Theme.muted;
+                            font-size: 10px;
+                            font-weight: 800;
+                            letter-spacing: 0.5px;
                         }
+                    }
+                    HorizontalLayout {
+                        alignment: center;
+                        Rectangle {
+                            width: 200px;
+                            height: 200px;
+                            RingBand {
+                                x: 0;
+                                y: 0;
+                                radius: 100px;
+                                stroke: 14px;
+                                fill-color: root.workout-done ? Theme.accent-success
+                                    : root.rest-sec == 0 ? Theme.accent-success
+                                    : Theme.accent-warning;
+                                progress: root.workout-done ? 1.0
+                                    : root.rest-sec == 0 ? 1.0
+                                    : root.rest-progress();
+                            }
+                            VerticalLayout {
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+                                width: parent.width - 60px;
+                                height: parent.height - 60px;
+                                alignment: center;
+                                spacing: 2px;
+                                HorizontalLayout {
+                                    alignment: center;
+                                    Rectangle {
+                                        width: rest-text.preferred-width + 12px;
+                                        height: 18px;
+                                        border-radius: 9px;
+                                        background: Theme.surface-2;
+                                        rest-text := Text {
+                                            text: root.workout-done ? "DONE"
+                                                : root.paused ? "PAUSED"
+                                                : root.rest-sec == 0 ? "GO"
+                                                : "REST";
+                                            color: root.workout-done ? Theme.accent-success
+                                                : root.paused ? Theme.muted
+                                                : root.rest-sec == 0 ? Theme.accent-success
+                                                : Theme.accent-warning;
+                                            font-size: 10px;
+                                            font-weight: 800;
+                                            letter-spacing: 0.5px;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
+                                            width: parent.width;
+                                            height: parent.height;
+                                        }
+                                    }
+                                }
+                                HorizontalLayout {
+                                    alignment: center;
+                                    Heading {
+                                        text: root.workout-done ? "✓"
+                                            : root.rest-sec == 0
+                                                ? "0:00"
+                                                : root.fmt-rest(root.rest-sec);
+                                        style: HeadingStyle.serif-light;
+                                        color: Theme.on-background;
+                                        font-size: 48px;
+                                    }
+                                }
+                                HorizontalLayout {
+                                    alignment: center;
+                                    Text {
+                                        text: root.workout-done
+                                            ? "All sets logged"
+                                            : "Next: Set " + root.current-set + " of 4";
+                                        color: Theme.muted;
+                                        font-size: Theme.font-size-caption;
+                                    }
+                                }
+                            }
+                            TouchArea { clicked => { root.toggle-pause(); } }
+                        }
+                    }
+                }
+
+                // ----- Current exercise card -----
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-md;
+                    spacing: Theme.spacing-sm;
+
+                    Rectangle {
+                        background: Theme.surface-1;
+                        border-radius: Theme.radius-md;
+                        drop-shadow-blur: Theme.elevation-1-blur;
+                        drop-shadow-color: Theme.elevation-1-color;
+                        drop-shadow-offset-y: Theme.elevation-1-y;
+
                         VerticalLayout {
-                            alignment: center;
-                            Rectangle {
-                                width: set-text.preferred-width + 14px;
-                                height: 22px;
-                                border-radius: 11px;
-                                background: Theme.accent-info;
-                                set-text := Text {
-                                    text: "SET " + root.set-current + " / " + root.set-total;
-                                    color: Theme.on-primary;
-                                    font-size: 10px;
-                                    font-weight: 800;
-                                    letter-spacing: 0.5px;
-                                    horizontal-alignment: center;
-                                    vertical-alignment: center;
-                                    width: parent.width;
-                                    height: parent.height;
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-sm;
+
+                            HorizontalLayout {
+                                spacing: Theme.spacing-sm;
+                                alignment: stretch;
+                                VerticalLayout {
+                                    horizontal-stretch: 1;
+                                    Heading {
+                                        text: root.exercise;
+                                        style: HeadingStyle.bold-impact;
+                                        color: Theme.on-surface;
+                                        font-size: 22px;
+                                    }
+                                }
+                                VerticalLayout {
+                                    alignment: center;
+                                    Rectangle {
+                                        width: set-text.preferred-width + 14px;
+                                        height: 22px;
+                                        border-radius: 11px;
+                                        background: root.workout-done
+                                            ? Theme.accent-success
+                                            : Theme.accent-info;
+                                        animate background { duration: Theme.motion-fast; }
+                                        set-text := Text {
+                                            text: root.workout-done
+                                                ? "ALL DONE"
+                                                : "SET " + root.current-set + " / 4";
+                                            color: Theme.on-primary;
+                                            font-size: 10px;
+                                            font-weight: 800;
+                                            letter-spacing: 0.5px;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
+                                            width: parent.width;
+                                            height: parent.height;
+                                        }
+                                    }
+                                }
+                            }
+
+                            SetRow {
+                                set-no: 1;
+                                weight: root.fmt-weight(root.s1-weight-t);
+                                reps: root.reps-display(1);
+                                state: root.s1-state;
+                            }
+                            SetRow {
+                                set-no: 2;
+                                weight: root.fmt-weight(root.s2-weight-t);
+                                reps: root.reps-display(2);
+                                state: root.s2-state;
+                            }
+                            SetRow {
+                                set-no: 3;
+                                weight: root.fmt-weight(root.s3-weight-t);
+                                reps: root.reps-display(3);
+                                state: root.s3-state;
+                            }
+                            SetRow {
+                                set-no: 4;
+                                weight: root.fmt-weight(root.s4-weight-t);
+                                reps: root.reps-display(4);
+                                state: root.s4-state;
+                            }
+
+                            // Action row.
+                            HorizontalLayout {
+                                spacing: Theme.spacing-sm;
+                                padding-top: Theme.spacing-xs;
+                                MobileButton {
+                                    text: "−2.5";
+                                    primary: false;
+                                    horizontal-stretch: 1;
+                                    enabled: !root.workout-done;
+                                    clicked => { root.adjust-weight(-25); }
+                                }
+                                MobileButton {
+                                    text: root.rest-sec == 0
+                                        ? "Skipped"
+                                        : "Skip rest";
+                                    primary: false;
+                                    horizontal-stretch: 1;
+                                    enabled: root.rest-sec > 0;
+                                    clicked => { root.skip-rest(); }
+                                }
+                                MobileButton {
+                                    text: root.workout-done
+                                        ? "Workout complete"
+                                        : "Done · log set " + root.current-set;
+                                    horizontal-stretch: 2;
+                                    tone: Tone.success;
+                                    enabled: !root.workout-done;
+                                    clicked => { root.log-set(); }
+                                }
+                                MobileButton {
+                                    text: "+2.5";
+                                    primary: false;
+                                    horizontal-stretch: 1;
+                                    enabled: !root.workout-done;
+                                    clicked => { root.adjust-weight(25); }
                                 }
                             }
                         }
                     }
+                }
 
-                    SetRow { set-no: 1; weight: "80 kg"; reps: "8"; state: 2; }
-                    SetRow { set-no: 2; weight: "80 kg"; reps: "8"; state: 2; }
-                    SetRow { set-no: 3; weight: "82.5 kg"; reps: "—"; state: 1; }
-                    SetRow { set-no: 4; weight: "82.5 kg"; reps: "—"; state: 0; }
-
-                    HorizontalLayout {
-                        spacing: Theme.spacing-sm;
-                        padding-top: Theme.spacing-xs;
-                        MobileButton {
-                            text: "Skip rest";
-                            primary: false;
-                            horizontal-stretch: 1;
-                            clicked => { root.skip-pressed(); }
-                        }
-                        MobileButton {
-                            text: "Done · log set";
-                            horizontal-stretch: 2;
-                            tone: Tone.success;
-                            clicked => { root.done-pressed(); }
-                        }
-                    }
+                SectionHeader { text: "UP NEXT"; }
+                UpcomingRow {
+                    name: "Overhead press";
+                    meta: "4 × 6 · 50 kg target";
+                    tone: Tone.info;
+                    clicked => { root.tap-upcoming("Overhead press"); }
+                }
+                Divider { }
+                UpcomingRow {
+                    name: "Dumbbell row";
+                    meta: "3 × 10 · 30 kg target";
+                    clicked => { root.tap-upcoming("Dumbbell row"); }
+                }
+                Divider { }
+                UpcomingRow {
+                    name: "Tricep cable pushdown";
+                    meta: "3 × 12 · 40 kg target";
+                    tone: Tone.warning;
+                    clicked => { root.tap-upcoming("Tricep cable pushdown"); }
                 }
             }
         }
-
-        // ----- Upcoming exercises -----
-        SectionHeader { text: "UP NEXT"; }
-        UpcomingRow {
-            name: "Overhead press";
-            meta: "4 × 6 · 50 kg target";
-            tone: Tone.info;
-        }
-        Divider { }
-        UpcomingRow {
-            name: "Dumbbell row";
-            meta: "3 × 10 · 30 kg target";
-        }
-        Divider { }
-        UpcomingRow {
-            name: "Tricep cable pushdown";
-            meta: "3 × 12 · 40 kg target";
-            tone: Tone.warning;
-        }
-            }   // end inner VerticalLayout
-        }       // end ScrollView
     }
 }

@@ -1,33 +1,402 @@
 // TrendingTopicsPage
 // =====================================================================
-//
-// Trending hashtags / topics. Two FormSection groups (TRENDING NEAR
-// YOU, GLOBAL), each row a SettingRow with a small rank-text trailing
-// so the rank column lines up at one shared right margin.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { SegmentedControl } from "@mobile-components/segmented-control.slint";
 import { FormSection } from "@mobile-components/form-section.slint";
-import { SettingRow } from "@mobile-components/setting-row.slint";
 import { Divider } from "@mobile-components/divider.slint";
 import { ScrollView } from "std-widgets.slint";
 
-component RankText inherits Text {
-    color: Theme.muted;
-    font-size: Theme.font-size-body;
-    font-weight: 700;
-    vertical-alignment: center;
-    horizontal-alignment: right;
+component TopicRow inherits Rectangle {
+    in property <string> hashtag;
+    in property <string> category;
+    in property <int> posts-k;
+    in property <int> rank;
+    in property <int> rank-delta: 0; // -1 down, 0 same, 1 up
+    in property <int> tone-i: 0;
+    in property <bool> following: false;
+    in property <bool> muted: false;
+    in property <bool> visited: false;
+    callback row-clicked();
+    callback follow-clicked();
+    callback mute-clicked();
+
+    horizontal-stretch: 1;
+    min-height: 64px;
+    opacity: root.muted ? 0.55 : 1.0;
+    background: ta.has-hover ? Theme.surface-2 : (root.following ? Theme.accent-info.with-alpha(0.08) : transparent);
+
+    ta := TouchArea {
+        clicked => {
+            root.row-clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+        VerticalLayout {
+            alignment: center;
+            width: 36px;
+            Text {
+                text: "#" + root.rank;
+                color: root.rank <= 3 ? Theme.accent-warning : Theme.muted;
+                font-size: Theme.font-size-body-large;
+                font-weight: 800;
+                horizontal-alignment: center;
+            }
+            if root.rank-delta != 0: Text {
+                text: root.rank-delta > 0 ? "▲" : "▼";
+                color: root.rank-delta > 0 ? Theme.accent-success : Theme.accent-danger;
+                font-size: 9px;
+                font-weight: 800;
+                horizontal-alignment: center;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 32px;
+                height: 32px;
+                border-radius: 8px;
+                background: root.tone-i == 1 ? Theme.accent-info.with-alpha(0.22) : (root.tone-i == 2 ? Theme.accent-success.with-alpha(0.22) : (root.tone-i == 3 ? Theme.accent-warning.with-alpha(0.22) : (root.tone-i == 4 ? Theme.accent-danger.with-alpha(0.22) : Theme.surface-2)));
+                Image {
+                    width: 16px;
+                    height: 16px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: root.tone-i == 4 ? @image-url("@mobile-components/icons/heart.svg") : (root.tone-i == 1 ? @image-url("@mobile-components/icons/pin.svg") : @image-url("@mobile-components/icons/star.svg"));
+                    colorize: root.tone-i == 1 ? Theme.accent-info : (root.tone-i == 2 ? Theme.accent-success : (root.tone-i == 3 ? Theme.accent-warning : (root.tone-i == 4 ? Theme.accent-danger : Theme.muted)));
+                    image-fit: contain;
+                }
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: (root.following ? "✓ " : "") + root.hashtag + (root.visited ? " · seen" : "");
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 700;
+                overflow: elide;
+            }
+            Text {
+                text: root.category + " · " + root.posts-k + "K posts";
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 4px;
+            Rectangle {
+                horizontal-stretch: 0;
+                width: 64px;
+                height: 24px;
+                border-radius: 12px;
+                background: root.following ? Theme.accent-info : Theme.surface-2;
+                HorizontalLayout {
+                    alignment: center;
+                    VerticalLayout {
+                        alignment: center;
+                        Text {
+                            text: root.following ? "Following" : "Follow";
+                            color: root.following ? Theme.on-primary : Theme.on-surface;
+                            font-size: 9px;
+                            font-weight: 800;
+                        }
+                    }
+                }
+                TouchArea {
+                    clicked => {
+                        root.follow-clicked();
+                    }
+                }
+            }
+            Rectangle {
+                horizontal-stretch: 0;
+                width: 64px;
+                height: 22px;
+                border-radius: 11px;
+                background: root.muted ? Theme.accent-danger.with-alpha(0.22) : Theme.surface-2;
+                HorizontalLayout {
+                    alignment: center;
+                    VerticalLayout {
+                        alignment: center;
+                        Text {
+                            text: root.muted ? "🔕 Muted" : "🔔 Mute";
+                            color: root.muted ? Theme.accent-danger : Theme.muted;
+                            font-size: 9px;
+                            font-weight: 800;
+                        }
+                    }
+                }
+                TouchArea {
+                    clicked => {
+                        root.mute-clicked();
+                    }
+                }
+            }
+        }
+    }
+}
+
+component CategoryChip inherits Rectangle {
+    in property <string> label;
+    in property <bool> active: false;
+    callback clicked();
+
+    horizontal-stretch: 0;
+    height: 28px;
+    border-radius: 14px;
+    background: root.active ? Theme.primary : Theme.surface-2;
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: center;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.active ? Theme.on-primary : Theme.on-surface;
+                font-size: Theme.font-size-caption;
+                font-weight: 700;
+            }
+        }
+    }
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.destructive ? Theme.accent-danger : Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+        }
+    }
 }
 
 export component TrendingTopicsPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
 
-    in-out property <int> window-index: 0;
+    in-out property <int> window-index: 0; // 0 Now 1 Today 2 Week
+    in-out property <int> category-filter: 0; // 0 All 1 Sport 2 Tech 3 Culture 4 News
+    in-out property <int> tick: 0; // for drift
+    in-out property <bool> f0: false;
+    in-out property <bool> f1: false;
+    in-out property <bool> f2: false;
+    in-out property <bool> f3: false;
+    in-out property <bool> f4: false;
+    in-out property <bool> f5: false;
+    in-out property <bool> f6: false;
+    in-out property <bool> f7: false;
+    in-out property <bool> f8: false;
+    in-out property <bool> f9: false;
+    in-out property <bool> f10: false;
+    in-out property <bool> f11: false;
+    in-out property <bool> m0: false;
+    in-out property <bool> m1: false;
+    in-out property <bool> m2: false;
+    in-out property <bool> m3: false;
+    in-out property <bool> m4: false;
+    in-out property <bool> m5: false;
+    in-out property <bool> m6: false;
+    in-out property <bool> m7: false;
+    in-out property <bool> m8: false;
+    in-out property <bool> m9: false;
+    in-out property <bool> m10: false;
+    in-out property <bool> m11: false;
+    in-out property <bool> v0: false;
+    in-out property <bool> v1: false;
+    in-out property <bool> v2: false;
+    in-out property <bool> v3: false;
+    in-out property <bool> v4: false;
+    in-out property <bool> v5: false;
+    in-out property <bool> v6: false;
+    in-out property <bool> v7: false;
+    in-out property <bool> v8: false;
+    in-out property <bool> v9: false;
+    in-out property <bool> v10: false;
+    in-out property <bool> v11: false;
+    in-out property <bool> sheet-open: false;
+    in-out property <bool> confirm-clear: false;
+    in-out property <string> status-msg: "";
+    in-out property <bool> status-success: false;
+    in-out property <bool> status-danger: false;
+
     callback back-pressed();
-    callback topic-pressed(string);
+    callback topic-pressed(int);
+
+    function follow-count() -> int {
+        return (root.f0 ? 1 : 0) + (root.f1 ? 1 : 0) + (root.f2 ? 1 : 0) + (root.f3 ? 1 : 0) + (root.f4 ? 1 : 0) + (root.f5 ? 1 : 0) + (root.f6 ? 1 : 0) + (root.f7 ? 1 : 0) + (root.f8 ? 1 : 0) + (root.f9 ? 1 : 0) + (root.f10 ? 1 : 0) + (root.f11 ? 1 : 0);
+    }
+    function window-mult() -> int {
+        return root.window-index == 0 ? 100 : (root.window-index == 1 ? 350 : 1400);
+    }
+    function adjusted(base-k: int) -> int {
+        return floor(base-k * root.window-mult() / 100) + mod(root.tick, 7);
+    }
+    function row-visible(category: int) -> bool {
+        return root.category-filter == 0 || root.category-filter == category;
+    }
+    function set-status(m: string, ok: bool, bad: bool) {
+        root.status-msg = m;
+        root.status-success = ok;
+        root.status-danger = bad;
+    }
+    function toggle-follow(i: int) {
+        if (i == 0) {
+            root.f0 = !root.f0;
+        }
+        if (i == 1) {
+            root.f1 = !root.f1;
+        }
+        if (i == 2) {
+            root.f2 = !root.f2;
+        }
+        if (i == 3) {
+            root.f3 = !root.f3;
+        }
+        if (i == 4) {
+            root.f4 = !root.f4;
+        }
+        if (i == 5) {
+            root.f5 = !root.f5;
+        }
+        if (i == 6) {
+            root.f6 = !root.f6;
+        }
+        if (i == 7) {
+            root.f7 = !root.f7;
+        }
+        if (i == 8) {
+            root.f8 = !root.f8;
+        }
+        if (i == 9) {
+            root.f9 = !root.f9;
+        }
+        if (i == 10) {
+            root.f10 = !root.f10;
+        }
+        if (i == 11) {
+            root.f11 = !root.f11;
+        }
+    }
+    function toggle-mute(i: int) {
+        if (i == 0) {
+            root.m0 = !root.m0;
+        }
+        if (i == 1) {
+            root.m1 = !root.m1;
+        }
+        if (i == 2) {
+            root.m2 = !root.m2;
+        }
+        if (i == 3) {
+            root.m3 = !root.m3;
+        }
+        if (i == 4) {
+            root.m4 = !root.m4;
+        }
+        if (i == 5) {
+            root.m5 = !root.m5;
+        }
+        if (i == 6) {
+            root.m6 = !root.m6;
+        }
+        if (i == 7) {
+            root.m7 = !root.m7;
+        }
+        if (i == 8) {
+            root.m8 = !root.m8;
+        }
+        if (i == 9) {
+            root.m9 = !root.m9;
+        }
+        if (i == 10) {
+            root.m10 = !root.m10;
+        }
+        if (i == 11) {
+            root.m11 = !root.m11;
+        }
+    }
+    function visit(i: int) {
+        if (i == 0) {
+            root.v0 = true;
+        }
+        if (i == 1) {
+            root.v1 = true;
+        }
+        if (i == 2) {
+            root.v2 = true;
+        }
+        if (i == 3) {
+            root.v3 = true;
+        }
+        if (i == 4) {
+            root.v4 = true;
+        }
+        if (i == 5) {
+            root.v5 = true;
+        }
+        if (i == 6) {
+            root.v6 = true;
+        }
+        if (i == 7) {
+            root.v7 = true;
+        }
+        if (i == 8) {
+            root.v8 = true;
+        }
+        if (i == 9) {
+            root.v9 = true;
+        }
+        if (i == 10) {
+            root.v10 = true;
+        }
+        if (i == 11) {
+            root.v11 = true;
+        }
+    }
+
+    drift := Timer {
+        interval: 3s;
+        running: true;
+        triggered => {
+            root.tick = root.tick + 1;
+        }
+    }
 
     background: Theme.background;
 
@@ -35,9 +404,32 @@ export component TrendingTopicsPage inherits Window {
         spacing: 0;
 
         AppBar {
-            title: "Trending";
+            title: "Trending · 👤 " + root.follow-count();
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
-            leading-pressed => { root.back-pressed(); }
+            trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
+            leading-pressed => {
+                root.back-pressed();
+            }
+            trailing-pressed => {
+                root.sheet-open = true;
+            }
+        }
+
+        if !root.status-msg.is-empty: Rectangle {
+            height: 28px;
+            background: root.status-success ? Theme.accent-success.with-alpha(0.16) : (root.status-danger ? Theme.accent-danger.with-alpha(0.16) : Theme.surface-2);
+            HorizontalLayout {
+                alignment: center;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.status-msg;
+                        color: root.status-success ? Theme.accent-success : (root.status-danger ? Theme.accent-danger : Theme.on-surface);
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                    }
+                }
+            }
         }
 
         ScrollView {
@@ -55,124 +447,494 @@ export component TrendingTopicsPage inherits Window {
                     SegmentedControl {
                         options: ["Now", "Today", "Week"];
                         selected-index <=> root.window-index;
+                        changed(i) => {
+                            root.set-status("Window: " + (i == 0 ? "now" : (i == 1 ? "today" : "week")), true, false);
+                        }
                     }
                 }
 
-                // ----- TRENDING NEAR YOU -----------------------------------
-                FormSection {
-                    title: "TRENDING NEAR YOU";
-
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/star.svg");
-                        tone: Tone.warning;
-                        title: "#brusselsmarathon";
-                        subtitle: "Sport · 12.4K posts";
-                        clicked => { root.topic-pressed("brusselsmarathon"); }
-                        RankText { text: "#1"; }
+                HorizontalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    spacing: Theme.spacing-sm;
+                    CategoryChip {
+                        label: "All";
+                        active: root.category-filter == 0;
+                        clicked => {
+                            root.category-filter = 0;
+                        }
                     }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/pin.svg");
-                        tone: Tone.info;
-                        title: "#metrol2";
-                        subtitle: "City · 8.1K posts";
-                        clicked => { root.topic-pressed("metrol2"); }
-                        RankText { text: "#2"; }
+                    CategoryChip {
+                        label: "Sport";
+                        active: root.category-filter == 1;
+                        clicked => {
+                            root.category-filter = 1;
+                        }
                     }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/heart.svg");
-                        tone: Tone.danger;
-                        title: "#frietfest";
-                        subtitle: "Food · 6.5K posts";
-                        clicked => { root.topic-pressed("frietfest"); }
-                        RankText { text: "#3"; }
+                    CategoryChip {
+                        label: "Tech";
+                        active: root.category-filter == 2;
+                        clicked => {
+                            root.category-filter = 2;
+                        }
                     }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/star.svg");
-                        tone: Tone.success;
-                        title: "#parclouise";
-                        subtitle: "Local · 5.2K posts";
-                        clicked => { root.topic-pressed("parclouise"); }
-                        RankText { text: "#4"; }
+                    CategoryChip {
+                        label: "Culture";
+                        active: root.category-filter == 3;
+                        clicked => {
+                            root.category-filter = 3;
+                        }
                     }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/pin.svg");
-                        tone: Tone.default;
-                        title: "#stibstrike";
-                        subtitle: "News · 4.8K posts";
-                        clicked => { root.topic-pressed("stibstrike"); }
-                        RankText { text: "#5"; }
-                    }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/heart.svg");
-                        tone: Tone.info;
-                        title: "#kunstenfestival";
-                        subtitle: "Culture · 3.9K posts";
-                        clicked => { root.topic-pressed("kunstenfestival"); }
-                        RankText { text: "#6"; }
+                    CategoryChip {
+                        label: "News";
+                        active: root.category-filter == 4;
+                        clicked => {
+                            root.category-filter = 4;
+                        }
                     }
                 }
 
-                // ----- GLOBAL ----------------------------------------------
                 FormSection {
-                    title: "GLOBAL";
+                    title: "TRENDING NEAR YOU · 📍 Brussels";
 
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/star.svg");
-                        tone: Tone.info;
-                        title: "#worldcup2026";
-                        subtitle: "Sport · 2.4M posts";
-                        clicked => { root.topic-pressed("worldcup2026"); }
-                        RankText { text: "#1"; }
+                    if root.row-visible(1): TopicRow {
+                        hashtag: "#brusselsmarathon";
+                        category: "Sport";
+                        posts-k: root.adjusted(12);
+                        rank: 1;
+                        rank-delta: 1;
+                        tone-i: 3;
+                        following: root.f0;
+                        muted: root.m0;
+                        visited: root.v0;
+                        row-clicked => {
+                            root.visit(0);
+                            root.set-status("Opened #brusselsmarathon", true, false);
+                            root.topic-pressed(0);
+                        }
+                        follow-clicked => {
+                            root.toggle-follow(0);
+                            root.set-status(root.f0 ? "Following #brusselsmarathon" : "Unfollowed", root.f0, false);
+                        }
+                        mute-clicked => {
+                            root.toggle-mute(0);
+                            root.set-status(root.m0 ? "Muted" : "Unmuted", !root.m0, root.m0);
+                        }
                     }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/pin.svg");
-                        tone: Tone.warning;
-                        title: "#climatecop";
-                        subtitle: "Politics · 1.8M posts";
-                        clicked => { root.topic-pressed("climatecop"); }
-                        RankText { text: "#2"; }
+                    if root.row-visible(1): Divider { }
+
+                    if root.row-visible(4): TopicRow {
+                        hashtag: "#metrol2";
+                        category: "City";
+                        posts-k: root.adjusted(8);
+                        rank: 2;
+                        rank-delta: 1;
+                        tone-i: 1;
+                        following: root.f1;
+                        muted: root.m1;
+                        visited: root.v1;
+                        row-clicked => {
+                            root.visit(1);
+                            root.set-status("Opened #metrol2", true, false);
+                            root.topic-pressed(1);
+                        }
+                        follow-clicked => {
+                            root.toggle-follow(1);
+                            root.set-status(root.f1 ? "Following #metrol2" : "Unfollowed", root.f1, false);
+                        }
+                        mute-clicked => {
+                            root.toggle-mute(1);
+                            root.set-status(root.m1 ? "Muted" : "Unmuted", !root.m1, root.m1);
+                        }
                     }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/heart.svg");
-                        tone: Tone.danger;
-                        title: "#designsystems";
-                        subtitle: "Tech · 942K posts";
-                        clicked => { root.topic-pressed("designsystems"); }
-                        RankText { text: "#3"; }
+                    if root.row-visible(4): Divider { }
+
+                    if root.row-visible(3): TopicRow {
+                        hashtag: "#frietfest";
+                        category: "Food";
+                        posts-k: root.adjusted(6);
+                        rank: 3;
+                        rank-delta: -1;
+                        tone-i: 4;
+                        following: root.f2;
+                        muted: root.m2;
+                        visited: root.v2;
+                        row-clicked => {
+                            root.visit(2);
+                            root.set-status("Opened #frietfest", true, false);
+                            root.topic-pressed(2);
+                        }
+                        follow-clicked => {
+                            root.toggle-follow(2);
+                            root.set-status(root.f2 ? "Following #frietfest" : "Unfollowed", root.f2, false);
+                        }
+                        mute-clicked => {
+                            root.toggle-mute(2);
+                            root.set-status(root.m2 ? "Muted" : "Unmuted", !root.m2, root.m2);
+                        }
                     }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/star.svg");
-                        tone: Tone.success;
-                        title: "#rustlang";
-                        subtitle: "Tech · 814K posts";
-                        clicked => { root.topic-pressed("rustlang"); }
-                        RankText { text: "#4"; }
+                    if root.row-visible(3): Divider { }
+
+                    if root.row-visible(3): TopicRow {
+                        hashtag: "#parclouise";
+                        category: "Local";
+                        posts-k: root.adjusted(5);
+                        rank: 4;
+                        rank-delta: 0;
+                        tone-i: 2;
+                        following: root.f3;
+                        muted: root.m3;
+                        visited: root.v3;
+                        row-clicked => {
+                            root.visit(3);
+                            root.set-status("Opened #parclouise", true, false);
+                            root.topic-pressed(3);
+                        }
+                        follow-clicked => {
+                            root.toggle-follow(3);
+                            root.set-status(root.f3 ? "Following #parclouise" : "Unfollowed", root.f3, false);
+                        }
+                        mute-clicked => {
+                            root.toggle-mute(3);
+                            root.set-status(root.m3 ? "Muted" : "Unmuted", !root.m3, root.m3);
+                        }
                     }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/pin.svg");
-                        tone: Tone.default;
-                        title: "#bakeoff";
-                        subtitle: "Entertainment · 624K posts";
-                        clicked => { root.topic-pressed("bakeoff"); }
-                        RankText { text: "#5"; }
+                    if root.row-visible(3): Divider { }
+
+                    if root.row-visible(4): TopicRow {
+                        hashtag: "#stibstrike";
+                        category: "News";
+                        posts-k: root.adjusted(4);
+                        rank: 5;
+                        rank-delta: 1;
+                        tone-i: 1;
+                        following: root.f4;
+                        muted: root.m4;
+                        visited: root.v4;
+                        row-clicked => {
+                            root.visit(4);
+                            root.set-status("Opened #stibstrike", true, false);
+                            root.topic-pressed(4);
+                        }
+                        follow-clicked => {
+                            root.toggle-follow(4);
+                            root.set-status(root.f4 ? "Following #stibstrike" : "Unfollowed", root.f4, false);
+                        }
+                        mute-clicked => {
+                            root.toggle-mute(4);
+                            root.set-status(root.m4 ? "Muted" : "Unmuted", !root.m4, root.m4);
+                        }
                     }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/heart.svg");
-                        tone: Tone.info;
-                        title: "#sundaylongread";
-                        subtitle: "Culture · 318K posts";
-                        clicked => { root.topic-pressed("sundaylongread"); }
-                        RankText { text: "#6"; }
+                    if root.row-visible(4): Divider { }
+
+                    if root.row-visible(3): TopicRow {
+                        hashtag: "#kunstenfestival";
+                        category: "Culture";
+                        posts-k: root.adjusted(3);
+                        rank: 6;
+                        rank-delta: -1;
+                        tone-i: 1;
+                        following: root.f5;
+                        muted: root.m5;
+                        visited: root.v5;
+                        row-clicked => {
+                            root.visit(5);
+                            root.set-status("Opened #kunstenfestival", true, false);
+                            root.topic-pressed(5);
+                        }
+                        follow-clicked => {
+                            root.toggle-follow(5);
+                            root.set-status(root.f5 ? "Following #kunstenfestival" : "Unfollowed", root.f5, false);
+                        }
+                        mute-clicked => {
+                            root.toggle-mute(5);
+                            root.set-status(root.m5 ? "Muted" : "Unmuted", !root.m5, root.m5);
+                        }
+                    }
+                }
+
+                FormSection {
+                    title: "GLOBAL · 🌐";
+
+                    if root.row-visible(1): TopicRow {
+                        hashtag: "#worldcup2026";
+                        category: "Sport";
+                        posts-k: root.adjusted(2400);
+                        rank: 1;
+                        rank-delta: 0;
+                        tone-i: 1;
+                        following: root.f6;
+                        muted: root.m6;
+                        visited: root.v6;
+                        row-clicked => {
+                            root.visit(6);
+                            root.set-status("Opened #worldcup2026", true, false);
+                            root.topic-pressed(6);
+                        }
+                        follow-clicked => {
+                            root.toggle-follow(6);
+                            root.set-status(root.f6 ? "Following" : "Unfollowed", root.f6, false);
+                        }
+                        mute-clicked => {
+                            root.toggle-mute(6);
+                            root.set-status(root.m6 ? "Muted" : "Unmuted", !root.m6, root.m6);
+                        }
+                    }
+                    if root.row-visible(1): Divider { }
+
+                    if root.row-visible(4): TopicRow {
+                        hashtag: "#climatecop";
+                        category: "Politics";
+                        posts-k: root.adjusted(1800);
+                        rank: 2;
+                        rank-delta: 1;
+                        tone-i: 3;
+                        following: root.f7;
+                        muted: root.m7;
+                        visited: root.v7;
+                        row-clicked => {
+                            root.visit(7);
+                            root.set-status("Opened #climatecop", true, false);
+                            root.topic-pressed(7);
+                        }
+                        follow-clicked => {
+                            root.toggle-follow(7);
+                            root.set-status(root.f7 ? "Following" : "Unfollowed", root.f7, false);
+                        }
+                        mute-clicked => {
+                            root.toggle-mute(7);
+                            root.set-status(root.m7 ? "Muted" : "Unmuted", !root.m7, root.m7);
+                        }
+                    }
+                    if root.row-visible(4): Divider { }
+
+                    if root.row-visible(2): TopicRow {
+                        hashtag: "#designsystems";
+                        category: "Tech";
+                        posts-k: root.adjusted(942);
+                        rank: 3;
+                        rank-delta: 1;
+                        tone-i: 4;
+                        following: root.f8;
+                        muted: root.m8;
+                        visited: root.v8;
+                        row-clicked => {
+                            root.visit(8);
+                            root.set-status("Opened #designsystems", true, false);
+                            root.topic-pressed(8);
+                        }
+                        follow-clicked => {
+                            root.toggle-follow(8);
+                            root.set-status(root.f8 ? "Following" : "Unfollowed", root.f8, false);
+                        }
+                        mute-clicked => {
+                            root.toggle-mute(8);
+                            root.set-status(root.m8 ? "Muted" : "Unmuted", !root.m8, root.m8);
+                        }
+                    }
+                    if root.row-visible(2): Divider { }
+
+                    if root.row-visible(2): TopicRow {
+                        hashtag: "#rustlang";
+                        category: "Tech";
+                        posts-k: root.adjusted(814);
+                        rank: 4;
+                        rank-delta: 1;
+                        tone-i: 2;
+                        following: root.f9;
+                        muted: root.m9;
+                        visited: root.v9;
+                        row-clicked => {
+                            root.visit(9);
+                            root.set-status("Opened #rustlang", true, false);
+                            root.topic-pressed(9);
+                        }
+                        follow-clicked => {
+                            root.toggle-follow(9);
+                            root.set-status(root.f9 ? "Following" : "Unfollowed", root.f9, false);
+                        }
+                        mute-clicked => {
+                            root.toggle-mute(9);
+                            root.set-status(root.m9 ? "Muted" : "Unmuted", !root.m9, root.m9);
+                        }
+                    }
+                    if root.row-visible(2): Divider { }
+
+                    if root.row-visible(3): TopicRow {
+                        hashtag: "#bakeoff";
+                        category: "Entertainment";
+                        posts-k: root.adjusted(624);
+                        rank: 5;
+                        rank-delta: -1;
+                        tone-i: 1;
+                        following: root.f10;
+                        muted: root.m10;
+                        visited: root.v10;
+                        row-clicked => {
+                            root.visit(10);
+                            root.set-status("Opened #bakeoff", true, false);
+                            root.topic-pressed(10);
+                        }
+                        follow-clicked => {
+                            root.toggle-follow(10);
+                            root.set-status(root.f10 ? "Following" : "Unfollowed", root.f10, false);
+                        }
+                        mute-clicked => {
+                            root.toggle-mute(10);
+                            root.set-status(root.m10 ? "Muted" : "Unmuted", !root.m10, root.m10);
+                        }
+                    }
+                    if root.row-visible(3): Divider { }
+
+                    if root.row-visible(3): TopicRow {
+                        hashtag: "#sundaylongread";
+                        category: "Culture";
+                        posts-k: root.adjusted(318);
+                        rank: 6;
+                        rank-delta: 0;
+                        tone-i: 1;
+                        following: root.f11;
+                        muted: root.m11;
+                        visited: root.v11;
+                        row-clicked => {
+                            root.visit(11);
+                            root.set-status("Opened #sundaylongread", true, false);
+                            root.topic-pressed(11);
+                        }
+                        follow-clicked => {
+                            root.toggle-follow(11);
+                            root.set-status(root.f11 ? "Following" : "Unfollowed", root.f11, false);
+                        }
+                        mute-clicked => {
+                            root.toggle-mute(11);
+                            root.set-status(root.m11 ? "Muted" : "Unmuted", !root.m11, root.m11);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+                root.confirm-clear = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: Theme.surface-2;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.muted;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: "Trending menu";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 700;
+                    }
+                }
+                SheetRow {
+                    label: "Refresh counts";
+                    clicked => {
+                        root.tick = root.tick + 5;
+                        root.set-status("Counts refreshed", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Unfollow all (" + root.follow-count() + ")";
+                    clicked => {
+                        root.f0 = false;
+                        root.f1 = false;
+                        root.f2 = false;
+                        root.f3 = false;
+                        root.f4 = false;
+                        root.f5 = false;
+                        root.f6 = false;
+                        root.f7 = false;
+                        root.f8 = false;
+                        root.f9 = false;
+                        root.f10 = false;
+                        root.f11 = false;
+                        root.set-status("Unfollowed all", false, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Unmute all";
+                    clicked => {
+                        root.m0 = false;
+                        root.m1 = false;
+                        root.m2 = false;
+                        root.m3 = false;
+                        root.m4 = false;
+                        root.m5 = false;
+                        root.m6 = false;
+                        root.m7 = false;
+                        root.m8 = false;
+                        root.m9 = false;
+                        root.m10 = false;
+                        root.m11 = false;
+                        root.set-status("All unmuted", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                Divider { }
+
+                SheetRow {
+                    label: root.confirm-clear ? "Confirm: mute everything" : "Mute everything";
+                    destructive: true;
+                    clicked => {
+                        if (root.confirm-clear) {
+                            root.m0 = true;
+                            root.m1 = true;
+                            root.m2 = true;
+                            root.m3 = true;
+                            root.m4 = true;
+                            root.m5 = true;
+                            root.m6 = true;
+                            root.m7 = true;
+                            root.m8 = true;
+                            root.m9 = true;
+                            root.m10 = true;
+                            root.m11 = true;
+                            root.set-status("All muted", false, true);
+                            root.sheet-open = false;
+                            root.confirm-clear = false;
+                        } else {
+                            root.confirm-clear = true;
+                        }
+                    }
+                }
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.sheet-open = false;
+                        root.confirm-clear = false;
                     }
                 }
             }

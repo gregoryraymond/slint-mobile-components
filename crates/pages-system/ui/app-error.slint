@@ -1,10 +1,5 @@
 // AppErrorPage
 // =====================================================================
-//
-// Friendly error fallback — what the user sees when something has gone
-// catastrophically wrong. Big tinted glyph + apologetic heading + the
-// diagnostics block that engineering actually needs, all laid out with
-// the shared row/section primitives so the alignment stays honest.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
@@ -15,13 +10,180 @@ import { Divider } from "@mobile-components/divider.slint";
 import { MobileButton, TextButton } from "@mobile-components/button.slint";
 import { ScrollView } from "std-widgets.slint";
 
+component CopyRow inherits Rectangle {
+    in property <string> label;
+    in property <string> value;
+    in property <bool> copied: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 56px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            spacing: 2px;
+            Text {
+                text: root.label;
+                color: Theme.muted;
+                font-size: 11px;
+                font-weight: 700;
+                letter-spacing: 1px;
+            }
+            Text {
+                text: root.value;
+                color: Theme.on-surface;
+                font-family: "JetBrains Mono";
+                font-size: Theme.font-size-body;
+                font-weight: 700;
+                overflow: elide;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                horizontal-stretch: 0;
+                height: 26px;
+                border-radius: 13px;
+                background: root.copied ? Theme.accent-success.with-alpha(0.22) : Theme.surface-2;
+                HorizontalLayout {
+                    padding-left: Theme.spacing-sm;
+                    padding-right: Theme.spacing-sm;
+                    VerticalLayout {
+                        alignment: center;
+                        Text {
+                            text: root.copied ? "✓ Copied" : "Copy";
+                            color: root.copied ? Theme.accent-success : Theme.accent-info;
+                            font-size: 10px;
+                            font-weight: 800;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.destructive ? Theme.accent-danger : Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+        }
+    }
+}
+
 export component AppErrorPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
 
+    in-out property <int> error-idx: 0; // 0 Network, 1 Server, 2 Auth, 3 Storage
+    in-out property <bool> retrying: false;
+    in-out property <int> retry-secs: 0;
+    in-out property <bool> recovered: false;
+    in-out property <int> copy-row: -1; // -1 none, 0..3 which row copied
+    in-out property <bool> logs-open: false;
+    in-out property <bool> bug-form-open: false;
+    in-out property <bool> diagnostics-sent: false;
+    in-out property <bool> sheet-open: false;
+    in-out property <bool> confirm-clear: false;
+    in-out property <string> status-msg: "";
+    in-out property <bool> status-success: false;
+    in-out property <bool> status-danger: false;
+
     callback back-pressed();
     callback retry-pressed();
     callback report-pressed();
+
+    function error-code() -> string {
+        return root.error-idx == 0 ? "E_NETWORK_TIMEOUT" : (root.error-idx == 1 ? "E_SERVER_500" : (root.error-idx == 2 ? "E_AUTH_EXPIRED" : "E_STORAGE_FULL"));
+    }
+    function error-headline() -> string {
+        return root.recovered ? "Recovered" : (root.retrying ? "Retrying…" : "Something went wrong");
+    }
+    function error-message() -> string {
+        return root.recovered ? "Connection restored." : (root.error-idx == 0 ? "Couldn't reach the server. Check your connection and try again." : (root.error-idx == 1 ? "Server is having a moment. Engineering's been paged." : (root.error-idx == 2 ? "Your session expired. Sign back in to continue." : "Local storage is full. Free space to continue.")));
+    }
+    function suggestion(i: int) -> string {
+        return root.error-idx == 0 ? (i == 0 ? "Check Wi-Fi or mobile data" : (i == 1 ? "Switch to a stable network" : "Disable VPN temporarily")) : (root.error-idx == 1 ? (i == 0 ? "Wait 30 seconds and retry" : (i == 1 ? "Check status.slint.dev" : "Contact support if persists")) : (root.error-idx == 2 ? (i == 0 ? "Sign back in" : (i == 1 ? "Check your password" : "Reset 2FA if needed")) : (i == 0 ? "Clear cached downloads" : (i == 1 ? "Move photos off device" : "Check Storage settings"))));
+    }
+    function set-status(m: string, ok: bool, bad: bool) {
+        root.status-msg = m;
+        root.status-success = ok;
+        root.status-danger = bad;
+    }
+    function start-retry() {
+        root.retrying = true;
+        root.retry-secs = 3;
+        root.set-status("Retrying in 3s…", false, false);
+        root.retry-pressed();
+    }
+    function copy-row-action(i: int) {
+        root.copy-row = i;
+        root.set-status("Copied to clipboard", true, false);
+    }
+
+    // Retry countdown.
+    retry-tick := Timer {
+        interval: 1s;
+        running: root.retrying && root.retry-secs > 0;
+        triggered => {
+            root.retry-secs = root.retry-secs - 1;
+            if (root.retry-secs == 0) {
+                root.retrying = false;
+                // 70% recovery rate based on error-idx parity.
+                if (mod(root.error-idx, 2) == 0) {
+                    root.recovered = true;
+                    root.set-status("✓ Reconnected", true, false);
+                } else {
+                    root.set-status("Still failing — try later", false, true);
+                }
+            }
+        }
+    }
+
+    // Copy auto-clear.
+    copy-tick := Timer {
+        interval: 1500ms;
+        running: root.copy-row >= 0;
+        triggered => {
+            root.copy-row = -1;
+        }
+    }
 
     background: Theme.background;
 
@@ -29,8 +191,73 @@ export component AppErrorPage inherits Window {
         spacing: 0;
 
         AppBar {
+            title: root.recovered ? "Recovered" : "Error · " + root.error-code();
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
-            leading-pressed => { root.back-pressed(); }
+            trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
+            leading-pressed => {
+                root.back-pressed();
+            }
+            trailing-pressed => {
+                root.sheet-open = true;
+            }
+        }
+
+        if !root.status-msg.is-empty: Rectangle {
+            height: 28px;
+            background: root.status-success ? Theme.accent-success.with-alpha(0.16) : (root.status-danger ? Theme.accent-danger.with-alpha(0.16) : Theme.surface-2);
+            HorizontalLayout {
+                alignment: center;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.status-msg;
+                        color: root.status-success ? Theme.accent-success : (root.status-danger ? Theme.accent-danger : Theme.on-surface);
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                    }
+                }
+            }
+        }
+
+        // Error-type chips strip.
+        HorizontalLayout {
+            padding-left: Theme.spacing-md;
+            padding-right: Theme.spacing-md;
+            padding-top: Theme.spacing-sm;
+            padding-bottom: Theme.spacing-sm;
+            spacing: Theme.spacing-sm;
+            for chip[i] in [
+                { label: "Network" },
+                { label: "Server" },
+                { label: "Auth" },
+                { label: "Storage" },
+            ]: Rectangle {
+                horizontal-stretch: 0;
+                height: 28px;
+                border-radius: 14px;
+                background: root.error-idx == i ? Theme.accent-danger : Theme.surface-2;
+                HorizontalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    VerticalLayout {
+                        alignment: center;
+                        Text {
+                            text: chip.label;
+                            color: root.error-idx == i ? Theme.on-primary : Theme.on-surface;
+                            font-size: Theme.font-size-caption;
+                            font-weight: 700;
+                        }
+                    }
+                }
+                TouchArea {
+                    clicked => {
+                        root.error-idx = i;
+                        root.recovered = false;
+                        root.retrying = false;
+                        root.set-status("Simulating " + chip.label + " error", false, true);
+                    }
+                }
+            }
         }
 
         ScrollView {
@@ -42,7 +269,6 @@ export component AppErrorPage inherits Window {
                 spacing: Theme.spacing-lg;
                 alignment: start;
 
-                // ----- Hero block -------------------------------------
                 VerticalLayout {
                     padding-left: Theme.spacing-md;
                     padding-right: Theme.spacing-md;
@@ -51,22 +277,31 @@ export component AppErrorPage inherits Window {
 
                     HorizontalLayout {
                         alignment: center;
-                        Image {
+                        Rectangle {
                             width: 96px;
                             height: 96px;
-                            source: @image-url("@mobile-components/icons/close.svg");
-                            colorize: Theme.accent-danger;
-                            image-fit: contain;
+                            border-radius: 48px;
+                            background: root.recovered ? Theme.accent-success : (root.retrying ? Theme.accent-warning : Theme.accent-danger);
+                            Text {
+                                text: root.recovered ? "✓" : (root.retrying ? "⟳" : "✕");
+                                color: Theme.on-primary;
+                                font-size: 48px;
+                                font-weight: 800;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                width: parent.width;
+                                height: parent.height;
+                            }
                         }
                     }
                     Heading {
-                        text: "Something went wrong";
+                        text: root.error-headline() + (root.retrying ? " " + root.retry-secs : "");
                         style: HeadingStyle.serif-display;
                         color: Theme.on-background;
                         horizontal-alignment: center;
                     }
                     Text {
-                        text: "We hit an unexpected issue. Try again, or report it so we can fix it.";
+                        text: root.error-message();
                         color: Theme.muted;
                         font-size: Theme.font-size-body;
                         horizontal-alignment: center;
@@ -74,32 +309,195 @@ export component AppErrorPage inherits Window {
                     }
                 }
 
-                // ----- Error details ----------------------------------
-                FormSection {
-                    title: "ERROR DETAILS";
+                // Suggestions.
+                if !root.recovered: FormSection {
+                    title: "TRY THIS";
 
-                    KeyValueRow {
-                        label: "Code";
-                        value: "E_NETWORK_TIMEOUT";
-                    }
-                    Divider { }
-                    KeyValueRow {
-                        label: "Request ID";
-                        value: "req_8c4e2a91";
-                    }
-                    Divider { }
-                    KeyValueRow {
-                        label: "Time";
-                        value: "2026-05-17 14:08 UTC";
-                    }
-                    Divider { }
-                    KeyValueRow {
-                        label: "Build";
-                        value: "1.4.2 · 3187";
+                    for s[i] in [{ idx: 0 }, { idx: 1 }, { idx: 2 }]: VerticalLayout {
+                        spacing: 0;
+                        Rectangle {
+                            min-height: 48px;
+                            background: ta-s.has-hover ? Theme.surface-2 : transparent;
+                            ta-s := TouchArea {
+                                clicked => {
+                                    root.set-status("Tip: " + root.suggestion(s.idx), true, false);
+                                }
+                            }
+                            HorizontalLayout {
+                                padding-left: Theme.spacing-md;
+                                padding-right: Theme.spacing-md;
+                                spacing: Theme.spacing-md;
+                                VerticalLayout {
+                                    alignment: center;
+                                    Rectangle {
+                                        width: 24px;
+                                        height: 24px;
+                                        border-radius: 12px;
+                                        background: Theme.accent-info;
+                                        Text {
+                                            text: "" + (s.idx + 1);
+                                            color: Theme.on-primary;
+                                            font-size: 12px;
+                                            font-weight: 800;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
+                                            width: parent.width;
+                                            height: parent.height;
+                                        }
+                                    }
+                                }
+                                VerticalLayout {
+                                    alignment: center;
+                                    horizontal-stretch: 1;
+                                    Text {
+                                        text: root.suggestion(s.idx);
+                                        color: Theme.on-surface;
+                                        font-size: Theme.font-size-body;
+                                    }
+                                }
+                            }
+                        }
+                        if s.idx < 2: Divider { }
                     }
                 }
 
-                // ----- Actions ----------------------------------------
+                FormSection {
+                    title: "ERROR DETAILS";
+
+                    CopyRow {
+                        label: "CODE";
+                        value: root.error-code();
+                        copied: root.copy-row == 0;
+                        clicked => {
+                            root.copy-row-action(0);
+                        }
+                    }
+                    Divider { }
+
+                    CopyRow {
+                        label: "REQUEST ID";
+                        value: "req_8c4e2a91";
+                        copied: root.copy-row == 1;
+                        clicked => {
+                            root.copy-row-action(1);
+                        }
+                    }
+                    Divider { }
+
+                    CopyRow {
+                        label: "TIME";
+                        value: "2026-05-17 14:08 UTC";
+                        copied: root.copy-row == 2;
+                        clicked => {
+                            root.copy-row-action(2);
+                        }
+                    }
+                    Divider { }
+
+                    CopyRow {
+                        label: "BUILD";
+                        value: "1.4.2 · 3187";
+                        copied: root.copy-row == 3;
+                        clicked => {
+                            root.copy-row-action(3);
+                        }
+                    }
+                }
+
+                FormSection {
+                    title: "DIAGNOSTICS";
+
+                    Rectangle {
+                        min-height: 48px;
+                        HorizontalLayout {
+                            padding: Theme.spacing-md;
+                            VerticalLayout {
+                                alignment: center;
+                                horizontal-stretch: 1;
+                                Text {
+                                    text: root.logs-open ? "Hide logs" : "Show logs";
+                                    color: Theme.accent-info;
+                                    font-size: Theme.font-size-body;
+                                    font-weight: 800;
+                                }
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                Text {
+                                    text: root.logs-open ? "▾" : "▸";
+                                    color: Theme.accent-info;
+                                    font-size: 14px;
+                                    font-weight: 800;
+                                }
+                            }
+                        }
+                        TouchArea {
+                            clicked => {
+                                root.logs-open = !root.logs-open;
+                                root.set-status(root.logs-open ? "Logs shown" : "Logs hidden", true, false);
+                            }
+                        }
+                    }
+                    if root.logs-open: Divider { }
+
+                    if root.logs-open: Rectangle {
+                        background: Theme.surface-1;
+                        min-height: 120px;
+                        VerticalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: 2px;
+                            Text {
+                                text: "14:08:02.184 NET req → /api/sync";
+                                color: Theme.muted;
+                                font-family: "JetBrains Mono";
+                                font-size: 10px;
+                            }
+                            Text {
+                                text: "14:08:32.184 NET timeout after 30s";
+                                color: Theme.accent-danger;
+                                font-family: "JetBrains Mono";
+                                font-size: 10px;
+                            }
+                            Text {
+                                text: "14:08:32.185 ERR " + root.error-code();
+                                color: Theme.accent-danger;
+                                font-family: "JetBrains Mono";
+                                font-size: 10px;
+                            }
+                            Text {
+                                text: "14:08:32.185 UI render error fallback";
+                                color: Theme.muted;
+                                font-family: "JetBrains Mono";
+                                font-size: 10px;
+                            }
+                        }
+                    }
+                    if root.logs-open: Divider { }
+
+                    Rectangle {
+                        min-height: 48px;
+                        HorizontalLayout {
+                            padding: Theme.spacing-md;
+                            VerticalLayout {
+                                alignment: center;
+                                horizontal-stretch: 1;
+                                Text {
+                                    text: root.diagnostics-sent ? "✓ Diagnostics sent" : "Send diagnostics to support";
+                                    color: root.diagnostics-sent ? Theme.accent-success : Theme.accent-info;
+                                    font-size: Theme.font-size-body;
+                                    font-weight: 800;
+                                }
+                            }
+                        }
+                        TouchArea {
+                            clicked => {
+                                root.diagnostics-sent = !root.diagnostics-sent;
+                                root.set-status(root.diagnostics-sent ? "Diagnostics sent" : "Cancelled", root.diagnostics-sent, false);
+                            }
+                        }
+                    }
+                }
+
                 VerticalLayout {
                     padding-left: Theme.spacing-md;
                     padding-right: Theme.spacing-md;
@@ -107,13 +505,171 @@ export component AppErrorPage inherits Window {
                     alignment: stretch;
 
                     MobileButton {
-                        text: "Try again";
-                        clicked => { root.retry-pressed(); }
+                        text: root.recovered ? "Continue" : (root.retrying ? "Retrying… (" + root.retry-secs + ")" : "Try again");
+                        tone: root.recovered ? Tone.success : Tone.default;
+                        clicked => {
+                            if (root.recovered) {
+                                root.recovered = false;
+                                root.set-status("Continue tapped", true, false);
+                            } else if (!root.retrying) {
+                                root.start-retry();
+                            }
+                        }
                     }
                     MobileButton {
-                        text: "Report a bug";
+                        text: root.bug-form-open ? "Bug form open" : "Report a bug";
                         primary: false;
-                        clicked => { root.report-pressed(); }
+                        clicked => {
+                            root.bug-form-open = !root.bug-form-open;
+                            root.set-status(root.bug-form-open ? "Opened bug report" : "Closed", root.bug-form-open, false);
+                            root.report-pressed();
+                        }
+                    }
+                }
+
+                if root.bug-form-open: Rectangle {
+                    background: Theme.accent-info.with-alpha(0.10);
+                    border-radius: Theme.radius-md;
+                    VerticalLayout {
+                        padding: Theme.spacing-md;
+                        spacing: Theme.spacing-xs;
+                        Text {
+                            text: "BUG FORM";
+                            color: Theme.accent-info;
+                            font-size: 10px;
+                            font-weight: 800;
+                            letter-spacing: 2px;
+                        }
+                        Text {
+                            text: "Subject: " + root.error-code();
+                            color: Theme.on-surface;
+                            font-size: Theme.font-size-body;
+                            font-weight: 700;
+                        }
+                        Text {
+                            text: "Diagnostics attached · build 1.4.2";
+                            color: Theme.muted;
+                            font-size: Theme.font-size-caption;
+                        }
+                        HorizontalLayout {
+                            alignment: end;
+                            Rectangle {
+                                horizontal-stretch: 0;
+                                width: 100px;
+                                height: 32px;
+                                border-radius: 16px;
+                                background: Theme.accent-info;
+                                HorizontalLayout {
+                                    alignment: center;
+                                    VerticalLayout {
+                                        alignment: center;
+                                        Text {
+                                            text: "Send bug";
+                                            color: Theme.on-primary;
+                                            font-size: Theme.font-size-caption;
+                                            font-weight: 800;
+                                        }
+                                    }
+                                }
+                                TouchArea {
+                                    clicked => {
+                                        root.bug-form-open = false;
+                                        root.set-status("Bug report sent · thanks", true, false);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+                root.confirm-clear = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: Theme.surface-2;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.muted;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: "Error menu";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 700;
+                    }
+                }
+                SheetRow {
+                    label: "Force retry now";
+                    clicked => {
+                        root.start-retry();
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: root.logs-open ? "Hide logs" : "Show logs";
+                    clicked => {
+                        root.logs-open = !root.logs-open;
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Copy all error details";
+                    clicked => {
+                        root.copy-row = 0;
+                        root.set-status("All details copied", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                Divider { }
+
+                SheetRow {
+                    label: root.confirm-clear ? "Confirm: clear cache" : "Clear cache & retry";
+                    destructive: true;
+                    clicked => {
+                        if (root.confirm-clear) {
+                            root.start-retry();
+                            root.set-status("Cache cleared · retrying", false, true);
+                            root.sheet-open = false;
+                            root.confirm-clear = false;
+                        } else {
+                            root.confirm-clear = true;
+                        }
+                    }
+                }
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.sheet-open = false;
+                        root.confirm-clear = false;
                     }
                 }
             }

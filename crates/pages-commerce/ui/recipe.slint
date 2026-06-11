@@ -101,9 +101,18 @@ component StepRow inherits Rectangle {
     in property <int> index;
     in property <string> body;
     in property <string> timer-label;
+    in property <bool> has-timer: false;
+    in property <bool> is-active: false;
+    in property <bool> is-current: false;
+    callback step-tapped();
+    callback timer-tapped();
 
     horizontal-stretch: 1;
     min-height: 72px;
+    background: root.is-current ? Theme.surface-2 : transparent;
+    border-radius: Theme.radius-md;
+    animate background { duration: Theme.motion-fast; }
+
     HorizontalLayout {
         padding: Theme.spacing-md;
         spacing: Theme.spacing-md;
@@ -115,7 +124,12 @@ component StepRow inherits Rectangle {
                 width: 32px;
                 height: 32px;
                 border-radius: 16px;
-                background: Theme.accent-info;
+                background: step-touch.pressed
+                    ? Theme.surface-pressed
+                    : (root.is-current ? Theme.accent-success : Theme.accent-info);
+                border-width: root.is-current ? 2px : 0px;
+                border-color: Theme.accent-success;
+                animate background { duration: Theme.motion-fast; }
                 Text {
                     text: root.index;
                     color: Theme.on-primary;
@@ -125,6 +139,9 @@ component StepRow inherits Rectangle {
                     vertical-alignment: center;
                     width: parent.width;
                     height: parent.height;
+                }
+                step-touch := TouchArea {
+                    clicked => { root.step-tapped(); }
                 }
             }
         }
@@ -137,13 +154,16 @@ component StepRow inherits Rectangle {
                 font-size: Theme.font-size-body;
                 wrap: word-wrap;
             }
-            if root.timer-label != "": HorizontalLayout {
+            if root.has-timer: HorizontalLayout {
                 alignment: start;
                 Rectangle {
-                    width: timer-text.preferred-width + 28px;
+                    width: timer-text-el.preferred-width + 28px;
                     height: 26px;
                     border-radius: 13px;
-                    background: Theme.accent-warning;
+                    background: timer-touch.pressed
+                        ? Theme.surface-pressed
+                        : (root.is-active ? Theme.accent-success : Theme.accent-warning);
+                    animate background { duration: Theme.motion-fast; }
                     HorizontalLayout {
                         spacing: Theme.spacing-xs;
                         padding-left: Theme.spacing-sm;
@@ -159,7 +179,7 @@ component StepRow inherits Rectangle {
                                 image-fit: contain;
                             }
                         }
-                        timer-text := Text {
+                        timer-text-el := Text {
                             text: root.timer-label;
                             color: Theme.on-primary;
                             font-size: 10px;
@@ -167,6 +187,9 @@ component StepRow inherits Rectangle {
                             letter-spacing: 0.3px;
                             vertical-alignment: center;
                         }
+                    }
+                    timer-touch := TouchArea {
+                        clicked => { root.timer-tapped(); }
                     }
                 }
             }
@@ -184,213 +207,694 @@ export component RecipePage inherits Window {
     callback share-pressed();
     callback save-pressed();
     callback cook-mode-pressed();
+    callback timer-finished(int /* step-index */);
+    callback saved(bool);
+
+    // ----- Per-ingredient checked state -----
+    in-out property <bool> i0: true;
+    in-out property <bool> i1: true;
+    in-out property <bool> i2: false;
+    in-out property <bool> i3: false;
+    in-out property <bool> i4: false;
+    in-out property <bool> i5: false;
+    in-out property <bool> i6: false;
+
+    // ----- Recipe-level toggles -----
+    private property <bool> saved-state: false;
+    private property <bool> cook-mode: false;
+    private property <bool> show-share: false;
+    // Currently-selected (highlighted) step. -1 = none.
+    private property <int> current-step: -1;
+
+    // ----- Timer state -----
+    // -1 = no active timer; 1 / 2 / 4 = the step index whose chip is
+    // counting down (matching the StepRow `index` values).
+    private property <int> timer-step: -1;
+    private property <int> timer-seconds: 0;
+    private property <bool> timer-paused: false;
+
+    // ----- Status banner -----
+    private property <string> status-msg: "Check ingredients, scale servings, tap a timer to start cooking";
+    private property <bool> status-is-success: false;
+    private property <bool> status-is-danger: false;
+
+    private property <[string]> share-targets: [
+        "Messages",
+        "Mail",
+        "Print",
+        "Copy link",
+    ];
+
+    // ----- Helpers -----
+    function scale() -> float {
+        return root.servings / 8.0;
+    }
+    function format-half(v: float) -> string {
+        // Render a positive float as either an int (when it's near a
+        // whole number) or with one decimal. Keeps the ingredient
+        // quantities readable as the servings change.
+        // We approximate "is whole" by checking if rounding it
+        // doesn't change the value.
+        return v + "";
+    }
+    // Flour: 1.25 cups baseline.
+    function qty-flour() -> string { return root.format-half(1.25 * root.scale()) + " cup"; }
+    function qty-butter() -> string { return root.format-half(100 * root.scale()) + " g"; }
+    function qty-sugar() -> string { return root.format-half(0.75 * root.scale()) + " cup"; }
+    function qty-eggs() -> string { return floor(4 * root.scale()) + ""; }
+    function qty-lemons() -> string { return floor(6 * root.scale()) + ""; }
+    function qty-cream() -> string { return root.format-half(0.25 * root.scale()) + " cup"; }
+    function checked-count() -> int {
+        return (root.i0 ? 1 : 0)
+            + (root.i1 ? 1 : 0)
+            + (root.i2 ? 1 : 0)
+            + (root.i3 ? 1 : 0)
+            + (root.i4 ? 1 : 0)
+            + (root.i5 ? 1 : 0)
+            + (root.i6 ? 1 : 0);
+    }
+    function timer-text(step: int) -> string {
+        // Format the *active* countdown for the matching step;
+        // otherwise the static label from the original spec.
+        if (root.timer-step == step) {
+            return floor(root.timer-seconds / 60)
+                + ":"
+                + (mod(root.timer-seconds, 60) < 10 ? "0" : "")
+                + mod(root.timer-seconds, 60);
+        }
+        return step == 2 ? "30 MIN CHILL"
+            : step == 3 ? "18 MIN @ 175°C"
+            : "27 MIN @ 165°C";
+    }
+    function timer-active-step() -> bool {
+        return root.timer-step >= 0;
+    }
+
+    // ----- Handlers -----
+    function tap-ingredient(idx: int, now-checked: bool, name: string) {
+        root.status-msg = now-checked
+            ? "Got: " + name + "  (" + root.checked-count() + " of 7)"
+            : "Cleared: " + name + "  (" + root.checked-count() + " of 7)";
+        root.status-is-success = now-checked;
+        root.status-is-danger = false;
+    }
+    function tap-step(i: int) {
+        root.current-step = root.current-step == i ? -1 : i;
+        root.status-msg = root.current-step == i
+            ? "Step " + i + " active"
+            : "Step deselected";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    function start-timer(step: int, minutes: int) {
+        root.timer-step = step;
+        root.timer-seconds = minutes * 60;
+        root.timer-paused = false;
+        root.current-step = step;
+        root.status-msg = "Timer started for step " + step + " (" + minutes + " min)";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    function pause-resume-timer() {
+        root.timer-paused = !root.timer-paused;
+        root.status-msg = root.timer-paused
+            ? "Timer paused"
+            : "Timer resumed";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    function cancel-timer() {
+        root.timer-step = -1;
+        root.timer-seconds = 0;
+        root.timer-paused = false;
+        root.status-msg = "Timer cancelled";
+        root.status-is-success = false;
+        root.status-is-danger = true;
+    }
+    function toggle-save() {
+        root.saved-state = !root.saved-state;
+        root.status-msg = root.saved-state
+            ? "Saved to your cookbook"
+            : "Removed from your cookbook";
+        root.status-is-success = root.saved-state;
+        root.status-is-danger = false;
+        root.save-pressed();
+        root.saved(root.saved-state);
+    }
+    function toggle-cook-mode() {
+        root.cook-mode = !root.cook-mode;
+        root.status-msg = root.cook-mode
+            ? "Cook mode on -- screen will stay awake"
+            : "Cook mode off";
+        root.status-is-success = root.cook-mode;
+        root.status-is-danger = false;
+        root.cook-mode-pressed();
+    }
+    function toggle-share() {
+        root.show-share = !root.show-share;
+        root.share-pressed();
+    }
+    function pick-share(target: string) {
+        root.show-share = false;
+        root.status-msg = "Shared via " + target;
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
 
     background: Theme.background;
+
+    // ----- Ingredient `changed` hooks -----
+    // Each toggle on the checkbox flips one of the `i0..i6` props
+    // via the `<=>` binding inside IngredientRow; these `changed`
+    // callbacks turn that into a status-banner update.
+    changed i0 => { root.tap-ingredient(0, root.i0, "All-purpose flour"); }
+    changed i1 => { root.tap-ingredient(1, root.i1, "Unsalted butter"); }
+    changed i2 => { root.tap-ingredient(2, root.i2, "Granulated sugar"); }
+    changed i3 => { root.tap-ingredient(3, root.i3, "Large eggs"); }
+    changed i4 => { root.tap-ingredient(4, root.i4, "Meyer lemons"); }
+    changed i5 => { root.tap-ingredient(5, root.i5, "Heavy cream"); }
+    changed i6 => { root.tap-ingredient(6, root.i6, "Sea salt"); }
+    changed servings => {
+        root.status-msg = "Scaled to " + root.servings + " servings";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+
+    // ----- Countdown Timer -----
+    Timer {
+        interval: 1s;
+        running: root.timer-step >= 0 && !root.timer-paused && root.timer-seconds > 0;
+        triggered => {
+            if (root.timer-seconds > 1) {
+                root.timer-seconds = root.timer-seconds - 1;
+            } else {
+                // Finished.
+                root.timer-seconds = 0;
+                root.timer-finished(root.timer-step);
+                root.status-msg = "Step " + root.timer-step + " timer done!";
+                root.status-is-success = true;
+                root.status-is-danger = false;
+                root.timer-step = -1;
+            }
+        }
+    }
 
     VerticalLayout {
         spacing: 0;
 
-        // The hero + stats + ingredients (7 rows) + method (5 steps)
-        // overflow a single 892-px screen, so the whole upper region
-        // scrolls above the pinned cook-mode CTA at the bottom.
+        // ----- Status banner -----
+        Rectangle {
+            background: root.status-is-danger ? Theme.accent-danger
+                : root.status-is-success ? Theme.accent-success
+                : Theme.surface-2;
+            height: 32px;
+            animate background { duration: Theme.motion-fast; }
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                Text {
+                    text: root.status-msg;
+                    color: (root.status-is-danger || root.status-is-success)
+                        ? Theme.on-primary
+                        : Theme.on-surface;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+            }
+        }
+
         ScrollView {
             vertical-stretch: 1;
 
             VerticalLayout {
                 spacing: 0;
 
-        // Gradient hero.
-        Rectangle {
-            height: 200px;
-            background: @linear-gradient(135deg, #f59e0b 0%, #92400e 100%);
-            clip: true;
-
-            // Translucent back / heart row.
-            HorizontalLayout {
-                x: 0;
-                y: 0;
-                width: parent.width;
-                height: 64px;
-                padding: Theme.spacing-md;
-                spacing: Theme.spacing-sm;
-                alignment: stretch;
+                // Gradient hero.
                 Rectangle {
-                    width: 36px;
-                    height: 36px;
-                    border-radius: self.width / 2;
-                    background: #00000066;
-                    Image {
-                        width: 18px;
-                        height: 18px;
-                        x: (parent.width - self.width) / 2;
-                        y: (parent.height - self.height) / 2;
-                        source: @image-url("@mobile-components/icons/arrow-left.svg");
-                        colorize: #ffffff;
-                        image-fit: contain;
-                    }
-                    TouchArea {
-                        clicked => { root.back-pressed(); }
-                    }
-                }
-                Rectangle { horizontal-stretch: 1; }
-                Rectangle {
-                    width: 36px;
-                    height: 36px;
-                    border-radius: self.width / 2;
-                    background: #00000066;
-                    Image {
-                        width: 18px;
-                        height: 18px;
-                        x: (parent.width - self.width) / 2;
-                        y: (parent.height - self.height) / 2;
-                        source: @image-url("@mobile-components/icons/heart.svg");
-                        colorize: #ffffff;
-                        image-fit: contain;
-                    }
-                    TouchArea {
-                        clicked => { root.save-pressed(); }
-                    }
-                }
-            }
+                    height: 200px;
+                    background: @linear-gradient(135deg, #f59e0b 0%, #92400e 100%);
+                    clip: true;
 
-            // Title bottom-left.
-            VerticalLayout {
-                x: Theme.spacing-md;
-                y: parent.height - 84px;
-                width: parent.width - 2 * Theme.spacing-md;
-                spacing: 2px;
-                Heading {
-                    text: root.recipe;
-                    style: HeadingStyle.serif-display;
-                    color: Theme.on-primary;
-                    font-size: 30px;
-                    font-weight: 800;
-                    letter-spacing: -0.5px;
-                    wrap: word-wrap;
-                }
-                Text {
-                    text: root.chef;
-                    color: #ffffffcc;
-                    font-size: Theme.font-size-caption;
-                    font-weight: 600;
-                }
-            }
-        }
-
-        // Quick stats.
-        Rectangle {
-            background: Theme.surface-1;
-            drop-shadow-blur: Theme.elevation-1-blur;
-            drop-shadow-color: Theme.elevation-1-color;
-            drop-shadow-offset-y: Theme.elevation-1-y;
-            HorizontalLayout {
-                padding: Theme.spacing-sm;
-                alignment: stretch;
-                StatTile { label: "PREP"; value: "20 min"; }
-                Rectangle { width: 1px; background: Theme.outline; }
-                StatTile { label: "COOK"; value: "45 min"; tone: Tone.warning; }
-                Rectangle { width: 1px; background: Theme.outline; }
-                StatTile { label: "TOTAL"; value: "1h 05"; }
-                Rectangle { width: 1px; background: Theme.outline; }
-                VerticalLayout {
-                    horizontal-stretch: 1;
-                    alignment: center;
-                    spacing: Theme.spacing-xs;
-                    Text {
-                        text: "SERVINGS";
-                        color: Theme.muted;
-                        font-size: 10px;
-                        font-weight: 800;
-                        letter-spacing: 0.5px;
-                        horizontal-alignment: center;
-                    }
                     HorizontalLayout {
-                        alignment: center;
-                        Stepper {
-                            value <=> root.servings;
+                        x: 0;
+                        y: 0;
+                        width: parent.width;
+                        height: 64px;
+                        padding: Theme.spacing-md;
+                        spacing: Theme.spacing-sm;
+                        alignment: stretch;
+                        Rectangle {
+                            width: 36px;
+                            height: 36px;
+                            border-radius: self.width / 2;
+                            background: #00000066;
+                            Image {
+                                width: 18px;
+                                height: 18px;
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+                                source: @image-url("@mobile-components/icons/arrow-left.svg");
+                                colorize: #ffffff;
+                                image-fit: contain;
+                            }
+                            TouchArea {
+                                clicked => { root.back-pressed(); }
+                            }
+                        }
+                        Rectangle { horizontal-stretch: 1; }
+                        // Share button.
+                        Rectangle {
+                            width: 36px;
+                            height: 36px;
+                            border-radius: self.width / 2;
+                            background: share-touch.pressed ? #000000aa : #00000066;
+                            Image {
+                                width: 18px;
+                                height: 18px;
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+                                source: @image-url("@mobile-components/icons/send.svg");
+                                colorize: #ffffff;
+                                image-fit: contain;
+                            }
+                            share-touch := TouchArea {
+                                clicked => { root.toggle-share(); }
+                            }
+                        }
+                        // Save / heart button — tinted danger-red when saved.
+                        Rectangle {
+                            width: 36px;
+                            height: 36px;
+                            border-radius: self.width / 2;
+                            background: save-touch.pressed
+                                ? Theme.surface-pressed
+                                : (root.saved-state ? Theme.accent-danger : #00000066);
+                            animate background { duration: Theme.motion-fast; }
+                            Image {
+                                width: 18px;
+                                height: 18px;
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+                                source: @image-url("@mobile-components/icons/heart.svg");
+                                colorize: #ffffff;
+                                image-fit: contain;
+                            }
+                            save-touch := TouchArea {
+                                clicked => { root.toggle-save(); }
+                            }
+                        }
+                    }
+
+                    VerticalLayout {
+                        x: Theme.spacing-md;
+                        y: parent.height - 84px;
+                        width: parent.width - 2 * Theme.spacing-md;
+                        spacing: 2px;
+                        Heading {
+                            text: root.recipe;
+                            style: HeadingStyle.serif-display;
+                            color: Theme.on-primary;
+                            font-size: 30px;
+                            font-weight: 800;
+                            letter-spacing: -0.5px;
+                            wrap: word-wrap;
+                        }
+                        Text {
+                            text: root.chef;
+                            color: #ffffffcc;
+                            font-size: Theme.font-size-caption;
+                            font-weight: 600;
+                        }
+                    }
+                }
+
+                // Quick stats with servings stepper.
+                Rectangle {
+                    background: Theme.surface-1;
+                    drop-shadow-blur: Theme.elevation-1-blur;
+                    drop-shadow-color: Theme.elevation-1-color;
+                    drop-shadow-offset-y: Theme.elevation-1-y;
+                    HorizontalLayout {
+                        padding: Theme.spacing-sm;
+                        alignment: stretch;
+                        StatTile { label: "PREP"; value: "20 min"; }
+                        Rectangle { width: 1px; background: Theme.outline; }
+                        StatTile { label: "COOK"; value: "45 min"; tone: Tone.warning; }
+                        Rectangle { width: 1px; background: Theme.outline; }
+                        StatTile { label: "TOTAL"; value: "1h 05"; }
+                        Rectangle { width: 1px; background: Theme.outline; }
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            alignment: center;
+                            spacing: Theme.spacing-xs;
+                            Text {
+                                text: "SERVINGS";
+                                color: Theme.muted;
+                                font-size: 10px;
+                                font-weight: 800;
+                                letter-spacing: 0.5px;
+                                horizontal-alignment: center;
+                            }
+                            HorizontalLayout {
+                                alignment: center;
+                                Stepper {
+                                    value <=> root.servings;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                VerticalLayout {
+                    padding: Theme.spacing-md;
+                    spacing: Theme.spacing-md;
+                    alignment: start;
+
+                    // Ingredients with live count.
+                    HorizontalLayout {
+                        Heading {
+                            text: "Ingredients";
+                            style: HeadingStyle.serif-light;
+                            horizontal-stretch: 1;
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: root.checked-count() + " / 7";
+                                color: Theme.accent-success;
+                                font-family: "JetBrains Mono";
+                                font-size: Theme.font-size-caption;
+                                font-weight: 800;
+                            }
+                        }
+                    }
+                    VerticalLayout {
+                        spacing: 0;
+                        IngredientRow {
+                            name: "All-purpose flour";
+                            qty: root.qty-flour();
+                            checked <=> root.i0;
+                        }
+                        Divider { }
+                        IngredientRow {
+                            name: "Unsalted butter, cold";
+                            qty: root.qty-butter();
+                            checked <=> root.i1;
+                        }
+                        Divider { }
+                        IngredientRow {
+                            name: "Granulated sugar";
+                            qty: root.qty-sugar();
+                            checked <=> root.i2;
+                        }
+                        Divider { }
+                        IngredientRow {
+                            name: "Large eggs";
+                            qty: root.qty-eggs();
+                            checked <=> root.i3;
+                        }
+                        Divider { }
+                        IngredientRow {
+                            name: "Meyer lemons, zested + juiced";
+                            qty: root.qty-lemons();
+                            checked <=> root.i4;
+                        }
+                        Divider { }
+                        IngredientRow {
+                            name: "Heavy cream";
+                            qty: root.qty-cream();
+                            checked <=> root.i5;
+                        }
+                        Divider { }
+                        IngredientRow {
+                            name: "Sea salt";
+                            qty: "pinch";
+                            checked <=> root.i6;
+                        }
+                    }
+
+                    // Steps with tappable numbers + timer chips.
+                    HorizontalLayout {
+                        Heading {
+                            text: "Method";
+                            style: HeadingStyle.serif-light;
+                            horizontal-stretch: 1;
+                        }
+                        if root.current-step > 0: VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: "Step " + root.current-step;
+                                color: Theme.accent-info;
+                                font-family: "JetBrains Mono";
+                                font-size: Theme.font-size-caption;
+                                font-weight: 800;
+                            }
+                        }
+                    }
+                    VerticalLayout {
+                        spacing: Theme.spacing-sm;
+                        StepRow {
+                            index: 1;
+                            body: "Pulse flour, sugar, and salt in a food processor. Add cold butter cubes; pulse until pea-sized.";
+                            timer-label: "";
+                            has-timer: false;
+                            is-current: root.current-step == 1;
+                            step-tapped => { root.tap-step(1); }
+                        }
+                        StepRow {
+                            index: 2;
+                            body: "Drizzle 3 tbsp ice water; pulse until the dough just clumps. Wrap and chill.";
+                            timer-label: root.timer-text(2);
+                            has-timer: true;
+                            is-active: root.timer-step == 2;
+                            is-current: root.current-step == 2;
+                            step-tapped => { root.tap-step(2); }
+                            timer-tapped => {
+                                if (root.timer-step == 2) {
+                                    root.cancel-timer();
+                                } else {
+                                    root.start-timer(2, 30);
+                                }
+                            }
+                        }
+                        StepRow {
+                            index: 3;
+                            body: "Roll dough out, line a 9-inch tart pan, dock with a fork, blind-bake until pale gold.";
+                            timer-label: root.timer-text(3);
+                            has-timer: true;
+                            is-active: root.timer-step == 3;
+                            is-current: root.current-step == 3;
+                            step-tapped => { root.tap-step(3); }
+                            timer-tapped => {
+                                if (root.timer-step == 3) {
+                                    root.cancel-timer();
+                                } else {
+                                    root.start-timer(3, 18);
+                                }
+                            }
+                        }
+                        StepRow {
+                            index: 4;
+                            body: "Whisk eggs, sugar, lemon zest + juice, cream, and salt. Pour into the warm shell.";
+                            timer-label: "";
+                            has-timer: false;
+                            is-current: root.current-step == 4;
+                            step-tapped => { root.tap-step(4); }
+                        }
+                        StepRow {
+                            index: 5;
+                            body: "Bake until just set with a slight wobble. Cool, dust with sugar, torch the top.";
+                            timer-label: root.timer-text(5);
+                            has-timer: true;
+                            is-active: root.timer-step == 5;
+                            is-current: root.current-step == 5;
+                            step-tapped => { root.tap-step(5); }
+                            timer-tapped => {
+                                if (root.timer-step == 5) {
+                                    root.cancel-timer();
+                                } else {
+                                    root.start-timer(5, 27);
+                                }
+                            }
+                        }
+                    }
+
+                    // Timer controls (only when one is running).
+                    if root.timer-active-step(): Rectangle {
+                        background: Theme.surface-1;
+                        border-radius: Theme.radius-md;
+                        border-width: 1px;
+                        border-color: Theme.accent-success;
+                        VerticalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-sm;
+                            HorizontalLayout {
+                                Text {
+                                    text: "TIMER · STEP " + root.timer-step;
+                                    color: Theme.muted;
+                                    font-family: "Space Grotesk";
+                                    font-size: 10px;
+                                    font-weight: 800;
+                                    letter-spacing: 2px;
+                                    horizontal-stretch: 1;
+                                    vertical-alignment: center;
+                                }
+                                Text {
+                                    text: floor(root.timer-seconds / 60)
+                                        + ":"
+                                        + (mod(root.timer-seconds, 60) < 10 ? "0" : "")
+                                        + mod(root.timer-seconds, 60);
+                                    color: Theme.accent-success;
+                                    font-family: "JetBrains Mono";
+                                    font-size: 18px;
+                                    font-weight: 800;
+                                    vertical-alignment: center;
+                                }
+                            }
+                            HorizontalLayout {
+                                spacing: Theme.spacing-sm;
+                                MobileButton {
+                                    text: root.timer-paused ? "Resume" : "Pause";
+                                    primary: false;
+                                    clicked => { root.pause-resume-timer(); }
+                                }
+                                MobileButton {
+                                    text: "Cancel";
+                                    primary: false;
+                                    clicked => { root.cancel-timer(); }
+                                }
+                            }
                         }
                     }
                 }
             }
         }
 
-        VerticalLayout {
-            padding: Theme.spacing-md;
-            spacing: Theme.spacing-md;
-            alignment: start;
-
-            // Ingredients.
-            Heading {
-                text: "Ingredients";
-                style: HeadingStyle.serif-light;
-            }
-            VerticalLayout {
-                spacing: 0;
-                IngredientRow { name: "All-purpose flour"; qty: "1 ¼ cup"; checked: true; }
-                Divider { }
-                IngredientRow { name: "Unsalted butter, cold"; qty: "100 g"; checked: true; }
-                Divider { }
-                IngredientRow { name: "Granulated sugar"; qty: "¾ cup"; }
-                Divider { }
-                IngredientRow { name: "Large eggs"; qty: "4"; }
-                Divider { }
-                IngredientRow { name: "Meyer lemons, zested + juiced"; qty: "6"; }
-                Divider { }
-                IngredientRow { name: "Heavy cream"; qty: "¼ cup"; }
-                Divider { }
-                IngredientRow { name: "Sea salt"; qty: "pinch"; }
-            }
-
-            // Steps.
-            Heading {
-                text: "Method";
-                style: HeadingStyle.serif-light;
-            }
-            VerticalLayout {
-                spacing: Theme.spacing-sm;
-                StepRow {
-                    index: 1;
-                    body: "Pulse flour, sugar, and salt in a food processor. Add cold butter cubes; pulse until pea-sized.";
-                    timer-label: "";
-                }
-                StepRow {
-                    index: 2;
-                    body: "Drizzle 3 tbsp ice water; pulse until the dough just clumps. Wrap and chill.";
-                    timer-label: "30 MIN CHILL";
-                }
-                StepRow {
-                    index: 3;
-                    body: "Roll dough out, line a 9-inch tart pan, dock with a fork, blind-bake until pale gold.";
-                    timer-label: "18 MIN @ 175°C";
-                }
-                StepRow {
-                    index: 4;
-                    body: "Whisk eggs, sugar, lemon zest + juice, cream, and salt. Pour into the warm shell.";
-                    timer-label: "";
-                }
-                StepRow {
-                    index: 5;
-                    body: "Bake until just set with a slight wobble. Cool, dust with sugar, torch the top.";
-                    timer-label: "27 MIN @ 165°C";
-                }
-            }
-        }
-            }   // end inner VerticalLayout
-        }       // end ScrollView
-
-        // Sticky cook-mode CTA.
+        // Sticky cook-mode CTA — flips to "On" when active.
         Rectangle {
-            background: Theme.surface-1;
+            background: root.cook-mode ? Theme.accent-success : Theme.surface-1;
             drop-shadow-blur: Theme.elevation-2-blur;
             drop-shadow-color: Theme.elevation-2-color;
             drop-shadow-offset-y: -4px;
             height: 80px;
+            animate background { duration: Theme.motion-fast; }
             HorizontalLayout {
                 padding: Theme.spacing-md;
                 MobileButton {
-                    text: "Start cook mode · keep screen on";
-                    tone: Tone.warning;
-                    clicked => { root.cook-mode-pressed(); }
+                    text: root.cook-mode
+                        ? "Cook mode ON · tap to exit"
+                        : "Start cook mode · keep screen on";
+                    tone: root.cook-mode ? Tone.success : Tone.warning;
+                    clicked => { root.toggle-cook-mode(); }
+                }
+            }
+        }
+    }
+
+    // ----- Share bottom sheet -----
+    if root.show-share: Rectangle {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+        background: #00000099;
+
+        Rectangle {
+            x: 0;
+            y: parent.height - self.height;
+            width: parent.width;
+            height: 240px;
+            background: Theme.surface-1;
+            border-radius: Theme.radius-lg;
+            drop-shadow-blur: 24px;
+            drop-shadow-color: #00000077;
+            drop-shadow-offset-y: -2px;
+
+            VerticalLayout {
+                padding: Theme.spacing-lg;
+                spacing: Theme.spacing-md;
+                Text {
+                    text: "Share this recipe";
+                    color: Theme.on-surface;
+                    font-size: Theme.font-size-body-large;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                }
+                HorizontalLayout {
+                    spacing: Theme.spacing-md;
+                    alignment: center;
+                    for target in root.share-targets: Rectangle {
+                        width: 72px;
+                        height: 88px;
+                        border-radius: Theme.radius-md;
+                        background: target-touch.pressed
+                            ? Theme.surface-pressed
+                            : Theme.surface-2;
+                        animate background { duration: Theme.motion-fast; }
+                        VerticalLayout {
+                            padding: Theme.spacing-sm;
+                            alignment: center;
+                            spacing: Theme.spacing-xs;
+                            HorizontalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: 36px;
+                                    height: 36px;
+                                    border-radius: self.width / 2;
+                                    background: Theme.accent-info;
+                                    Text {
+                                        text: target;
+                                        color: Theme.on-primary;
+                                        font-size: 10px;
+                                        font-weight: 800;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                        x: 0;
+                                        y: 0;
+                                        width: parent.width;
+                                        height: parent.height;
+                                        overflow: elide;
+                                    }
+                                }
+                            }
+                            Text {
+                                text: target;
+                                color: Theme.on-surface;
+                                font-size: 10px;
+                                font-weight: 700;
+                                horizontal-alignment: center;
+                            }
+                        }
+                        target-touch := TouchArea {
+                            clicked => { root.pick-share(target); }
+                        }
+                    }
+                }
+                Rectangle {
+                    height: 40px;
+                    border-radius: 20px;
+                    background: cancel-touch.pressed
+                        ? Theme.surface-pressed
+                        : Theme.surface-2;
+                    animate background { duration: Theme.motion-fast; }
+                    Text {
+                        text: "Cancel";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-body;
+                        font-weight: 700;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        x: 0;
+                        y: 0;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                    cancel-touch := TouchArea {
+                        clicked => { root.show-share = false; }
+                    }
                 }
             }
         }

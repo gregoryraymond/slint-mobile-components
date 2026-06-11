@@ -1,16 +1,5 @@
 // TimerPage
 // =====================================================================
-//
-// Pomodoro / workout timer hero — huge circular progress ring with
-// remaining-time digits at the centre, transport row underneath, and
-// a recent-sessions list. Demonstrates:
-//
-//   - "Big-ring-on-canvas" composition. Same ring-band primitive used
-//     on ActivityRingsPage, here at a single-band scale of 240 px so
-//     the surface reads as a focused timer.
-//   - Inside-ring layout: mode chip ("Focus" / "Break"), MM:SS, label.
-//   - Three transport buttons (Reset / Start / Skip) sized so the
-//     centre button (Start, primary) is visually dominant.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
@@ -18,9 +7,8 @@ import { SectionHeader } from "@mobile-components/section-header.slint";
 import { SegmentedControl } from "@mobile-components/segmented-control.slint";
 import { Divider } from "@mobile-components/divider.slint";
 import { HeadingStyle } from "@mobile-components/heading.slint";
+import { ScrollView } from "std-widgets.slint";
 
-// Reusable ring-band primitive — mirrors the one in activity-rings.slint
-// but scoped to this page so the two screens can evolve independently.
 component RingBand inherits Rectangle {
     in property <length> radius;
     in property <length> stroke: 12px;
@@ -47,39 +35,43 @@ component RingBand inherits Rectangle {
         border-color: root.fill-color;
         opacity: root.progress;
         background: transparent;
+        animate opacity { duration: Theme.motion-fast; }
     }
 }
 
-// One past-session row.
 component SessionRow inherits Rectangle {
     in property <string> task;
     in property <string> duration;
     in property <string> when;
-    in property <Tone> tone: Tone.default;
+    in property <int> tone-i: 0;
+    in property <bool> pinned: false;
+    callback row-clicked();
+    callback pin-clicked();
 
-    min-height: 48px;
+    min-height: 52px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+    ta := TouchArea {
+        clicked => {
+            root.row-clicked();
+        }
+    }
+
     HorizontalLayout {
         padding-left: Theme.spacing-md;
         padding-right: Theme.spacing-md;
         spacing: Theme.spacing-md;
         alignment: stretch;
-        // Tone dot.
         VerticalLayout {
             alignment: center;
             Rectangle {
                 width: 10px;
                 height: 10px;
                 border-radius: 5px;
-                background:
-                      root.tone == Tone.success ? Theme.accent-success
-                    : root.tone == Tone.warning ? Theme.accent-warning
-                    : root.tone == Tone.danger  ? Theme.accent-danger
-                    : root.tone == Tone.info    ? Theme.accent-info
-                    : Theme.muted;
+                background: root.tone-i == 1 ? Theme.accent-info : (root.tone-i == 2 ? Theme.accent-warning : (root.tone-i == 3 ? Theme.accent-success : (root.tone-i == 4 ? Theme.accent-danger : Theme.muted)));
             }
         }
         Text {
-            text: root.task;
+            text: (root.pinned ? "★ " : "") + root.task;
             color: Theme.on-surface;
             font-size: Theme.font-size-body;
             vertical-alignment: center;
@@ -93,13 +85,67 @@ component SessionRow inherits Rectangle {
             font-weight: 600;
             vertical-alignment: center;
         }
-        Text {
-            text: root.when;
-            color: Theme.muted;
-            font-size: Theme.font-size-caption;
-            vertical-alignment: center;
+        VerticalLayout {
+            alignment: center;
             width: 60px;
-            horizontal-alignment: right;
+            Text {
+                text: root.when;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+                horizontal-alignment: right;
+            }
+        }
+        Rectangle {
+            width: 28px;
+            height: 28px;
+            border-radius: 14px;
+            background: root.pinned ? Theme.accent-warning.with-alpha(0.22) : Theme.surface-2;
+            Text {
+                text: "★";
+                color: root.pinned ? Theme.accent-warning : Theme.muted;
+                font-size: 12px;
+                font-weight: 800;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                width: parent.width;
+                height: parent.height;
+            }
+            TouchArea {
+                clicked => {
+                    root.pin-clicked();
+                }
+            }
+        }
+    }
+}
+
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.destructive ? Theme.accent-danger : Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
         }
     }
 }
@@ -107,16 +153,104 @@ component SessionRow inherits Rectangle {
 export component TimerPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
-    in property <string> mode: "FOCUS";
-    in property <string> time-remaining: "18:42";
-    in property <string> task: "Slint mobile components — iteration 14";
-    in-out property <int> mode-index: 0;
+
+    in-out property <int> mode-index: 0; // 0 Focus 1 Short 2 Long
+    in-out property <int> total-secs: 1500; // 25 min
+    in-out property <int> remaining-secs: 1122; // 18:42
     in-out property <bool> running: true;
-    in property <float> progress: 0.62;
+    in-out property <int> task-idx: 0; // 0..2 task preset
+    in-out property <int> completed-today: 3;
+    in-out property <bool> sound: true;
+    in-out property <bool> auto-loop: false;
+    in-out property <bool> just-finished: false;
+    in-out property <bool> pin1: false;
+    in-out property <bool> pin2: false;
+    in-out property <bool> pin3: true;
+    in-out property <bool> sheet-open: false;
+    in-out property <bool> confirm-clear: false;
+    in-out property <string> status-msg: "";
+    in-out property <bool> status-success: false;
+    in-out property <bool> status-danger: false;
+
     callback back-pressed();
     callback start-pressed();
     callback reset-pressed();
     callback skip-pressed();
+
+    function mode-label() -> string {
+        return root.mode-index == 0 ? "FOCUS" : (root.mode-index == 1 ? "SHORT BREAK" : "LONG BREAK");
+    }
+    function mode-default-secs() -> int {
+        return root.mode-index == 0 ? 1500 : (root.mode-index == 1 ? 300 : 900);
+    }
+    function progress() -> float {
+        return root.total-secs == 0 ? 0 : root.remaining-secs * 1.0 / root.total-secs;
+    }
+    function pad2(n: int) -> string {
+        return n < 10 ? "0" + n : "" + n;
+    }
+    function mmss(s: int) -> string {
+        return root.pad2(floor(s / 60)) + ":" + root.pad2(mod(s, 60));
+    }
+    function task-label() -> string {
+        return root.task-idx == 0 ? "Slint mobile components — iteration 14" : (root.task-idx == 1 ? "Email triage" : "Tone enum docs review");
+    }
+    function set-status(m: string, ok: bool, bad: bool) {
+        root.status-msg = m;
+        root.status-success = ok;
+        root.status-danger = bad;
+    }
+    function switch-mode(i: int) {
+        root.mode-index = i;
+        root.total-secs = root.mode-default-secs();
+        root.remaining-secs = root.total-secs;
+        root.running = false;
+        root.just-finished = false;
+        root.set-status("Mode: " + root.mode-label(), true, false);
+    }
+    function reset-timer() {
+        root.remaining-secs = root.total-secs;
+        root.running = false;
+        root.just-finished = false;
+        root.set-status("Reset", false, false);
+    }
+    function skip-session() {
+        if (root.mode-index == 0) {
+            root.completed-today = root.completed-today + 1;
+        }
+        root.remaining-secs = 0;
+        root.running = false;
+        root.set-status("Skipped", false, true);
+    }
+    function complete() {
+        if (root.mode-index == 0) {
+            root.completed-today = root.completed-today + 1;
+        }
+        root.running = false;
+        root.just-finished = true;
+        root.set-status("✓ " + root.mode-label() + " done", true, false);
+        if (root.auto-loop) {
+            // Auto-advance to next mode.
+            if (root.mode-index == 0) {
+                root.switch-mode(1);
+                root.running = true;
+            } else if (root.mode-index == 1) {
+                root.switch-mode(0);
+                root.running = true;
+            }
+        }
+    }
+
+    tick := Timer {
+        interval: 1s;
+        running: root.running && root.remaining-secs > 0;
+        triggered => {
+            root.remaining-secs = root.remaining-secs - 1;
+            if (root.remaining-secs == 0) {
+                root.complete();
+            }
+        }
+    }
 
     background: Theme.background;
 
@@ -124,193 +258,437 @@ export component TimerPage inherits Window {
         spacing: 0;
 
         AppBar {
-            title: "Timer";
+            title: "Timer · " + root.mode-label();
             title-style: HeadingStyle.mono;
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
-            leading-pressed => { root.back-pressed(); }
+            leading-pressed => {
+                root.back-pressed();
+            }
+            trailing-pressed => {
+                root.sheet-open = true;
+            }
         }
 
-        VerticalLayout {
-            padding: Theme.spacing-md;
-            spacing: Theme.spacing-md;
-
-            // ----- Mode segmented control -----
-            SegmentedControl {
-                options: ["Focus", "Short break", "Long break"];
-                selected-index <=> root.mode-index;
-            }
-
-            // ----- Big ring + centred timer -----
-            Rectangle {
-                height: 280px;
-                HorizontalLayout {
+        if !root.status-msg.is-empty: Rectangle {
+            height: 28px;
+            background: root.status-success ? Theme.accent-success.with-alpha(0.16) : (root.status-danger ? Theme.accent-danger.with-alpha(0.16) : Theme.surface-2);
+            HorizontalLayout {
+                alignment: center;
+                VerticalLayout {
                     alignment: center;
-                    Rectangle {
-                        width: 240px;
-                        height: 240px;
-                        // Ring.
-                        RingBand {
-                            x: 0;
-                            y: 0;
-                            radius: 120px;
-                            stroke: 14px;
-                            fill-color:
-                                  root.mode-index == 0 ? Theme.primary
-                                : root.mode-index == 1 ? Theme.accent-success
-                                : Theme.accent-info;
-                            progress: root.progress;
-                        }
-                        // Inner content.
-                        VerticalLayout {
-                            x: (parent.width - self.width) / 2;
-                            y: (parent.height - self.height) / 2;
-                            width: parent.width - 60px;
-                            height: parent.height - 60px;
-                            alignment: center;
-                            spacing: Theme.spacing-xs;
+                    Text {
+                        text: root.status-msg;
+                        color: root.status-success ? Theme.accent-success : (root.status-danger ? Theme.accent-danger : Theme.on-surface);
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                    }
+                }
+            }
+        }
 
-                            HorizontalLayout {
+        ScrollView {
+            vertical-stretch: 1;
+            VerticalLayout {
+                padding: Theme.spacing-md;
+                spacing: Theme.spacing-md;
+
+                // ----- Mode segmented control -----
+                SegmentedControl {
+                    options: ["Focus", "Short break", "Long break"];
+                    selected-index <=> root.mode-index;
+                    changed(i) => {
+                        root.switch-mode(i);
+                    }
+                }
+
+                // ----- Big ring + centred timer -----
+                Rectangle {
+                    height: 280px;
+                    HorizontalLayout {
+                        alignment: center;
+                        Rectangle {
+                            width: 240px;
+                            height: 240px;
+                            RingBand {
+                                x: 0;
+                                y: 0;
+                                radius: 120px;
+                                stroke: 14px;
+                                fill-color: root.just-finished ? Theme.accent-success : (root.mode-index == 0 ? Theme.primary : (root.mode-index == 1 ? Theme.accent-success : Theme.accent-info));
+                                progress: root.progress();
+                            }
+                            VerticalLayout {
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+                                width: parent.width - 60px;
+                                height: parent.height - 60px;
                                 alignment: center;
-                                Rectangle {
-                                    width: mode-text.preferred-width + 16px;
-                                    height: 20px;
-                                    border-radius: 10px;
-                                    background: Theme.surface-2;
-                                    mode-text := Text {
-                                        text: root.mode;
-                                        color: Theme.muted;
-                                        font-size: 10px;
-                                        font-weight: 700;
-                                        letter-spacing: 0.5px;
+                                spacing: Theme.spacing-xs;
+
+                                HorizontalLayout {
+                                    alignment: center;
+                                    Rectangle {
+                                        horizontal-stretch: 0;
+                                        height: 22px;
+                                        border-radius: 11px;
+                                        background: root.just-finished ? Theme.accent-success : Theme.surface-2;
+                                        HorizontalLayout {
+                                            padding-left: 8px;
+                                            padding-right: 8px;
+                                            VerticalLayout {
+                                                alignment: center;
+                                                Text {
+                                                    text: root.just-finished ? "DONE ✓" : root.mode-label();
+                                                    color: root.just-finished ? Theme.on-primary : Theme.muted;
+                                                    font-size: 10px;
+                                                    font-weight: 800;
+                                                    letter-spacing: 0.5px;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                HorizontalLayout {
+                                    alignment: center;
+                                    Text {
+                                        text: root.mmss(root.remaining-secs);
+                                        color: Theme.on-background;
+                                        font-family: "JetBrains Mono";
+                                        font-size: 56px;
+                                        font-weight: 400;
                                         horizontal-alignment: center;
-                                        vertical-alignment: center;
-                                        width: parent.width;
-                                        height: parent.height;
+                                    }
+                                }
+                                HorizontalLayout {
+                                    alignment: center;
+                                    Text {
+                                        text: root.task-label();
+                                        color: Theme.muted;
+                                        font-size: Theme.font-size-caption;
+                                        horizontal-alignment: center;
+                                        wrap: word-wrap;
+                                        width: parent.width - 16px;
                                     }
                                 }
                             }
-                            HorizontalLayout {
-                                alignment: center;
-                                Text {
-                                    text: root.time-remaining;
-                                    color: Theme.on-background;
-                                    font-family: "JetBrains Mono";
-                                    font-size: 56px;
-                                    font-weight: 400;
-                                    horizontal-alignment: center;
+                            TouchArea {
+                                clicked => {
+                                    root.task-idx = mod(root.task-idx + 1, 3);
+                                    root.set-status("Task: " + root.task-label(), true, false);
                                 }
                             }
-                            HorizontalLayout {
+                        }
+                    }
+                }
+
+                // ----- Status row pills -----
+                HorizontalLayout {
+                    spacing: Theme.spacing-sm;
+                    alignment: center;
+                    Rectangle {
+                        horizontal-stretch: 0;
+                        height: 28px;
+                        border-radius: 14px;
+                        background: Theme.surface-2;
+                        HorizontalLayout {
+                            padding-left: Theme.spacing-sm;
+                            padding-right: Theme.spacing-sm;
+                            VerticalLayout {
                                 alignment: center;
                                 Text {
-                                    text: root.task;
-                                    color: Theme.muted;
+                                    text: "Today · " + root.completed-today + " focus sessions";
+                                    color: Theme.on-surface;
                                     font-size: Theme.font-size-caption;
-                                    horizontal-alignment: center;
-                                    wrap: word-wrap;
-                                    width: parent.width - 16px;
+                                    font-weight: 700;
                                 }
                             }
                         }
                     }
-                }
-            }
-
-            // ----- Transport row -----
-            HorizontalLayout {
-                alignment: center;
-                spacing: Theme.spacing-md;
-                // Reset (left, secondary).
-                Rectangle {
-                    width: 56px;
-                    height: 56px;
-                    border-radius: self.width / 2;
-                    background: reset-touch.pressed ? Theme.surface-pressed : Theme.surface-1;
-                    Image {
-                        width: 24px;
-                        height: 24px;
-                        x: (parent.width - self.width) / 2;
-                        y: (parent.height - self.height) / 2;
-                        source: @image-url("@mobile-components/icons/skip-back.svg");
-                        colorize: Theme.on-surface;
-                        image-fit: contain;
+                    Rectangle {
+                        horizontal-stretch: 0;
+                        height: 28px;
+                        border-radius: 14px;
+                        background: root.sound ? Theme.accent-info.with-alpha(0.22) : Theme.surface-2;
+                        HorizontalLayout {
+                            padding-left: Theme.spacing-sm;
+                            padding-right: Theme.spacing-sm;
+                            VerticalLayout {
+                                alignment: center;
+                                Text {
+                                    text: root.sound ? "🔔 on" : "🔕 off";
+                                    color: root.sound ? Theme.accent-info : Theme.muted;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 700;
+                                }
+                            }
+                        }
+                        TouchArea {
+                            clicked => {
+                                root.sound = !root.sound;
+                                root.set-status(root.sound ? "Sound on" : "Sound off", root.sound, !root.sound);
+                            }
+                        }
                     }
-                    reset-touch := TouchArea {
-                        clicked => { root.reset-pressed(); }
-                    }
-                }
-                // Start / Pause (centre, primary).
-                Rectangle {
-                    width: 80px;
-                    height: 80px;
-                    border-radius: self.width / 2;
-                    background: start-touch.pressed ? Theme.primary-pressed : Theme.primary;
-                    drop-shadow-blur: Theme.elevation-2-blur;
-                    drop-shadow-color: Theme.elevation-2-color;
-                    drop-shadow-offset-y: Theme.elevation-2-y;
-                    Image {
-                        width: 36px;
-                        height: 36px;
-                        x: (parent.width - self.width) / 2;
-                        y: (parent.height - self.height) / 2;
-                        source: root.running
-                            ? @image-url("@mobile-components/icons/pause.svg")
-                            : @image-url("@mobile-components/icons/play.svg");
-                        colorize: Theme.on-primary;
-                        image-fit: contain;
-                    }
-                    start-touch := TouchArea {
-                        clicked => {
-                            root.running = !root.running;
-                            root.start-pressed();
+                    Rectangle {
+                        horizontal-stretch: 0;
+                        height: 28px;
+                        border-radius: 14px;
+                        background: root.auto-loop ? Theme.accent-success.with-alpha(0.22) : Theme.surface-2;
+                        HorizontalLayout {
+                            padding-left: Theme.spacing-sm;
+                            padding-right: Theme.spacing-sm;
+                            VerticalLayout {
+                                alignment: center;
+                                Text {
+                                    text: root.auto-loop ? "Auto-loop" : "Manual";
+                                    color: root.auto-loop ? Theme.accent-success : Theme.muted;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 700;
+                                }
+                            }
+                        }
+                        TouchArea {
+                            clicked => {
+                                root.auto-loop = !root.auto-loop;
+                                root.set-status(root.auto-loop ? "Auto-loop on" : "Manual mode", root.auto-loop, !root.auto-loop);
+                            }
                         }
                     }
                 }
-                // Skip (right, secondary).
-                Rectangle {
-                    width: 56px;
-                    height: 56px;
-                    border-radius: self.width / 2;
-                    background: skip-touch.pressed ? Theme.surface-pressed : Theme.surface-1;
-                    Image {
-                        width: 24px;
-                        height: 24px;
-                        x: (parent.width - self.width) / 2;
-                        y: (parent.height - self.height) / 2;
-                        source: @image-url("@mobile-components/icons/skip-forward.svg");
-                        colorize: Theme.on-surface;
-                        image-fit: contain;
+
+                // ----- Transport row -----
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: Theme.spacing-md;
+                    Rectangle {
+                        width: 56px;
+                        height: 56px;
+                        border-radius: self.width / 2;
+                        background: reset-touch.pressed ? Theme.surface-pressed : Theme.surface-1;
+                        Image {
+                            width: 24px;
+                            height: 24px;
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                            source: @image-url("@mobile-components/icons/skip-back.svg");
+                            colorize: Theme.on-surface;
+                            image-fit: contain;
+                        }
+                        reset-touch := TouchArea {
+                            clicked => {
+                                root.reset-timer();
+                                root.reset-pressed();
+                            }
+                        }
                     }
-                    skip-touch := TouchArea {
-                        clicked => { root.skip-pressed(); }
+                    Rectangle {
+                        width: 80px;
+                        height: 80px;
+                        border-radius: self.width / 2;
+                        background: start-touch.pressed ? Theme.primary-pressed : Theme.primary;
+                        drop-shadow-blur: Theme.elevation-2-blur;
+                        drop-shadow-color: Theme.elevation-2-color;
+                        drop-shadow-offset-y: Theme.elevation-2-y;
+                        Image {
+                            width: 36px;
+                            height: 36px;
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                            source: root.running ? @image-url("@mobile-components/icons/pause.svg") : @image-url("@mobile-components/icons/play.svg");
+                            colorize: Theme.on-primary;
+                            image-fit: contain;
+                        }
+                        start-touch := TouchArea {
+                            clicked => {
+                                if (root.remaining-secs == 0) {
+                                    root.reset-timer();
+                                }
+                                root.running = !root.running;
+                                root.just-finished = false;
+                                root.set-status(root.running ? "Running" : "Paused", root.running, !root.running);
+                                root.start-pressed();
+                            }
+                        }
+                    }
+                    Rectangle {
+                        width: 56px;
+                        height: 56px;
+                        border-radius: self.width / 2;
+                        background: skip-touch.pressed ? Theme.surface-pressed : Theme.surface-1;
+                        Image {
+                            width: 24px;
+                            height: 24px;
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                            source: @image-url("@mobile-components/icons/skip-forward.svg");
+                            colorize: Theme.on-surface;
+                            image-fit: contain;
+                        }
+                        skip-touch := TouchArea {
+                            clicked => {
+                                root.skip-session();
+                                root.skip-pressed();
+                            }
+                        }
+                    }
+                }
+
+                SectionHeader {
+                    text: "TODAY · " + root.completed-today + " SESSIONS";
+                }
+                SessionRow {
+                    task: "Slint mobile components — iteration 13";
+                    duration: "25:00";
+                    when: "10:32";
+                    tone-i: 3;
+                    pinned: root.pin1;
+                    row-clicked => {
+                        root.task-idx = 0;
+                        root.set-status("Repeating iteration 13", true, false);
+                    }
+                    pin-clicked => {
+                        root.pin1 = !root.pin1;
+                        root.set-status(root.pin1 ? "Pinned" : "Unpinned", root.pin1, false);
+                    }
+                }
+                Divider { }
+
+                SessionRow {
+                    task: "Email triage";
+                    duration: "15:00";
+                    when: "09:45";
+                    tone-i: 1;
+                    pinned: root.pin2;
+                    row-clicked => {
+                        root.task-idx = 1;
+                        root.set-status("Switched to Email triage", true, false);
+                    }
+                    pin-clicked => {
+                        root.pin2 = !root.pin2;
+                        root.set-status(root.pin2 ? "Pinned" : "Unpinned", root.pin2, false);
+                    }
+                }
+                Divider { }
+
+                SessionRow {
+                    task: "Tone enum docs review";
+                    duration: "25:00";
+                    when: "08:50";
+                    tone-i: 3;
+                    pinned: root.pin3;
+                    row-clicked => {
+                        root.task-idx = 2;
+                        root.set-status("Repeating Tone docs", true, false);
+                    }
+                    pin-clicked => {
+                        root.pin3 = !root.pin3;
+                        root.set-status(root.pin3 ? "Pinned" : "Unpinned", root.pin3, false);
                     }
                 }
             }
         }
+    }
 
-        SectionHeader { text: "TODAY · 3 SESSIONS"; }
-        SessionRow {
-            task: "Slint mobile components — iteration 13";
-            duration: "25:00";
-            when: "10:32";
-            tone: Tone.success;
+    // ===================== Bottom sheet =====================
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+                root.confirm-clear = false;
+            }
         }
-        Divider { }
-        SessionRow {
-            task: "Email triage";
-            duration: "15:00";
-            when: "09:45";
-            tone: Tone.info;
-        }
-        Divider { }
-        SessionRow {
-            task: "Tone enum docs review";
-            duration: "25:00";
-            when: "08:50";
-            tone: Tone.success;
-        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: Theme.surface-2;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
 
-        Rectangle { vertical-stretch: 1; }
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.muted;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: "Timer menu";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 700;
+                    }
+                }
+                SheetRow {
+                    label: "+5 minutes";
+                    clicked => {
+                        root.remaining-secs = root.remaining-secs + 300;
+                        root.set-status("+5:00", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "-5 minutes";
+                    clicked => {
+                        root.remaining-secs = max(0, root.remaining-secs - 300);
+                        root.set-status("-5:00", false, true);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: root.sound ? "Mute" : "Unmute";
+                    clicked => {
+                        root.sound = !root.sound;
+                        root.set-status(root.sound ? "Sound on" : "Muted", root.sound, !root.sound);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: root.auto-loop ? "Stop auto-loop" : "Auto-loop sessions";
+                    clicked => {
+                        root.auto-loop = !root.auto-loop;
+                        root.set-status(root.auto-loop ? "Auto-loop on" : "Manual mode", root.auto-loop, !root.auto-loop);
+                        root.sheet-open = false;
+                    }
+                }
+                Divider { }
+
+                SheetRow {
+                    label: root.confirm-clear ? "Confirm: clear sessions" : "Clear today's sessions";
+                    destructive: true;
+                    clicked => {
+                        if (root.confirm-clear) {
+                            root.completed-today = 0;
+                            root.set-status("Sessions cleared", false, true);
+                            root.sheet-open = false;
+                            root.confirm-clear = false;
+                        } else {
+                            root.confirm-clear = true;
+                        }
+                    }
+                }
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.sheet-open = false;
+                        root.confirm-clear = false;
+                    }
+                }
+            }
+        }
     }
 }

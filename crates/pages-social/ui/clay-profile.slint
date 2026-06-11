@@ -1,49 +1,51 @@
 // ClayProfilePage  —  ClaySkin demo
 // =====================================================================
-//
-// Soft pastel claymorphism profile. Puffy rounded translucent-white
-// "clay" surfaces float over a lavender→peach gradient ground; type is
-// low-contrast plum (IBM Plex Sans). Shows an avatar hero, a stat strip,
-// pill chips, and a soft settings list. Reads ClaySkin tokens.
 
 import { Theme } from "@mobile-theme/theme.slint";
 import { ClaySkin } from "@mobile-theme/skins.slint";
 import { ScrollView } from "std-widgets.slint";
 
-// One puffy stat tile.
 component StatTile inherits Rectangle {
     in property <string> value;
     in property <string> label;
-    background: ClaySkin.glass-fill;
+    in property <bool> selected: false;
+    callback clicked();
+    background: root.selected ? #c9a9ff : ClaySkin.glass-fill;
     border-radius: Theme.radius-lg;
     drop-shadow-blur: Theme.elevation-1-blur;
     drop-shadow-color: #b89ce033;
     drop-shadow-offset-y: Theme.elevation-1-y;
     clip: true;
+    horizontal-stretch: 1;
     VerticalLayout {
         padding: Theme.spacing-md;
         alignment: center;
         spacing: 2px;
         Text {
             text: root.value;
-            color: ClaySkin.text-primary;
+            color: root.selected ? #ffffff : ClaySkin.text-primary;
             font-size: Theme.font-size-headline;
             font-weight: 700;
             horizontal-alignment: center;
         }
         Text {
             text: root.label;
-            color: ClaySkin.text-muted;
+            color: root.selected ? #ffffffcc : ClaySkin.text-muted;
             font-size: Theme.font-size-caption;
             horizontal-alignment: center;
         }
     }
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
 }
 
-// A soft pill chip.
 component ClayChip inherits Rectangle {
     in property <string> label;
     in property <bool> filled;
+    callback clicked();
     background: root.filled ? #c9a9ff : ClaySkin.glass-fill;
     border-radius: Theme.radius-lg;
     clip: true;
@@ -59,13 +61,26 @@ component ClayChip inherits Rectangle {
             font-weight: 600;
         }
     }
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
 }
 
-// A soft list row.
 component ClayRow inherits Rectangle {
     in property <string> title;
     in property <string> trailing;
+    in property <int> tone-i: 0;
+    callback clicked();
     min-height: 56px;
+    background: ta.has-hover ? #ffffff44 : transparent;
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
     HorizontalLayout {
         padding-left: Theme.spacing-md;
         padding-right: Theme.spacing-md;
@@ -78,11 +93,55 @@ component ClayRow inherits Rectangle {
             vertical-alignment: center;
             horizontal-stretch: 1;
         }
-        Text {
-            text: root.trailing;
-            color: ClaySkin.text-muted;
-            font-size: Theme.font-size-body;
-            vertical-alignment: center;
+        Rectangle {
+            horizontal-stretch: 0;
+            height: 26px;
+            border-radius: 13px;
+            background: root.tone-i == 1 ? #c9a9ff : (root.tone-i == 2 ? #f9c895 : (root.tone-i == 3 ? #f4a3a3 : ClaySkin.glass-fill));
+            HorizontalLayout {
+                padding-left: Theme.spacing-sm;
+                padding-right: Theme.spacing-sm;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.trailing;
+                        color: root.tone-i == 0 ? ClaySkin.text-muted : #ffffff;
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                    }
+                }
+            }
+        }
+    }
+}
+
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    background: ta.has-hover ? ClaySkin.glass-fill : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.destructive ? #f4a3a3 : ClaySkin.text-primary;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
         }
     }
 }
@@ -93,8 +152,53 @@ export component ClayProfilePage inherits Window {
     default-font-family: ClaySkin.font-family;
     background: ClaySkin.page-background;
 
+    in-out property <int> avatar-idx: 0;
+    in-out property <bool> following: false;
+    in-out property <int> follow-count: 12400;
+    in-out property <int> pieces: 248;
+    in-out property <int> shows: 31;
+    in-out property <int> selected-stat: -1;
+    in-out property <bool> chip-wheel: true;
+    in-out property <bool> chip-glaze: false;
+    in-out property <bool> chip-raku: false;
+    in-out property <bool> chip-kiln: false;
+    in-out property <bool> chip-handmade: false;
+    in-out property <int> studio-mode: 0; // 0 9-5, 1 10-7, 2 by appt
+    in-out property <int> comm-mode: 0; // 0 open, 1 waitlist, 2 closed
+    in-out property <int> notif-mode: 0; // 0 on, 1 mentions, 2 off
+    in-out property <bool> edit-mode: false;
+    in-out property <bool> sheet-open: false;
+    in-out property <bool> confirm-block: false;
+    in-out property <string> status-msg: "";
+    in-out property <bool> status-success: false;
+    in-out property <bool> status-danger: false;
+
+    callback back-pressed();
+
+    function avatar-emoji() -> string {
+        return root.avatar-idx == 0 ? "🌸" : (root.avatar-idx == 1 ? "🌿" : (root.avatar-idx == 2 ? "🍵" : "🏺"));
+    }
+    function fmt-follows() -> string {
+        return root.follow-count >= 1000 ? floor(root.follow-count / 100) / 10 + "k" : "" + root.follow-count;
+    }
+    function studio-label() -> string {
+        return root.studio-mode == 0 ? "9–5" : (root.studio-mode == 1 ? "10–7" : "by appt");
+    }
+    function comm-label() -> string {
+        return root.comm-mode == 0 ? "open" : (root.comm-mode == 1 ? "waitlist" : "closed");
+    }
+    function notif-label() -> string {
+        return root.notif-mode == 0 ? "on" : (root.notif-mode == 1 ? "mentions" : "off");
+    }
+    function set-status(m: string, ok: bool, bad: bool) {
+        root.status-msg = m;
+        root.status-success = ok;
+        root.status-danger = bad;
+    }
+
     if ClaySkin.has-background-image: Image {
-        x: 0; y: 0;
+        x: 0;
+        y: 0;
         width: root.width;
         height: root.height;
         source: ClaySkin.page-background-image;
@@ -117,18 +221,75 @@ export component ClayProfilePage inherits Window {
                     padding-left: Theme.spacing-md;
                     padding-right: Theme.spacing-md;
                     alignment: space-between;
-                    Text {
-                        text: "‹ back";
-                        color: ClaySkin.text-secondary;
-                        font-size: Theme.font-size-body-large;
-                        vertical-alignment: center;
+                    Rectangle {
+                        horizontal-stretch: 0;
+                        Text {
+                            text: "‹ back";
+                            color: ClaySkin.text-secondary;
+                            font-size: Theme.font-size-body-large;
+                            vertical-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
+                        }
+                        TouchArea {
+                            clicked => {
+                                root.set-status("Back", false, false);
+                                root.back-pressed();
+                            }
+                        }
                     }
-                    Text {
-                        text: "edit";
-                        color: ClaySkin.text-secondary;
-                        font-size: Theme.font-size-body-large;
-                        font-weight: 600;
-                        vertical-alignment: center;
+                    Rectangle {
+                        horizontal-stretch: 0;
+                        Text {
+                            text: "⋯";
+                            color: ClaySkin.text-secondary;
+                            font-size: Theme.font-size-headline;
+                            vertical-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
+                        }
+                        TouchArea {
+                            clicked => {
+                                root.sheet-open = true;
+                            }
+                        }
+                    }
+                    Rectangle {
+                        horizontal-stretch: 0;
+                        Text {
+                            text: root.edit-mode ? "done" : "edit";
+                            color: root.edit-mode ? #9d6bff : ClaySkin.text-secondary;
+                            font-size: Theme.font-size-body-large;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
+                        }
+                        TouchArea {
+                            clicked => {
+                                root.edit-mode = !root.edit-mode;
+                                root.set-status(root.edit-mode ? "Edit mode" : "Saved", root.edit-mode, false);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ---- Status banner ----
+            if !root.status-msg.is-empty: Rectangle {
+                background: root.status-success ? #c9e8c9 : (root.status-danger ? #f4c5c5 : ClaySkin.glass-fill);
+                border-radius: Theme.radius-lg;
+                height: 36px;
+                HorizontalLayout {
+                    alignment: center;
+                    VerticalLayout {
+                        alignment: center;
+                        Text {
+                            text: root.status-msg;
+                            color: root.status-success ? #2e6e2e : (root.status-danger ? #8e2e2e : ClaySkin.text-primary);
+                            font-size: Theme.font-size-caption;
+                            font-weight: 700;
+                        }
                     }
                 }
             }
@@ -148,15 +309,21 @@ export component ClayProfilePage inherits Window {
                         drop-shadow-offset-y: Theme.elevation-2-y;
                         clip: true;
                         Text {
-                            text: "🌸";
+                            text: root.avatar-emoji();
                             font-size: 56px;
                             x: (parent.width - self.width) / 2;
                             y: (parent.height - self.height) / 2;
                         }
+                        TouchArea {
+                            clicked => {
+                                root.avatar-idx = mod(root.avatar-idx + 1, 4);
+                                root.set-status("Avatar " + (root.avatar-idx + 1) + "/4", true, false);
+                            }
+                        }
                     }
                 }
                 Text {
-                    text: "Mira Aoki";
+                    text: "Mira Aoki" + (root.edit-mode ? " ✎" : "");
                     color: ClaySkin.text-primary;
                     font-size: Theme.font-size-headline;
                     font-weight: 700;
@@ -168,24 +335,169 @@ export component ClayProfilePage inherits Window {
                     font-size: Theme.font-size-body-large;
                     horizontal-alignment: center;
                 }
+                // Follow + Message buttons.
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: Theme.spacing-md;
+                    Rectangle {
+                        horizontal-stretch: 0;
+                        width: 140px;
+                        height: 40px;
+                        border-radius: 20px;
+                        background: root.following ? ClaySkin.glass-fill : #c9a9ff;
+                        HorizontalLayout {
+                            alignment: center;
+                            VerticalLayout {
+                                alignment: center;
+                                Text {
+                                    text: root.following ? "✓ Following" : "Follow";
+                                    color: root.following ? ClaySkin.text-primary : #ffffff;
+                                    font-size: Theme.font-size-body;
+                                    font-weight: 800;
+                                }
+                            }
+                        }
+                        TouchArea {
+                            clicked => {
+                                root.following = !root.following;
+                                root.follow-count = root.follow-count + (root.following ? 1 : -1);
+                                root.set-status(root.following ? "Now following Mira" : "Unfollowed", root.following, !root.following);
+                            }
+                        }
+                    }
+                    Rectangle {
+                        horizontal-stretch: 0;
+                        width: 100px;
+                        height: 40px;
+                        border-radius: 20px;
+                        background: ClaySkin.glass-fill;
+                        HorizontalLayout {
+                            alignment: center;
+                            VerticalLayout {
+                                alignment: center;
+                                Text {
+                                    text: "Message";
+                                    color: ClaySkin.text-secondary;
+                                    font-size: Theme.font-size-body;
+                                    font-weight: 800;
+                                }
+                            }
+                        }
+                        TouchArea {
+                            clicked => {
+                                root.set-status("Composing to Mira…", true, false);
+                            }
+                        }
+                    }
+                }
             }
 
             // ---- Stat strip ----
             HorizontalLayout {
                 spacing: Theme.spacing-md;
-                StatTile { value: "248"; label: "pieces"; horizontal-stretch: 1; }
-                StatTile { value: "12.4k"; label: "follows"; horizontal-stretch: 1; }
-                StatTile { value: "31"; label: "shows"; horizontal-stretch: 1; }
+                StatTile {
+                    value: "" + root.pieces;
+                    label: "pieces";
+                    selected: root.selected-stat == 0;
+                    clicked => {
+                        root.selected-stat = root.selected-stat == 0 ? -1 : 0;
+                        root.set-status(root.selected-stat == 0 ? "Filtering: pieces" : "Cleared", true, false);
+                    }
+                }
+                StatTile {
+                    value: root.fmt-follows();
+                    label: "follows";
+                    selected: root.selected-stat == 1;
+                    clicked => {
+                        root.selected-stat = root.selected-stat == 1 ? -1 : 1;
+                        root.set-status(root.selected-stat == 1 ? "Showing followers" : "Cleared", true, false);
+                    }
+                }
+                StatTile {
+                    value: "" + root.shows;
+                    label: "shows";
+                    selected: root.selected-stat == 2;
+                    clicked => {
+                        root.selected-stat = root.selected-stat == 2 ? -1 : 2;
+                        root.set-status(root.selected-stat == 2 ? "Showing shows" : "Cleared", true, false);
+                    }
+                }
+            }
+
+            // ---- Selected stat detail ----
+            if root.selected-stat >= 0: Rectangle {
+                background: ClaySkin.glass-fill;
+                border-radius: Theme.radius-lg;
+                drop-shadow-blur: Theme.elevation-1-blur;
+                drop-shadow-color: #b89ce033;
+                drop-shadow-offset-y: Theme.elevation-1-y;
+                VerticalLayout {
+                    padding: Theme.spacing-md;
+                    spacing: Theme.spacing-xs;
+                    Text {
+                        text: root.selected-stat == 0 ? "PIECES" : (root.selected-stat == 1 ? "FOLLOWERS" : "SHOWS");
+                        color: ClaySkin.text-muted;
+                        font-size: 11px;
+                        font-weight: 800;
+                        letter-spacing: 2px;
+                    }
+                    Text {
+                        text: root.selected-stat == 0 ? "Bowls 142 · plates 64 · vases 42" : (root.selected-stat == 1 ? "+218 new this month · 38% from Japan" : "Next show: Kyoto Crafts Fair, June 14");
+                        color: ClaySkin.text-primary;
+                        font-size: Theme.font-size-body;
+                        wrap: word-wrap;
+                    }
+                }
             }
 
             // ---- Chips ----
             HorizontalLayout {
                 spacing: Theme.spacing-sm;
-                ClayChip { label: "wheel"; filled: true; }
-                ClayChip { label: "glaze"; }
-                ClayChip { label: "raku"; }
-                ClayChip { label: "kiln"; }
-                Rectangle { horizontal-stretch: 1; }
+                ClayChip {
+                    label: "wheel";
+                    filled: root.chip-wheel;
+                    clicked => {
+                        root.chip-wheel = !root.chip-wheel;
+                        root.set-status("#wheel " + (root.chip-wheel ? "on" : "off"), root.chip-wheel, false);
+                    }
+                }
+                ClayChip {
+                    label: "glaze";
+                    filled: root.chip-glaze;
+                    clicked => {
+                        root.chip-glaze = !root.chip-glaze;
+                        root.set-status("#glaze " + (root.chip-glaze ? "on" : "off"), root.chip-glaze, false);
+                    }
+                }
+                ClayChip {
+                    label: "raku";
+                    filled: root.chip-raku;
+                    clicked => {
+                        root.chip-raku = !root.chip-raku;
+                        root.set-status("#raku " + (root.chip-raku ? "on" : "off"), root.chip-raku, false);
+                    }
+                }
+                ClayChip {
+                    label: "kiln";
+                    filled: root.chip-kiln;
+                    clicked => {
+                        root.chip-kiln = !root.chip-kiln;
+                        root.set-status("#kiln " + (root.chip-kiln ? "on" : "off"), root.chip-kiln, false);
+                    }
+                }
+                Rectangle {
+                    horizontal-stretch: 1;
+                }
+            }
+            if root.edit-mode: HorizontalLayout {
+                ClayChip {
+                    label: "+ handmade";
+                    filled: root.chip-handmade;
+                    clicked => {
+                        root.chip-handmade = !root.chip-handmade;
+                        root.set-status("#handmade " + (root.chip-handmade ? "added" : "removed"), root.chip-handmade, false);
+                    }
+                }
             }
 
             // ---- Soft settings card ----
@@ -199,11 +511,136 @@ export component ClayProfilePage inherits Window {
                 VerticalLayout {
                     padding-top: Theme.spacing-sm;
                     padding-bottom: Theme.spacing-sm;
-                    ClayRow { title: "Studio hours"; trailing: "9–5"; }
-                    Rectangle { height: 1px; background: ClaySkin.hairline; }
-                    ClayRow { title: "Commissions"; trailing: "open"; }
-                    Rectangle { height: 1px; background: ClaySkin.hairline; }
-                    ClayRow { title: "Notifications"; trailing: "on"; }
+                    ClayRow {
+                        title: "Studio hours";
+                        trailing: root.studio-label();
+                        tone-i: 1;
+                        clicked => {
+                            root.studio-mode = mod(root.studio-mode + 1, 3);
+                            root.set-status("Studio hours · " + root.studio-label(), true, false);
+                        }
+                    }
+                    Rectangle {
+                        height: 1px;
+                        background: ClaySkin.hairline;
+                    }
+                    ClayRow {
+                        title: "Commissions";
+                        trailing: root.comm-label();
+                        tone-i: root.comm-mode == 0 ? 0 : (root.comm-mode == 1 ? 2 : 3);
+                        clicked => {
+                            root.comm-mode = mod(root.comm-mode + 1, 3);
+                            root.set-status("Commissions · " + root.comm-label(), root.comm-mode == 0, root.comm-mode == 2);
+                        }
+                    }
+                    Rectangle {
+                        height: 1px;
+                        background: ClaySkin.hairline;
+                    }
+                    ClayRow {
+                        title: "Notifications";
+                        trailing: root.notif-label();
+                        tone-i: root.notif-mode == 0 ? 1 : (root.notif-mode == 1 ? 2 : 0);
+                        clicked => {
+                            root.notif-mode = mod(root.notif-mode + 1, 3);
+                            root.set-status("Notifications · " + root.notif-label(), root.notif-mode != 2, false);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ===================== Bottom sheet =====================
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+                root.confirm-block = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: ClaySkin.bar-background;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: ClaySkin.text-muted;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: "Profile menu";
+                        color: ClaySkin.text-primary;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 700;
+                    }
+                }
+                SheetRow {
+                    label: "Share profile link";
+                    clicked => {
+                        root.set-status("Link copied", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Cycle avatar (" + root.avatar-emoji() + ")";
+                    clicked => {
+                        root.avatar-idx = mod(root.avatar-idx + 1, 4);
+                        root.set-status("Avatar " + (root.avatar-idx + 1), true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: root.edit-mode ? "Stop editing" : "Edit profile";
+                    clicked => {
+                        root.edit-mode = !root.edit-mode;
+                        root.set-status(root.edit-mode ? "Edit mode" : "Saved", root.edit-mode, false);
+                        root.sheet-open = false;
+                    }
+                }
+                Rectangle {
+                    height: 1px;
+                    background: ClaySkin.hairline;
+                }
+                SheetRow {
+                    label: root.confirm-block ? "Confirm: block Mira" : "Block Mira";
+                    destructive: true;
+                    clicked => {
+                        if (root.confirm-block) {
+                            root.following = false;
+                            root.set-status("Blocked", false, true);
+                            root.sheet-open = false;
+                            root.confirm-block = false;
+                        } else {
+                            root.confirm-block = true;
+                        }
+                    }
+                }
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.sheet-open = false;
+                        root.confirm-block = false;
+                    }
                 }
             }
         }

@@ -5,11 +5,16 @@
 // Demonstrates a tonally rich health-tracking template:
 //
 //   - Daily summary hero: "Today · 3 of 6 doses taken" + a horizontal
-//     7-dot adherence streak strip showing the last 7 days.
-//   - Time-of-day grouped sections (MORNING / NOON / EVENING / NIGHT)
-//     with per-dose rows: pill icon + drug name + dose + time +
-//     status pill (TAKEN success, DUE info, MISSED danger).
-//   - Sticky bottom "Mark all morning taken" CTA.
+//     7-dot adherence streak strip. The big "N / 6" number, summary
+//     line, and percentage ring all derive from live state and the
+//     ring's colour shifts with adherence (success ≥ 80%, warning
+//     ≥ 50%, danger < 50%).
+//   - Time-of-day grouped sections (MORNING / NOON / EVENING) with
+//     per-dose rows. Each row is tappable to cycle its state Due →
+//     Taken → Missed → Later → Due.
+//   - Tappable streak dots cycle that day's state too.
+//   - Sticky bottom CTA finds the next due dose and marks it taken;
+//     when no doses are due, it shows the "Caught up" state.
 
 import { ScrollView } from "std-widgets.slint";
 import { Theme, Tone } from "@mobile-theme/theme.slint";
@@ -19,23 +24,28 @@ import { Divider } from "@mobile-components/divider.slint";
 import { MobileButton } from "@mobile-components/button.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
 
-// Dose row.
+// One dose row — tappable.
 component DoseRow inherits Rectangle {
     in property <string> drug;
     in property <string> dose;
     in property <string> when;
-    in property <int> state: 0;   // 0=due, 1=taken, 2=missed, 3=scheduled
+    in property <int> state: 0; // 0=due 1=taken 2=missed 3=later
     in property <color> pill-color: Theme.accent-info;
+    in property <bool> expanded: false;
+    callback clicked();
 
     horizontal-stretch: 1;
     min-height: 64px;
+    background: root.expanded ? Theme.surface-2
+        : touch.pressed ? Theme.surface-pressed
+        : transparent;
+    animate background { duration: Theme.motion-fast; }
 
     HorizontalLayout {
         padding: Theme.spacing-md;
         spacing: Theme.spacing-md;
         alignment: stretch;
 
-        // Pill icon — a tablet-shaped rectangle in the brand color.
         VerticalLayout {
             alignment: center;
             Rectangle {
@@ -43,7 +53,6 @@ component DoseRow inherits Rectangle {
                 height: 24px;
                 border-radius: Theme.radius-md;
                 background: root.pill-color;
-                // Inner highlight band.
                 Rectangle {
                     x: 1px;
                     y: 0;
@@ -56,7 +65,6 @@ component DoseRow inherits Rectangle {
             }
         }
 
-        // Drug + dose.
         VerticalLayout {
             horizontal-stretch: 1;
             alignment: center;
@@ -74,7 +82,6 @@ component DoseRow inherits Rectangle {
             }
         }
 
-        // Status pill.
         VerticalLayout {
             alignment: center;
             Rectangle {
@@ -86,6 +93,7 @@ component DoseRow inherits Rectangle {
                     : root.state == 0 ? Theme.accent-info
                     : root.state == 2 ? Theme.accent-danger
                     : Theme.surface-variant;
+                animate background { duration: Theme.motion-fast; }
                 status-text := Text {
                     text:
                           root.state == 1 ? "TAKEN"
@@ -104,54 +112,207 @@ component DoseRow inherits Rectangle {
             }
         }
     }
+    touch := TouchArea { clicked => { root.clicked(); } }
 }
 
-// Streak dot row — 7 daily dots (today on the right, 6 prior days).
-component StreakStrip inherits Rectangle {
+// One tappable streak dot.
+component StreakDot inherits Rectangle {
+    in property <int> state: 1; // 0=unknown 1=taken 2=missed
+    in property <bool> today: false;
+    callback clicked();
+
     horizontal-stretch: 1;
-    HorizontalLayout {
-        spacing: Theme.spacing-xs;
-        alignment: stretch;
-        for state in [1, 1, 2, 1, 1, 1, 0] : VerticalLayout {
-            horizontal-stretch: 1;
+    VerticalLayout {
+        horizontal-stretch: 1;
+        alignment: center;
+        spacing: 2px;
+        HorizontalLayout {
             alignment: center;
-            spacing: 2px;
-            HorizontalLayout {
-                alignment: center;
-                Rectangle {
-                    width: 24px;
-                    height: 24px;
-                    border-radius: Theme.radius-md;
-                    background:
-                          state == 1 ? Theme.accent-success
-                        : state == 2 ? Theme.accent-danger
-                        : Theme.surface-variant;
-                    Text {
-                        text:
-                              state == 1 ? "✓"
-                            : state == 2 ? "✕"
-                            : "?";
-                        color: state == 0 ? Theme.muted : Theme.on-primary;
-                        font-size: 11px;
-                        font-weight: 800;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                        width: parent.width;
-                        height: parent.height;
-                    }
+            Rectangle {
+                width: 24px;
+                height: 24px;
+                border-radius: Theme.radius-md;
+                background:
+                      root.state == 1 ? Theme.accent-success
+                    : root.state == 2 ? Theme.accent-danger
+                    : Theme.surface-variant;
+                border-width: root.today ? 2px : 0px;
+                border-color: Theme.accent-info;
+                animate background { duration: Theme.motion-fast; }
+                Text {
+                    text:
+                          root.state == 1 ? "✓"
+                        : root.state == 2 ? "✕"
+                        : "?";
+                    color: root.state == 0 ? Theme.muted : Theme.on-primary;
+                    font-size: 11px;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
                 }
             }
         }
     }
+    TouchArea { clicked => { root.clicked(); } }
 }
 
 export component MedicationPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
     in property <string> when: "Today, May 14";
-    in property <string> summary: "3 of 6 doses taken · 1 missed";
     callback back-pressed();
     callback mark-all-pressed();
+    callback add-medication();
+    callback dose-changed(string, string);
+
+    // ----- Interactive state -----
+    // 0=DUE 1=TAKEN 2=MISSED 3=LATER
+    private property <int> d0: 1; // Vitamin D3
+    private property <int> d1: 1; // Omega-3
+    private property <int> d2: 2; // Metformin AM (missed)
+    private property <int> d3: 1; // Magnesium
+    private property <int> d4: 0; // Metformin PM
+    private property <int> d5: 3; // Probiotic
+    private property <int> s0: 1;
+    private property <int> s1: 1;
+    private property <int> s2: 2;
+    private property <int> s3: 1;
+    private property <int> s4: 1;
+    private property <int> s5: 1;
+    private property <int> s6: 0; // today (unknown)
+    private property <int> add-count: 0;
+    private property <string> status-msg: "Tap a dose to cycle state · streak dots are tappable too";
+    private property <bool> status-is-success: false;
+    private property <bool> status-is-danger: false;
+
+    // ----- Helpers -----
+    function dose-state(i: int) -> int {
+        if (i == 0) { return root.d0; }
+        if (i == 1) { return root.d1; }
+        if (i == 2) { return root.d2; }
+        if (i == 3) { return root.d3; }
+        if (i == 4) { return root.d4; }
+        return root.d5;
+    }
+    function dose-name(i: int) -> string {
+        if (i == 0) { return "Vitamin D3"; }
+        if (i == 1) { return "Omega-3"; }
+        if (i == 2) { return "Metformin (AM)"; }
+        if (i == 3) { return "Magnesium glycinate"; }
+        if (i == 4) { return "Metformin (PM)"; }
+        return "Probiotic";
+    }
+    function state-label(s: int) -> string {
+        if (s == 0) { return "DUE"; }
+        if (s == 1) { return "TAKEN"; }
+        if (s == 2) { return "MISSED"; }
+        return "LATER";
+    }
+    function taken-count() -> int {
+        return (root.d0 == 1 ? 1 : 0) + (root.d1 == 1 ? 1 : 0)
+            + (root.d2 == 1 ? 1 : 0) + (root.d3 == 1 ? 1 : 0)
+            + (root.d4 == 1 ? 1 : 0) + (root.d5 == 1 ? 1 : 0);
+    }
+    function missed-count() -> int {
+        return (root.d0 == 2 ? 1 : 0) + (root.d1 == 2 ? 1 : 0)
+            + (root.d2 == 2 ? 1 : 0) + (root.d3 == 2 ? 1 : 0)
+            + (root.d4 == 2 ? 1 : 0) + (root.d5 == 2 ? 1 : 0);
+    }
+    function due-count() -> int {
+        return (root.d0 == 0 ? 1 : 0) + (root.d1 == 0 ? 1 : 0)
+            + (root.d2 == 0 ? 1 : 0) + (root.d3 == 0 ? 1 : 0)
+            + (root.d4 == 0 ? 1 : 0) + (root.d5 == 0 ? 1 : 0);
+    }
+    function pct() -> int { return floor(root.taken-count() * 100 / 6); }
+    function pct-tone() -> color {
+        if (root.pct() >= 80) { return Theme.accent-success; }
+        if (root.pct() >= 50) { return Theme.accent-warning; }
+        return Theme.accent-danger;
+    }
+    function next-due-idx() -> int {
+        if (root.d0 == 0) { return 0; }
+        if (root.d1 == 0) { return 1; }
+        if (root.d2 == 0) { return 2; }
+        if (root.d3 == 0) { return 3; }
+        if (root.d4 == 0) { return 4; }
+        if (root.d5 == 0) { return 5; }
+        return -1;
+    }
+    function summary-text() -> string {
+        return root.taken-count() + " of 6 taken · "
+            + root.missed-count() + " missed · "
+            + root.due-count() + " due";
+    }
+    function streak-state(i: int) -> int {
+        if (i == 0) { return root.s0; }
+        if (i == 1) { return root.s1; }
+        if (i == 2) { return root.s2; }
+        if (i == 3) { return root.s3; }
+        if (i == 4) { return root.s4; }
+        if (i == 5) { return root.s5; }
+        return root.s6;
+    }
+
+    // ----- Mutations -----
+    public function tap-dose(i: int) {
+        // Cycle 0 → 1 → 2 → 3 → 0
+        if (i == 0) { root.d0 = mod(root.d0 + 1, 4); }
+        if (i == 1) { root.d1 = mod(root.d1 + 1, 4); }
+        if (i == 2) { root.d2 = mod(root.d2 + 1, 4); }
+        if (i == 3) { root.d3 = mod(root.d3 + 1, 4); }
+        if (i == 4) { root.d4 = mod(root.d4 + 1, 4); }
+        if (i == 5) { root.d5 = mod(root.d5 + 1, 4); }
+        root.dose-changed(root.dose-name(i),
+            root.state-label(root.dose-state(i)));
+        root.status-msg = root.dose-name(i) + " · "
+            + root.state-label(root.dose-state(i));
+        root.status-is-success = root.dose-state(i) == 1;
+        root.status-is-danger = root.dose-state(i) == 2;
+    }
+    public function tap-streak(i: int) {
+        // Cycle 0 → 1 → 2 → 0
+        if (i == 0) { root.s0 = mod(root.s0 + 1, 3); }
+        if (i == 1) { root.s1 = mod(root.s1 + 1, 3); }
+        if (i == 2) { root.s2 = mod(root.s2 + 1, 3); }
+        if (i == 3) { root.s3 = mod(root.s3 + 1, 3); }
+        if (i == 4) { root.s4 = mod(root.s4 + 1, 3); }
+        if (i == 5) { root.s5 = mod(root.s5 + 1, 3); }
+        if (i == 6) { root.s6 = mod(root.s6 + 1, 3); }
+        root.status-msg = "Day " + (i + 1) + " · "
+            + (root.streak-state(i) == 1 ? "taken"
+                : root.streak-state(i) == 2 ? "missed"
+                : "unknown");
+        root.status-is-success = root.streak-state(i) == 1;
+        root.status-is-danger = root.streak-state(i) == 2;
+    }
+    public function tap-cta() {
+        if (root.next-due-idx() < 0) {
+            root.status-msg = "All caught up · nothing due";
+            root.status-is-success = true;
+            root.status-is-danger = false;
+            return;
+        }
+        // Mark next due as taken.
+        if (root.next-due-idx() == 0) { root.d0 = 1; }
+        if (root.next-due-idx() == 1) { root.d1 = 1; }
+        if (root.next-due-idx() == 2) { root.d2 = 1; }
+        if (root.next-due-idx() == 3) { root.d3 = 1; }
+        if (root.next-due-idx() == 4) { root.d4 = 1; }
+        if (root.next-due-idx() == 5) { root.d5 = 1; }
+        root.mark-all-pressed();
+        root.status-msg = "Marked taken · " + root.taken-count() + " of 6 done";
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    public function tap-add() {
+        root.add-count = root.add-count + 1;
+        root.add-medication();
+        root.status-msg = "Add medication · " + root.add-count + " queued";
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
 
     background: Theme.background;
 
@@ -164,138 +325,200 @@ export component MedicationPage inherits Window {
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             trailing-icon: @image-url("@mobile-components/icons/plus.svg");
             leading-pressed => { root.back-pressed(); }
+            trailing-pressed => { root.tap-add(); }
         }
 
-        // Hero summary + 6 dose rows across 3 time-of-day sections
-        // overflow a single 892-px screen, so the middle region scrolls
-        // between the pinned AppBar and the sticky CTA below.
+        // ----- Status banner ---------------------------------------
+        Rectangle {
+            height: 32px;
+            background: root.status-is-danger ? Theme.accent-danger
+                : root.status-is-success ? Theme.accent-success
+                : Theme.surface-2;
+            animate background { duration: Theme.motion-fast; }
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                Text {
+                    text: root.status-msg;
+                    color: (root.status-is-danger || root.status-is-success)
+                        ? Theme.on-primary
+                        : Theme.on-surface;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+            }
+        }
+
         ScrollView {
             vertical-stretch: 1;
 
             VerticalLayout {
                 spacing: 0;
 
-        // ----- Hero summary -----
-        VerticalLayout {
-            padding: Theme.spacing-md;
-            spacing: Theme.spacing-sm;
-
-            Rectangle {
-                background: Theme.surface-1;
-                border-radius: Theme.radius-md;
-                drop-shadow-blur: Theme.elevation-1-blur;
-                drop-shadow-color: Theme.elevation-1-color;
-                drop-shadow-offset-y: Theme.elevation-1-y;
-                height: 140px;
-
+                // Hero summary — all numbers derive from dose state.
                 VerticalLayout {
                     padding: Theme.spacing-md;
                     spacing: Theme.spacing-sm;
-                    Text {
-                        text: root.when;
-                        color: Theme.muted;
-                        font-size: 10px;
-                        font-weight: 800;
-                        letter-spacing: 0.5px;
-                    }
-                    HorizontalLayout {
-                        spacing: Theme.spacing-sm;
-                        alignment: stretch;
+
+                    Rectangle {
+                        background: Theme.surface-1;
+                        border-radius: Theme.radius-md;
+                        drop-shadow-blur: Theme.elevation-1-blur;
+                        drop-shadow-color: Theme.elevation-1-color;
+                        drop-shadow-offset-y: Theme.elevation-1-y;
+                        height: 140px;
+
                         VerticalLayout {
-                            horizontal-stretch: 1;
-                            spacing: 2px;
-                            Heading {
-                                text: "3 / 6";
-                                style: HeadingStyle.mono;
-                                color: Theme.on-surface;
-                                font-size: 36px;
-                                font-weight: 300;
-                            }
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-sm;
                             Text {
-                                text: root.summary;
+                                text: root.when;
                                 color: Theme.muted;
-                                font-size: Theme.font-size-caption;
+                                font-size: 10px;
+                                font-weight: 800;
+                                letter-spacing: 0.5px;
                             }
-                        }
-                        VerticalLayout {
-                            alignment: center;
-                            Rectangle {
-                                width: 56px;
-                                height: 56px;
-                                border-radius: self.width / 2;
-                                background: Theme.accent-success;
-                                Text {
-                                    text: "50%";
-                                    color: Theme.on-primary;
-                                    font-size: Theme.font-size-body-large;
-                                    font-weight: 800;
-                                    horizontal-alignment: center;
-                                    vertical-alignment: center;
-                                    width: parent.width;
-                                    height: parent.height;
+                            HorizontalLayout {
+                                spacing: Theme.spacing-sm;
+                                alignment: stretch;
+                                VerticalLayout {
+                                    horizontal-stretch: 1;
+                                    spacing: 2px;
+                                    Heading {
+                                        text: root.taken-count() + " / 6";
+                                        style: HeadingStyle.mono;
+                                        color: Theme.on-surface;
+                                        font-size: 36px;
+                                        font-weight: 300;
+                                    }
+                                    Text {
+                                        text: root.summary-text();
+                                        color: Theme.muted;
+                                        font-size: Theme.font-size-caption;
+                                    }
+                                }
+                                VerticalLayout {
+                                    alignment: center;
+                                    Rectangle {
+                                        width: 56px;
+                                        height: 56px;
+                                        border-radius: self.width / 2;
+                                        background: root.pct-tone();
+                                        animate background { duration: Theme.motion-fast; }
+                                        Text {
+                                            text: root.pct() + "%";
+                                            color: Theme.on-primary;
+                                            font-size: Theme.font-size-body-large;
+                                            font-weight: 800;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
+                                            width: parent.width;
+                                            height: parent.height;
+                                        }
+                                    }
+                                }
+                            }
+                            // Streak strip — each dot tappable.
+                            HorizontalLayout {
+                                spacing: Theme.spacing-xs;
+                                alignment: stretch;
+                                StreakDot {
+                                    state: root.s0;
+                                    clicked => { root.tap-streak(0); }
+                                }
+                                StreakDot {
+                                    state: root.s1;
+                                    clicked => { root.tap-streak(1); }
+                                }
+                                StreakDot {
+                                    state: root.s2;
+                                    clicked => { root.tap-streak(2); }
+                                }
+                                StreakDot {
+                                    state: root.s3;
+                                    clicked => { root.tap-streak(3); }
+                                }
+                                StreakDot {
+                                    state: root.s4;
+                                    clicked => { root.tap-streak(4); }
+                                }
+                                StreakDot {
+                                    state: root.s5;
+                                    clicked => { root.tap-streak(5); }
+                                }
+                                StreakDot {
+                                    state: root.s6;
+                                    today: true;
+                                    clicked => { root.tap-streak(6); }
                                 }
                             }
                         }
                     }
-                    StreakStrip { }
+                }
+
+                SectionHeader { text: "MORNING · 08:00"; }
+                DoseRow {
+                    drug: "Vitamin D3";
+                    dose: "1000 IU · 1 capsule";
+                    when: "08:00";
+                    state: root.d0;
+                    pill-color: Theme.accent-warning;
+                    clicked => { root.tap-dose(0); }
+                }
+                Divider { }
+                DoseRow {
+                    drug: "Omega-3";
+                    dose: "1000 mg · 1 softgel";
+                    when: "08:00";
+                    state: root.d1;
+                    pill-color: Theme.accent-info;
+                    clicked => { root.tap-dose(1); }
+                }
+                Divider { }
+                DoseRow {
+                    drug: "Metformin";
+                    dose: "500 mg · 1 tablet";
+                    when: "08:30";
+                    state: root.d2;
+                    pill-color: Theme.accent-danger;
+                    clicked => { root.tap-dose(2); }
+                }
+
+                SectionHeader { text: "NOON · 13:00"; }
+                DoseRow {
+                    drug: "Magnesium glycinate";
+                    dose: "200 mg · 1 capsule";
+                    when: "13:00";
+                    state: root.d3;
+                    pill-color: Theme.accent-success;
+                    clicked => { root.tap-dose(3); }
+                }
+
+                SectionHeader { text: "EVENING · 19:00"; }
+                DoseRow {
+                    drug: "Metformin";
+                    dose: "500 mg · 1 tablet";
+                    when: "19:00";
+                    state: root.d4;
+                    pill-color: Theme.accent-danger;
+                    clicked => { root.tap-dose(4); }
+                }
+                Divider { }
+                DoseRow {
+                    drug: "Probiotic";
+                    dose: "10 B CFU · 1 capsule";
+                    when: "19:30";
+                    state: root.d5;
+                    pill-color: Theme.accent-info;
+                    clicked => { root.tap-dose(5); }
                 }
             }
         }
 
-        SectionHeader { text: "MORNING · 08:00"; }
-        DoseRow {
-            drug: "Vitamin D3";
-            dose: "1000 IU · 1 capsule";
-            when: "08:00";
-            state: 1;
-            pill-color: Theme.accent-warning;
-        }
-        Divider { }
-        DoseRow {
-            drug: "Omega-3";
-            dose: "1000 mg · 1 softgel";
-            when: "08:00";
-            state: 1;
-            pill-color: Theme.accent-info;
-        }
-        Divider { }
-        DoseRow {
-            drug: "Metformin";
-            dose: "500 mg · 1 tablet";
-            when: "08:30";
-            state: 2;
-            pill-color: Theme.accent-danger;
-        }
-
-        SectionHeader { text: "NOON · 13:00"; }
-        DoseRow {
-            drug: "Magnesium glycinate";
-            dose: "200 mg · 1 capsule";
-            when: "13:00";
-            state: 1;
-            pill-color: Theme.accent-success;
-        }
-
-        SectionHeader { text: "EVENING · 19:00"; }
-        DoseRow {
-            drug: "Metformin";
-            dose: "500 mg · 1 tablet";
-            when: "19:00";
-            state: 0;
-            pill-color: Theme.accent-danger;
-        }
-        Divider { }
-        DoseRow {
-            drug: "Probiotic";
-            dose: "10 B CFU · 1 capsule";
-            when: "19:30";
-            state: 3;
-            pill-color: Theme.accent-info;
-        }
-            }   // end inner VerticalLayout
-        }       // end ScrollView
-
-        // Sticky CTA — most actionable: log all morning doses at once.
+        // Sticky CTA — flips between "Mark next due" and "Caught up".
         Rectangle {
             background: Theme.surface-1;
             drop-shadow-blur: Theme.elevation-2-blur;
@@ -305,9 +528,12 @@ export component MedicationPage inherits Window {
             HorizontalLayout {
                 padding: Theme.spacing-md;
                 MobileButton {
-                    text: "Mark evening dose taken";
-                    tone: Tone.success;
-                    clicked => { root.mark-all-pressed(); }
+                    text: root.next-due-idx() < 0
+                        ? "All caught up ✓"
+                        : "Mark " + root.dose-name(root.next-due-idx()) + " taken";
+                    tone: root.next-due-idx() < 0 ? Tone.info : Tone.success;
+                    enabled: true;
+                    clicked => { root.tap-cta(); }
                 }
             }
         }

@@ -1,37 +1,56 @@
 // EmailThreadPage
 // =====================================================================
-//
-// Single email thread view — sender header + subject + body + quoted
-// reply chain + attachment chips + action row. Demonstrates:
-//
-//   - Label-pill row right under the subject (Inbox / Slint / Priority)
-//     that mirrors how Gmail / Superhuman / Hey render thread metadata.
-//   - Inline attachment cards with file-icon + filename + size + an
-//     ellipsis trailing affordance.
-//   - Quote-block visual: collapsed `> ` rail (2px outline-coloured) on
-//     the left edge of the older messages in the thread.
-//   - Bottom action bar (Reply / Reply all / Forward) anchored above
-//     the keyboard area.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { Avatar } from "@mobile-components/avatar.slint";
-import { Chip } from "@mobile-components/chip.slint";
 import { Divider } from "@mobile-components/divider.slint";
-import { MobileButton, TextButton } from "@mobile-components/button.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
 import { ScrollView } from "std-widgets.slint";
 
-// One attachment card.
+component LabelChip inherits Rectangle {
+    in property <string> label;
+    in property <bool> selected: false;
+    callback clicked();
+
+    horizontal-stretch: 0;
+    height: 28px;
+    border-radius: 14px;
+    background: root.selected ? Theme.primary : Theme.surface-2;
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: center;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.selected ? Theme.on-primary : Theme.on-surface;
+                font-size: Theme.font-size-caption;
+                font-weight: 700;
+            }
+        }
+    }
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
 component AttachmentChip inherits Rectangle {
     in property <string> name;
     in property <string> size;
     in property <color> icon-color: Theme.accent-info;
+    in property <bool> downloaded: false;
+    callback clicked();
 
     height: 56px;
     width: 200px;
-    background: Theme.surface-2;
+    background: root.downloaded ? Theme.accent-success.with-alpha(0.10) : Theme.surface-2;
     border-radius: Theme.radius-md;
+    border-width: root.downloaded ? 1px : 0px;
+    border-color: Theme.accent-success;
 
     HorizontalLayout {
         padding-left: Theme.spacing-sm;
@@ -40,7 +59,6 @@ component AttachmentChip inherits Rectangle {
         padding-bottom: Theme.spacing-xs;
         spacing: Theme.spacing-sm;
         alignment: stretch;
-        // Faux file icon.
         VerticalLayout {
             alignment: center;
             Rectangle {
@@ -69,33 +87,38 @@ component AttachmentChip inherits Rectangle {
                 text: root.name;
                 color: Theme.on-surface;
                 font-size: Theme.font-size-caption;
-                font-weight: 600;
+                font-weight: 700;
                 overflow: elide;
             }
             Text {
-                text: root.size;
-                color: Theme.muted;
+                text: root.size + (root.downloaded ? " · ✓ downloaded" : " · tap to download");
+                color: root.downloaded ? Theme.accent-success : Theme.muted;
                 font-size: 10px;
             }
         }
     }
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
 }
 
-// One bottom action button (Reply, Reply all, Forward) — vertical
-// icon + label stack.
 component ActionButton inherits Rectangle {
     in property <image> icon;
     in property <string> label;
+    in property <bool> active: false;
     callback clicked();
 
     accessible-role: button;
     accessible-label: root.label;
-    accessible-action-default => { root.clicked(); }
+    accessible-action-default => {
+        root.clicked();
+    }
 
     horizontal-stretch: 1;
     height: 56px;
-    background: touch.pressed ? Theme.surface-pressed : transparent;
-
+    background: root.active ? Theme.primary.with-alpha(0.22) : (touch.pressed ? Theme.surface-pressed : transparent);
     animate background { duration: Theme.motion-fast; }
 
     VerticalLayout {
@@ -125,19 +148,28 @@ component ActionButton inherits Rectangle {
         }
     }
     touch := TouchArea {
-        clicked => { root.clicked(); }
+        clicked => {
+            root.clicked();
+        }
     }
 }
 
-// A nested quoted message — leading 2-px outline rail on the left, dim
-// content. Used for the previous message(s) in the thread.
 component QuotedMessage inherits Rectangle {
     in property <string> initials;
     in property <string> author;
     in property <string> when;
     in property <string> body;
+    in property <bool> expanded: true;
+    callback toggle();
 
     horizontal-stretch: 1;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.toggle();
+        }
+    }
 
     HorizontalLayout {
         padding-top: Theme.spacing-sm;
@@ -146,7 +178,6 @@ component QuotedMessage inherits Rectangle {
         spacing: Theme.spacing-sm;
         alignment: stretch;
 
-        // Quote rail.
         Rectangle {
             width: 4px;
             background: Theme.outline;
@@ -177,12 +208,50 @@ component QuotedMessage inherits Rectangle {
                         font-size: 10px;
                     }
                 }
+                Text {
+                    text: root.expanded ? "▾" : "▸";
+                    color: Theme.muted;
+                    font-size: 12px;
+                    font-weight: 800;
+                    vertical-alignment: center;
+                }
             }
-            Text {
+            if root.expanded: Text {
                 text: root.body;
                 color: Theme.muted;
                 font-size: Theme.font-size-caption;
                 wrap: word-wrap;
+            }
+        }
+    }
+}
+
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.destructive ? Theme.accent-danger : Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
             }
         }
     }
@@ -195,8 +264,28 @@ export component EmailThreadPage inherits Window {
     in property <string> sender: "Priya Rao";
     in property <string> sender-email: "priya@slint.dev";
     in property <string> when: "Today, 14:32";
-    in property <string> body:
-        "Hi Greg —\n\nLooked through the iteration 10–13 work. The Tone enum migration is exactly what I wanted: every status-aware component now reads from the same source, and the Dialog refactor is a particularly clean win.\n\nTwo follow-ups before we ship:\n  • Add `tone` to Snackbar's action button colour as well — right now only the dot is tinted.\n  • The Drawer's inner-edge shadow gets clipped at the screen edge. Move the perforation rectangles inside the parent and the offset-x will fall onto the page beneath as expected.\n\nLGTM otherwise. Ship it.\n\nPriya";
+    in property <string> body: "Hi Greg —\n\nLooked through the iteration 10–13 work. The Tone enum migration is exactly what I wanted: every status-aware component now reads from the same source, and the Dialog refactor is a particularly clean win.\n\nTwo follow-ups before we ship:\n  • Add `tone` to Snackbar's action button colour as well — right now only the dot is tinted.\n  • The Drawer's inner-edge shadow gets clipped at the screen edge. Move the perforation rectangles inside the parent and the offset-x will fall onto the page beneath as expected.\n\nLGTM otherwise. Ship it.\n\nPriya";
+
+    in-out property <bool> starred: false;
+    in-out property <bool> archived: false;
+    in-out property <bool> deleted: false;
+    in-out property <bool> unread: false;
+    in-out property <bool> snoozed: false;
+    in-out property <bool> label-inbox: true;
+    in-out property <bool> label-slint: false;
+    in-out property <bool> label-priority: false;
+    in-out property <bool> label-followup: false;
+    in-out property <bool> a0-down: false;
+    in-out property <bool> a1-down: false;
+    in-out property <bool> q0-expanded: true;
+    in-out property <bool> q1-expanded: false;
+    in-out property <int> compose-mode: -1; // -1 none, 0 reply, 1 reply-all, 2 forward
+    in-out property <bool> sheet-open: false;
+    in-out property <bool> confirm-delete: false;
+    in-out property <string> status-msg: "";
+    in-out property <bool> status-success: false;
+    in-out property <bool> status-danger: false;
+
     callback back-pressed();
     callback archive-pressed();
     callback delete-pressed();
@@ -204,49 +293,246 @@ export component EmailThreadPage inherits Window {
     callback reply-all-pressed();
     callback forward-pressed();
 
+    function appbar-title() -> string {
+        return root.archived ? "ARCHIVED" : (root.deleted ? "DELETED" : (root.snoozed ? "SNOOZED" : "INBOX"));
+    }
+    function compose-label() -> string {
+        return root.compose-mode == 0 ? "Reply" : (root.compose-mode == 1 ? "Reply all" : "Forward");
+    }
+    function label-count() -> int {
+        return (root.label-inbox ? 1 : 0) + (root.label-slint ? 1 : 0) + (root.label-priority ? 1 : 0) + (root.label-followup ? 1 : 0);
+    }
+    function set-status(m: string, ok: bool, bad: bool) {
+        root.status-msg = m;
+        root.status-success = ok;
+        root.status-danger = bad;
+    }
+
     background: Theme.background;
 
     VerticalLayout {
         spacing: 0;
 
         AppBar {
-            title: "inbox";
-            title-style: HeadingStyle.lowercase-soft;
+            title: root.appbar-title() + (root.starred ? " · ★" : "") + (root.unread ? " · UNREAD" : "");
+            title-style: HeadingStyle.uppercase-spaced;
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
-            leading-pressed => { root.back-pressed(); }
+            leading-pressed => {
+                if (root.compose-mode >= 0) {
+                    root.compose-mode = -1;
+                    root.set-status("Draft saved", true, false);
+                } else {
+                    root.back-pressed();
+                }
+            }
+            trailing-pressed => {
+                root.sheet-open = true;
+            }
+        }
+
+        // Action toolbar row.
+        Rectangle {
+            background: Theme.surface-1;
+            height: 44px;
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                spacing: Theme.spacing-sm;
+                alignment: stretch;
+                Rectangle {
+                    horizontal-stretch: 0;
+                    width: 36px;
+                    height: 28px;
+                    border-radius: 14px;
+                    background: root.starred ? Theme.accent-warning.with-alpha(0.22) : Theme.surface-2;
+                    Text {
+                        text: "★";
+                        color: root.starred ? Theme.accent-warning : Theme.muted;
+                        font-size: 14px;
+                        font-weight: 800;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                    TouchArea {
+                        clicked => {
+                            root.starred = !root.starred;
+                            root.set-status(root.starred ? "Starred" : "Unstarred", root.starred, false);
+                        }
+                    }
+                }
+                Rectangle {
+                    horizontal-stretch: 0;
+                    width: 36px;
+                    height: 28px;
+                    border-radius: 14px;
+                    background: root.archived ? Theme.accent-info.with-alpha(0.22) : Theme.surface-2;
+                    Text {
+                        text: "📥";
+                        color: root.archived ? Theme.accent-info : Theme.muted;
+                        font-size: 12px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                    TouchArea {
+                        clicked => {
+                            root.archived = !root.archived;
+                            root.set-status(root.archived ? "Archived" : "Restored", true, false);
+                            root.archive-pressed();
+                        }
+                    }
+                }
+                Rectangle {
+                    horizontal-stretch: 0;
+                    width: 36px;
+                    height: 28px;
+                    border-radius: 14px;
+                    background: root.snoozed ? Theme.accent-success.with-alpha(0.22) : Theme.surface-2;
+                    Text {
+                        text: "⏰";
+                        color: root.snoozed ? Theme.accent-success : Theme.muted;
+                        font-size: 12px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                    TouchArea {
+                        clicked => {
+                            root.snoozed = !root.snoozed;
+                            root.set-status(root.snoozed ? "Snoozed until tomorrow" : "Unsnoozed", root.snoozed, false);
+                        }
+                    }
+                }
+                Rectangle {
+                    horizontal-stretch: 0;
+                    width: 36px;
+                    height: 28px;
+                    border-radius: 14px;
+                    background: root.unread ? Theme.accent-info.with-alpha(0.22) : Theme.surface-2;
+                    Text {
+                        text: root.unread ? "●" : "○";
+                        color: root.unread ? Theme.accent-info : Theme.muted;
+                        font-size: 14px;
+                        font-weight: 800;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                    TouchArea {
+                        clicked => {
+                            root.unread = !root.unread;
+                            root.set-status(root.unread ? "Marked unread" : "Marked read", !root.unread, false);
+                        }
+                    }
+                }
+                Rectangle {
+                    horizontal-stretch: 1;
+                }
+                Rectangle {
+                    horizontal-stretch: 0;
+                    width: 36px;
+                    height: 28px;
+                    border-radius: 14px;
+                    background: Theme.accent-danger.with-alpha(0.22);
+                    Text {
+                        text: "✕";
+                        color: Theme.accent-danger;
+                        font-size: 14px;
+                        font-weight: 800;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                    TouchArea {
+                        clicked => {
+                            root.deleted = !root.deleted;
+                            root.set-status(root.deleted ? "Moved to trash" : "Restored from trash", !root.deleted, root.deleted);
+                            root.delete-pressed();
+                        }
+                    }
+                }
+            }
+        }
+
+        if !root.status-msg.is-empty: Rectangle {
+            height: 28px;
+            background: root.status-success ? Theme.accent-success.with-alpha(0.16) : (root.status-danger ? Theme.accent-danger.with-alpha(0.16) : Theme.surface-2);
+            HorizontalLayout {
+                alignment: center;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.status-msg;
+                        color: root.status-success ? Theme.accent-success : (root.status-danger ? Theme.accent-danger : Theme.on-surface);
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                    }
+                }
+            }
         }
 
         ScrollView {
             vertical-stretch: 1;
             horizontal-stretch: 1;
-            viewport-width: 412px;
-            viewport-height: 1200px;
             VerticalLayout {
                 padding-left: Theme.spacing-md;
                 padding-right: Theme.spacing-md;
+                padding-top: Theme.spacing-md;
                 padding-bottom: Theme.spacing-md;
                 spacing: Theme.spacing-md;
 
-                // ----- Subject -----
                 Heading {
                     style: HeadingStyle.serif-light;
-                    text: root.subject;
+                    text: (root.starred ? "★ " : "") + root.subject + (root.deleted ? " · DELETED" : "");
                     color: Theme.on-background;
                     wrap: word-wrap;
                 }
 
-                // ----- Labels -----
                 HorizontalLayout {
                     spacing: Theme.spacing-sm;
-                    Chip { label: "Inbox"; selected: true; }
-                    Chip { label: "Slint"; }
-                    Chip { label: "Priority"; }
+                    LabelChip {
+                        label: "Inbox";
+                        selected: root.label-inbox;
+                        clicked => {
+                            root.label-inbox = !root.label-inbox;
+                            root.set-status("#Inbox " + (root.label-inbox ? "on" : "off"), root.label-inbox, false);
+                        }
+                    }
+                    LabelChip {
+                        label: "Slint";
+                        selected: root.label-slint;
+                        clicked => {
+                            root.label-slint = !root.label-slint;
+                            root.set-status("#Slint " + (root.label-slint ? "on" : "off"), root.label-slint, false);
+                        }
+                    }
+                    LabelChip {
+                        label: "Priority";
+                        selected: root.label-priority;
+                        clicked => {
+                            root.label-priority = !root.label-priority;
+                            root.set-status("#Priority " + (root.label-priority ? "on" : "off"), root.label-priority, false);
+                        }
+                    }
+                    LabelChip {
+                        label: "Follow-up";
+                        selected: root.label-followup;
+                        clicked => {
+                            root.label-followup = !root.label-followup;
+                            root.set-status("#Follow-up " + (root.label-followup ? "on" : "off"), root.label-followup, false);
+                        }
+                    }
                 }
 
                 Divider { }
 
-                // ----- Sender row -----
                 HorizontalLayout {
                     spacing: Theme.spacing-md;
                     alignment: stretch;
@@ -280,7 +566,6 @@ export component EmailThreadPage inherits Window {
                     }
                 }
 
-                // ----- Body -----
                 Text {
                     text: root.body;
                     color: Theme.on-surface;
@@ -288,9 +573,8 @@ export component EmailThreadPage inherits Window {
                     wrap: word-wrap;
                 }
 
-                // ----- Attachments -----
                 Text {
-                    text: "2 ATTACHMENTS";
+                    text: "2 ATTACHMENTS · " + ((root.a0-down ? 1 : 0) + (root.a1-down ? 1 : 0)) + " DOWNLOADED";
                     color: Theme.muted;
                     font-size: 10px;
                     font-weight: 700;
@@ -302,33 +586,125 @@ export component EmailThreadPage inherits Window {
                         name: "tone-rollout.pdf";
                         size: "412 KB";
                         icon-color: Theme.accent-danger;
+                        downloaded: root.a0-down;
+                        clicked => {
+                            root.a0-down = !root.a0-down;
+                            root.set-status(root.a0-down ? "Downloaded tone-rollout.pdf" : "Removed download", root.a0-down, !root.a0-down);
+                        }
                     }
                     AttachmentChip {
                         name: "drawer-shadow-fix.pdf";
                         size: "88 KB";
                         icon-color: Theme.accent-info;
+                        downloaded: root.a1-down;
+                        clicked => {
+                            root.a1-down = !root.a1-down;
+                            root.set-status(root.a1-down ? "Downloaded drawer-shadow-fix.pdf" : "Removed download", root.a1-down, !root.a1-down);
+                        }
                     }
                 }
 
                 Divider { }
 
-                // ----- Quoted thread -----
                 QuotedMessage {
                     initials: "GR";
                     author: "Greg Raymond";
                     when: "Today, 12:40";
                     body: "Tagging you on the iteration 13 PR — Tone enum + Dialog refactor are in, plus Drawer primitive lands here too. Mind taking a pass?";
+                    expanded: root.q0-expanded;
+                    toggle => {
+                        root.q0-expanded = !root.q0-expanded;
+                    }
                 }
                 QuotedMessage {
                     initials: "AR";
                     author: "Anika Ravi";
                     when: "Yesterday, 17:08";
                     body: "Worth flagging that the new Tone enum should also drive Banner's action-label colour, not just the leading icon — I noticed that on the Wallet snapshot.";
+                    expanded: root.q1-expanded;
+                    toggle => {
+                        root.q1-expanded = !root.q1-expanded;
+                    }
                 }
             }
         }
 
-        // ----- Sticky action bar -----
+        if root.compose-mode >= 0: Rectangle {
+            background: Theme.accent-info.with-alpha(0.16);
+            min-height: 96px;
+            VerticalLayout {
+                padding: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    spacing: Theme.spacing-sm;
+                    alignment: stretch;
+                    Text {
+                        text: root.compose-label() + " to " + root.sender;
+                        color: Theme.accent-info;
+                        font-size: Theme.font-size-body;
+                        font-weight: 800;
+                        horizontal-stretch: 1;
+                    }
+                    Rectangle {
+                        horizontal-stretch: 0;
+                        height: 28px;
+                        border-radius: 14px;
+                        background: Theme.accent-info;
+                        HorizontalLayout {
+                            padding-left: Theme.spacing-sm;
+                            padding-right: Theme.spacing-sm;
+                            VerticalLayout {
+                                alignment: center;
+                                Text {
+                                    text: "Send";
+                                    color: Theme.on-primary;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 800;
+                                }
+                            }
+                        }
+                        TouchArea {
+                            clicked => {
+                                root.set-status(root.compose-label() + " sent ✓", true, false);
+                                root.compose-mode = -1;
+                            }
+                        }
+                    }
+                    Rectangle {
+                        horizontal-stretch: 0;
+                        height: 28px;
+                        border-radius: 14px;
+                        background: Theme.surface-2;
+                        HorizontalLayout {
+                            padding-left: Theme.spacing-sm;
+                            padding-right: Theme.spacing-sm;
+                            VerticalLayout {
+                                alignment: center;
+                                Text {
+                                    text: "Discard";
+                                    color: Theme.accent-danger;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 800;
+                                }
+                            }
+                        }
+                        TouchArea {
+                            clicked => {
+                                root.set-status("Draft discarded", false, true);
+                                root.compose-mode = -1;
+                            }
+                        }
+                    }
+                }
+                Text {
+                    text: root.compose-mode == 0 ? "(typing area — single recipient)" : (root.compose-mode == 1 ? "(typing area — all reviewers cc'd)" : "(forward + attachments)");
+                    color: Theme.muted;
+                    font-size: Theme.font-size-caption;
+                }
+            }
+        }
+
+        // Sticky action bar.
         Rectangle {
             background: Theme.surface-1;
             drop-shadow-blur: Theme.elevation-2-blur;
@@ -338,17 +714,135 @@ export component EmailThreadPage inherits Window {
                 ActionButton {
                     icon: @image-url("@mobile-components/icons/arrow-left.svg");
                     label: "REPLY";
-                    clicked => { root.reply-pressed(); }
+                    active: root.compose-mode == 0;
+                    clicked => {
+                        root.compose-mode = root.compose-mode == 0 ? -1 : 0;
+                        root.set-status(root.compose-mode == 0 ? "Reply mode" : "Closed", root.compose-mode == 0, false);
+                        root.reply-pressed();
+                    }
                 }
                 ActionButton {
                     icon: @image-url("@mobile-components/icons/send.svg");
                     label: "REPLY ALL";
-                    clicked => { root.reply-all-pressed(); }
+                    active: root.compose-mode == 1;
+                    clicked => {
+                        root.compose-mode = root.compose-mode == 1 ? -1 : 1;
+                        root.set-status(root.compose-mode == 1 ? "Reply all mode" : "Closed", root.compose-mode == 1, false);
+                        root.reply-all-pressed();
+                    }
                 }
                 ActionButton {
                     icon: @image-url("@mobile-components/icons/chevron-right.svg");
                     label: "FORWARD";
-                    clicked => { root.forward-pressed(); }
+                    active: root.compose-mode == 2;
+                    clicked => {
+                        root.compose-mode = root.compose-mode == 2 ? -1 : 2;
+                        root.set-status(root.compose-mode == 2 ? "Forward mode" : "Closed", root.compose-mode == 2, false);
+                        root.forward-pressed();
+                    }
+                }
+            }
+        }
+    }
+
+    // ===================== Bottom sheet =====================
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+                root.confirm-delete = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: Theme.surface-2;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.muted;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: "Thread menu";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 700;
+                    }
+                }
+                SheetRow {
+                    label: root.starred ? "Unstar thread" : "Star thread";
+                    clicked => {
+                        root.starred = !root.starred;
+                        root.set-status(root.starred ? "Starred" : "Unstarred", root.starred, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: root.snoozed ? "Wake thread" : "Snooze until tomorrow";
+                    clicked => {
+                        root.snoozed = !root.snoozed;
+                        root.set-status(root.snoozed ? "Snoozed" : "Unsnoozed", root.snoozed, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: root.unread ? "Mark read" : "Mark as unread";
+                    clicked => {
+                        root.unread = !root.unread;
+                        root.set-status(root.unread ? "Marked unread" : "Marked read", !root.unread, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Download both attachments";
+                    clicked => {
+                        root.a0-down = true;
+                        root.a1-down = true;
+                        root.set-status("Both attachments downloaded", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                Divider { }
+
+                SheetRow {
+                    label: root.confirm-delete ? "Confirm: delete thread" : "Delete thread";
+                    destructive: true;
+                    clicked => {
+                        if (root.confirm-delete) {
+                            root.deleted = true;
+                            root.set-status("Thread deleted", false, true);
+                            root.sheet-open = false;
+                            root.confirm-delete = false;
+                        } else {
+                            root.confirm-delete = true;
+                        }
+                    }
+                }
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.sheet-open = false;
+                        root.confirm-delete = false;
+                    }
                 }
             }
         }

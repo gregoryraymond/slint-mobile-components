@@ -1,65 +1,53 @@
 // DownloadManagerPage
 // =====================================================================
-//
-// A download manager — the "what's downloading" screen. Distinct from
-// `StorageManagerPage` (category breakdown of used disk) and
-// `FileBrowserPage` (a file tree). Demonstrates a progress-list
-// surface:
-//
-//   - A storage strip showing what downloads are using.
-//   - An ACTIVE section: rows with a type icon, name, a progress bar,
-//     a "downloaded / total · speed" line, and a pause/resume disc.
-//   - A COMPLETED section: rows with a success check, size + when.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { SectionHeader } from "@mobile-components/section-header.slint";
 import { Divider } from "@mobile-components/divider.slint";
 import { HeadingStyle } from "@mobile-components/heading.slint";
+import { ScrollView } from "std-widgets.slint";
 
-// Type-tinted icon disc. `kind`: 0 video / 1 audio / 2 doc / 3 app.
 component TypeIcon inherits Rectangle {
     in property <int> kind: 0;
 
     width: 40px;
     height: 40px;
     border-radius: Theme.radius-sm;
-    background:
-          root.kind == 0 ? Theme.accent-danger.with-alpha(0.18)
-        : root.kind == 1 ? Theme.primary.with-alpha(0.18)
-        : root.kind == 2 ? Theme.accent-info.with-alpha(0.18)
-        : Theme.accent-success.with-alpha(0.18);
+    background: root.kind == 0 ? Theme.accent-danger.with-alpha(0.18) : (root.kind == 1 ? Theme.primary.with-alpha(0.18) : (root.kind == 2 ? Theme.accent-info.with-alpha(0.18) : Theme.accent-success.with-alpha(0.18)));
     Image {
         width: 20px;
         height: 20px;
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
-        source:
-              root.kind == 0 ? @image-url("@mobile-components/icons/play.svg")
-            : root.kind == 1 ? @image-url("@mobile-components/icons/play.svg")
-            : root.kind == 2 ? @image-url("@mobile-components/icons/inbox.svg")
-            : @image-url("@mobile-components/icons/queue.svg");
-        colorize:
-              root.kind == 0 ? Theme.accent-danger
-            : root.kind == 1 ? Theme.primary
-            : root.kind == 2 ? Theme.accent-info
-            : Theme.accent-success;
+        source: root.kind == 0 ? @image-url("@mobile-components/icons/play.svg") : (root.kind == 1 ? @image-url("@mobile-components/icons/play.svg") : (root.kind == 2 ? @image-url("@mobile-components/icons/inbox.svg") : @image-url("@mobile-components/icons/queue.svg")));
+        colorize: root.kind == 0 ? Theme.accent-danger : (root.kind == 1 ? Theme.primary : (root.kind == 2 ? Theme.accent-info : Theme.accent-success));
         image-fit: contain;
     }
 }
 
-// One active-download row.
 component ActiveRow inherits Rectangle {
     in property <int> kind: 0;
     in property <string> name;
-    in property <string> meta;
-    in property <float> progress: 0.4;
+    in property <int> done-mb: 0;
+    in property <int> total-mb: 0;
+    in property <int> speed-mbps: 0;
     in property <bool> paused: false;
     callback toggle-pressed();
+    callback cancel-pressed();
 
     horizontal-stretch: 1;
-    vertical-stretch: 0;
-    height: 88px;
+    min-height: 88px;
+
+    function progress() -> float {
+        return root.done-mb * 1.0 / root.total-mb;
+    }
+    function fmt-size(mb: int) -> string {
+        return mb >= 1024 ? floor(mb / 102) / 10 + " GB" : mb + " MB";
+    }
+    function eta-text() -> string {
+        return root.paused ? "Paused" : (root.speed-mbps > 0 ? "ETA " + floor((root.total-mb - root.done-mb) / root.speed-mbps) + "s · " + root.speed-mbps + " MB/s" : "Stalled");
+    }
 
     HorizontalLayout {
         padding: Theme.spacing-md;
@@ -88,14 +76,15 @@ component ActiveRow inherits Rectangle {
                 background: Theme.surface-variant;
                 Rectangle {
                     x: 0;
-                    width: parent.width * root.progress;
+                    width: parent.width * root.progress();
                     height: parent.height;
                     border-radius: 2.5px;
                     background: root.paused ? Theme.muted : Theme.accent-info;
+                    animate width { duration: Theme.motion-fast; }
                 }
             }
             Text {
-                text: root.paused ? "Paused · " + root.meta : root.meta;
+                text: root.fmt-size(root.done-mb) + " of " + root.fmt-size(root.total-mb) + " · " + root.eta-text();
                 color: Theme.muted;
                 font-size: Theme.font-size-caption;
             }
@@ -113,35 +102,68 @@ component ActiveRow inherits Rectangle {
                     height: 16px;
                     x: (parent.width - self.width) / 2;
                     y: (parent.height - self.height) / 2;
-                    source: root.paused
-                        ? @image-url("@mobile-components/icons/play.svg")
-                        : @image-url("@mobile-components/icons/pause.svg");
+                    source: root.paused ? @image-url("@mobile-components/icons/play.svg") : @image-url("@mobile-components/icons/pause.svg");
                     colorize: Theme.on-surface;
                     image-fit: contain;
                 }
                 touch := TouchArea {
-                    clicked => { root.toggle-pressed(); }
+                    clicked => {
+                        root.toggle-pressed();
+                    }
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 36px;
+                height: 36px;
+                border-radius: 18px;
+                background: Theme.accent-danger.with-alpha(0.22);
+                Text {
+                    text: "✕";
+                    color: Theme.accent-danger;
+                    font-size: 14px;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+                TouchArea {
+                    clicked => {
+                        root.cancel-pressed();
+                    }
                 }
             }
         }
     }
 }
 
-// One completed-download row.
 component CompletedRow inherits Rectangle {
     in property <int> kind: 0;
     in property <string> name;
     in property <string> meta;
-    callback clicked();
+    in property <bool> deleted: false;
+    callback row-clicked();
+    callback delete-clicked();
 
     accessible-role: button;
     accessible-label: root.name;
-    accessible-action-default => { root.clicked(); }
+    accessible-action-default => {
+        root.row-clicked();
+    }
 
     horizontal-stretch: 1;
     min-height: 60px;
-    background: touch.pressed ? Theme.surface-pressed : transparent;
-    animate background { duration: Theme.motion-fast; }
+    opacity: root.deleted ? 0.45 : 1.0;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.row-clicked();
+        }
+    }
 
     HorizontalLayout {
         padding: Theme.spacing-md;
@@ -158,7 +180,7 @@ component CompletedRow inherits Rectangle {
             alignment: center;
             spacing: 2px;
             Text {
-                text: root.name;
+                text: root.name + (root.deleted ? " · deleted" : "");
                 color: Theme.on-surface;
                 font-size: Theme.font-size-body;
                 font-weight: 600;
@@ -173,34 +195,180 @@ component CompletedRow inherits Rectangle {
         VerticalLayout {
             alignment: center;
             Rectangle {
-                width: 24px;
-                height: 24px;
-                border-radius: Theme.radius-md;
-                background: Theme.accent-success;
-                Image {
-                    width: 12px;
-                    height: 12px;
-                    x: (parent.width - self.width) / 2;
-                    y: (parent.height - self.height) / 2;
-                    source: @image-url("@mobile-components/icons/check.svg");
-                    colorize: Theme.on-primary;
-                    image-fit: contain;
+                width: 32px;
+                height: 32px;
+                border-radius: 16px;
+                background: root.deleted ? Theme.accent-success.with-alpha(0.22) : Theme.accent-success;
+                Text {
+                    text: root.deleted ? "↺" : "✓";
+                    color: root.deleted ? Theme.accent-success : Theme.on-primary;
+                    font-size: 14px;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+                TouchArea {
+                    clicked => {
+                        root.delete-clicked();
+                    }
                 }
             }
         }
     }
-    touch := TouchArea {
-        clicked => { root.clicked(); }
+}
+
+component Chip2 inherits Rectangle {
+    in property <string> label;
+    in property <bool> active: false;
+    callback clicked();
+
+    horizontal-stretch: 0;
+    height: 28px;
+    border-radius: 14px;
+    background: root.active ? Theme.primary : Theme.surface-2;
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: center;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.active ? Theme.on-primary : Theme.on-surface;
+                font-size: Theme.font-size-caption;
+                font-weight: 700;
+            }
+        }
+    }
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.destructive ? Theme.accent-danger : Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+        }
     }
 }
 
 export component DownloadManagerPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
+
+    in-out property <int> prog0: 612;
+    in-out property <int> total0: 1400;
+    in-out property <int> speed0: 8;
+    in-out property <bool> paused0: false;
+    in-out property <bool> cancelled0: false;
+    in-out property <bool> finished0: false;
+    in-out property <int> prog1: 44;
+    in-out property <int> total1: 96;
+    in-out property <int> speed1: 3;
+    in-out property <bool> paused1: true;
+    in-out property <bool> cancelled1: false;
+    in-out property <bool> finished1: false;
+    in-out property <bool> c1-deleted: false;
+    in-out property <bool> c2-deleted: false;
+    in-out property <bool> c3-deleted: false;
+    in-out property <bool> c4-deleted: false;
+    in-out property <int> filter: 0; // 0 All 1 Active 2 Completed
+    in-out property <bool> sheet-open: false;
+    in-out property <bool> confirm-cancel-all: false;
+    in-out property <string> status-msg: "";
+    in-out property <bool> status-success: false;
+    in-out property <bool> status-danger: false;
+
     callback back-pressed();
     callback clear-pressed();
     callback toggle-pressed(string);
     callback completed-pressed(string);
+
+    function active-count() -> int {
+        return (root.cancelled0 || root.finished0 ? 0 : 1) + (root.cancelled1 || root.finished1 ? 0 : 1);
+    }
+    function completed-count() -> int {
+        return 4 + (root.finished0 ? 1 : 0) + (root.finished1 ? 1 : 0) - (root.c1-deleted ? 1 : 0) - (root.c2-deleted ? 1 : 0) - (root.c3-deleted ? 1 : 0) - (root.c4-deleted ? 1 : 0);
+    }
+    function used-mb() -> int {
+        return root.prog0 + root.prog1 + 184 + 12 + 320 + 8;
+    }
+    function used-gb-x10() -> int {
+        return floor(root.used-mb() / 102);
+    }
+    function fmt-used() -> string {
+        return floor(root.used-gb-x10() / 10) + "." + mod(root.used-gb-x10(), 10) + " GB";
+    }
+    function show-active() -> bool {
+        return root.filter == 0 || root.filter == 1;
+    }
+    function show-completed() -> bool {
+        return root.filter == 0 || root.filter == 2;
+    }
+    function set-status(m: string, ok: bool, bad: bool) {
+        root.status-msg = m;
+        root.status-success = ok;
+        root.status-danger = bad;
+    }
+    function pause-all() {
+        root.paused0 = true;
+        root.paused1 = true;
+        root.set-status("All downloads paused", false, false);
+    }
+    function resume-all() {
+        root.paused0 = false;
+        root.paused1 = false;
+        root.set-status("All downloads resumed", true, false);
+    }
+
+    tick := Timer {
+        interval: 1s;
+        running: true;
+        triggered => {
+            if (!root.paused0 && !root.finished0 && !root.cancelled0 && root.prog0 < root.total0) {
+                root.prog0 = min(root.total0, root.prog0 + root.speed0);
+                if (root.prog0 >= root.total0) {
+                    root.finished0 = true;
+                    root.set-status("✓ Coastline finished", true, false);
+                }
+            }
+            if (!root.paused1 && !root.finished1 && !root.cancelled1 && root.prog1 < root.total1) {
+                root.prog1 = min(root.total1, root.prog1 + root.speed1);
+                if (root.prog1 >= root.total1) {
+                    root.finished1 = true;
+                    root.set-status("✓ studio-app finished", true, false);
+                }
+            }
+        }
+    }
 
     background: Theme.background;
 
@@ -208,18 +376,39 @@ export component DownloadManagerPage inherits Window {
         spacing: 0;
 
         AppBar {
-            title: "Downloads";
+            title: "Downloads · " + root.active-count() + " active";
             title-style: HeadingStyle.plex-medium;
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
-            leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.clear-pressed(); }
+            leading-pressed => {
+                root.back-pressed();
+            }
+            trailing-pressed => {
+                root.sheet-open = true;
+            }
         }
 
-        // Storage strip.
+        if !root.status-msg.is-empty: Rectangle {
+            height: 28px;
+            background: root.status-success ? Theme.accent-success.with-alpha(0.16) : (root.status-danger ? Theme.accent-danger.with-alpha(0.16) : Theme.surface-2);
+            HorizontalLayout {
+                alignment: center;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.status-msg;
+                        color: root.status-success ? Theme.accent-success : (root.status-danger ? Theme.accent-danger : Theme.on-surface);
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                    }
+                }
+            }
+        }
+
+        // Storage strip with action buttons.
         Rectangle {
             background: Theme.surface-1;
-            height: 56px;
+            min-height: 68px;
             HorizontalLayout {
                 padding-left: Theme.spacing-md;
                 padding-right: Theme.spacing-md;
@@ -248,68 +437,327 @@ export component DownloadManagerPage inherits Window {
                     alignment: center;
                     spacing: 2px;
                     Text {
-                        text: "Downloads using 6.2 GB";
+                        text: "Downloads using " + root.fmt-used();
                         color: Theme.on-surface;
                         font-size: Theme.font-size-caption;
                         font-weight: 800;
                     }
                     Text {
-                        text: "2 active · 4 completed";
+                        text: root.active-count() + " active · " + root.completed-count() + " completed";
                         color: Theme.muted;
                         font-size: Theme.font-size-caption;
+                    }
+                }
+                Rectangle {
+                    horizontal-stretch: 0;
+                    height: 32px;
+                    border-radius: 16px;
+                    background: Theme.surface-2;
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-sm;
+                        padding-right: Theme.spacing-sm;
+                        alignment: center;
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: (root.paused0 && root.paused1) ? "Resume all" : "Pause all";
+                                color: Theme.on-surface;
+                                font-size: Theme.font-size-caption;
+                                font-weight: 800;
+                            }
+                        }
+                    }
+                    TouchArea {
+                        clicked => {
+                            if (root.paused0 && root.paused1) {
+                                root.resume-all();
+                            } else {
+                                root.pause-all();
+                            }
+                        }
                     }
                 }
             }
         }
 
-        SectionHeader { text: "ACTIVE"; }
-        ActiveRow {
-            kind: 0;
-            name: "Coastline — S2E4.mp4";
-            meta: "612 MB of 1.4 GB · 8.2 MB/s";
-            progress: 0.43;
-            paused: false;
-            toggle-pressed => { root.toggle-pressed("Coastline S2E4"); }
-        }
-        Divider { }
-        ActiveRow {
-            kind: 3;
-            name: "studio-app-2.4.0.apk";
-            meta: "44 MB of 96 MB";
-            progress: 0.46;
-            paused: true;
-            toggle-pressed => { root.toggle-pressed("studio-app"); }
-        }
-
-        SectionHeader { text: "COMPLETED"; }
-        CompletedRow {
-            kind: 1;
-            name: "Deep Focus — full album.zip";
-            meta: "184 MB · finished 10 min ago";
-            clicked => { root.completed-pressed("Deep Focus"); }
-        }
-        Divider { }
-        CompletedRow {
-            kind: 2;
-            name: "Q2 board pack.pdf";
-            meta: "12 MB · finished today";
-            clicked => { root.completed-pressed("Q2 board pack"); }
-        }
-        Divider { }
-        CompletedRow {
-            kind: 0;
-            name: "Onboarding walkthrough.mov";
-            meta: "320 MB · finished yesterday";
-            clicked => { root.completed-pressed("Onboarding walkthrough"); }
-        }
-        Divider { }
-        CompletedRow {
-            kind: 2;
-            name: "Tax documents 2025.zip";
-            meta: "8 MB · finished 3 days ago";
-            clicked => { root.completed-pressed("Tax documents"); }
+        // Filter chips.
+        HorizontalLayout {
+            padding-left: Theme.spacing-md;
+            padding-right: Theme.spacing-md;
+            padding-top: Theme.spacing-sm;
+            padding-bottom: Theme.spacing-sm;
+            spacing: Theme.spacing-sm;
+            Chip2 {
+                label: "All (" + (root.active-count() + root.completed-count()) + ")";
+                active: root.filter == 0;
+                clicked => {
+                    root.filter = 0;
+                }
+            }
+            Chip2 {
+                label: "Active (" + root.active-count() + ")";
+                active: root.filter == 1;
+                clicked => {
+                    root.filter = 1;
+                }
+            }
+            Chip2 {
+                label: "Completed (" + root.completed-count() + ")";
+                active: root.filter == 2;
+                clicked => {
+                    root.filter = 2;
+                }
+            }
         }
 
-        Rectangle { vertical-stretch: 1; }
+        ScrollView {
+            vertical-stretch: 1;
+            VerticalLayout {
+                spacing: 0;
+
+                if root.show-active() && root.active-count() > 0: SectionHeader {
+                    text: "ACTIVE";
+                }
+                if root.show-active() && !root.cancelled0 && !root.finished0: ActiveRow {
+                    kind: 0;
+                    name: "Coastline — S2E4.mp4";
+                    done-mb: root.prog0;
+                    total-mb: root.total0;
+                    speed-mbps: root.speed0;
+                    paused: root.paused0;
+                    toggle-pressed => {
+                        root.paused0 = !root.paused0;
+                        root.set-status(root.paused0 ? "Coastline paused" : "Coastline resumed", !root.paused0, root.paused0);
+                        root.toggle-pressed("Coastline S2E4");
+                    }
+                    cancel-pressed => {
+                        root.cancelled0 = true;
+                        root.set-status("Coastline cancelled", false, true);
+                    }
+                }
+                if root.show-active() && !root.cancelled0 && !root.finished0 && !root.cancelled1 && !root.finished1: Divider { }
+
+                if root.show-active() && !root.cancelled1 && !root.finished1: ActiveRow {
+                    kind: 3;
+                    name: "studio-app-2.4.0.apk";
+                    done-mb: root.prog1;
+                    total-mb: root.total1;
+                    speed-mbps: root.speed1;
+                    paused: root.paused1;
+                    toggle-pressed => {
+                        root.paused1 = !root.paused1;
+                        root.set-status(root.paused1 ? "studio-app paused" : "studio-app resumed", !root.paused1, root.paused1);
+                        root.toggle-pressed("studio-app");
+                    }
+                    cancel-pressed => {
+                        root.cancelled1 = true;
+                        root.set-status("studio-app cancelled", false, true);
+                    }
+                }
+
+                if root.show-completed(): SectionHeader {
+                    text: "COMPLETED";
+                }
+                if root.show-completed() && root.finished0: CompletedRow {
+                    kind: 0;
+                    name: "Coastline — S2E4.mp4";
+                    meta: "1.4 GB · finished just now";
+                    row-clicked => {
+                        root.set-status("Opened Coastline", true, false);
+                    }
+                    delete-clicked => {
+                        root.finished0 = false;
+                        root.cancelled0 = true;
+                        root.set-status("Removed Coastline", false, true);
+                    }
+                }
+                if root.show-completed() && root.finished0: Divider { }
+
+                if root.show-completed() && root.finished1: CompletedRow {
+                    kind: 3;
+                    name: "studio-app-2.4.0.apk";
+                    meta: "96 MB · finished just now";
+                    row-clicked => {
+                        root.set-status("Opened studio-app", true, false);
+                    }
+                    delete-clicked => {
+                        root.finished1 = false;
+                        root.cancelled1 = true;
+                        root.set-status("Removed studio-app", false, true);
+                    }
+                }
+                if root.show-completed() && root.finished1: Divider { }
+
+                if root.show-completed(): CompletedRow {
+                    kind: 1;
+                    name: "Deep Focus — full album.zip";
+                    meta: "184 MB · finished 10 min ago";
+                    deleted: root.c1-deleted;
+                    row-clicked => {
+                        root.set-status("Opened Deep Focus", true, false);
+                        root.completed-pressed("Deep Focus");
+                    }
+                    delete-clicked => {
+                        root.c1-deleted = !root.c1-deleted;
+                        root.set-status(root.c1-deleted ? "Deleted Deep Focus" : "Restored", !root.c1-deleted, root.c1-deleted);
+                    }
+                }
+                if root.show-completed(): Divider { }
+
+                if root.show-completed(): CompletedRow {
+                    kind: 2;
+                    name: "Q2 board pack.pdf";
+                    meta: "12 MB · finished today";
+                    deleted: root.c2-deleted;
+                    row-clicked => {
+                        root.set-status("Opened Q2 board pack", true, false);
+                        root.completed-pressed("Q2 board pack");
+                    }
+                    delete-clicked => {
+                        root.c2-deleted = !root.c2-deleted;
+                        root.set-status(root.c2-deleted ? "Deleted Q2 pack" : "Restored", !root.c2-deleted, root.c2-deleted);
+                    }
+                }
+                if root.show-completed(): Divider { }
+
+                if root.show-completed(): CompletedRow {
+                    kind: 0;
+                    name: "Onboarding walkthrough.mov";
+                    meta: "320 MB · finished yesterday";
+                    deleted: root.c3-deleted;
+                    row-clicked => {
+                        root.set-status("Opened Onboarding", true, false);
+                        root.completed-pressed("Onboarding walkthrough");
+                    }
+                    delete-clicked => {
+                        root.c3-deleted = !root.c3-deleted;
+                        root.set-status(root.c3-deleted ? "Deleted Onboarding" : "Restored", !root.c3-deleted, root.c3-deleted);
+                    }
+                }
+                if root.show-completed(): Divider { }
+
+                if root.show-completed(): CompletedRow {
+                    kind: 2;
+                    name: "Tax documents 2025.zip";
+                    meta: "8 MB · finished 3 days ago";
+                    deleted: root.c4-deleted;
+                    row-clicked => {
+                        root.set-status("Opened Tax docs", true, false);
+                        root.completed-pressed("Tax documents");
+                    }
+                    delete-clicked => {
+                        root.c4-deleted = !root.c4-deleted;
+                        root.set-status(root.c4-deleted ? "Deleted Tax docs" : "Restored", !root.c4-deleted, root.c4-deleted);
+                    }
+                }
+
+                Rectangle {
+                    height: Theme.spacing-xl;
+                }
+            }
+        }
+    }
+
+    // ===================== Bottom sheet =====================
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+                root.confirm-cancel-all = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: Theme.surface-2;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.muted;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: "Download manager";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 700;
+                    }
+                }
+                SheetRow {
+                    label: root.paused0 && root.paused1 ? "Resume all downloads" : "Pause all downloads";
+                    clicked => {
+                        if (root.paused0 && root.paused1) {
+                            root.resume-all();
+                        } else {
+                            root.pause-all();
+                        }
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Boost speeds (+5 MB/s)";
+                    clicked => {
+                        root.speed0 = root.speed0 + 5;
+                        root.speed1 = root.speed1 + 5;
+                        root.set-status("Speeds boosted", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Clear completed";
+                    clicked => {
+                        root.c1-deleted = true;
+                        root.c2-deleted = true;
+                        root.c3-deleted = true;
+                        root.c4-deleted = true;
+                        root.set-status("Completed list cleared", false, true);
+                        root.sheet-open = false;
+                        root.clear-pressed();
+                    }
+                }
+                Divider { }
+
+                SheetRow {
+                    label: root.confirm-cancel-all ? "Confirm: cancel all" : "Cancel all active";
+                    destructive: true;
+                    clicked => {
+                        if (root.confirm-cancel-all) {
+                            root.cancelled0 = true;
+                            root.cancelled1 = true;
+                            root.set-status("All active cancelled", false, true);
+                            root.sheet-open = false;
+                            root.confirm-cancel-all = false;
+                        } else {
+                            root.confirm-cancel-all = true;
+                        }
+                    }
+                }
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.sheet-open = false;
+                        root.confirm-cancel-all = false;
+                    }
+                }
+            }
+        }
     }
 }

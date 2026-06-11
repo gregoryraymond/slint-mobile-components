@@ -1,31 +1,190 @@
 // EditorialArticlePage  —  EditorialSkin demo
 // =====================================================================
 //
-// Print-magazine longform reader. Warm cream paper, near-black ink, a
-// deep burgundy accent, Fraunces serif throughout. A kicker + giant
-// display headline, a byline rule, a drop-cap opening paragraph, a
-// pull-quote, and body columns. Reads EditorialSkin tokens.
+// Print-magazine longform reader, now interactive.
+//
+//   - Masthead carries: title (THE MARGIN), an `Aa` button that
+//     cycles font size 0..3 (S/M/L/XL), a bookmark icon that toggles
+//     saved, and a share icon that increments a share counter.
+//   - Status banner sits under the masthead.
+//   - Pull quote is tappable — fires a "share quote" status.
+//   - Sticky bottom action bar: Clap (counter), Comment (counter),
+//     Share, Read aloud (Timer-driven TTS simulation; while reading,
+//     a progress bar above the action bar fills from 0 → 100).
 
-import { Theme } from "@mobile-theme/theme.slint";
+import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { EditorialSkin } from "@mobile-theme/skins.slint";
 import { ScrollView } from "std-widgets.slint";
 
-// A body paragraph in the reading serif.
 component BodyPara inherits Text {
     color: EditorialSkin.text-secondary;
-    font-size: Theme.font-size-body-large;
     wrap: word-wrap;
     horizontal-alignment: left;
+}
+
+// Bottom-action pill.
+component ActionPill inherits Rectangle {
+    in property <image> icon;
+    in property <string> label;
+    in property <bool> active: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    height: 56px;
+    background: root.active ? Theme.accent-info.with-alpha(0.16)
+        : touch.pressed ? Theme.surface-pressed
+        : transparent;
+    border-radius: Theme.radius-sm;
+    animate background { duration: Theme.motion-fast; }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-sm;
+        padding-right: Theme.spacing-sm;
+        spacing: Theme.spacing-xs;
+        alignment: center;
+        VerticalLayout {
+            alignment: center;
+            Image {
+                width: 18px;
+                height: 18px;
+                source: root.icon;
+                colorize: root.active
+                    ? Theme.accent-info
+                    : EditorialSkin.text-secondary;
+                image-fit: contain;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.active
+                    ? Theme.accent-info
+                    : EditorialSkin.text-secondary;
+                font-size: Theme.font-size-caption;
+                font-weight: 700;
+            }
+        }
+    }
+    touch := TouchArea { clicked => { root.clicked(); } }
 }
 
 export component EditorialArticlePage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
     default-font-family: EditorialSkin.font-family;
+    callback share-pressed();
+    callback save-pressed();
+    callback comment-pressed();
+    callback clap-changed(int);
+    callback tts-toggled(bool);
+
+    // ----- Interactive state -----
+    private property <int> font-idx: 1; // 0..3
+    private property <bool> saved: false;
+    private property <int> claps: 0;
+    private property <int> comments: 12;
+    private property <int> shares: 0;
+    private property <bool> tts-playing: false;
+    private property <int> tts-progress: 0; // 0..100
+    private property <string> status-msg: "Tap Aa to cycle font · clap or read aloud below · pull quote shares";
+    private property <bool> status-is-success: false;
+    private property <bool> status-is-danger: false;
+
+    // ----- Timer simulates TTS progress -----
+    Timer {
+        interval: 200ms;
+        running: root.tts-playing;
+        triggered => {
+            if (root.tts-progress < 100) {
+                root.tts-progress = root.tts-progress + 1;
+            } else {
+                root.tts-playing = false;
+            }
+        }
+    }
+
+    // ----- Helpers -----
+    function font-size-px(i: int) -> length {
+        if (i == 0) { return 14px; }
+        if (i == 1) { return 16px; }
+        if (i == 2) { return 18px; }
+        return 20px;
+    }
+    function font-label(i: int) -> string {
+        if (i == 0) { return "S"; }
+        if (i == 1) { return "M"; }
+        if (i == 2) { return "L"; }
+        return "XL";
+    }
+    function aa-display() -> string {
+        return "Aa · " + root.font-label(root.font-idx);
+    }
+
+    // ----- Mutations -----
+    public function cycle-font() {
+        root.font-idx = mod(root.font-idx + 1, 4);
+        root.status-msg = "Font · " + root.font-label(root.font-idx)
+            + " (" + floor(root.font-size-px(root.font-idx) / 1px) + " px)";
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    public function toggle-save() {
+        root.saved = !root.saved;
+        root.save-pressed();
+        root.status-msg = root.saved
+            ? "Saved to your reading list"
+            : "Removed from reading list";
+        root.status-is-success = root.saved;
+        root.status-is-danger = !root.saved;
+    }
+    public function tap-share() {
+        root.shares = root.shares + 1;
+        root.share-pressed();
+        root.status-msg = "Shared article (#" + root.shares + ")";
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    public function tap-clap() {
+        root.claps = root.claps + 1;
+        root.clap-changed(root.claps);
+        root.status-msg = root.claps == 1
+            ? "👏 First clap · thanks!"
+            : "👏 Claps · " + root.claps;
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    public function tap-comment() {
+        root.comments = root.comments + 1;
+        root.comment-pressed();
+        root.status-msg = "Comments · " + root.comments + " (yours posted)";
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    public function tap-tts() {
+        root.tts-playing = !root.tts-playing;
+        root.tts-toggled(root.tts-playing);
+        if (root.tts-playing && root.tts-progress >= 100) {
+            root.tts-progress = 0;
+        }
+        root.status-msg = root.tts-playing
+            ? "Read aloud · " + root.tts-progress + "%"
+            : "Read aloud paused at " + root.tts-progress + "%";
+        root.status-is-success = root.tts-playing;
+        root.status-is-danger = false;
+    }
+    public function tap-pull-quote() {
+        root.shares = root.shares + 1;
+        root.status-msg = "Quote shared (#" + root.shares + ")";
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+
     background: EditorialSkin.page-background;
 
     if EditorialSkin.has-background-image: Image {
-        x: 0; y: 0;
+        x: 0;
+        y: 0;
         width: root.width;
         height: root.height;
         source: EditorialSkin.page-background-image;
@@ -35,14 +194,15 @@ export component EditorialArticlePage inherits Window {
     VerticalLayout {
         spacing: 0;
 
-        // ---- Slim masthead ----
+        // ---- Slim masthead with action icons ----
         Rectangle {
             background: EditorialSkin.bar-background;
             height: 56px;
             HorizontalLayout {
                 padding-left: Theme.spacing-lg;
                 padding-right: Theme.spacing-lg;
-                alignment: space-between;
+                spacing: Theme.spacing-sm;
+                alignment: stretch;
                 Text {
                     text: "THE MARGIN";
                     color: EditorialSkin.text-primary;
@@ -50,16 +210,104 @@ export component EditorialArticlePage inherits Window {
                     font-weight: 700;
                     letter-spacing: 2px;
                     vertical-alignment: center;
+                    horizontal-stretch: 1;
                 }
-                Text {
-                    text: "Aa";
-                    color: EditorialSkin.text-muted;
-                    font-size: Theme.font-size-body-large;
-                    vertical-alignment: center;
+                // Aa font cycle.
+                Rectangle {
+                    width: aa.preferred-width + 16px;
+                    height: 32px;
+                    border-radius: 16px;
+                    background: aa-touch.pressed
+                        ? Theme.surface-pressed
+                        : transparent;
+                    border-width: 1px;
+                    border-color: EditorialSkin.hairline;
+                    animate background { duration: Theme.motion-fast; }
+                    y: 12px;
+                    aa := Text {
+                        text: root.aa-display();
+                        color: EditorialSkin.text-primary;
+                        font-size: Theme.font-size-caption;
+                        font-weight: 800;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                    aa-touch := TouchArea { clicked => { root.cycle-font(); } }
+                }
+                // Bookmark icon.
+                Rectangle {
+                    width: 32px;
+                    height: 32px;
+                    border-radius: 16px;
+                    background: root.saved
+                        ? Theme.accent-warning
+                        : (bk-touch.pressed ? Theme.surface-pressed : transparent);
+                    animate background { duration: Theme.motion-fast; }
+                    y: 12px;
+                    Text {
+                        text: root.saved ? "★" : "☆";
+                        color: root.saved
+                            ? Theme.on-primary
+                            : EditorialSkin.text-primary;
+                        font-size: Theme.font-size-body;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                    bk-touch := TouchArea { clicked => { root.toggle-save(); } }
+                }
+                // Share icon.
+                Rectangle {
+                    width: 32px;
+                    height: 32px;
+                    border-radius: 16px;
+                    background: sh-touch.pressed
+                        ? Theme.surface-pressed
+                        : transparent;
+                    animate background { duration: Theme.motion-fast; }
+                    y: 12px;
+                    Text {
+                        text: "↗";
+                        color: EditorialSkin.text-primary;
+                        font-size: Theme.font-size-body;
+                        font-weight: 700;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                    sh-touch := TouchArea { clicked => { root.tap-share(); } }
                 }
             }
         }
         Rectangle { height: 1px; background: EditorialSkin.hairline; }
+
+        // ---- Status banner -------------------------------------------
+        Rectangle {
+            height: 32px;
+            background: root.status-is-danger ? Theme.accent-danger
+                : root.status-is-success ? Theme.accent-success
+                : EditorialSkin.glass-fill;
+            animate background { duration: Theme.motion-fast; }
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                Text {
+                    text: root.status-msg;
+                    color: (root.status-is-danger || root.status-is-success)
+                        ? Theme.on-primary
+                        : EditorialSkin.text-primary;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+            }
+        }
 
         ScrollView {
             vertical-stretch: 1;
@@ -70,7 +318,6 @@ export component EditorialArticlePage inherits Window {
                 padding-bottom: Theme.spacing-xl;
                 spacing: Theme.spacing-md;
 
-                // ---- Kicker ----
                 Text {
                     text: "ESSAY · CRAFT";
                     color: #7a1f2b;
@@ -78,7 +325,6 @@ export component EditorialArticlePage inherits Window {
                     font-weight: 700;
                     letter-spacing: 3px;
                 }
-                // ---- Display headline ----
                 Text {
                     text: "The Slow Return of the Long Sentence";
                     color: EditorialSkin.text-primary;
@@ -94,7 +340,6 @@ export component EditorialArticlePage inherits Window {
                     wrap: word-wrap;
                 }
 
-                // ---- Byline rule ----
                 Rectangle { height: 1px; background: EditorialSkin.hairline; }
                 HorizontalLayout {
                     spacing: Theme.spacing-sm;
@@ -105,7 +350,8 @@ export component EditorialArticlePage inherits Window {
                         font-weight: 700;
                     }
                     Text {
-                        text: "·  12 min read";
+                        text: "·  12 min read · " + root.claps + " claps · "
+                            + root.comments + " comments";
                         color: EditorialSkin.text-muted;
                         font-size: Theme.font-size-caption;
                         horizontal-stretch: 1;
@@ -113,7 +359,6 @@ export component EditorialArticlePage inherits Window {
                 }
                 Rectangle { height: 1px; background: EditorialSkin.hairline; }
 
-                // ---- Drop-cap opener ----
                 HorizontalLayout {
                     spacing: Theme.spacing-sm;
                     Text {
@@ -124,6 +369,7 @@ export component EditorialArticlePage inherits Window {
                     }
                     BodyPara {
                         text: "here was a time when a sentence could wander, gathering clauses the way a river gathers tributaries, and no editor reached for the red pen.";
+                        font-size: root.font-size-px(root.font-idx);
                         horizontal-stretch: 1;
                         vertical-alignment: center;
                     }
@@ -131,11 +377,15 @@ export component EditorialArticlePage inherits Window {
 
                 BodyPara {
                     text: "We mistook brevity for clarity and clarity for truth. But the long sentence has its own logic — it holds a thought open long enough for a second thought to arrive, and a third, until the whole shape of an idea stands revealed.";
+                    font-size: root.font-size-px(root.font-idx);
                 }
 
-                // ---- Pull quote ----
+                // Pull quote — tappable to share.
                 Rectangle {
-                    background: EditorialSkin.glass-fill;
+                    background: pq-touch.pressed
+                        ? EditorialSkin.glass-fill.with-alpha(0.6)
+                        : EditorialSkin.glass-fill;
+                    animate background { duration: Theme.motion-fast; }
                     border-radius: Theme.radius-md;
                     clip: true;
                     VerticalLayout {
@@ -143,23 +393,91 @@ export component EditorialArticlePage inherits Window {
                         HorizontalLayout {
                             spacing: Theme.spacing-md;
                             Rectangle { width: 3px; background: #7a1f2b; }
-                            Text {
-                                text: "\"A paragraph is a small room; a sentence is the breath you take inside it.\"";
-                                color: EditorialSkin.text-primary;
-                                font-size: Theme.font-size-title;
-                                font-weight: 400;
-                                wrap: word-wrap;
+                            VerticalLayout {
+                                spacing: 4px;
                                 horizontal-stretch: 1;
+                                Text {
+                                    text: "\"A paragraph is a small room; a sentence is the breath you take inside it.\"";
+                                    color: EditorialSkin.text-primary;
+                                    font-size: Theme.font-size-title;
+                                    font-weight: 400;
+                                    wrap: word-wrap;
+                                }
+                                Text {
+                                    text: "Tap to share this quote ↗";
+                                    color: #7a1f2b;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 700;
+                                    letter-spacing: 0.5px;
+                                }
                             }
                         }
+                    }
+                    pq-touch := TouchArea {
+                        clicked => { root.tap-pull-quote(); }
                     }
                 }
 
                 BodyPara {
                     text: "To read slowly is not nostalgia. It is a wager that attention, given freely, returns something the scroll cannot: the sense of having been somewhere, of having stayed.";
+                    font-size: root.font-size-px(root.font-idx);
                 }
                 BodyPara {
                     text: "And so we begin again, mid-thought, trusting the reader to follow — because they always could.";
+                    font-size: root.font-size-px(root.font-idx);
+                }
+            }
+        }
+
+        // ---- TTS progress bar (visible while reading) ----
+        if root.tts-progress > 0: Rectangle {
+            height: 3px;
+            background: EditorialSkin.hairline;
+            Rectangle {
+                x: 0;
+                y: 0;
+                width: parent.width * root.tts-progress / 100;
+                height: parent.height;
+                background: #7a1f2b;
+            }
+        }
+
+        // ---- Sticky bottom action bar ----
+        Rectangle {
+            background: EditorialSkin.bar-background;
+            height: 64px;
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                padding-top: 4px;
+                padding-bottom: 4px;
+                spacing: Theme.spacing-xs;
+                ActionPill {
+                    icon: @image-url("@mobile-components/icons/heart.svg");
+                    label: root.claps > 0 ? "👏 " + root.claps : "Clap";
+                    active: root.claps > 0;
+                    clicked => { root.tap-clap(); }
+                }
+                ActionPill {
+                    icon: @image-url("@mobile-components/icons/pencil.svg");
+                    label: "Comment · " + root.comments;
+                    clicked => { root.tap-comment(); }
+                }
+                ActionPill {
+                    icon: @image-url("@mobile-components/icons/send.svg");
+                    label: root.shares > 0 ? "Share · " + root.shares : "Share";
+                    active: root.shares > 0;
+                    clicked => { root.tap-share(); }
+                }
+                ActionPill {
+                    icon: root.tts-playing
+                        ? @image-url("@mobile-components/icons/pause.svg")
+                        : @image-url("@mobile-components/icons/play.svg");
+                    label: root.tts-playing
+                        ? "Pause · " + root.tts-progress + "%"
+                        : "Read aloud";
+                    active: root.tts-playing;
+                    clicked => { root.tap-tts(); }
                 }
             }
         }

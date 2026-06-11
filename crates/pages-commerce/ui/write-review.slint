@@ -7,16 +7,18 @@
 // helper-text baseline.
 //
 // What this screen does
-//   - AppBar with back + "Post" trailing TextButton.
-//   - Product summary Card (title = product name, subtitle = "merchant
-//     · variant").
-//   - RATING FormSection — one SettingRow "Overall" with a 5-star
-//     trailing strip (4 stars filled with accent-warning, 1 muted).
-//   - "Title" FormField (TextField).
-//   - "Review" FormField (TextField + min-character helper).
-//   - RECOMMEND FormSection — two SettingRows each with a
-//     MobileSwitch in the trailing slot.
-//   - Primary "Post review" MobileButton at the bottom.
+//   - AppBar with back.
+//   - Status banner that narrates every interaction.
+//   - Product summary Card.
+//   - RATING — 5 tappable stars + live descriptor ("Loved it", etc.).
+//   - Title FormField with live char counter + required-error.
+//   - Review FormField with live char counter, min-30 validation, and
+//     red/green helper text.
+//   - TAGS chip strip — pick what stood out (toggle-on toggle-off).
+//   - PHOTOS — add up to 3 photos via a "+" tile, tap a photo to drop.
+//   - RECOMMEND — two MobileSwitch rows, with status feedback on flip.
+//   - Post review CTA — disabled until rating + body are valid; flips
+//     to a posted-success state on submit (and re-enables editing).
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
@@ -27,6 +29,7 @@ import { SettingRow } from "@mobile-components/setting-row.slint";
 import { TextField } from "@mobile-components/text-field.slint";
 import { MobileButton, TextButton } from "@mobile-components/button.slint";
 import { MobileSwitch } from "@mobile-components/switch.slint";
+import { Chip } from "@mobile-components/chip.slint";
 import { Divider } from "@mobile-components/divider.slint";
 import { ScrollView } from "std-widgets.slint";
 
@@ -43,8 +46,146 @@ export component WriteReviewPage inherits Window {
     callback post-pressed();
     callback submit-pressed();
     callback star-pressed(int);
+    callback draft-saved();
+    callback tag-toggled(string, bool);
+
+    // ----- Interactive state -----
+    private property <int> rating: 0; // 0 = no rating yet
+    private property <bool> t0: false; // Flavour
+    private property <bool> t1: false; // Aroma
+    private property <bool> t2: false; // Value
+    private property <bool> t3: false; // Packaging
+    private property <bool> t4: false; // Freshness
+    private property <int> photo-count: 0; // 0-3
+    private property <bool> posted: false;
+    private property <string> status-msg: "Tap a star to rate, write a review, then post";
+    private property <bool> status-is-success: false;
+    private property <bool> status-is-danger: false;
 
     background: Theme.background;
+
+    // ----- Derived helpers -----
+    function rating-descriptor(r: int) -> string {
+        if (r == 0) { return "Tap a star to rate"; }
+        if (r == 1) { return "Hated it"; }
+        if (r == 2) { return "Didn't like it"; }
+        if (r == 3) { return "It was ok"; }
+        if (r == 4) { return "Liked it"; }
+        return "Loved it";
+    }
+    function tag-count() -> int {
+        return (root.t0 ? 1 : 0) + (root.t1 ? 1 : 0) + (root.t2 ? 1 : 0)
+            + (root.t3 ? 1 : 0) + (root.t4 ? 1 : 0);
+    }
+    function body-len() -> int { return root.review-body.character-count; }
+    function title-len() -> int { return root.review-title.character-count; }
+    function body-valid() -> bool { return root.body-len() >= 30; }
+    function title-valid() -> bool { return !root.review-title.is-empty; }
+    function form-valid() -> bool {
+        return root.rating > 0 && root.body-valid() && root.title-valid();
+    }
+
+    // ----- Mutations -----
+    public function tap-star(s: int) {
+        // Tap the same star again to clear.
+        root.rating = root.rating == s ? 0 : s;
+        root.star-pressed(s);
+        root.status-msg = root.rating == 0
+            ? "Rating cleared"
+            : "Rating: " + root.rating + "★ — " + root.rating-descriptor(root.rating);
+        root.status-is-success = root.rating >= 4;
+        root.status-is-danger = root.rating > 0 && root.rating <= 2;
+        root.posted = false;
+    }
+    public function toggle-tag(i: int, label: string) {
+        if (i == 0) { root.t0 = !root.t0; root.tag-toggled(label, root.t0); }
+        if (i == 1) { root.t1 = !root.t1; root.tag-toggled(label, root.t1); }
+        if (i == 2) { root.t2 = !root.t2; root.tag-toggled(label, root.t2); }
+        if (i == 3) { root.t3 = !root.t3; root.tag-toggled(label, root.t3); }
+        if (i == 4) { root.t4 = !root.t4; root.tag-toggled(label, root.t4); }
+        root.status-msg = "Tags: " + root.tag-count() + " selected";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+        root.posted = false;
+    }
+    public function add-photo() {
+        if (root.photo-count < 3) {
+            root.photo-count = root.photo-count + 1;
+            root.status-msg = "Photo added · " + root.photo-count + " of 3";
+            root.status-is-success = true;
+            root.status-is-danger = false;
+        } else {
+            root.status-msg = "Photo limit reached (max 3)";
+            root.status-is-success = false;
+            root.status-is-danger = true;
+        }
+        root.posted = false;
+    }
+    public function drop-photo() {
+        if (root.photo-count > 0) {
+            root.photo-count = root.photo-count - 1;
+            root.status-msg = "Photo removed · " + root.photo-count + " remaining";
+            root.status-is-success = false;
+            root.status-is-danger = true;
+            root.posted = false;
+        }
+    }
+    public function do-submit() {
+        if (!root.form-valid()) {
+            root.status-msg = "Fix the highlighted fields before posting";
+            root.status-is-success = false;
+            root.status-is-danger = true;
+            return;
+        }
+        root.posted = true;
+        root.submit-pressed();
+        root.post-pressed();
+        root.status-msg = "Posted · " + root.rating + "★ · " + root.tag-count()
+            + " tags · " + root.photo-count + " photos";
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    public function save-draft() {
+        root.draft-saved();
+        root.status-msg = "Draft saved · resume any time";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+        root.posted = false;
+    }
+    public function reset-edit() {
+        root.posted = false;
+        root.status-msg = "Editing again — submit when ready";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+
+    // Live status as user types.
+    changed review-title => {
+        if (root.posted) { root.posted = false; }
+        root.status-msg = "Title · " + root.title-len() + " chars";
+        root.status-is-success = root.title-valid();
+        root.status-is-danger = !root.title-valid() && root.title-len() == 0;
+    }
+    changed review-body => {
+        if (root.posted) { root.posted = false; }
+        root.status-msg = "Review · " + root.body-len() + " / 30 chars";
+        root.status-is-success = root.body-valid();
+        root.status-is-danger = !root.body-valid();
+    }
+    changed would-buy-again => {
+        root.status-msg = root.would-buy-again
+            ? "Marked: would buy again"
+            : "Marked: wouldn't buy again";
+        root.status-is-success = root.would-buy-again;
+        root.status-is-danger = !root.would-buy-again;
+    }
+    changed allow-attribution => {
+        root.status-msg = root.allow-attribution
+            ? "Public attribution: ON"
+            : "Public attribution: OFF (anonymous)";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
 
     VerticalLayout {
         spacing: 0;
@@ -53,6 +194,30 @@ export component WriteReviewPage inherits Window {
             title: "Write a review";
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             leading-pressed => { root.back-pressed(); }
+        }
+
+        // ----- Status banner ------------------------------------------
+        Rectangle {
+            height: 32px;
+            background: root.status-is-danger ? Theme.accent-danger
+                : root.status-is-success ? Theme.accent-success
+                : Theme.surface-2;
+            animate background { duration: Theme.motion-fast; }
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                Text {
+                    text: root.status-msg;
+                    color: (root.status-is-danger || root.status-is-success)
+                        ? Theme.on-primary
+                        : Theme.on-surface;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+            }
         }
 
         ScrollView {
@@ -83,50 +248,50 @@ export component WriteReviewPage inherits Window {
                         icon: @image-url("@mobile-components/icons/star.svg");
                         tone: Tone.warning;
                         title: "Overall";
-                        subtitle: "Tap a star";
+                        subtitle: root.rating-descriptor(root.rating);
                         HorizontalLayout {
                             spacing: Theme.spacing-xs;
                             alignment: end;
 
                             Image {
-                                width: 18px;
-                                height: 18px;
+                                width: 22px;
+                                height: 22px;
                                 source: @image-url("@mobile-components/icons/star.svg");
-                                colorize: Theme.accent-warning;
+                                colorize: root.rating >= 1 ? Theme.accent-warning : Theme.muted;
                                 image-fit: contain;
-                                TouchArea { clicked => { root.star-pressed(1); } }
+                                TouchArea { clicked => { root.tap-star(1); } }
                             }
                             Image {
-                                width: 18px;
-                                height: 18px;
+                                width: 22px;
+                                height: 22px;
                                 source: @image-url("@mobile-components/icons/star.svg");
-                                colorize: Theme.accent-warning;
+                                colorize: root.rating >= 2 ? Theme.accent-warning : Theme.muted;
                                 image-fit: contain;
-                                TouchArea { clicked => { root.star-pressed(2); } }
+                                TouchArea { clicked => { root.tap-star(2); } }
                             }
                             Image {
-                                width: 18px;
-                                height: 18px;
+                                width: 22px;
+                                height: 22px;
                                 source: @image-url("@mobile-components/icons/star.svg");
-                                colorize: Theme.accent-warning;
+                                colorize: root.rating >= 3 ? Theme.accent-warning : Theme.muted;
                                 image-fit: contain;
-                                TouchArea { clicked => { root.star-pressed(3); } }
+                                TouchArea { clicked => { root.tap-star(3); } }
                             }
                             Image {
-                                width: 18px;
-                                height: 18px;
+                                width: 22px;
+                                height: 22px;
                                 source: @image-url("@mobile-components/icons/star.svg");
-                                colorize: Theme.accent-warning;
+                                colorize: root.rating >= 4 ? Theme.accent-warning : Theme.muted;
                                 image-fit: contain;
-                                TouchArea { clicked => { root.star-pressed(4); } }
+                                TouchArea { clicked => { root.tap-star(4); } }
                             }
                             Image {
-                                width: 18px;
-                                height: 18px;
+                                width: 22px;
+                                height: 22px;
                                 source: @image-url("@mobile-components/icons/star.svg");
-                                colorize: Theme.muted;
+                                colorize: root.rating >= 5 ? Theme.accent-warning : Theme.muted;
                                 image-fit: contain;
-                                TouchArea { clicked => { root.star-pressed(5); } }
+                                TouchArea { clicked => { root.tap-star(5); } }
                             }
                         }
                     }
@@ -135,6 +300,11 @@ export component WriteReviewPage inherits Window {
                 // ----- Title field ------------------------------------
                 FormField {
                     label: "Title";
+                    required: true;
+                    helper: root.title-len() + " chars";
+                    error: (root.title-len() == 0 && (root.rating > 0 || root.body-len() > 0))
+                        ? "Add a short title to summarise your review"
+                        : "";
                     TextField {
                         placeholder: "Short and punchy";
                         text <=> root.review-title;
@@ -144,10 +314,134 @@ export component WriteReviewPage inherits Window {
                 // ----- Review body field ------------------------------
                 FormField {
                     label: "Review";
-                    helper: "Min 30 characters.";
+                    required: true;
+                    helper: root.body-valid()
+                        ? "Great — " + root.body-len() + " chars (min 30 ✓)"
+                        : root.body-len() + " / 30 chars — add a bit more";
+                    error: (root.body-len() > 0 && !root.body-valid())
+                        ? "Reviews need at least 30 characters"
+                        : "";
                     TextField {
                         placeholder: "What did you love? What could be better?";
                         text <=> root.review-body;
+                    }
+                }
+
+                // ----- TAGS -------------------------------------------
+                FormSection {
+                    title: "WHAT STOOD OUT · " + root.tag-count() + " selected";
+
+                    Rectangle {
+                        background: Theme.surface-1;
+                        HorizontalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-sm;
+                            Rectangle {
+                                Chip { label: "Flavour"; selected: root.t0; }
+                                TouchArea { clicked => { root.toggle-tag(0, "Flavour"); } }
+                            }
+                            Rectangle {
+                                Chip { label: "Aroma"; selected: root.t1; }
+                                TouchArea { clicked => { root.toggle-tag(1, "Aroma"); } }
+                            }
+                            Rectangle {
+                                Chip { label: "Value"; selected: root.t2; }
+                                TouchArea { clicked => { root.toggle-tag(2, "Value"); } }
+                            }
+                            Rectangle {
+                                Chip { label: "Pack."; selected: root.t3; }
+                                TouchArea { clicked => { root.toggle-tag(3, "Packaging"); } }
+                            }
+                            Rectangle {
+                                Chip { label: "Fresh"; selected: root.t4; }
+                                TouchArea { clicked => { root.toggle-tag(4, "Freshness"); } }
+                            }
+                        }
+                    }
+                }
+
+                // ----- PHOTOS -----------------------------------------
+                FormSection {
+                    title: "PHOTOS · " + root.photo-count + " of 3";
+                    caption: "Tap + to add a photo, tap a thumbnail to remove.";
+
+                    Rectangle {
+                        background: Theme.surface-1;
+                        HorizontalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-sm;
+                            alignment: start;
+
+                            if root.photo-count >= 1: Rectangle {
+                                width: 64px;
+                                height: 64px;
+                                border-radius: Theme.radius-md;
+                                background: @linear-gradient(135deg, #d4751a 0%, #7a2e0a 100%);
+                                clip: true;
+                                Image {
+                                    width: 14px;
+                                    height: 14px;
+                                    x: parent.width - self.width - 4px;
+                                    y: 4px;
+                                    source: @image-url("@mobile-components/icons/close.svg");
+                                    colorize: #ffffff;
+                                    image-fit: contain;
+                                }
+                                TouchArea { clicked => { root.drop-photo(); } }
+                            }
+                            if root.photo-count >= 2: Rectangle {
+                                width: 64px;
+                                height: 64px;
+                                border-radius: Theme.radius-md;
+                                background: @linear-gradient(135deg, #6dba63 0%, #2f5a2b 100%);
+                                clip: true;
+                                Image {
+                                    width: 14px;
+                                    height: 14px;
+                                    x: parent.width - self.width - 4px;
+                                    y: 4px;
+                                    source: @image-url("@mobile-components/icons/close.svg");
+                                    colorize: #ffffff;
+                                    image-fit: contain;
+                                }
+                                TouchArea { clicked => { root.drop-photo(); } }
+                            }
+                            if root.photo-count >= 3: Rectangle {
+                                width: 64px;
+                                height: 64px;
+                                border-radius: Theme.radius-md;
+                                background: @linear-gradient(135deg, #c486e4 0%, #6b3da0 100%);
+                                clip: true;
+                                Image {
+                                    width: 14px;
+                                    height: 14px;
+                                    x: parent.width - self.width - 4px;
+                                    y: 4px;
+                                    source: @image-url("@mobile-components/icons/close.svg");
+                                    colorize: #ffffff;
+                                    image-fit: contain;
+                                }
+                                TouchArea { clicked => { root.drop-photo(); } }
+                            }
+                            if root.photo-count < 3: Rectangle {
+                                width: 64px;
+                                height: 64px;
+                                border-radius: Theme.radius-md;
+                                background: Theme.surface-2;
+                                border-width: 1px;
+                                border-color: Theme.outline;
+                                Image {
+                                    width: 18px;
+                                    height: 18px;
+                                    x: (parent.width - self.width) / 2;
+                                    y: (parent.height - self.height) / 2;
+                                    source: @image-url("@mobile-components/icons/plus.svg");
+                                    colorize: Theme.on-surface;
+                                    image-fit: contain;
+                                }
+                                TouchArea { clicked => { root.add-photo(); } }
+                            }
+                        }
                     }
                 }
 
@@ -168,7 +462,7 @@ export component WriteReviewPage inherits Window {
                     }
                 }
 
-                // ----- Submit ------------------------------------------
+                // ----- Submit -----------------------------------------
                 VerticalLayout {
                     padding-left: Theme.spacing-md;
                     padding-right: Theme.spacing-md;
@@ -176,12 +470,24 @@ export component WriteReviewPage inherits Window {
                     alignment: stretch;
 
                     MobileButton {
-                        text: "Post review";
-                        clicked => { root.submit-pressed(); }
+                        text: root.posted
+                            ? "Posted ✓ · Tap to edit again"
+                            : root.form-valid()
+                                ? "Post review · " + root.rating + "★"
+                                : "Post review (complete the form)";
+                        tone: root.posted ? Tone.success : Tone.default;
+                        enabled: root.posted || root.form-valid();
+                        clicked => {
+                            if (root.posted) {
+                                root.reset-edit();
+                            } else {
+                                root.do-submit();
+                            }
+                        }
                     }
                     TextButton {
-                        text: "Post";
-                        clicked => { root.post-pressed(); }
+                        text: "Save draft";
+                        clicked => { root.save-draft(); }
                     }
                 }
             }

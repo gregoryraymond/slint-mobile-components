@@ -1,23 +1,18 @@
 // LiveStreamPage
 // =====================================================================
 //
-// Twitch / Instagram-Live style watch surface. The top 60% of the page
-// is dominated by the "video frame" placeholder (Theme.surface-3 with a
-// centred "LIVE" label and a small red dot indicator). The AppBar is
-// transparent so it overlays the stream. Below the frame: stream title,
-// streamer line, viewer / engagement metadata via `MetaRow`, three
-// quick-action buttons (Like / Share / Tip), a `FormSection` of recent
-// comments rendered as `SettingRow`s, and a chat composer at the very
-// bottom built from a `FormField` + `TextField`.
+// Twitch / Instagram-Live style watch surface, now interactive.
 //
-// Alignment discipline
-//   - The "rows" are SettingRows in a FormSection — same min-height,
-//     same gutters, same leading-tile size. No hand-rolled comment
-//     rows.
-//   - Metadata uses MetaRow so the icon-text chips share a baseline.
-//   - The chat composer wraps a TextField in a FormField for the same
-//     reason every other input on the page would: consistent label
-//     position and horizontal inset.
+//   - Timer increments `elapsed-sec` so the meta row shows how long the
+//     stream has been running.
+//   - Like / Share / Tip buttons all have counters; Tip opens a bottom
+//     sheet with $1 / $5 / $10 / $20 quick amounts (totals to
+//     `tip-cents`).
+//   - The chat composer commits via `accepted` (Enter). Up to three
+//     fresh user comments get prepended to the LIVE CHAT section with
+//     a `NEW · YOU` pill.
+//   - Static comment rows are tappable to highlight + status.
+//   - AppBar trailing more-vertical reports stream options.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
@@ -44,21 +39,142 @@ export component LiveStreamPage inherits Window {
     callback tip-pressed();
     callback comment-pressed(string);
     callback chat-submitted(string);
+    callback tip-added(int);
+
+    // ----- Interactive state -----
+    private property <int> elapsed-sec: 4280; // 1h 11m
+    private property <int> likes: 8400;
+    private property <int> shares: 0;
+    private property <int> tip-cents: 0;
+    private property <bool> tip-sheet-open: false;
+    private property <int> ce-count: 0;
+    private property <string> ce1: "";
+    private property <string> ce2: "";
+    private property <string> ce3: "";
+    private property <int> highlighted-comment: -1;
+    private property <int> viewer-count: 1247;
+    private property <string> status-msg: "Tap Like / Share / Tip · type into the composer + Enter to send";
+    private property <bool> status-is-success: false;
+    private property <bool> status-is-danger: false;
+
+    // ----- Timer drives elapsed -----
+    Timer {
+        interval: 1s;
+        running: true;
+        triggered => {
+            root.elapsed-sec = root.elapsed-sec + 1;
+        }
+    }
+
+    // ----- Helpers -----
+    function fmt-elapsed() -> string {
+        return floor(root.elapsed-sec / 3600) + "h "
+            + (mod(floor(root.elapsed-sec / 60), 60) < 10
+                ? "0" + mod(floor(root.elapsed-sec / 60), 60)
+                : "" + mod(floor(root.elapsed-sec / 60), 60))
+            + "m";
+    }
+    function fmt-likes() -> string {
+        return root.likes >= 1000
+            ? floor(root.likes / 1000) + "."
+                + floor(mod(root.likes, 1000) / 100) + "K"
+            : "" + root.likes;
+    }
+    function fmt-viewers() -> string {
+        return floor(root.viewer-count / 1000) + ","
+            + (mod(root.viewer-count, 1000) < 10
+                ? "00" + mod(root.viewer-count, 1000)
+                : mod(root.viewer-count, 1000) < 100
+                    ? "0" + mod(root.viewer-count, 1000)
+                    : "" + mod(root.viewer-count, 1000));
+    }
+    function fmt-tip() -> string {
+        return root.tip-cents == 0
+            ? "Tip"
+            : "Tip · $" + floor(root.tip-cents / 100);
+    }
+
+    // ----- Mutations -----
+    public function tap-like() {
+        root.likes = root.likes + 1;
+        // Random viewer bump for liveliness.
+        root.viewer-count = root.viewer-count + mod(root.likes, 3);
+        root.like-pressed();
+        root.status-msg = "Liked · " + root.fmt-likes() + " hearts";
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    public function tap-share() {
+        root.shares = root.shares + 1;
+        root.share-pressed();
+        root.status-msg = "Shared (#" + root.shares + ")";
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    public function open-tip() {
+        root.tip-sheet-open = true;
+        root.tip-pressed();
+        root.status-msg = "Pick a tip amount";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function close-tip() { root.tip-sheet-open = false; }
+    public function send-tip(cents: int) {
+        root.tip-cents = root.tip-cents + cents;
+        root.tip-added(cents);
+        root.status-msg = "Tipped $" + floor(cents / 100)
+            + " · total $" + floor(root.tip-cents / 100);
+        root.status-is-success = true;
+        root.status-is-danger = false;
+        root.tip-sheet-open = false;
+    }
+    public function tap-comment(name: string) {
+        root.comment-pressed(name);
+        root.highlighted-comment = root.highlighted-comment == 0 ? -1 : 0;
+        root.status-msg = "Reply to " + name + " · type below";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function submit-chat() {
+        if (root.chat-draft.is-empty) {
+            root.status-msg = "Type something to send";
+            root.status-is-success = false;
+            root.status-is-danger = true;
+            return;
+        }
+        // Shift slots: ce3 ← ce2 ← ce1 ← new (newest first means ce1
+        // is the most recent).
+        if (root.ce-count < 3) {
+            root.ce-count = root.ce-count + 1;
+        }
+        // Shift older down.
+        root.ce3 = root.ce2;
+        root.ce2 = root.ce1;
+        root.ce1 = root.chat-draft;
+        root.chat-submitted(root.chat-draft);
+        root.status-msg = "Sent · " + root.chat-draft;
+        root.status-is-success = true;
+        root.status-is-danger = false;
+        root.chat-draft = "";
+    }
+    public function tap-more() {
+        root.status-msg = "Options · subscribe · clip · quality";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
 
     background: Theme.background;
 
     VerticalLayout {
         spacing: 0;
 
-        // ----- Video frame (top 60% of page) with overlay AppBar -----
+        // ----- Video frame -----
         Rectangle {
-            // 60% of 892px = 535px. Hardcoded to avoid binding loops on
-            // parent.height (see video-player.slint for the same trick).
-            height: 535px;
+            height: 360px;
             background: Theme.surface-3;
             clip: true;
 
-            // Centred "LIVE" label + red live-indicator dot.
+            // Centred LIVE label.
             HorizontalLayout {
                 x: (parent.width - self.preferred-width) / 2;
                 y: (parent.height - self.preferred-height) / 2;
@@ -81,7 +197,6 @@ export component LiveStreamPage inherits Window {
                 }
             }
 
-            // Transparent AppBar overlaid at the top of the frame.
             AppBar {
                 x: 0;
                 y: 0;
@@ -91,10 +206,34 @@ export component LiveStreamPage inherits Window {
                 leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
                 trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
                 leading-pressed => { root.back-pressed(); }
+                trailing-pressed => { root.tap-more(); }
             }
         }
 
-        // ----- Scrolling body: title, meta, actions, comments, composer
+        // ----- Status banner ---------------------------------------
+        Rectangle {
+            height: 32px;
+            background: root.status-is-danger ? Theme.accent-danger
+                : root.status-is-success ? Theme.accent-success
+                : Theme.surface-2;
+            animate background { duration: Theme.motion-fast; }
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                Text {
+                    text: root.status-msg;
+                    color: (root.status-is-danger || root.status-is-success)
+                        ? Theme.on-primary
+                        : Theme.on-surface;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+            }
+        }
+
         ScrollView {
             vertical-stretch: 1;
 
@@ -104,7 +243,6 @@ export component LiveStreamPage inherits Window {
                 spacing: Theme.spacing-md;
                 alignment: start;
 
-                // Title + streamer.
                 VerticalLayout {
                     padding-left: Theme.spacing-md;
                     padding-right: Theme.spacing-md;
@@ -117,14 +255,13 @@ export component LiveStreamPage inherits Window {
                         wrap: word-wrap;
                     }
                     Text {
-                        text: root.streamer;
+                        text: root.streamer + " · live for " + root.fmt-elapsed();
                         color: Theme.muted;
                         font-size: Theme.font-size-body;
                         font-weight: 600;
                     }
                 }
 
-                // Meta chips: viewers + likes.
                 MetaRow {
                     items: [
                         { icon: @image-url("@mobile-components/icons/profile.svg"), text: "1,247 watching" },
@@ -132,37 +269,66 @@ export component LiveStreamPage inherits Window {
                     ];
                 }
 
-                // Quick actions — three equal-stretch buttons.
                 HorizontalLayout {
                     padding-left: Theme.spacing-md;
                     padding-right: Theme.spacing-md;
                     spacing: Theme.spacing-sm;
                     MobileButton {
-                        text: "Like";
+                        text: root.likes > 8400
+                            ? "♥ " + root.fmt-likes()
+                            : "Like";
                         primary: false;
-                        clicked => { root.like-pressed(); }
+                        tone: root.likes > 8400 ? Tone.danger : Tone.default;
+                        clicked => { root.tap-like(); }
                     }
                     MobileButton {
-                        text: "Share";
+                        text: root.shares > 0
+                            ? "Share · " + root.shares
+                            : "Share";
                         primary: false;
-                        clicked => { root.share-pressed(); }
+                        clicked => { root.tap-share(); }
                     }
                     MobileButton {
-                        text: "Tip";
-                        clicked => { root.tip-pressed(); }
+                        text: root.fmt-tip();
+                        tone: root.tip-cents > 0 ? Tone.success : Tone.default;
+                        clicked => { root.open-tip(); }
                     }
                 }
 
-                // Comments — every row is the canonical SettingRow.
                 FormSection {
-                    title: "LIVE CHAT";
+                    title: "LIVE CHAT · " + (root.ce-count + 5) + " messages";
+
+                    if root.ce-count >= 3: SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        tone: Tone.success;
+                        title: "you (just now)";
+                        subtitle: root.ce3;
+                        clicked => { root.tap-comment("you (#3)"); }
+                    }
+                    if root.ce-count >= 3: Divider { }
+                    if root.ce-count >= 2: SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        tone: Tone.success;
+                        title: "you (just now)";
+                        subtitle: root.ce2;
+                        clicked => { root.tap-comment("you (#2)"); }
+                    }
+                    if root.ce-count >= 2: Divider { }
+                    if root.ce-count >= 1: SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        tone: Tone.success;
+                        title: "you (just now)";
+                        subtitle: root.ce1;
+                        clicked => { root.tap-comment("you (#1)"); }
+                    }
+                    if root.ce-count >= 1: Divider { }
 
                     SettingRow {
                         icon: @image-url("@mobile-components/icons/profile.svg");
                         tone: Tone.info;
                         title: "rustacean42";
                         subtitle: "this build pipeline is so clean";
-                        clicked => { root.comment-pressed("rustacean42"); }
+                        clicked => { root.tap-comment("rustacean42"); }
                     }
                     Divider { }
                     SettingRow {
@@ -170,7 +336,7 @@ export component LiveStreamPage inherits Window {
                         tone: Tone.success;
                         title: "mobile_mara";
                         subtitle: "what theme is that? loving the colours";
-                        clicked => { root.comment-pressed("mobile_mara"); }
+                        clicked => { root.tap-comment("mobile_mara"); }
                     }
                     Divider { }
                     SettingRow {
@@ -178,7 +344,7 @@ export component LiveStreamPage inherits Window {
                         tone: Tone.warning;
                         title: "slint_fan";
                         subtitle: "first time catching one of these live!";
-                        clicked => { root.comment-pressed("slint_fan"); }
+                        clicked => { root.tap-comment("slint_fan"); }
                     }
                     Divider { }
                     SettingRow {
@@ -186,25 +352,154 @@ export component LiveStreamPage inherits Window {
                         tone: Tone.danger;
                         title: "kernel_kira";
                         subtitle: "do the gesture demo next plz";
-                        clicked => { root.comment-pressed("kernel_kira"); }
+                        clicked => { root.tap-comment("kernel_kira"); }
                     }
                     Divider { }
                     SettingRow {
                         icon: @image-url("@mobile-components/icons/profile.svg");
                         title: "anon_dev";
                         subtitle: "how do you handle hot reload on android?";
-                        clicked => { root.comment-pressed("anon_dev"); }
+                        clicked => { root.tap-comment("anon_dev"); }
                     }
                 }
 
-                // Composer at the bottom.
                 FormField {
                     label: "";
                     TextField {
-                        placeholder: "Say something…";
+                        placeholder: "Say something… (press Enter to send)";
                         text <=> root.chat-draft;
-                        accepted(v) => { root.chat-submitted(v); }
+                        accepted(v) => { root.submit-chat(); }
                     }
+                }
+            }
+        }
+    }
+
+    // ----- Tip bottom sheet ----------------------------------------
+    if root.tip-sheet-open: Rectangle {
+        Rectangle {
+            background: #00000099;
+            TouchArea {
+                clicked => { root.close-tip(); }
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            height: 360px;
+            background: Theme.surface-1;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding: Theme.spacing-lg;
+                spacing: Theme.spacing-md;
+
+                Rectangle {
+                    width: 40px;
+                    height: 4px;
+                    border-radius: 2px;
+                    background: Theme.muted;
+                }
+
+                Heading {
+                    text: "Tip " + root.streamer;
+                    style: HeadingStyle.grotesk-bold;
+                    font-size: Theme.font-size-title;
+                }
+                Text {
+                    text: root.tip-cents > 0
+                        ? "Already tipped $" + floor(root.tip-cents / 100)
+                            + " — add more"
+                        : "Pick an amount to tip — appears in chat as a highlight.";
+                    color: Theme.muted;
+                    font-size: Theme.font-size-caption;
+                }
+
+                HorizontalLayout {
+                    spacing: Theme.spacing-sm;
+                    Rectangle {
+                        height: 56px;
+                        horizontal-stretch: 1;
+                        border-radius: Theme.radius-md;
+                        background: Theme.accent-success;
+                        Text {
+                            text: "$1";
+                            color: Theme.on-primary;
+                            font-size: Theme.font-size-body-large;
+                            font-weight: 800;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
+                        }
+                        TouchArea { clicked => { root.send-tip(100); } }
+                    }
+                    Rectangle {
+                        height: 56px;
+                        horizontal-stretch: 1;
+                        border-radius: Theme.radius-md;
+                        background: Theme.accent-success;
+                        Text {
+                            text: "$5";
+                            color: Theme.on-primary;
+                            font-size: Theme.font-size-body-large;
+                            font-weight: 800;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
+                        }
+                        TouchArea { clicked => { root.send-tip(500); } }
+                    }
+                }
+                HorizontalLayout {
+                    spacing: Theme.spacing-sm;
+                    Rectangle {
+                        height: 56px;
+                        horizontal-stretch: 1;
+                        border-radius: Theme.radius-md;
+                        background: Theme.accent-success;
+                        Text {
+                            text: "$10";
+                            color: Theme.on-primary;
+                            font-size: Theme.font-size-body-large;
+                            font-weight: 800;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
+                        }
+                        TouchArea { clicked => { root.send-tip(1000); } }
+                    }
+                    Rectangle {
+                        height: 56px;
+                        horizontal-stretch: 1;
+                        border-radius: Theme.radius-md;
+                        background: Theme.accent-success;
+                        Text {
+                            text: "$20";
+                            color: Theme.on-primary;
+                            font-size: Theme.font-size-body-large;
+                            font-weight: 800;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
+                        }
+                        TouchArea { clicked => { root.send-tip(2000); } }
+                    }
+                }
+
+                Rectangle { vertical-stretch: 1; }
+
+                MobileButton {
+                    text: "Cancel";
+                    tone: Tone.danger;
+                    clicked => { root.close-tip(); }
                 }
             }
         }

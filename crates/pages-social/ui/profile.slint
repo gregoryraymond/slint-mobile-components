@@ -1,38 +1,34 @@
 // ProfilePage
 // =====================================================================
-//
-// Composite template — user profile screen. Demonstrates how the
-// catalogue composes hero content (large Avatar, headline, role) with
-// stats, primary + secondary actions, and a SegmentedControl driving a
-// content sub-view. Useful as scaffolding for social-app profiles,
-// settings → account screens, contact details pages, etc.
-//
-// The content under the SegmentedControl is intentionally a placeholder
-// `Skeleton` block — slot in real content per app.
 
-import { Theme } from "@mobile-theme/theme.slint";
+import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { Avatar } from "@mobile-components/avatar.slint";
 import { MobileButton } from "@mobile-components/button.slint";
 import { SegmentedControl } from "@mobile-components/segmented-control.slint";
-import { Skeleton } from "@mobile-components/skeleton.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
+import { Divider } from "@mobile-components/divider.slint";
 import { ScrollView } from "std-widgets.slint";
 
 component StatColumn inherits Rectangle {
     in property <string> count;
     in property <string> label;
+    in property <bool> active: false;
+    callback clicked();
 
     horizontal-stretch: 1;
+    border-radius: 8px;
+    background: root.active ? Theme.accent-info.with-alpha(0.16) : transparent;
 
     VerticalLayout {
+        padding: Theme.spacing-sm;
         alignment: center;
         spacing: 2px;
         HorizontalLayout {
             alignment: center;
             Text {
                 text: root.count;
-                color: Theme.on-background;
+                color: root.active ? Theme.accent-info : Theme.on-background;
                 font-family: "JetBrains Mono";
                 font-size: Theme.font-size-title;
                 font-weight: 700;
@@ -52,6 +48,157 @@ component StatColumn inherits Rectangle {
             }
         }
     }
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component PostRow inherits Rectangle {
+    in property <string> body;
+    in property <string> when;
+    in property <int> likes: 0;
+    in property <int> replies: 0;
+    in property <bool> liked: false;
+    in property <bool> pinned: false;
+    callback row-clicked();
+    callback like-clicked();
+    callback pin-clicked();
+
+    horizontal-stretch: 1;
+    min-height: 80px;
+    background: ta.has-hover ? Theme.surface-2 : (root.pinned ? Theme.accent-warning.with-alpha(0.10) : transparent);
+
+    ta := TouchArea {
+        clicked => {
+            root.row-clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+        VerticalLayout {
+            horizontal-stretch: 1;
+            spacing: 4px;
+            Text {
+                text: (root.pinned ? "📌 " : "") + root.when;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+                font-weight: 800;
+            }
+            Text {
+                text: root.body;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                wrap: word-wrap;
+            }
+            HorizontalLayout {
+                spacing: Theme.spacing-sm;
+                alignment: start;
+                Rectangle {
+                    horizontal-stretch: 0;
+                    height: 22px;
+                    border-radius: 11px;
+                    background: root.liked ? Theme.accent-danger.with-alpha(0.22) : Theme.surface-2;
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-sm;
+                        padding-right: Theme.spacing-sm;
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: (root.liked ? "❤ " : "♡ ") + root.likes;
+                                color: root.liked ? Theme.accent-danger : Theme.muted;
+                                font-size: 10px;
+                                font-weight: 800;
+                            }
+                        }
+                    }
+                    TouchArea {
+                        clicked => {
+                            root.like-clicked();
+                        }
+                    }
+                }
+                Rectangle {
+                    horizontal-stretch: 0;
+                    height: 22px;
+                    border-radius: 11px;
+                    background: Theme.surface-2;
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-sm;
+                        padding-right: Theme.spacing-sm;
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: "💬 " + root.replies;
+                                color: Theme.muted;
+                                font-size: 10px;
+                                font-weight: 800;
+                            }
+                        }
+                    }
+                }
+                Rectangle {
+                    horizontal-stretch: 0;
+                    height: 22px;
+                    border-radius: 11px;
+                    background: root.pinned ? Theme.accent-warning.with-alpha(0.22) : Theme.surface-2;
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-sm;
+                        padding-right: Theme.spacing-sm;
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: root.pinned ? "📌 Pinned" : "Pin";
+                                color: root.pinned ? Theme.accent-warning : Theme.muted;
+                                font-size: 10px;
+                                font-weight: 800;
+                            }
+                        }
+                    }
+                    TouchArea {
+                        clicked => {
+                            root.pin-clicked();
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.destructive ? Theme.accent-danger : Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+        }
+    }
 }
 
 export component ProfilePage inherits Window {
@@ -60,15 +207,62 @@ export component ProfilePage inherits Window {
     in property <string> display-name: "Petra Lindquist";
     in property <string> handle: "@petra · Design Engineer";
     in property <string> bio: "Building the slint-mobile-components design system. Ex-Linear. Ferments hot sauce on weekends.";
-    in property <string> posts-count: "248";
-    in property <string> following-count: "184";
-    in property <string> followers-count: "2.6k";
     in property <string> avatar-initials: "PL";
+
     in-out property <int> tab-index: 0;
+    in-out property <bool> following: false;
+    in-out property <int> followers-count: 2600;
+    in-out property <int> posts-count: 248;
+    in-out property <int> following-count: 184;
+    in-out property <int> selected-stat: -1;
+    in-out property <int> share-mode: 0; // 0 share, 1 copied, 2 sent
+    in-out property <bool> p0-liked: false;
+    in-out property <bool> p1-liked: false;
+    in-out property <bool> p2-liked: false;
+    in-out property <int> p0-likes: 245;
+    in-out property <int> p1-likes: 87;
+    in-out property <int> p2-likes: 142;
+    in-out property <bool> p0-pinned: true;
+    in-out property <bool> p1-pinned: false;
+    in-out property <bool> p2-pinned: false;
+    in-out property <bool> r0-liked: false;
+    in-out property <bool> r1-liked: false;
+    in-out property <bool> r2-liked: false;
+    in-out property <bool> l0-liked: true;
+    in-out property <bool> l1-liked: true;
+    in-out property <bool> l2-liked: true;
+    in-out property <bool> sheet-open: false;
+    in-out property <bool> confirm-block: false;
+    in-out property <bool> blocked: false;
+    in-out property <bool> muted: false;
+    in-out property <string> status-msg: "";
+    in-out property <bool> status-success: false;
+    in-out property <bool> status-danger: false;
+
     callback back-pressed();
     callback more-pressed();
     callback edit-pressed();
     callback share-pressed();
+
+    function fmt-followers() -> string {
+        return root.followers-count >= 1000 ? floor(root.followers-count / 100) / 10 + "k" : "" + root.followers-count;
+    }
+    function share-label() -> string {
+        return root.share-mode == 0 ? "Share" : (root.share-mode == 1 ? "Link copied ✓" : "Sent ✓");
+    }
+    function stat-detail() -> string {
+        return root.selected-stat == 0 ? "Top post: 245 likes · Avg engagement: 14%" : (root.selected-stat == 1 ? "Includes 32 mutuals · 14 verified" : "+218 this month · 38% from Japan · 22% from US");
+    }
+    function set-status(m: string, ok: bool, bad: bool) {
+        root.status-msg = m;
+        root.status-success = ok;
+        root.status-danger = bad;
+    }
+    function toggle-follow() {
+        root.following = !root.following;
+        root.followers-count = root.following ? root.followers-count + 1 : root.followers-count - 1;
+        root.set-status(root.following ? "Following @petra" : "Unfollowed", root.following, false);
+    }
 
     background: Theme.background;
 
@@ -76,12 +270,34 @@ export component ProfilePage inherits Window {
         spacing: 0;
 
         AppBar {
-            title: "Profile";
+            title: "Profile" + (root.following ? " · ✓ Following" : "") + (root.blocked ? " · Blocked" : "") + (root.muted ? " · Muted" : "");
             title-style: HeadingStyle.serif-light;
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
-            leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.more-pressed(); }
+            leading-pressed => {
+                root.back-pressed();
+            }
+            trailing-pressed => {
+                root.sheet-open = true;
+                root.more-pressed();
+            }
+        }
+
+        if !root.status-msg.is-empty: Rectangle {
+            height: 28px;
+            background: root.status-success ? Theme.accent-success.with-alpha(0.16) : (root.status-danger ? Theme.accent-danger.with-alpha(0.16) : Theme.surface-2);
+            HorizontalLayout {
+                alignment: center;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.status-msg;
+                        color: root.status-success ? Theme.accent-success : (root.status-danger ? Theme.accent-danger : Theme.on-surface);
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                    }
+                }
+            }
         }
 
         ScrollView {
@@ -91,7 +307,6 @@ export component ProfilePage inherits Window {
                 padding: Theme.spacing-lg;
                 spacing: Theme.spacing-lg;
 
-                // ----- Hero block: avatar + name + handle + bio -----
                 VerticalLayout {
                     spacing: Theme.spacing-md;
                     HorizontalLayout {
@@ -132,56 +347,373 @@ export component ProfilePage inherits Window {
                     }
                 }
 
-                // ----- Stats row -----
                 HorizontalLayout {
                     alignment: stretch;
                     spacing: Theme.spacing-md;
-                    StatColumn { count: root.posts-count; label: "POSTS"; }
-                    StatColumn { count: root.following-count; label: "FOLLOWING"; }
-                    StatColumn { count: root.followers-count; label: "FOLLOWERS"; }
+                    StatColumn {
+                        count: "" + root.posts-count;
+                        label: "POSTS";
+                        active: root.selected-stat == 0;
+                        clicked => {
+                            root.selected-stat = root.selected-stat == 0 ? -1 : 0;
+                            root.set-status(root.selected-stat == 0 ? "Posts insight" : "Closed", true, false);
+                        }
+                    }
+                    StatColumn {
+                        count: "" + root.following-count;
+                        label: "FOLLOWING";
+                        active: root.selected-stat == 1;
+                        clicked => {
+                            root.selected-stat = root.selected-stat == 1 ? -1 : 1;
+                            root.set-status(root.selected-stat == 1 ? "Following insight" : "Closed", true, false);
+                        }
+                    }
+                    StatColumn {
+                        count: root.fmt-followers();
+                        label: "FOLLOWERS";
+                        active: root.selected-stat == 2;
+                        clicked => {
+                            root.selected-stat = root.selected-stat == 2 ? -1 : 2;
+                            root.set-status(root.selected-stat == 2 ? "Followers insight" : "Closed", true, false);
+                        }
+                    }
                 }
 
-                // ----- Actions -----
+                if root.selected-stat >= 0: Rectangle {
+                    background: Theme.accent-info.with-alpha(0.10);
+                    border-radius: Theme.radius-md;
+                    VerticalLayout {
+                        padding: Theme.spacing-md;
+                        Text {
+                            text: root.stat-detail();
+                            color: Theme.accent-info;
+                            font-size: Theme.font-size-body;
+                            font-weight: 700;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+
                 HorizontalLayout {
                     spacing: Theme.spacing-md;
                     MobileButton {
-                        text: "Edit profile";
+                        text: root.following ? "✓ Following" : "Follow";
                         primary: true;
-                        clicked => { root.edit-pressed(); }
+                        tone: root.following ? Tone.success : Tone.default;
+                        clicked => {
+                            root.toggle-follow();
+                        }
                     }
                     MobileButton {
-                        text: "Share";
+                        text: root.share-label();
                         primary: false;
-                        clicked => { root.share-pressed(); }
+                        tone: root.share-mode != 0 ? Tone.info : Tone.default;
+                        clicked => {
+                            root.share-mode = mod(root.share-mode + 1, 3);
+                            root.set-status(root.share-label(), root.share-mode != 0, false);
+                            root.share-pressed();
+                        }
                     }
                 }
 
-                // ----- Sub-view selector -----
-                SegmentedControl {
-                    options: ["Posts", "Replies", "Likes"];
-                    selected-index <=> root.tab-index;
+                MobileButton {
+                    text: "Edit profile";
+                    primary: false;
+                    clicked => {
+                        root.set-status("Opening editor…", true, false);
+                        root.edit-pressed();
+                    }
                 }
 
-                // ----- Placeholder content under the sub-tabs -----
-                VerticalLayout {
-                    spacing: Theme.spacing-md;
-                    for _ in [0, 1, 2]: VerticalLayout {
-                        spacing: Theme.spacing-sm;
-                        HorizontalLayout {
-                            spacing: Theme.spacing-md;
-                            Skeleton {
-                                width: 40px;
-                                height: 40px;
-                                border-radius: Theme.radius-lg;
-                            }
-                            VerticalLayout {
-                                spacing: Theme.spacing-sm;
-                                alignment: center;
-                                horizontal-stretch: 1;
-                                Skeleton { height: 14px; }
-                                Skeleton { height: 12px; }
-                            }
+                SegmentedControl {
+                    options: ["Posts · 3", "Replies · 3", "Likes · 3"];
+                    selected-index <=> root.tab-index;
+                    changed(i) => {
+                        root.set-status("Tab: " + (i == 0 ? "Posts" : (i == 1 ? "Replies" : "Likes")), true, false);
+                    }
+                }
+
+                // Content per tab.
+                if root.tab-index == 0: VerticalLayout {
+                    spacing: 0;
+                    PostRow {
+                        body: "Shipped the Tone enum refactor today. Every status colour in the catalogue now flows from one source.";
+                        when: "5 May · 245 ❤";
+                        likes: root.p0-likes;
+                        replies: 12;
+                        liked: root.p0-liked;
+                        pinned: root.p0-pinned;
+                        row-clicked => {
+                            root.set-status("Opened post 1", true, false);
                         }
+                        like-clicked => {
+                            root.p0-liked = !root.p0-liked;
+                            root.p0-likes = root.p0-liked ? root.p0-likes + 1 : root.p0-likes - 1;
+                            root.set-status(root.p0-liked ? "Liked" : "Unliked", root.p0-liked, false);
+                        }
+                        pin-clicked => {
+                            root.p0-pinned = !root.p0-pinned;
+                            if (root.p0-pinned) {
+                                root.p1-pinned = false;
+                                root.p2-pinned = false;
+                            }
+                            root.set-status(root.p0-pinned ? "📌 Pinned" : "Unpinned", root.p0-pinned, false);
+                        }
+                    }
+                    Divider { }
+
+                    PostRow {
+                        body: "Drawer primitive lands tomorrow. Working on perforation clipping at the page edge.";
+                        when: "3 May · 87 ❤";
+                        likes: root.p1-likes;
+                        replies: 4;
+                        liked: root.p1-liked;
+                        pinned: root.p1-pinned;
+                        row-clicked => {
+                            root.set-status("Opened post 2", true, false);
+                        }
+                        like-clicked => {
+                            root.p1-liked = !root.p1-liked;
+                            root.p1-likes = root.p1-liked ? root.p1-likes + 1 : root.p1-likes - 1;
+                            root.set-status(root.p1-liked ? "Liked" : "Unliked", root.p1-liked, false);
+                        }
+                        pin-clicked => {
+                            root.p1-pinned = !root.p1-pinned;
+                            if (root.p1-pinned) {
+                                root.p0-pinned = false;
+                                root.p2-pinned = false;
+                            }
+                            root.set-status(root.p1-pinned ? "📌 Pinned" : "Unpinned", root.p1-pinned, false);
+                        }
+                    }
+                    Divider { }
+
+                    PostRow {
+                        body: "BottomSheet refactor done. Tap-to-dismiss + drag handle finally feel right.";
+                        when: "28 Apr · 142 ❤";
+                        likes: root.p2-likes;
+                        replies: 7;
+                        liked: root.p2-liked;
+                        pinned: root.p2-pinned;
+                        row-clicked => {
+                            root.set-status("Opened post 3", true, false);
+                        }
+                        like-clicked => {
+                            root.p2-liked = !root.p2-liked;
+                            root.p2-likes = root.p2-liked ? root.p2-likes + 1 : root.p2-likes - 1;
+                            root.set-status(root.p2-liked ? "Liked" : "Unliked", root.p2-liked, false);
+                        }
+                        pin-clicked => {
+                            root.p2-pinned = !root.p2-pinned;
+                            if (root.p2-pinned) {
+                                root.p0-pinned = false;
+                                root.p1-pinned = false;
+                            }
+                            root.set-status(root.p2-pinned ? "📌 Pinned" : "Unpinned", root.p2-pinned, false);
+                        }
+                    }
+                }
+
+                if root.tab-index == 1: VerticalLayout {
+                    spacing: 0;
+                    PostRow {
+                        body: "Replying to @ada: yes, the Banner action label is in scope for tomorrow's PR.";
+                        when: "Reply · 4h";
+                        likes: 8;
+                        replies: 0;
+                        liked: root.r0-liked;
+                        row-clicked => {
+                            root.set-status("Opened reply", true, false);
+                        }
+                        like-clicked => {
+                            root.r0-liked = !root.r0-liked;
+                            root.set-status(root.r0-liked ? "Liked" : "Unliked", root.r0-liked, false);
+                        }
+                        pin-clicked => { }
+                    }
+                    Divider { }
+
+                    PostRow {
+                        body: "Replying to @bao: cargo apk2 if you're on Apple Silicon — xbuild has the gesture bug.";
+                        when: "Reply · 2d";
+                        likes: 14;
+                        replies: 2;
+                        liked: root.r1-liked;
+                        row-clicked => {
+                            root.set-status("Opened reply", true, false);
+                        }
+                        like-clicked => {
+                            root.r1-liked = !root.r1-liked;
+                            root.set-status(root.r1-liked ? "Liked" : "Unliked", root.r1-liked, false);
+                        }
+                        pin-clicked => { }
+                    }
+                    Divider { }
+
+                    PostRow {
+                        body: "Replying to @anika: yes — surface-1/-2/-3 over the longer names. Same DESIGN.md.";
+                        when: "Reply · 1w";
+                        likes: 22;
+                        replies: 0;
+                        liked: root.r2-liked;
+                        row-clicked => {
+                            root.set-status("Opened reply", true, false);
+                        }
+                        like-clicked => {
+                            root.r2-liked = !root.r2-liked;
+                            root.set-status(root.r2-liked ? "Liked" : "Unliked", root.r2-liked, false);
+                        }
+                        pin-clicked => { }
+                    }
+                }
+
+                if root.tab-index == 2: VerticalLayout {
+                    spacing: 0;
+                    PostRow {
+                        body: "@ada: Loving the new spacing scale — finally tight enough on a 412 px target.";
+                        when: "Liked · 5h";
+                        likes: 84;
+                        replies: 6;
+                        liked: root.l0-liked;
+                        row-clicked => {
+                            root.set-status("Opened liked post", true, false);
+                        }
+                        like-clicked => {
+                            root.l0-liked = !root.l0-liked;
+                            root.set-status(root.l0-liked ? "Re-liked" : "Unliked", root.l0-liked, false);
+                        }
+                        pin-clicked => { }
+                    }
+                    Divider { }
+
+                    PostRow {
+                        body: "@cosmin: Anyone shipping Slint on Windows tablets? Touch latency check below.";
+                        when: "Liked · 1d";
+                        likes: 41;
+                        replies: 11;
+                        liked: root.l1-liked;
+                        row-clicked => {
+                            root.set-status("Opened liked post", true, false);
+                        }
+                        like-clicked => {
+                            root.l1-liked = !root.l1-liked;
+                            root.set-status(root.l1-liked ? "Re-liked" : "Unliked", root.l1-liked, false);
+                        }
+                        pin-clicked => { }
+                    }
+                    Divider { }
+
+                    PostRow {
+                        body: "@chen: Fraunces 9pt 0.4 lands today — the tabular numerals are finally in.";
+                        when: "Liked · 3d";
+                        likes: 132;
+                        replies: 18;
+                        liked: root.l2-liked;
+                        row-clicked => {
+                            root.set-status("Opened liked post", true, false);
+                        }
+                        like-clicked => {
+                            root.l2-liked = !root.l2-liked;
+                            root.set-status(root.l2-liked ? "Re-liked" : "Unliked", root.l2-liked, false);
+                        }
+                        pin-clicked => { }
+                    }
+                }
+            }
+        }
+    }
+
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+                root.confirm-block = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: Theme.surface-2;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.muted;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: "Profile menu";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 700;
+                    }
+                }
+                SheetRow {
+                    label: root.following ? "Unfollow @petra" : "Follow @petra";
+                    clicked => {
+                        root.toggle-follow();
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Copy profile link";
+                    clicked => {
+                        root.share-mode = 1;
+                        root.set-status("Link copied", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: root.muted ? "Unmute" : "Mute posts";
+                    clicked => {
+                        root.muted = !root.muted;
+                        root.set-status(root.muted ? "Muted" : "Unmuted", !root.muted, root.muted);
+                        root.sheet-open = false;
+                    }
+                }
+                Divider { }
+
+                SheetRow {
+                    label: root.blocked ? "Unblock @petra" : (root.confirm-block ? "Confirm: block @petra" : "Block @petra");
+                    destructive: true;
+                    clicked => {
+                        if (root.blocked) {
+                            root.blocked = false;
+                            root.set-status("Unblocked", true, false);
+                            root.sheet-open = false;
+                        } else if (root.confirm-block) {
+                            root.blocked = true;
+                            root.following = false;
+                            root.set-status("Blocked", false, true);
+                            root.sheet-open = false;
+                            root.confirm-block = false;
+                        } else {
+                            root.confirm-block = true;
+                        }
+                    }
+                }
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.sheet-open = false;
+                        root.confirm-block = false;
                     }
                 }
             }

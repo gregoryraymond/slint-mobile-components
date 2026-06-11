@@ -7,19 +7,16 @@
 // the leading-icon column, the title column, and the trailing-value
 // column all line up across the entire screen.
 //
-// Layout
-// ------
-//
-//   AppBar — "Split bill" with back arrow.
-//   Hero Card — amount paid (large mono numeral) + restaurant + date.
-//   FormSection "SPLIT EVENLY" — one SettingRow with a Stepper trailing.
-//   FormSection "PEOPLE" — one SettingRow per person, leading is a
-//     profile tile tinted Tone.info (same 32 × 32 footprint as every
-//     other leading tile in the library), trailing is the share value
-//     in accent-info colour.
-//   FormSection "TOTALS" — KeyValueRows for subtotal / tip / total
-//     (last with emphasis: true).
-//   Actions — primary "Send requests" + secondary "Adjust manually".
+// What this screen does
+//   - AppBar "Split bill" with back arrow.
+//   - Hero card: amount paid (large mono numeral) + restaurant + date.
+//   - Headcount stepper (1..12) drives per-person amount live.
+//   - Tip-percent chip strip (0% / 10% / 15% / 18% / 20%) +
+//     a "+1%" bump button — recomputes the tip, total, and per-person
+//     share.
+//   - People rows are tappable to toggle paid; the icon tone, subtitle,
+//     and trailing amount all swap. Unpaid count drives the "Send
+//     requests" two-tap confirm CTA.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
@@ -28,6 +25,7 @@ import { Card } from "@mobile-components/card.slint";
 import { FormSection } from "@mobile-components/form-section.slint";
 import { SettingRow } from "@mobile-components/setting-row.slint";
 import { KeyValueRow } from "@mobile-components/key-value-row.slint";
+import { Chip } from "@mobile-components/chip.slint";
 import { Divider } from "@mobile-components/divider.slint";
 import { Stepper } from "@mobile-components/stepper.slint";
 import { MobileButton, TextButton } from "@mobile-components/button.slint";
@@ -41,6 +39,177 @@ export component PaymentSplitPage inherits Window {
     callback send-pressed();
     callback adjust-pressed();
     callback people-changed(int);
+    callback person-paid(string, bool);
+    callback tip-changed(int);
+
+    // ----- Interactive state -----
+    private property <int> people-count: 4;
+    private property <int> tip-pct: 15;
+    private property <bool> p0: false;
+    private property <bool> p1: false;
+    private property <bool> p2: false;
+    private property <bool> p3: false;
+    private property <bool> p4: false;
+    private property <bool> p5: false;
+    private property <bool> p6: false;
+    private property <bool> p7: false;
+    private property <bool> p8: false;
+    private property <bool> p9: false;
+    private property <bool> p10: false;
+    private property <bool> p11: false;
+    private property <bool> send-confirming: false;
+    private property <int> send-count: 0;
+    private property <string> status-msg: "Tap a person to mark paid · pick a tip · nudge the headcount";
+    private property <bool> status-is-success: false;
+    private property <bool> status-is-danger: false;
+
+    // ----- Helpers -----
+    function name-for(i: int) -> string {
+        if (i == 0) { return "Ada"; }
+        if (i == 1) { return "Brent"; }
+        if (i == 2) { return "Cy"; }
+        if (i == 3) { return "Devi"; }
+        if (i == 4) { return "Eli"; }
+        if (i == 5) { return "Fae"; }
+        if (i == 6) { return "Gus"; }
+        if (i == 7) { return "Hina"; }
+        if (i == 8) { return "Ida"; }
+        if (i == 9) { return "Jin"; }
+        if (i == 10) { return "Kal"; }
+        return "Liv";
+    }
+    function paid-for(i: int) -> bool {
+        if (i == 0) { return root.p0; }
+        if (i == 1) { return root.p1; }
+        if (i == 2) { return root.p2; }
+        if (i == 3) { return root.p3; }
+        if (i == 4) { return root.p4; }
+        if (i == 5) { return root.p5; }
+        if (i == 6) { return root.p6; }
+        if (i == 7) { return root.p7; }
+        if (i == 8) { return root.p8; }
+        if (i == 9) { return root.p9; }
+        if (i == 10) { return root.p10; }
+        return root.p11;
+    }
+    function paid-count() -> int {
+        return (root.people-count >= 1 && root.p0 ? 1 : 0)
+            + (root.people-count >= 2 && root.p1 ? 1 : 0)
+            + (root.people-count >= 3 && root.p2 ? 1 : 0)
+            + (root.people-count >= 4 && root.p3 ? 1 : 0)
+            + (root.people-count >= 5 && root.p4 ? 1 : 0)
+            + (root.people-count >= 6 && root.p5 ? 1 : 0)
+            + (root.people-count >= 7 && root.p6 ? 1 : 0)
+            + (root.people-count >= 8 && root.p7 ? 1 : 0)
+            + (root.people-count >= 9 && root.p8 ? 1 : 0)
+            + (root.people-count >= 10 && root.p9 ? 1 : 0)
+            + (root.people-count >= 11 && root.p10 ? 1 : 0)
+            + (root.people-count >= 12 && root.p11 ? 1 : 0);
+    }
+    function unpaid-count() -> int {
+        return root.people-count - root.paid-count();
+    }
+
+    function subtotal-cents() -> int { return 16017; }
+    function tip-cents() -> int {
+        return floor(root.subtotal-cents() * root.tip-pct / 100);
+    }
+    function total-cents() -> int {
+        return root.subtotal-cents() + root.tip-cents();
+    }
+    function per-person-cents() -> int {
+        return floor(root.total-cents() / root.people-count);
+    }
+    function zpad3(n: int) -> string {
+        return n < 10 ? "00" + n : n < 100 ? "0" + n : "" + n;
+    }
+    function add-commas(n: int) -> string {
+        return n < 1000 ? "" + n
+            : floor(n / 1000) + "," + root.zpad3(mod(n, 1000));
+    }
+    function fmt-euros(c: int) -> string {
+        return "€ " + root.add-commas(floor(c / 100)) + "."
+            + (mod(c, 100) < 10 ? "0" + mod(c, 100) : "" + mod(c, 100));
+    }
+
+    // ----- Mutations -----
+    public function set-tip(pct: int) {
+        root.tip-pct = pct;
+        root.tip-changed(pct);
+        root.status-msg = "Tip · " + pct + "% · " + root.fmt-euros(root.tip-cents())
+            + " · total " + root.fmt-euros(root.total-cents());
+        root.status-is-success = pct > 0;
+        root.status-is-danger = pct == 0;
+        root.send-confirming = false;
+    }
+    public function bump-tip() {
+        if (root.tip-pct < 50) {
+            root.tip-pct = root.tip-pct + 1;
+        }
+        root.tip-changed(root.tip-pct);
+        root.status-msg = "Tip · " + root.tip-pct + "% · "
+            + root.fmt-euros(root.tip-cents());
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    public function toggle-paid(i: int) {
+        if (i == 0) { root.p0 = !root.p0; }
+        if (i == 1) { root.p1 = !root.p1; }
+        if (i == 2) { root.p2 = !root.p2; }
+        if (i == 3) { root.p3 = !root.p3; }
+        if (i == 4) { root.p4 = !root.p4; }
+        if (i == 5) { root.p5 = !root.p5; }
+        if (i == 6) { root.p6 = !root.p6; }
+        if (i == 7) { root.p7 = !root.p7; }
+        if (i == 8) { root.p8 = !root.p8; }
+        if (i == 9) { root.p9 = !root.p9; }
+        if (i == 10) { root.p10 = !root.p10; }
+        if (i == 11) { root.p11 = !root.p11; }
+        root.person-paid(root.name-for(i), root.paid-for(i));
+        root.status-msg = root.paid-for(i)
+            ? root.name-for(i) + " paid · " + root.unpaid-count() + " still owe"
+            : root.name-for(i) + " un-paid · " + root.unpaid-count() + " owe";
+        root.status-is-success = root.paid-for(i);
+        root.status-is-danger = !root.paid-for(i);
+        root.send-confirming = false;
+    }
+    public function do-send() {
+        if (root.unpaid-count() == 0) {
+            root.status-msg = "Everyone paid · nothing to send";
+            root.status-is-success = false;
+            root.status-is-danger = true;
+            return;
+        }
+        if (!root.send-confirming) {
+            root.send-confirming = true;
+            root.status-msg = "Tap again to send "
+                + root.unpaid-count() + " requests";
+            root.status-is-success = false;
+            root.status-is-danger = false;
+            return;
+        }
+        root.send-confirming = false;
+        root.send-count = root.send-count + 1;
+        root.send-pressed();
+        root.status-msg = "Sent " + root.unpaid-count()
+            + " requests · " + root.fmt-euros(root.per-person-cents()) + " each";
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    public function tap-adjust() {
+        root.adjust-pressed();
+        root.status-msg = "Manual adjust · each person edits their share";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    changed people-count => {
+        root.people-changed(root.people-count);
+        root.status-msg = "Splitting among " + root.people-count + " · "
+            + root.fmt-euros(root.per-person-cents()) + " each";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+        root.send-confirming = false;
+    }
 
     background: Theme.background;
 
@@ -53,6 +222,30 @@ export component PaymentSplitPage inherits Window {
             leading-pressed => { root.back-pressed(); }
         }
 
+        // ----- Status banner ---------------------------------------
+        Rectangle {
+            height: 32px;
+            background: root.status-is-danger ? Theme.accent-danger
+                : root.status-is-success ? Theme.accent-success
+                : Theme.surface-2;
+            animate background { duration: Theme.motion-fast; }
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                Text {
+                    text: root.status-msg;
+                    color: (root.status-is-danger || root.status-is-success)
+                        ? Theme.on-primary
+                        : Theme.on-surface;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+            }
+        }
+
         ScrollView {
             vertical-stretch: 1;
 
@@ -62,7 +255,7 @@ export component PaymentSplitPage inherits Window {
                 spacing: Theme.spacing-md;
                 alignment: start;
 
-                // ----- Hero card: amount paid -------------------------------
+                // ----- Hero card -----
                 VerticalLayout {
                     padding-left: Theme.spacing-md;
                     padding-right: Theme.spacing-md;
@@ -73,7 +266,7 @@ export component PaymentSplitPage inherits Window {
                             alignment: center;
 
                             Heading {
-                                text: "€ 184.20";
+                                text: root.fmt-euros(root.total-cents());
                                 style: HeadingStyle.mono;
                                 color: Theme.on-surface;
                                 font-size: 44px;
@@ -81,7 +274,8 @@ export component PaymentSplitPage inherits Window {
                                 horizontal-alignment: center;
                             }
                             Text {
-                                text: "Caffè San Carlo · 2026-05-15";
+                                text: "Caffè San Carlo · 2026-05-15 · "
+                                    + root.fmt-euros(root.per-person-cents()) + "/head";
                                 color: Theme.muted;
                                 font-size: Theme.font-size-caption;
                                 horizontal-alignment: center;
@@ -90,81 +284,201 @@ export component PaymentSplitPage inherits Window {
                     }
                 }
 
-                // ----- Split evenly -----------------------------------------
+                // ----- Split evenly --------------------------------
                 FormSection {
                     title: "SPLIT EVENLY";
 
                     SettingRow {
-                        title: "Among 4 people";
+                        title: "Among " + root.people-count + " people";
                         subtitle: "Tap +/− to change the head count";
 
                         Stepper {
-                            value: 4;
+                            value <=> root.people-count;
                             minimum: 1;
                             maximum: 12;
-                            changed(v) => { root.people-changed(v); }
                         }
                     }
                 }
 
-                // ----- People -----------------------------------------------
+                // ----- People --------------------------------------
                 FormSection {
-                    title: "PEOPLE";
+                    title: "PEOPLE · " + root.unpaid-count() + " owe / "
+                        + root.paid-count() + " paid";
 
-                    SettingRow {
+                    if root.people-count >= 1: SettingRow {
                         icon: @image-url("@mobile-components/icons/profile.svg");
-                        tone: Tone.info;
-                        title: "Ada";
-                        subtitle: "owes you";
-
+                        tone: root.p0 ? Tone.success : Tone.info;
+                        title: root.name-for(0);
+                        subtitle: root.p0 ? "paid in full" : "owes you";
+                        clicked => { root.toggle-paid(0); }
                         Text {
-                            text: "€ 46.05";
-                            color: Theme.accent-info;
+                            text: (root.p0 ? "✓ " : "") + root.fmt-euros(root.per-person-cents());
+                            color: root.p0 ? Theme.accent-success : Theme.accent-info;
                             font-size: Theme.font-size-body-large;
                             font-weight: 700;
                             horizontal-alignment: right;
                         }
                     }
-                    Divider { }
-                    SettingRow {
+                    if root.people-count >= 2: Divider { }
+                    if root.people-count >= 2: SettingRow {
                         icon: @image-url("@mobile-components/icons/profile.svg");
-                        tone: Tone.info;
-                        title: "Brent";
-                        subtitle: "owes you";
-
+                        tone: root.p1 ? Tone.success : Tone.info;
+                        title: root.name-for(1);
+                        subtitle: root.p1 ? "paid in full" : "owes you";
+                        clicked => { root.toggle-paid(1); }
                         Text {
-                            text: "€ 46.05";
-                            color: Theme.accent-info;
+                            text: (root.p1 ? "✓ " : "") + root.fmt-euros(root.per-person-cents());
+                            color: root.p1 ? Theme.accent-success : Theme.accent-info;
                             font-size: Theme.font-size-body-large;
                             font-weight: 700;
                             horizontal-alignment: right;
                         }
                     }
-                    Divider { }
-                    SettingRow {
+                    if root.people-count >= 3: Divider { }
+                    if root.people-count >= 3: SettingRow {
                         icon: @image-url("@mobile-components/icons/profile.svg");
-                        tone: Tone.info;
-                        title: "Cy";
-                        subtitle: "owes you";
-
+                        tone: root.p2 ? Tone.success : Tone.info;
+                        title: root.name-for(2);
+                        subtitle: root.p2 ? "paid in full" : "owes you";
+                        clicked => { root.toggle-paid(2); }
                         Text {
-                            text: "€ 46.05";
-                            color: Theme.accent-info;
+                            text: (root.p2 ? "✓ " : "") + root.fmt-euros(root.per-person-cents());
+                            color: root.p2 ? Theme.accent-success : Theme.accent-info;
                             font-size: Theme.font-size-body-large;
                             font-weight: 700;
                             horizontal-alignment: right;
                         }
                     }
-                    Divider { }
-                    SettingRow {
+                    if root.people-count >= 4: Divider { }
+                    if root.people-count >= 4: SettingRow {
                         icon: @image-url("@mobile-components/icons/profile.svg");
-                        tone: Tone.info;
-                        title: "Devi";
-                        subtitle: "owes you";
-
+                        tone: root.p3 ? Tone.success : Tone.info;
+                        title: root.name-for(3);
+                        subtitle: root.p3 ? "paid in full" : "owes you";
+                        clicked => { root.toggle-paid(3); }
                         Text {
-                            text: "€ 46.05";
-                            color: Theme.accent-info;
+                            text: (root.p3 ? "✓ " : "") + root.fmt-euros(root.per-person-cents());
+                            color: root.p3 ? Theme.accent-success : Theme.accent-info;
+                            font-size: Theme.font-size-body-large;
+                            font-weight: 700;
+                            horizontal-alignment: right;
+                        }
+                    }
+                    if root.people-count >= 5: Divider { }
+                    if root.people-count >= 5: SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        tone: root.p4 ? Tone.success : Tone.info;
+                        title: root.name-for(4);
+                        subtitle: root.p4 ? "paid in full" : "owes you";
+                        clicked => { root.toggle-paid(4); }
+                        Text {
+                            text: (root.p4 ? "✓ " : "") + root.fmt-euros(root.per-person-cents());
+                            color: root.p4 ? Theme.accent-success : Theme.accent-info;
+                            font-size: Theme.font-size-body-large;
+                            font-weight: 700;
+                            horizontal-alignment: right;
+                        }
+                    }
+                    if root.people-count >= 6: Divider { }
+                    if root.people-count >= 6: SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        tone: root.p5 ? Tone.success : Tone.info;
+                        title: root.name-for(5);
+                        subtitle: root.p5 ? "paid in full" : "owes you";
+                        clicked => { root.toggle-paid(5); }
+                        Text {
+                            text: (root.p5 ? "✓ " : "") + root.fmt-euros(root.per-person-cents());
+                            color: root.p5 ? Theme.accent-success : Theme.accent-info;
+                            font-size: Theme.font-size-body-large;
+                            font-weight: 700;
+                            horizontal-alignment: right;
+                        }
+                    }
+                    if root.people-count >= 7: Divider { }
+                    if root.people-count >= 7: SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        tone: root.p6 ? Tone.success : Tone.info;
+                        title: root.name-for(6);
+                        subtitle: root.p6 ? "paid in full" : "owes you";
+                        clicked => { root.toggle-paid(6); }
+                        Text {
+                            text: (root.p6 ? "✓ " : "") + root.fmt-euros(root.per-person-cents());
+                            color: root.p6 ? Theme.accent-success : Theme.accent-info;
+                            font-size: Theme.font-size-body-large;
+                            font-weight: 700;
+                            horizontal-alignment: right;
+                        }
+                    }
+                    if root.people-count >= 8: Divider { }
+                    if root.people-count >= 8: SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        tone: root.p7 ? Tone.success : Tone.info;
+                        title: root.name-for(7);
+                        subtitle: root.p7 ? "paid in full" : "owes you";
+                        clicked => { root.toggle-paid(7); }
+                        Text {
+                            text: (root.p7 ? "✓ " : "") + root.fmt-euros(root.per-person-cents());
+                            color: root.p7 ? Theme.accent-success : Theme.accent-info;
+                            font-size: Theme.font-size-body-large;
+                            font-weight: 700;
+                            horizontal-alignment: right;
+                        }
+                    }
+                    if root.people-count >= 9: Divider { }
+                    if root.people-count >= 9: SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        tone: root.p8 ? Tone.success : Tone.info;
+                        title: root.name-for(8);
+                        subtitle: root.p8 ? "paid in full" : "owes you";
+                        clicked => { root.toggle-paid(8); }
+                        Text {
+                            text: (root.p8 ? "✓ " : "") + root.fmt-euros(root.per-person-cents());
+                            color: root.p8 ? Theme.accent-success : Theme.accent-info;
+                            font-size: Theme.font-size-body-large;
+                            font-weight: 700;
+                            horizontal-alignment: right;
+                        }
+                    }
+                    if root.people-count >= 10: Divider { }
+                    if root.people-count >= 10: SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        tone: root.p9 ? Tone.success : Tone.info;
+                        title: root.name-for(9);
+                        subtitle: root.p9 ? "paid in full" : "owes you";
+                        clicked => { root.toggle-paid(9); }
+                        Text {
+                            text: (root.p9 ? "✓ " : "") + root.fmt-euros(root.per-person-cents());
+                            color: root.p9 ? Theme.accent-success : Theme.accent-info;
+                            font-size: Theme.font-size-body-large;
+                            font-weight: 700;
+                            horizontal-alignment: right;
+                        }
+                    }
+                    if root.people-count >= 11: Divider { }
+                    if root.people-count >= 11: SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        tone: root.p10 ? Tone.success : Tone.info;
+                        title: root.name-for(10);
+                        subtitle: root.p10 ? "paid in full" : "owes you";
+                        clicked => { root.toggle-paid(10); }
+                        Text {
+                            text: (root.p10 ? "✓ " : "") + root.fmt-euros(root.per-person-cents());
+                            color: root.p10 ? Theme.accent-success : Theme.accent-info;
+                            font-size: Theme.font-size-body-large;
+                            font-weight: 700;
+                            horizontal-alignment: right;
+                        }
+                    }
+                    if root.people-count >= 12: Divider { }
+                    if root.people-count >= 12: SettingRow {
+                        icon: @image-url("@mobile-components/icons/profile.svg");
+                        tone: root.p11 ? Tone.success : Tone.info;
+                        title: root.name-for(11);
+                        subtitle: root.p11 ? "paid in full" : "owes you";
+                        clicked => { root.toggle-paid(11); }
+                        Text {
+                            text: (root.p11 ? "✓ " : "") + root.fmt-euros(root.per-person-cents());
+                            color: root.p11 ? Theme.accent-success : Theme.accent-info;
                             font-size: Theme.font-size-body-large;
                             font-weight: 700;
                             horizontal-alignment: right;
@@ -172,28 +486,73 @@ export component PaymentSplitPage inherits Window {
                     }
                 }
 
-                // ----- Totals -----------------------------------------------
+                // ----- Totals -------------------------------------
                 FormSection {
                     title: "TOTALS";
 
                     KeyValueRow {
                         label: "Subtotal";
-                        value: "€ 160.17";
+                        value: root.fmt-euros(root.subtotal-cents());
                     }
                     Divider { }
-                    KeyValueRow {
-                        label: "Tip · 15 %";
-                        value: "€ 24.03";
+                    // Custom tip row + chip strip.
+                    Rectangle {
+                        min-height: 96px;
+                        VerticalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-sm;
+                            HorizontalLayout {
+                                Text {
+                                    text: "Tip · " + root.tip-pct + " %";
+                                    color: Theme.on-surface;
+                                    font-size: Theme.font-size-body;
+                                    horizontal-stretch: 1;
+                                }
+                                Text {
+                                    text: root.fmt-euros(root.tip-cents());
+                                    color: Theme.on-surface;
+                                    font-size: Theme.font-size-body;
+                                    font-weight: 700;
+                                }
+                            }
+                            HorizontalLayout {
+                                spacing: Theme.spacing-xs;
+                                Rectangle {
+                                    Chip { label: "0%"; selected: root.tip-pct == 0; }
+                                    TouchArea { clicked => { root.set-tip(0); } }
+                                }
+                                Rectangle {
+                                    Chip { label: "10%"; selected: root.tip-pct == 10; }
+                                    TouchArea { clicked => { root.set-tip(10); } }
+                                }
+                                Rectangle {
+                                    Chip { label: "15%"; selected: root.tip-pct == 15; }
+                                    TouchArea { clicked => { root.set-tip(15); } }
+                                }
+                                Rectangle {
+                                    Chip { label: "18%"; selected: root.tip-pct == 18; }
+                                    TouchArea { clicked => { root.set-tip(18); } }
+                                }
+                                Rectangle {
+                                    Chip { label: "20%"; selected: root.tip-pct == 20; }
+                                    TouchArea { clicked => { root.set-tip(20); } }
+                                }
+                                Rectangle {
+                                    Chip { label: "+1%"; }
+                                    TouchArea { clicked => { root.bump-tip(); } }
+                                }
+                            }
+                        }
                     }
                     Divider { }
                     KeyValueRow {
                         label: "Total";
-                        value: "€ 184.20";
+                        value: root.fmt-euros(root.total-cents());
                         emphasis: true;
                     }
                 }
 
-                // ----- Actions ----------------------------------------------
+                // ----- Actions ------------------------------------
                 VerticalLayout {
                     padding-left: Theme.spacing-md;
                     padding-right: Theme.spacing-md;
@@ -201,12 +560,20 @@ export component PaymentSplitPage inherits Window {
                     alignment: stretch;
 
                     MobileButton {
-                        text: "Send requests";
-                        clicked => { root.send-pressed(); }
+                        text: root.unpaid-count() == 0
+                            ? "Everyone paid · nothing to send"
+                            : root.send-confirming
+                                ? "Tap again to send " + root.unpaid-count() + " requests"
+                                : root.send-count > 0
+                                    ? "Send " + root.unpaid-count() + " more requests"
+                                    : "Send " + root.unpaid-count() + " requests";
+                        tone: root.send-confirming ? Tone.success : Tone.default;
+                        enabled: root.unpaid-count() > 0;
+                        clicked => { root.do-send(); }
                     }
                     TextButton {
                         text: "Adjust manually";
-                        clicked => { root.adjust-pressed(); }
+                        clicked => { root.tap-adjust(); }
                     }
                 }
             }

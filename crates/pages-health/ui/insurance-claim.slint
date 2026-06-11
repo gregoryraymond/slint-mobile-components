@@ -4,12 +4,8 @@
 // Submit-a-claim form. INSURED summary block at the top
 // (KeyValueRows), claim-detail FormFields (provider / service date /
 // diagnosis code / amount), ATTACHMENTS list with delete affordance
-// + "Add another" row, and submit / save-draft actions at the bottom.
-//
-// Alignment discipline
-// --------------------
-// Every metadata pair is `KeyValueRow`; every input is wrapped in
-// `FormField`; every attachment is `SettingRow`. No hand-rolled rows.
+// + "Add another" row that actually appends fake rows, and a
+// two-tap-confirm Submit + Save-draft counter at the bottom.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
@@ -26,16 +22,131 @@ export component InsuranceClaimPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
 
-    in-out property <string> provider;
-    in-out property <string> service-date;
-    in-out property <string> diagnosis-code;
-    in-out property <string> amount;
+    in-out property <string> provider: "Riverside Heart Clinic";
+    in-out property <string> service-date: "05/12/2026";
+    in-out property <string> diagnosis-code: "I10";
+    in-out property <string> amount: "240.00";
 
     callback back-pressed();
     callback submit-pressed();
     callback save-draft-pressed();
     callback delete-attachment(string);
     callback add-attachment();
+    callback claim-submitted(int);
+
+    // ----- Interactive state -----
+    private property <bool> a0-removed: false;
+    private property <bool> a1-removed: false;
+    private property <int> added-count: 0;
+    private property <bool> submit-confirming: false;
+    private property <int> submit-count: 0;
+    private property <int> draft-count: 0;
+    private property <string> status-msg: "Fill the fields · add attachments · tap Submit twice to confirm";
+    private property <bool> status-is-success: false;
+    private property <bool> status-is-danger: false;
+
+    function form-valid() -> bool {
+        return !root.provider.is-empty && !root.service-date.is-empty
+            && !root.amount.is-empty;
+    }
+    function attachment-count() -> int {
+        return (root.a0-removed ? 0 : 1) + (root.a1-removed ? 0 : 1)
+            + root.added-count;
+    }
+    function is-submitted() -> bool { return root.submit-count > 0; }
+
+    public function delete-row(name: string, i: int) {
+        if (i == 0) { root.a0-removed = true; }
+        if (i == 1) { root.a1-removed = true; }
+        root.delete-attachment(name);
+        root.status-msg = "Removed " + name + " · " + root.attachment-count() + " left";
+        root.status-is-success = false;
+        root.status-is-danger = true;
+    }
+    public function delete-added(i: int) {
+        // Treat removing the most recent fresh attachment as "pop".
+        if (root.added-count > 0) {
+            root.added-count = root.added-count - 1;
+        }
+        root.delete-attachment("attachment_extra_" + i + ".pdf");
+        root.status-msg = "Removed extra · " + root.attachment-count() + " left";
+        root.status-is-success = false;
+        root.status-is-danger = true;
+    }
+    public function tap-add-attachment() {
+        if (root.added-count < 3) {
+            root.added-count = root.added-count + 1;
+            root.add-attachment();
+            root.status-msg = "Added attachment · " + root.attachment-count() + " total";
+            root.status-is-success = true;
+            root.status-is-danger = false;
+        } else {
+            root.status-msg = "Attachment limit reached (3 extras)";
+            root.status-is-success = false;
+            root.status-is-danger = true;
+        }
+    }
+    public function do-submit() {
+        if (!root.form-valid()) {
+            root.status-msg = "Fill required fields first";
+            root.status-is-success = false;
+            root.status-is-danger = true;
+            return;
+        }
+        if (!root.submit-confirming) {
+            root.submit-confirming = true;
+            root.status-msg = "Tap Submit again to confirm";
+            root.status-is-success = false;
+            root.status-is-danger = false;
+            return;
+        }
+        root.submit-confirming = false;
+        root.submit-count = root.submit-count + 1;
+        root.submit-pressed();
+        root.claim-submitted(root.submit-count);
+        root.status-msg = "Claim submitted (#" + root.submit-count + ") · "
+            + root.attachment-count() + " attachments";
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    public function do-save-draft() {
+        root.draft-count = root.draft-count + 1;
+        root.save-draft-pressed();
+        root.status-msg = "Draft saved (#" + root.draft-count + ")";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    changed provider => {
+        root.status-msg = root.provider.is-empty
+            ? "Provider required"
+            : "Provider · " + root.provider;
+        root.status-is-success = !root.provider.is-empty;
+        root.status-is-danger = root.provider.is-empty;
+        root.submit-confirming = false;
+    }
+    changed service-date => {
+        root.status-msg = root.service-date.is-empty
+            ? "Service date required"
+            : "Service date · " + root.service-date;
+        root.status-is-success = !root.service-date.is-empty;
+        root.status-is-danger = root.service-date.is-empty;
+        root.submit-confirming = false;
+    }
+    changed amount => {
+        root.status-msg = root.amount.is-empty
+            ? "Amount required"
+            : "Amount · $" + root.amount;
+        root.status-is-success = !root.amount.is-empty;
+        root.status-is-danger = root.amount.is-empty;
+        root.submit-confirming = false;
+    }
+    changed diagnosis-code => {
+        root.status-msg = "Diagnosis · "
+            + (root.diagnosis-code.is-empty ? "(empty)" : root.diagnosis-code);
+        root.status-is-success = false;
+        root.status-is-danger = false;
+        root.submit-confirming = false;
+    }
 
     background: Theme.background;
 
@@ -48,6 +159,30 @@ export component InsuranceClaimPage inherits Window {
             leading-pressed => { root.back-pressed(); }
         }
 
+        // ----- Status banner ---------------------------------------
+        Rectangle {
+            height: 32px;
+            background: root.status-is-danger ? Theme.accent-danger
+                : root.status-is-success ? Theme.accent-success
+                : Theme.surface-2;
+            animate background { duration: Theme.motion-fast; }
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                Text {
+                    text: root.status-msg;
+                    color: (root.status-is-danger || root.status-is-success)
+                        ? Theme.on-primary
+                        : Theme.on-surface;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+            }
+        }
+
         ScrollView {
             vertical-stretch: 1;
 
@@ -57,9 +192,11 @@ export component InsuranceClaimPage inherits Window {
                 spacing: Theme.spacing-lg;
                 alignment: start;
 
-                // ----- INSURED ----------------------------------------------
+                // INSURED with optional SUBMITTED badge.
                 FormSection {
-                    title: "INSURED";
+                    title: root.is-submitted()
+                        ? "INSURED · SUBMITTED #" + root.submit-count
+                        : "INSURED";
 
                     KeyValueRow {
                         label: "Name";
@@ -77,7 +214,6 @@ export component InsuranceClaimPage inherits Window {
                     }
                 }
 
-                // ----- Field stack ------------------------------------------
                 VerticalLayout {
                     spacing: Theme.spacing-md;
                     alignment: stretch;
@@ -85,6 +221,7 @@ export component InsuranceClaimPage inherits Window {
                     FormField {
                         label: "Provider name";
                         required: true;
+                        error: root.provider.is-empty ? "Required" : "";
                         TextField {
                             placeholder: "Riverside Heart Clinic";
                             text <=> root.provider;
@@ -94,6 +231,7 @@ export component InsuranceClaimPage inherits Window {
                     FormField {
                         label: "Service date";
                         required: true;
+                        error: root.service-date.is-empty ? "Required" : "";
                         TextField {
                             placeholder: "MM/DD/YYYY";
                             text <=> root.service-date;
@@ -112,6 +250,7 @@ export component InsuranceClaimPage inherits Window {
                     FormField {
                         label: "Amount";
                         required: true;
+                        error: root.amount.is-empty ? "Required" : "";
                         TextField {
                             placeholder: "0.00";
                             text <=> root.amount;
@@ -120,41 +259,92 @@ export component InsuranceClaimPage inherits Window {
                     }
                 }
 
-                // ----- ATTACHMENTS ------------------------------------------
+                // ATTACHMENTS — original 2 removable, plus up to 3 added.
                 FormSection {
-                    title: "ATTACHMENTS";
+                    title: "ATTACHMENTS · " + root.attachment-count();
 
-                    SettingRow {
+                    if !root.a0-removed: SettingRow {
                         icon: @image-url("@mobile-components/icons/menu.svg");
                         title: "receipt_05122026.pdf";
                         subtitle: "412 KB · added today";
-                        clicked => { root.delete-attachment("receipt_05122026.pdf"); }
+                        clicked => {
+                            root.delete-row("receipt_05122026.pdf", 0);
+                        }
                         Image {
                             width: 16px;
                             height: 16px;
                             source: @image-url("@mobile-components/icons/close.svg");
-                            colorize: Theme.muted;
+                            colorize: Theme.accent-danger;
                             image-fit: contain;
                         }
                     }
-                    Divider { }
-                    SettingRow {
+                    if !root.a0-removed && (!root.a1-removed || root.added-count > 0): Divider { }
+
+                    if !root.a1-removed: SettingRow {
                         icon: @image-url("@mobile-components/icons/queue.svg");
                         title: "lab_panel_05112026.pdf";
                         subtitle: "208 KB · added today";
-                        clicked => { root.delete-attachment("lab_panel_05112026.pdf"); }
+                        clicked => {
+                            root.delete-row("lab_panel_05112026.pdf", 1);
+                        }
                         Image {
                             width: 16px;
                             height: 16px;
                             source: @image-url("@mobile-components/icons/close.svg");
-                            colorize: Theme.muted;
+                            colorize: Theme.accent-danger;
                             image-fit: contain;
                         }
                     }
+                    if !root.a1-removed && root.added-count > 0: Divider { }
+
+                    if root.added-count >= 1: SettingRow {
+                        icon: @image-url("@mobile-components/icons/menu.svg");
+                        title: "attachment_extra_1.pdf";
+                        subtitle: "Just added";
+                        clicked => { root.delete-added(1); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/close.svg");
+                            colorize: Theme.accent-danger;
+                            image-fit: contain;
+                        }
+                    }
+                    if root.added-count >= 2: Divider { }
+                    if root.added-count >= 2: SettingRow {
+                        icon: @image-url("@mobile-components/icons/menu.svg");
+                        title: "attachment_extra_2.pdf";
+                        subtitle: "Just added";
+                        clicked => { root.delete-added(2); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/close.svg");
+                            colorize: Theme.accent-danger;
+                            image-fit: contain;
+                        }
+                    }
+                    if root.added-count >= 3: Divider { }
+                    if root.added-count >= 3: SettingRow {
+                        icon: @image-url("@mobile-components/icons/menu.svg");
+                        title: "attachment_extra_3.pdf";
+                        subtitle: "Just added";
+                        clicked => { root.delete-added(3); }
+                        Image {
+                            width: 16px;
+                            height: 16px;
+                            source: @image-url("@mobile-components/icons/close.svg");
+                            colorize: Theme.accent-danger;
+                            image-fit: contain;
+                        }
+                    }
+
                     Divider { }
                     SettingRow {
-                        title: "+ Add another";
-                        clicked => { root.add-attachment(); }
+                        title: root.added-count < 3
+                            ? "+ Add another"
+                            : "+ Limit reached (3)";
+                        clicked => { root.tap-add-attachment(); }
                         Image {
                             width: 16px;
                             height: 16px;
@@ -165,7 +355,6 @@ export component InsuranceClaimPage inherits Window {
                     }
                 }
 
-                // ----- Actions ----------------------------------------------
                 VerticalLayout {
                     padding-left: Theme.spacing-md;
                     padding-right: Theme.spacing-md;
@@ -173,13 +362,22 @@ export component InsuranceClaimPage inherits Window {
                     alignment: stretch;
 
                     MobileButton {
-                        text: "Submit claim";
-                        enabled: root.provider != "" && root.service-date != "" && root.amount != "";
-                        clicked => { root.submit-pressed(); }
+                        text: root.is-submitted()
+                            ? "Submit again (#" + (root.submit-count + 1) + ")"
+                            : root.submit-confirming
+                                ? "Tap again to confirm"
+                                : "Submit claim";
+                        tone: root.submit-confirming ? Tone.success
+                            : root.is-submitted() ? Tone.info
+                            : Tone.default;
+                        enabled: root.form-valid();
+                        clicked => { root.do-submit(); }
                     }
                     TextButton {
-                        text: "Save as draft";
-                        clicked => { root.save-draft-pressed(); }
+                        text: root.draft-count > 0
+                            ? "Save as draft (saved " + root.draft-count + "×)"
+                            : "Save as draft";
+                        clicked => { root.do-save-draft(); }
                     }
                 }
             }

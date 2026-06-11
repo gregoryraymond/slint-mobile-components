@@ -6,15 +6,20 @@
 // Page` (portfolio summary). Demonstrates:
 //
 //   - Ticker + company hero with brand logo disc, big share price, and
-//     tone-tinted day delta beneath.
-//   - Range-picker chip strip (1D / 1W / 1M / 3M / 1Y / 5Y / All).
+//     tone-tinted day delta beneath. A "★ Watched" badge appears next
+//     to the company name when watchlisted.
+//   - Range-picker chip strip (1D / 1W / 1M / 3M / 1Y / 5Y / All) that
+//     swaps the sparkline bars + day-delta text + direction live.
 //   - Reused bar-strip sparkline (same approximation pattern as the
 //     crypto page), tone-coloured by the delta direction.
-//   - Holdings strip — "You own 14 shares · $4,318" tone-tinted by
-//     gain/loss against cost basis.
-//   - 2 × 2 fundamentals grid (Open / High / Market cap / P/E).
-//   - Analyst ratings horizontal bar (Buy / Hold / Sell tally).
-//   - Sticky Buy / Sell pair at the bottom.
+//   - Holdings strip — "You own N shares · $X" tone-tinted by
+//     gain/loss against cost basis. Tap to expand cost-basis details.
+//   - 2 × 2 fundamentals grid (Open / High / Market cap / P/E) —
+//     tiles are tappable.
+//   - Analyst ratings horizontal bar (Buy / Hold / Sell tally) —
+//     bands are tappable to highlight the share.
+//   - Sticky Buy / Sell pair opens a trade bottom sheet with a ± qty
+//     stepper and confirm.
 
 import { ScrollView } from "std-widgets.slint";
 import { Theme, Tone } from "@mobile-theme/theme.slint";
@@ -47,15 +52,17 @@ component Sparkline inherits Rectangle {
     }
 }
 
-// One fundamental tile in the 2×2 grid.
+// One fundamental tile in the 2×2 grid — now tappable.
 component FundamentalTile inherits Rectangle {
     in property <string> label;
     in property <string> value;
     in property <Tone> tone: Tone.default;
+    callback clicked();
 
     horizontal-stretch: 1;
     height: 72px;
-    background: Theme.surface-1;
+    background: touch.pressed ? Theme.surface-pressed : Theme.surface-1;
+    animate background { duration: Theme.motion-fast; }
     border-radius: Theme.radius-md;
     drop-shadow-blur: Theme.elevation-1-blur;
     drop-shadow-color: Theme.elevation-1-color;
@@ -77,21 +84,23 @@ component FundamentalTile inherits Rectangle {
             color:
                   root.tone == Tone.success ? Theme.accent-success
                 : root.tone == Tone.warning ? Theme.accent-warning
-                : root.tone == Tone.danger  ? Theme.accent-danger
-                : root.tone == Tone.info    ? Theme.accent-info
+                : root.tone == Tone.danger ? Theme.accent-danger
+                : root.tone == Tone.info ? Theme.accent-info
                 : Theme.on-surface;
             font-size: Theme.font-size-body-large;
             font-weight: 700;
         }
     }
+    touch := TouchArea { clicked => { root.clicked(); } }
 }
 
-// Analyst ratings bar — three bands (Buy success / Hold warning / Sell
-// danger) sized by the count fraction.
+// Analyst ratings bar — bands tappable.
 component AnalystBar inherits Rectangle {
     in property <int> buy: 12;
     in property <int> hold: 7;
     in property <int> sell: 2;
+    in property <int> active-band: -1; // -1 / 0 / 1 / 2
+    callback band-tapped(int);
 
     height: 16px;
     border-radius: 8px;
@@ -105,14 +114,23 @@ component AnalystBar inherits Rectangle {
         Rectangle {
             horizontal-stretch: root.buy;
             background: Theme.accent-success;
+            opacity: root.active-band == -1 || root.active-band == 0 ? 1.0 : 0.4;
+            animate opacity { duration: Theme.motion-fast; }
+            TouchArea { clicked => { root.band-tapped(0); } }
         }
         Rectangle {
             horizontal-stretch: root.hold;
             background: Theme.accent-warning;
+            opacity: root.active-band == -1 || root.active-band == 1 ? 1.0 : 0.4;
+            animate opacity { duration: Theme.motion-fast; }
+            TouchArea { clicked => { root.band-tapped(1); } }
         }
         Rectangle {
             horizontal-stretch: root.sell;
             background: Theme.accent-danger;
+            opacity: root.active-band == -1 || root.active-band == 2 ? 1.0 : 0.4;
+            animate opacity { duration: Theme.motion-fast; }
+            TouchArea { clicked => { root.band-tapped(2); } }
         }
     }
 }
@@ -122,15 +140,195 @@ export component InvestmentDetailPage inherits Window {
     preferred-height: 892px;
     in property <string> ticker: "PTGN";
     in property <string> company: "Patagonia Inc.";
-    in property <string> price: "$308.42";
-    in property <string> day-delta: "+$5.24 · +1.73% today";
-    in property <int> day-direction: 1;
-    in property <string> holdings: "14 shares · $4,318";
-    in property <string> holdings-delta: "+$214 · +5.2%";
     callback back-pressed();
     callback star-pressed();
     callback buy-pressed();
     callback sell-pressed();
+    callback range-changed(string);
+    callback trade-confirmed(string, int, int); // side, qty, total-cents
+
+    // ----- Interactive state -----
+    private property <bool> watched: false;
+    private property <int> range-index: 2; // default 1M
+    private property <int> shares: 14;
+    private property <int> cost-cents: 410400; // $4,104 cost basis = $293.14 avg
+    private property <bool> holdings-expanded: false;
+    private property <int> analyst-band: -1;
+    private property <bool> trade-sheet-open: false;
+    private property <int> trade-side: 0; // 0=Buy, 1=Sell
+    private property <int> trade-qty: 1;
+    private property <string> status-msg: "Pick a range · tap Holdings to expand · Buy/Sell opens trade sheet";
+    private property <bool> status-is-success: false;
+    private property <bool> status-is-danger: false;
+
+    // ----- Helpers -----
+    function current-price-cents() -> int { return 30842; }
+    function position-cents() -> int { return root.shares * root.current-price-cents(); }
+    function gain-cents() -> int { return root.position-cents() - root.cost-cents; }
+    function avg-cost-cents() -> int {
+        return root.shares == 0 ? 0 : floor(root.cost-cents / root.shares);
+    }
+    function range-label(i: int) -> string {
+        if (i == 0) { return "1D"; }
+        if (i == 1) { return "1W"; }
+        if (i == 2) { return "1M"; }
+        if (i == 3) { return "3M"; }
+        if (i == 4) { return "1Y"; }
+        if (i == 5) { return "5Y"; }
+        return "All";
+    }
+    function delta-text(i: int) -> string {
+        if (i == 0) { return "−$2.10 · −0.68% today"; }
+        if (i == 1) { return "+$14.80 · +5.04% · 1 week"; }
+        if (i == 2) { return "+$28.32 · +10.10% · 1 month"; }
+        if (i == 3) { return "+$58.10 · +23.20% · 3 months"; }
+        if (i == 4) { return "+$142.30 · +85.70% · 1 year"; }
+        if (i == 5) { return "+$253.10 · +459% · 5 years"; }
+        return "+$284.42 · +1,330% · all-time";
+    }
+    function delta-direction(i: int) -> int {
+        if (i == 0) { return -1; }
+        return 1;
+    }
+    function zpad3(n: int) -> string {
+        return n < 10 ? "00" + n : n < 100 ? "0" + n : "" + n;
+    }
+    function add-commas(n: int) -> string {
+        return n < 1000 ? "" + n
+            : n < 1000000 ? floor(n / 1000) + "," + root.zpad3(mod(n, 1000))
+            : floor(n / 1000000) + ","
+                + root.zpad3(floor(mod(n, 1000000) / 1000)) + ","
+                + root.zpad3(mod(n, 1000));
+    }
+    function fmt-cents(c: int) -> string {
+        return "$" + root.add-commas(floor(c / 100)) + "."
+            + (mod(c, 100) < 10 ? "0" + mod(c, 100) : "" + mod(c, 100));
+    }
+    function fmt-cents-signed(c: int) -> string {
+        return c >= 0
+            ? "+" + root.fmt-cents(c)
+            : "−" + root.fmt-cents(0 - c);
+    }
+    function holdings-text() -> string {
+        return root.shares + " shares · " + root.fmt-cents(root.position-cents());
+    }
+    function holdings-delta() -> string {
+        return root.fmt-cents-signed(root.gain-cents()) + " (cost basis)";
+    }
+    function trade-total-cents() -> int {
+        return root.trade-qty * root.current-price-cents();
+    }
+    function trade-side-name() -> string {
+        return root.trade-side == 0 ? "Buy" : "Sell";
+    }
+    function analyst-label(i: int) -> string {
+        if (i == 0) { return "Buy"; }
+        if (i == 1) { return "Hold"; }
+        return "Sell";
+    }
+    function analyst-count(i: int) -> int {
+        if (i == 0) { return 12; }
+        if (i == 1) { return 7; }
+        return 2;
+    }
+
+    // ----- Mutations -----
+    public function toggle-watch() {
+        root.watched = !root.watched;
+        root.star-pressed();
+        root.status-msg = root.watched ? "Added to watchlist" : "Removed from watchlist";
+        root.status-is-success = root.watched;
+        root.status-is-danger = !root.watched;
+    }
+    public function pick-range(i: int) {
+        root.range-index = i;
+        root.range-changed(root.range-label(i));
+        root.status-msg = "Range: " + root.range-label(i)
+            + " · " + root.delta-text(i);
+        root.status-is-success = root.delta-direction(i) >= 0;
+        root.status-is-danger = root.delta-direction(i) < 0;
+    }
+    public function toggle-holdings() {
+        root.holdings-expanded = !root.holdings-expanded;
+        root.status-msg = root.holdings-expanded
+            ? "Position · " + root.holdings-text() + " · avg " + root.fmt-cents(root.avg-cost-cents())
+            : "Collapsed position";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function tap-band(i: int) {
+        root.analyst-band = root.analyst-band == i ? -1 : i;
+        if (root.analyst-band == i) {
+            root.status-msg = root.analyst-count(i) + " analysts say "
+                + root.analyst-label(i);
+            root.status-is-success = i == 0;
+            root.status-is-danger = i == 2;
+        } else {
+            root.status-msg = "Cleared analyst highlight";
+            root.status-is-success = false;
+            root.status-is-danger = false;
+        }
+    }
+    public function tap-tile(label: string, value: string) {
+        root.status-msg = label + " · " + value;
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function open-trade(side: int) {
+        root.trade-sheet-open = true;
+        root.trade-side = side;
+        root.trade-qty = 1;
+        if (side == 0) {
+            root.buy-pressed();
+        } else {
+            root.sell-pressed();
+        }
+        root.status-msg = "Open " + root.trade-side-name() + " sheet · pick a quantity";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function close-trade() { root.trade-sheet-open = false; }
+    public function adjust-qty(delta: int) {
+        root.trade-qty = max(1, root.trade-qty + delta);
+        root.status-msg = root.trade-side-name() + " · " + root.trade-qty
+            + " shares · " + root.fmt-cents(root.trade-total-cents());
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function confirm-trade() {
+        if (root.trade-side == 0) {
+            // Buy
+            root.cost-cents = root.cost-cents
+                + root.trade-qty * root.current-price-cents();
+            root.shares = root.shares + root.trade-qty;
+            root.trade-confirmed("Buy", root.trade-qty, root.trade-total-cents());
+            root.status-msg = "Bought " + root.trade-qty + " " + root.ticker
+                + " · " + root.fmt-cents(root.trade-total-cents())
+                + " · now " + root.shares + " shares";
+            root.status-is-success = true;
+            root.status-is-danger = false;
+        } else {
+            // Sell
+            if (root.trade-qty > root.shares) {
+                root.status-msg = "Not enough shares · own " + root.shares;
+                root.status-is-success = false;
+                root.status-is-danger = true;
+                return;
+            }
+            // Reduce cost basis proportionally.
+            root.cost-cents = floor(root.cost-cents
+                * (root.shares - root.trade-qty) / root.shares);
+            root.shares = root.shares - root.trade-qty;
+            root.trade-confirmed("Sell", root.trade-qty, root.trade-total-cents());
+            root.status-msg = "Sold " + root.trade-qty + " " + root.ticker
+                + " · " + root.fmt-cents(root.trade-total-cents())
+                + " · now " + root.shares + " shares";
+            root.status-is-success = false;
+            root.status-is-danger = true;
+        }
+        root.trade-sheet-open = false;
+        root.trade-qty = 1;
+    }
 
     background: Theme.background;
 
@@ -143,223 +341,393 @@ export component InvestmentDetailPage inherits Window {
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             trailing-icon: @image-url("@mobile-components/icons/star.svg");
             leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.star-pressed(); }
+            trailing-pressed => { root.toggle-watch(); }
         }
 
-        // Hero + range chips/sparkline + holdings + fundamentals grid +
-        // analyst ratings overflow a single 892-px screen, so the middle
-        // region scrolls between the pinned AppBar and the sticky
-        // Buy/Sell footer below.
+        // ----- Status banner ---------------------------------------
+        Rectangle {
+            height: 32px;
+            background: root.status-is-danger ? Theme.accent-danger
+                : root.status-is-success ? Theme.accent-success
+                : Theme.surface-2;
+            animate background { duration: Theme.motion-fast; }
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                Text {
+                    text: root.status-msg;
+                    color: (root.status-is-danger || root.status-is-success)
+                        ? Theme.on-primary
+                        : Theme.on-surface;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+            }
+        }
+
         ScrollView {
             vertical-stretch: 1;
 
             VerticalLayout {
                 spacing: 0;
 
-        // ----- Hero -----
-        VerticalLayout {
-            padding: Theme.spacing-md;
-            spacing: Theme.spacing-sm;
-            HorizontalLayout {
-                spacing: Theme.spacing-md;
-                alignment: stretch;
-                VerticalLayout {
-                    alignment: center;
-                    Rectangle {
-                        width: 44px;
-                        height: 44px;
-                        border-radius: 8px;
-                        background: @linear-gradient(135deg, #b91c1c 0%, #7f1d1d 100%);
-                        Text {
-                            text: "P";
-                            color: Theme.on-primary;
-                            font-size: 22px;
-                            font-weight: 800;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
-                            width: parent.width;
-                            height: parent.height;
-                        }
-                    }
-                }
-                VerticalLayout {
-                    horizontal-stretch: 1;
-                    alignment: center;
-                    spacing: 2px;
-                    Text {
-                        text: root.company;
-                        color: Theme.on-surface;
-                        font-size: Theme.font-size-body;
-                        font-weight: 700;
-                    }
-                    Text {
-                        text: root.ticker + " · NYSE";
-                        color: Theme.muted;
-                        font-size: Theme.font-size-caption;
-                        font-weight: 600;
-                    }
-                }
-            }
-
-            HorizontalLayout {
-                Heading {
-                    text: root.price;
-                    style: HeadingStyle.bold-impact;
-                    color: Theme.on-background;
-                    font-size: 38px;
-                    horizontal-stretch: 1;
-                }
-            }
-            HorizontalLayout {
-                Text {
-                    text: root.day-delta;
-                    color:
-                          root.day-direction > 0 ? Theme.accent-success
-                        : root.day-direction < 0 ? Theme.accent-danger
-                        : Theme.muted;
-                    font-size: Theme.font-size-body;
-                    font-weight: 700;
-                }
-            }
-        }
-
-        // ----- Range chips + sparkline -----
-        VerticalLayout {
-            padding-left: Theme.spacing-md;
-            padding-right: Theme.spacing-md;
-            spacing: Theme.spacing-sm;
-            HorizontalLayout {
-                spacing: Theme.spacing-sm;
-                Chip { label: "1D"; }
-                Chip { label: "1W"; }
-                Chip { label: "1M"; selected: true; }
-                Chip { label: "3M"; }
-                Chip { label: "1Y"; }
-                Chip { label: "5Y"; }
-                Chip { label: "All"; }
-            }
-            Rectangle {
-                background: Theme.surface-1;
-                border-radius: Theme.radius-md;
-                drop-shadow-blur: Theme.elevation-1-blur;
-                drop-shadow-color: Theme.elevation-1-color;
-                drop-shadow-offset-y: Theme.elevation-1-y;
-                height: 140px;
+                // ----- Hero -----
                 VerticalLayout {
                     padding: Theme.spacing-md;
-                    Sparkline {
-                        horizontal-stretch: 1;
-                        height: 108px;
-                        stroke:
-                              root.day-direction >= 0
-                            ? Theme.accent-success
-                            : Theme.accent-danger;
-                        bars: [
-                            38, 42, 39, 47, 45, 50, 54, 51, 58, 62,
-                            59, 64, 68, 65, 70, 73, 78, 75, 80, 84,
-                            81, 86, 90, 87, 92, 88, 93, 95, 91, 97
-                        ];
+                    spacing: Theme.spacing-sm;
+                    HorizontalLayout {
+                        spacing: Theme.spacing-md;
+                        alignment: stretch;
+                        VerticalLayout {
+                            alignment: center;
+                            Rectangle {
+                                width: 44px;
+                                height: 44px;
+                                border-radius: 8px;
+                                background: @linear-gradient(135deg, #b91c1c 0%, #7f1d1d 100%);
+                                Text {
+                                    text: "P";
+                                    color: Theme.on-primary;
+                                    font-size: 22px;
+                                    font-weight: 800;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                            }
+                        }
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            alignment: center;
+                            spacing: 2px;
+                            HorizontalLayout {
+                                spacing: Theme.spacing-xs;
+                                Text {
+                                    text: root.company;
+                                    color: Theme.on-surface;
+                                    font-size: Theme.font-size-body;
+                                    font-weight: 700;
+                                    vertical-alignment: center;
+                                }
+                                if root.watched: Rectangle {
+                                    width: wb.preferred-width + 12px;
+                                    height: 18px;
+                                    border-radius: 4px;
+                                    background: Theme.accent-warning;
+                                    wb := Text {
+                                        text: "★ WATCHED";
+                                        color: Theme.on-primary;
+                                        font-size: 9px;
+                                        font-weight: 800;
+                                        letter-spacing: 0.5px;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                        width: parent.width;
+                                        height: parent.height;
+                                    }
+                                }
+                            }
+                            Text {
+                                text: root.ticker + " · NYSE";
+                                color: Theme.muted;
+                                font-size: Theme.font-size-caption;
+                                font-weight: 600;
+                            }
+                        }
                     }
-                }
-            }
-        }
 
-        // ----- Holdings strip -----
-        VerticalLayout {
-            padding: Theme.spacing-md;
-            spacing: Theme.spacing-sm;
-            Rectangle {
-                background: Theme.surface-1;
-                border-radius: Theme.radius-md;
-                drop-shadow-blur: Theme.elevation-1-blur;
-                drop-shadow-color: Theme.elevation-1-color;
-                drop-shadow-offset-y: Theme.elevation-1-y;
-                height: 72px;
-                HorizontalLayout {
-                    padding: Theme.spacing-md;
-                    spacing: Theme.spacing-md;
-                    alignment: stretch;
-                    VerticalLayout {
-                        horizontal-stretch: 1;
-                        alignment: center;
-                        spacing: 2px;
-                        Text {
-                            text: "YOUR POSITION";
-                            color: Theme.muted;
-                            font-size: 10px;
-                            font-weight: 800;
-                            letter-spacing: 0.5px;
-                        }
-                        Text {
-                            text: root.holdings;
-                            color: Theme.on-surface;
-                            font-size: Theme.font-size-body-large;
-                            font-weight: 700;
+                    HorizontalLayout {
+                        Heading {
+                            text: root.fmt-cents(root.current-price-cents());
+                            style: HeadingStyle.bold-impact;
+                            color: Theme.on-background;
+                            font-size: 38px;
+                            horizontal-stretch: 1;
                         }
                     }
-                    VerticalLayout {
-                        alignment: center;
+                    HorizontalLayout {
                         Text {
-                            text: root.holdings-delta;
-                            color: Theme.accent-success;
+                            text: root.delta-text(root.range-index);
+                            color:
+                                  root.delta-direction(root.range-index) > 0 ? Theme.accent-success
+                                : root.delta-direction(root.range-index) < 0 ? Theme.accent-danger
+                                : Theme.muted;
                             font-size: Theme.font-size-body;
                             font-weight: 700;
+                        }
+                    }
+                }
+
+                // ----- Range chips + sparkline -----
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    spacing: Theme.spacing-sm;
+                    HorizontalLayout {
+                        spacing: Theme.spacing-sm;
+                        Rectangle {
+                            Chip { label: "1D"; selected: root.range-index == 0; }
+                            TouchArea { clicked => { root.pick-range(0); } }
+                        }
+                        Rectangle {
+                            Chip { label: "1W"; selected: root.range-index == 1; }
+                            TouchArea { clicked => { root.pick-range(1); } }
+                        }
+                        Rectangle {
+                            Chip { label: "1M"; selected: root.range-index == 2; }
+                            TouchArea { clicked => { root.pick-range(2); } }
+                        }
+                        Rectangle {
+                            Chip { label: "3M"; selected: root.range-index == 3; }
+                            TouchArea { clicked => { root.pick-range(3); } }
+                        }
+                        Rectangle {
+                            Chip { label: "1Y"; selected: root.range-index == 4; }
+                            TouchArea { clicked => { root.pick-range(4); } }
+                        }
+                        Rectangle {
+                            Chip { label: "5Y"; selected: root.range-index == 5; }
+                            TouchArea { clicked => { root.pick-range(5); } }
+                        }
+                        Rectangle {
+                            Chip { label: "All"; selected: root.range-index == 6; }
+                            TouchArea { clicked => { root.pick-range(6); } }
+                        }
+                    }
+                    Rectangle {
+                        background: Theme.surface-1;
+                        border-radius: Theme.radius-md;
+                        drop-shadow-blur: Theme.elevation-1-blur;
+                        drop-shadow-color: Theme.elevation-1-color;
+                        drop-shadow-offset-y: Theme.elevation-1-y;
+                        height: 140px;
+                        VerticalLayout {
+                            padding: Theme.spacing-md;
+                            if root.range-index == 0: Sparkline {
+                                horizontal-stretch: 1;
+                                height: 108px;
+                                stroke: Theme.accent-danger;
+                                bars: [60, 62, 61, 58, 55, 52, 50, 53, 51, 48, 50, 52, 49, 47, 48, 51, 53, 50, 52, 51, 48, 46, 50, 52, 51, 49, 47, 50, 53, 51];
+                            }
+                            if root.range-index == 1: Sparkline {
+                                horizontal-stretch: 1;
+                                height: 108px;
+                                stroke: Theme.accent-success;
+                                bars: [40, 42, 38, 41, 45, 43, 48, 50, 52, 49, 53, 56, 58, 55, 60, 62, 65, 63, 68, 70, 67, 72, 75, 73, 78, 80, 78, 82, 85, 88];
+                            }
+                            if root.range-index == 2: Sparkline {
+                                horizontal-stretch: 1;
+                                height: 108px;
+                                stroke: Theme.accent-success;
+                                bars: [38, 42, 39, 47, 45, 50, 54, 51, 58, 62, 59, 64, 68, 65, 70, 73, 78, 75, 80, 84, 81, 86, 90, 87, 92, 88, 93, 95, 91, 97];
+                            }
+                            if root.range-index == 3: Sparkline {
+                                horizontal-stretch: 1;
+                                height: 108px;
+                                stroke: Theme.accent-success;
+                                bars: [28, 32, 30, 35, 38, 41, 44, 48, 52, 50, 55, 58, 62, 60, 65, 68, 72, 70, 75, 78, 82, 80, 85, 88, 90, 92, 95, 93, 96, 98];
+                            }
+                            if root.range-index == 4: Sparkline {
+                                horizontal-stretch: 1;
+                                height: 108px;
+                                stroke: Theme.accent-success;
+                                bars: [15, 18, 22, 25, 20, 28, 30, 35, 32, 38, 42, 45, 50, 48, 55, 60, 62, 68, 70, 65, 72, 78, 80, 85, 82, 88, 92, 95, 90, 97];
+                            }
+                            if root.range-index == 5: Sparkline {
+                                horizontal-stretch: 1;
+                                height: 108px;
+                                stroke: Theme.accent-success;
+                                bars: [8, 12, 15, 18, 22, 20, 25, 30, 28, 35, 38, 32, 42, 48, 45, 52, 58, 55, 62, 68, 72, 70, 78, 82, 85, 88, 92, 95, 97, 99];
+                            }
+                            if root.range-index == 6: Sparkline {
+                                horizontal-stretch: 1;
+                                height: 108px;
+                                stroke: Theme.accent-success;
+                                bars: [5, 8, 12, 10, 18, 22, 20, 28, 35, 30, 38, 42, 48, 45, 52, 58, 62, 65, 70, 72, 78, 82, 85, 88, 92, 95, 90, 95, 97, 99];
+                            }
+                        }
+                    }
+                }
+
+                // ----- Holdings strip (tap to expand) -----
+                VerticalLayout {
+                    padding: Theme.spacing-md;
+                    spacing: Theme.spacing-sm;
+                    Rectangle {
+                        background: root.holdings-expanded
+                            ? Theme.surface-2
+                            : Theme.surface-1;
+                        animate background { duration: Theme.motion-fast; }
+                        border-radius: Theme.radius-md;
+                        drop-shadow-blur: Theme.elevation-1-blur;
+                        drop-shadow-color: Theme.elevation-1-color;
+                        drop-shadow-offset-y: Theme.elevation-1-y;
+                        VerticalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-sm;
+                            HorizontalLayout {
+                                spacing: Theme.spacing-md;
+                                alignment: stretch;
+                                VerticalLayout {
+                                    horizontal-stretch: 1;
+                                    alignment: center;
+                                    spacing: 2px;
+                                    Text {
+                                        text: "YOUR POSITION · TAP TO EXPAND";
+                                        color: Theme.muted;
+                                        font-size: 10px;
+                                        font-weight: 800;
+                                        letter-spacing: 0.5px;
+                                    }
+                                    Text {
+                                        text: root.holdings-text();
+                                        color: Theme.on-surface;
+                                        font-size: Theme.font-size-body-large;
+                                        font-weight: 700;
+                                    }
+                                }
+                                VerticalLayout {
+                                    alignment: center;
+                                    Text {
+                                        text: root.fmt-cents-signed(root.gain-cents());
+                                        color: root.gain-cents() >= 0
+                                            ? Theme.accent-success
+                                            : Theme.accent-danger;
+                                        font-size: Theme.font-size-body;
+                                        font-weight: 700;
+                                        horizontal-alignment: right;
+                                    }
+                                }
+                            }
+
+                            if root.holdings-expanded: Rectangle {
+                                height: 1px;
+                                background: Theme.outline;
+                            }
+                            if root.holdings-expanded: HorizontalLayout {
+                                Text {
+                                    text: "Cost basis";
+                                    color: Theme.muted;
+                                    font-size: Theme.font-size-caption;
+                                    horizontal-stretch: 1;
+                                }
+                                Text {
+                                    text: root.fmt-cents(root.cost-cents);
+                                    color: Theme.on-surface;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 700;
+                                }
+                            }
+                            if root.holdings-expanded: HorizontalLayout {
+                                Text {
+                                    text: "Avg cost / share";
+                                    color: Theme.muted;
+                                    font-size: Theme.font-size-caption;
+                                    horizontal-stretch: 1;
+                                }
+                                Text {
+                                    text: root.fmt-cents(root.avg-cost-cents());
+                                    color: Theme.on-surface;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 700;
+                                }
+                            }
+                            if root.holdings-expanded: HorizontalLayout {
+                                Text {
+                                    text: "Current value";
+                                    color: Theme.muted;
+                                    font-size: Theme.font-size-caption;
+                                    horizontal-stretch: 1;
+                                }
+                                Text {
+                                    text: root.fmt-cents(root.position-cents());
+                                    color: Theme.on-surface;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 700;
+                                }
+                            }
+                        }
+                        TouchArea { clicked => { root.toggle-holdings(); } }
+                    }
+                }
+
+                SectionHeader { text: "FUNDAMENTALS"; }
+                VerticalLayout {
+                    padding: Theme.spacing-md;
+                    spacing: Theme.spacing-sm;
+                    HorizontalLayout {
+                        spacing: Theme.spacing-sm;
+                        FundamentalTile {
+                            label: "OPEN";
+                            value: "$303.18";
+                            clicked => { root.tap-tile("Open", "$303.18"); }
+                        }
+                        FundamentalTile {
+                            label: "DAY HIGH";
+                            value: "$310.42";
+                            tone: Tone.success;
+                            clicked => { root.tap-tile("Day high", "$310.42"); }
+                        }
+                    }
+                    HorizontalLayout {
+                        spacing: Theme.spacing-sm;
+                        FundamentalTile {
+                            label: "MARKET CAP";
+                            value: "$48.2B";
+                            clicked => { root.tap-tile("Market cap", "$48.2B"); }
+                        }
+                        FundamentalTile {
+                            label: "P/E";
+                            value: "21.4";
+                            tone: Tone.info;
+                            clicked => { root.tap-tile("P/E ratio", "21.4"); }
+                        }
+                    }
+                }
+
+                SectionHeader { text: "ANALYST RATINGS · 21 ANALYSTS"; }
+                VerticalLayout {
+                    padding: Theme.spacing-md;
+                    spacing: Theme.spacing-sm;
+                    AnalystBar {
+                        buy: 12;
+                        hold: 7;
+                        sell: 2;
+                        active-band: root.analyst-band;
+                        band-tapped(i) => { root.tap-band(i); }
+                    }
+                    HorizontalLayout {
+                        Text {
+                            text: "12 Buy";
+                            color: Theme.accent-success;
+                            font-size: 11px;
+                            font-weight: 800;
+                            horizontal-stretch: 1;
+                        }
+                        Text {
+                            text: "7 Hold";
+                            color: Theme.accent-warning;
+                            font-size: 11px;
+                            font-weight: 800;
+                            horizontal-stretch: 1;
+                            horizontal-alignment: center;
+                        }
+                        Text {
+                            text: "2 Sell";
+                            color: Theme.accent-danger;
+                            font-size: 11px;
+                            font-weight: 800;
+                            horizontal-stretch: 1;
                             horizontal-alignment: right;
                         }
                     }
                 }
             }
         }
-
-        SectionHeader { text: "FUNDAMENTALS"; }
-        VerticalLayout {
-            padding: Theme.spacing-md;
-            spacing: Theme.spacing-sm;
-            HorizontalLayout {
-                spacing: Theme.spacing-sm;
-                FundamentalTile { label: "OPEN"; value: "$303.18"; }
-                FundamentalTile { label: "DAY HIGH"; value: "$310.42"; tone: Tone.success; }
-            }
-            HorizontalLayout {
-                spacing: Theme.spacing-sm;
-                FundamentalTile { label: "MARKET CAP"; value: "$48.2B"; }
-                FundamentalTile { label: "P/E"; value: "21.4"; tone: Tone.info; }
-            }
-        }
-
-        SectionHeader { text: "ANALYST RATINGS · 21 ANALYSTS"; }
-        VerticalLayout {
-            padding: Theme.spacing-md;
-            spacing: Theme.spacing-sm;
-            AnalystBar { buy: 12; hold: 7; sell: 2; }
-            HorizontalLayout {
-                Text {
-                    text: "12 Buy";
-                    color: Theme.accent-success;
-                    font-size: 11px;
-                    font-weight: 800;
-                    horizontal-stretch: 1;
-                }
-                Text {
-                    text: "7 Hold";
-                    color: Theme.accent-warning;
-                    font-size: 11px;
-                    font-weight: 800;
-                    horizontal-stretch: 1;
-                    horizontal-alignment: center;
-                }
-                Text {
-                    text: "2 Sell";
-                    color: Theme.accent-danger;
-                    font-size: 11px;
-                    font-weight: 800;
-                    horizontal-stretch: 1;
-                    horizontal-alignment: right;
-                }
-            }
-        }
-            }   // end inner VerticalLayout
-        }       // end ScrollView
 
         // Sticky Buy / Sell.
         Rectangle {
@@ -375,13 +743,171 @@ export component InvestmentDetailPage inherits Window {
                     text: "Sell";
                     primary: false;
                     horizontal-stretch: 1;
-                    clicked => { root.sell-pressed(); }
+                    enabled: root.shares > 0;
+                    clicked => { root.open-trade(1); }
                 }
                 MobileButton {
                     text: "Buy";
                     tone: Tone.success;
                     horizontal-stretch: 2;
-                    clicked => { root.buy-pressed(); }
+                    clicked => { root.open-trade(0); }
+                }
+            }
+        }
+    }
+
+    // ----- Trade bottom sheet ----------------------------------------
+    if root.trade-sheet-open: Rectangle {
+        Rectangle {
+            background: #00000099;
+            TouchArea {
+                clicked => { root.close-trade(); }
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            height: 400px;
+            background: Theme.surface-1;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding: Theme.spacing-lg;
+                spacing: Theme.spacing-md;
+
+                Rectangle {
+                    width: 40px;
+                    height: 4px;
+                    border-radius: 2px;
+                    background: Theme.muted;
+                }
+
+                Heading {
+                    text: root.trade-side-name() + " " + root.ticker;
+                    style: HeadingStyle.grotesk-bold;
+                    font-size: Theme.font-size-title;
+                }
+                Text {
+                    text: "Market · " + root.fmt-cents(root.current-price-cents()) + " / share";
+                    color: Theme.muted;
+                    font-size: Theme.font-size-caption;
+                }
+
+                // Quantity stepper.
+                HorizontalLayout {
+                    spacing: Theme.spacing-md;
+                    alignment: center;
+                    Rectangle {
+                        width: 56px;
+                        height: 56px;
+                        border-radius: 28px;
+                        background: Theme.accent-danger;
+                        Text {
+                            text: "−";
+                            color: Theme.on-primary;
+                            font-size: 28px;
+                            font-weight: 800;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
+                        }
+                        TouchArea { clicked => { root.adjust-qty(-1); } }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 2px;
+                        Text {
+                            text: root.trade-qty;
+                            color: Theme.on-surface;
+                            font-size: 32px;
+                            font-weight: 800;
+                            horizontal-alignment: center;
+                            min-width: 80px;
+                        }
+                        Text {
+                            text: "shares";
+                            color: Theme.muted;
+                            font-size: Theme.font-size-caption;
+                            horizontal-alignment: center;
+                        }
+                    }
+                    Rectangle {
+                        width: 56px;
+                        height: 56px;
+                        border-radius: 28px;
+                        background: Theme.accent-success;
+                        Text {
+                            text: "+";
+                            color: Theme.on-primary;
+                            font-size: 28px;
+                            font-weight: 800;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
+                        }
+                        TouchArea { clicked => { root.adjust-qty(1); } }
+                    }
+                }
+
+                // Trade summary.
+                Rectangle {
+                    background: Theme.surface-2;
+                    border-radius: Theme.radius-md;
+                    VerticalLayout {
+                        padding: Theme.spacing-md;
+                        spacing: 4px;
+                        HorizontalLayout {
+                            Text {
+                                text: "Subtotal";
+                                color: Theme.muted;
+                                font-size: Theme.font-size-caption;
+                                horizontal-stretch: 1;
+                            }
+                            Text {
+                                text: root.fmt-cents(root.trade-total-cents());
+                                color: Theme.on-surface;
+                                font-size: Theme.font-size-body;
+                                font-weight: 700;
+                            }
+                        }
+                        HorizontalLayout {
+                            Text {
+                                text: root.trade-side == 0
+                                    ? "Shares after buy"
+                                    : "Shares after sell";
+                                color: Theme.muted;
+                                font-size: Theme.font-size-caption;
+                                horizontal-stretch: 1;
+                            }
+                            Text {
+                                text: root.trade-side == 0
+                                    ? "" + (root.shares + root.trade-qty)
+                                    : "" + max(0, root.shares - root.trade-qty);
+                                color: Theme.on-surface;
+                                font-size: Theme.font-size-body;
+                                font-weight: 700;
+                            }
+                        }
+                    }
+                }
+
+                Rectangle { vertical-stretch: 1; }
+
+                MobileButton {
+                    text: "Confirm " + root.trade-side-name() + " · " + root.fmt-cents(root.trade-total-cents());
+                    tone: root.trade-side == 0 ? Tone.success : Tone.danger;
+                    clicked => { root.confirm-trade(); }
+                }
+                MobileButton {
+                    text: "Cancel";
+                    primary: false;
+                    clicked => { root.close-trade(); }
                 }
             }
         }

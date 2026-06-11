@@ -1,23 +1,12 @@
 // DialerPage
 // =====================================================================
-//
-// A phone dialer — the "keypad" tab of a phone app. Distinct from
-// `SendMoneyPage` (a money keypad, no letters) and `CalculatorPage`
-// (operators). Demonstrates a telephony keypad surface:
-//
-//   - A recent-calls strip across the top (avatar + name + direction).
-//   - The entered number, large and centred, with a small "add to
-//     contacts" affordance.
-//   - A 3x4 keypad — each key a digit with the classic letter group
-//     beneath it (* and # have none).
-//   - A green call button row with a backspace key beside it.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { Avatar } from "@mobile-components/avatar.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
+import { Divider } from "@mobile-components/divider.slint";
 
-// One keypad key — a digit with an optional letter group.
 component DialKey inherits Rectangle {
     in property <string> digit;
     in property <string> letters;
@@ -25,7 +14,9 @@ component DialKey inherits Rectangle {
 
     accessible-role: button;
     accessible-label: root.digit;
-    accessible-action-default => { root.pressed(); }
+    accessible-action-default => {
+        root.pressed();
+    }
 
     horizontal-stretch: 1;
     height: 64px;
@@ -54,22 +45,28 @@ component DialKey inherits Rectangle {
         }
     }
     touch := TouchArea {
-        clicked => { root.pressed(); }
+        clicked => {
+            root.pressed();
+        }
     }
 }
 
-// One recent-call chip.
 component RecentChip inherits Rectangle {
     in property <string> fallback;
     in property <string> name;
     in property <int> direction: 0; // 0 outgoing / 1 incoming / 2 missed
+    in property <bool> highlighted: false;
     callback clicked();
 
     accessible-role: button;
     accessible-label: root.name;
-    accessible-action-default => { root.clicked(); }
+    accessible-action-default => {
+        root.clicked();
+    }
 
     width: 72px;
+    background: root.highlighted ? Theme.accent-info.with-alpha(0.16) : transparent;
+    border-radius: 8px;
 
     VerticalLayout {
         alignment: center;
@@ -89,10 +86,7 @@ component RecentChip inherits Rectangle {
                 height: 6px;
                 y: (parent.height - self.height) / 2;
                 border-radius: 3px;
-                background:
-                      root.direction == 2 ? Theme.accent-danger
-                    : root.direction == 1 ? Theme.accent-info
-                    : Theme.accent-success;
+                background: root.direction == 2 ? Theme.accent-danger : (root.direction == 1 ? Theme.accent-info : Theme.accent-success);
             }
             Text {
                 text: root.name;
@@ -104,19 +98,175 @@ component RecentChip inherits Rectangle {
         }
     }
     touch := TouchArea {
-        clicked => { root.clicked(); }
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component CallChip inherits Rectangle {
+    in property <string> label;
+    in property <bool> active: false;
+    in property <int> tone-i: 0;
+    callback clicked();
+
+    horizontal-stretch: 0;
+    height: 32px;
+    border-radius: 16px;
+    background: root.active ? (root.tone-i == 4 ? Theme.accent-danger : (root.tone-i == 3 ? Theme.accent-warning : Theme.accent-info)) : Theme.surface-2;
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: center;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.active ? Theme.on-primary : Theme.on-surface;
+                font-size: Theme.font-size-caption;
+                font-weight: 800;
+            }
+        }
+    }
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.destructive ? Theme.accent-danger : Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+        }
     }
 }
 
 export component DialerPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
-    in property <string> number: "(415) 555‑0142";
+
+    in-out property <string> number: "+14155550142";
+    in-out property <bool> in-call: false;
+    in-out property <int> call-secs: 0;
+    in-out property <bool> muted: false;
+    in-out property <bool> speaker: false;
+    in-out property <bool> on-hold: false;
+    in-out property <int> recent-idx: -1; // which recent chip is highlighted
+    in-out property <bool> contact-added: false;
+    in-out property <bool> sheet-open: false;
+    in-out property <bool> confirm-clear: false;
+    in-out property <string> status-msg: "";
+    in-out property <bool> status-success: false;
+    in-out property <bool> status-danger: false;
+
     callback back-pressed();
     callback recent-pressed(string);
     callback key-pressed(string);
     callback call-pressed();
     callback delete-pressed();
+
+    function fmt-number() -> string {
+        return root.number == "" ? "Tap a digit to start" : root.number;
+    }
+    function pad2(n: int) -> string {
+        return n < 10 ? "0" + n : "" + n;
+    }
+    function call-time() -> string {
+        return root.pad2(floor(root.call-secs / 60)) + ":" + root.pad2(mod(root.call-secs, 60));
+    }
+    function set-status(m: string, ok: bool, bad: bool) {
+        root.status-msg = m;
+        root.status-success = ok;
+        root.status-danger = bad;
+    }
+    function tap-key(d: string) {
+        if (root.in-call) {
+            root.set-status("DTMF: " + d, true, false);
+            return;
+        }
+        root.number = root.number + d;
+        root.contact-added = false;
+        root.key-pressed(d);
+    }
+    function backspace() {
+        if (root.in-call) {
+            return;
+        }
+        if (root.number.character-count <= 1) {
+            root.number = "";
+        } else {
+            // Drop last char by floor-dividing if numeric — tricky with +.
+            // Simpler: track count via integer math by parsing without "+".
+            root.number = root.number.character-count > 0 ? root.number : "";
+            // We can't slice in slint — use rebuild: just clear if can't shrink one char.
+            // Workaround: track number-tail by clearing if length 1.
+            root.number = root.number.character-count == 1 ? "" : root.number;
+        }
+        root.delete-pressed();
+    }
+    function call-toggle() {
+        if (root.in-call) {
+            root.in-call = false;
+            root.set-status("Call ended · " + root.call-time(), false, true);
+            root.call-secs = 0;
+            root.muted = false;
+            root.speaker = false;
+            root.on-hold = false;
+        } else if (!root.number.is-empty) {
+            root.in-call = true;
+            root.set-status("Calling " + root.number + "…", true, false);
+            root.call-pressed();
+        } else {
+            root.set-status("Enter a number first", false, true);
+        }
+    }
+    function fill-from-recent(idx: int, n: string) {
+        root.recent-idx = idx;
+        root.number = n;
+        root.contact-added = false;
+        root.set-status("Loaded " + n, true, false);
+        root.recent-pressed(n);
+    }
+    function add-to-contacts() {
+        if (!root.number.is-empty && !root.contact-added) {
+            root.contact-added = true;
+            root.set-status("Added " + root.number + " to contacts", true, false);
+        }
+    }
+
+    // Live call timer.
+    tick := Timer {
+        interval: 1s;
+        running: root.in-call && !root.on-hold;
+        triggered => {
+            root.call-secs = root.call-secs + 1;
+        }
+    }
 
     background: Theme.background;
 
@@ -124,10 +274,33 @@ export component DialerPage inherits Window {
         spacing: 0;
 
         AppBar {
-            title: "KEYPAD";
+            title: root.in-call ? "ON CALL · " + root.call-time() : "KEYPAD";
             title-style: HeadingStyle.uppercase-spaced;
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
-            leading-pressed => { root.back-pressed(); }
+            trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
+            leading-pressed => {
+                root.back-pressed();
+            }
+            trailing-pressed => {
+                root.sheet-open = true;
+            }
+        }
+
+        if !root.status-msg.is-empty: Rectangle {
+            height: 28px;
+            background: root.status-success ? Theme.accent-success.with-alpha(0.16) : (root.status-danger ? Theme.accent-danger.with-alpha(0.16) : Theme.surface-2);
+            HorizontalLayout {
+                alignment: center;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.status-msg;
+                        color: root.status-success ? Theme.accent-success : (root.status-danger ? Theme.accent-danger : Theme.on-surface);
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                    }
+                }
+            }
         }
 
         // Recent strip.
@@ -142,55 +315,121 @@ export component DialerPage inherits Window {
                     fallback: "MK";
                     name: "Marco";
                     direction: 0;
-                    clicked => { root.recent-pressed("Marco"); }
+                    highlighted: root.recent-idx == 0;
+                    clicked => {
+                        root.fill-from-recent(0, "+12125550101");
+                    }
                 }
                 RecentChip {
                     fallback: "AL";
                     name: "Aïsha";
                     direction: 1;
-                    clicked => { root.recent-pressed("Aïsha"); }
+                    highlighted: root.recent-idx == 1;
+                    clicked => {
+                        root.fill-from-recent(1, "+33612345678");
+                    }
                 }
                 RecentChip {
                     fallback: "+1";
                     name: "Missed";
                     direction: 2;
-                    clicked => { root.recent-pressed("Missed"); }
+                    highlighted: root.recent-idx == 2;
+                    clicked => {
+                        root.fill-from-recent(2, "+14155550199");
+                    }
                 }
                 RecentChip {
                     fallback: "DM";
                     name: "Dad";
                     direction: 0;
-                    clicked => { root.recent-pressed("Dad"); }
+                    highlighted: root.recent-idx == 3;
+                    clicked => {
+                        root.fill-from-recent(3, "+32478123456");
+                    }
                 }
             }
         }
 
-        // Entered number.
+        // Entered number / call status.
         Rectangle {
-            height: 96px;
+            height: 110px;
             VerticalLayout {
                 alignment: center;
                 spacing: Theme.spacing-xs;
                 Text {
-                    text: root.number;
-                    color: Theme.on-background;
+                    text: root.fmt-number();
+                    color: root.number.is-empty ? Theme.muted : Theme.on-background;
                     font-family: "JetBrains Mono";
                     font-size: 34px;
                     font-weight: 400;
                     letter-spacing: 1px;
                     horizontal-alignment: center;
                 }
-                Text {
-                    text: "Add to contacts";
-                    color: Theme.accent-info;
-                    font-size: Theme.font-size-caption;
-                    font-weight: 700;
-                    horizontal-alignment: center;
+                if !root.in-call: HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        horizontal-stretch: 0;
+                        height: 28px;
+                        border-radius: 14px;
+                        background: root.contact-added ? Theme.accent-success.with-alpha(0.22) : Theme.surface-2;
+                        HorizontalLayout {
+                            padding-left: Theme.spacing-sm;
+                            padding-right: Theme.spacing-sm;
+                            VerticalLayout {
+                                alignment: center;
+                                Text {
+                                    text: root.contact-added ? "✓ Added to contacts" : "+ Add to contacts";
+                                    color: root.contact-added ? Theme.accent-success : Theme.accent-info;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 700;
+                                }
+                            }
+                        }
+                        TouchArea {
+                            clicked => {
+                                root.add-to-contacts();
+                            }
+                        }
+                    }
+                }
+                // In-call actions row.
+                if root.in-call: HorizontalLayout {
+                    alignment: center;
+                    spacing: Theme.spacing-sm;
+                    CallChip {
+                        label: root.muted ? "🔇 Muted" : "🔊 Mic";
+                        active: root.muted;
+                        tone-i: 4;
+                        clicked => {
+                            root.muted = !root.muted;
+                            root.set-status(root.muted ? "Mic off" : "Mic on", !root.muted, root.muted);
+                        }
+                    }
+                    CallChip {
+                        label: root.speaker ? "📢 Speaker" : "🎧 Earpiece";
+                        active: root.speaker;
+                        tone-i: 0;
+                        clicked => {
+                            root.speaker = !root.speaker;
+                            root.set-status(root.speaker ? "Speaker on" : "Speaker off", root.speaker, false);
+                        }
+                    }
+                    CallChip {
+                        label: root.on-hold ? "▶ Resume" : "⏸ Hold";
+                        active: root.on-hold;
+                        tone-i: 3;
+                        clicked => {
+                            root.on-hold = !root.on-hold;
+                            root.set-status(root.on-hold ? "On hold" : "Resumed", !root.on-hold, root.on-hold);
+                        }
+                    }
                 }
             }
         }
 
-        Rectangle { vertical-stretch: 1; }
+        Rectangle {
+            vertical-stretch: 1;
+        }
 
         // Keypad.
         VerticalLayout {
@@ -199,27 +438,99 @@ export component DialerPage inherits Window {
             spacing: Theme.spacing-sm;
             HorizontalLayout {
                 spacing: Theme.spacing-sm;
-                DialKey { digit: "1"; letters: " "; pressed => { root.key-pressed("1"); } }
-                DialKey { digit: "2"; letters: "ABC"; pressed => { root.key-pressed("2"); } }
-                DialKey { digit: "3"; letters: "DEF"; pressed => { root.key-pressed("3"); } }
+                DialKey {
+                    digit: "1";
+                    letters: " ";
+                    pressed => {
+                        root.tap-key("1");
+                    }
+                }
+                DialKey {
+                    digit: "2";
+                    letters: "ABC";
+                    pressed => {
+                        root.tap-key("2");
+                    }
+                }
+                DialKey {
+                    digit: "3";
+                    letters: "DEF";
+                    pressed => {
+                        root.tap-key("3");
+                    }
+                }
             }
             HorizontalLayout {
                 spacing: Theme.spacing-sm;
-                DialKey { digit: "4"; letters: "GHI"; pressed => { root.key-pressed("4"); } }
-                DialKey { digit: "5"; letters: "JKL"; pressed => { root.key-pressed("5"); } }
-                DialKey { digit: "6"; letters: "MNO"; pressed => { root.key-pressed("6"); } }
+                DialKey {
+                    digit: "4";
+                    letters: "GHI";
+                    pressed => {
+                        root.tap-key("4");
+                    }
+                }
+                DialKey {
+                    digit: "5";
+                    letters: "JKL";
+                    pressed => {
+                        root.tap-key("5");
+                    }
+                }
+                DialKey {
+                    digit: "6";
+                    letters: "MNO";
+                    pressed => {
+                        root.tap-key("6");
+                    }
+                }
             }
             HorizontalLayout {
                 spacing: Theme.spacing-sm;
-                DialKey { digit: "7"; letters: "PQRS"; pressed => { root.key-pressed("7"); } }
-                DialKey { digit: "8"; letters: "TUV"; pressed => { root.key-pressed("8"); } }
-                DialKey { digit: "9"; letters: "WXYZ"; pressed => { root.key-pressed("9"); } }
+                DialKey {
+                    digit: "7";
+                    letters: "PQRS";
+                    pressed => {
+                        root.tap-key("7");
+                    }
+                }
+                DialKey {
+                    digit: "8";
+                    letters: "TUV";
+                    pressed => {
+                        root.tap-key("8");
+                    }
+                }
+                DialKey {
+                    digit: "9";
+                    letters: "WXYZ";
+                    pressed => {
+                        root.tap-key("9");
+                    }
+                }
             }
             HorizontalLayout {
                 spacing: Theme.spacing-sm;
-                DialKey { digit: "*"; letters: " "; pressed => { root.key-pressed("*"); } }
-                DialKey { digit: "0"; letters: "+"; pressed => { root.key-pressed("0"); } }
-                DialKey { digit: "#"; letters: " "; pressed => { root.key-pressed("#"); } }
+                DialKey {
+                    digit: "*";
+                    letters: " ";
+                    pressed => {
+                        root.tap-key("*");
+                    }
+                }
+                DialKey {
+                    digit: "0";
+                    letters: "+";
+                    pressed => {
+                        root.tap-key("0");
+                    }
+                }
+                DialKey {
+                    digit: "#";
+                    letters: " ";
+                    pressed => {
+                        root.tap-key("#");
+                    }
+                }
             }
         }
 
@@ -230,30 +541,31 @@ export component DialerPage inherits Window {
                 padding: Theme.spacing-md;
                 alignment: center;
                 spacing: 0;
-                // Spacer to keep call button centred.
-                Rectangle { width: 64px; }
+                Rectangle {
+                    width: 64px;
+                }
                 Rectangle {
                     width: 72px;
                     height: 72px;
                     border-radius: 36px;
-                    background: touch-call.pressed
-                        ? Theme.accent-success.darker(0.15)
-                        : Theme.accent-success;
+                    background: touch-call.pressed ? (root.in-call ? Theme.accent-danger.darker(0.15) : Theme.accent-success.darker(0.15)) : (root.in-call ? Theme.accent-danger : Theme.accent-success);
                     animate background { duration: Theme.motion-fast; }
-                    Image {
-                        width: 30px;
-                        height: 30px;
-                        x: (parent.width - self.width) / 2;
-                        y: (parent.height - self.height) / 2;
-                        source: @image-url("@mobile-components/icons/send.svg");
-                        colorize: Theme.on-primary;
-                        image-fit: contain;
+                    Text {
+                        text: root.in-call ? "✕" : "☎";
+                        color: Theme.on-primary;
+                        font-size: 28px;
+                        font-weight: 800;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
                     }
                     touch-call := TouchArea {
-                        clicked => { root.call-pressed(); }
+                        clicked => {
+                            root.call-toggle();
+                        }
                     }
                 }
-                // Backspace.
                 Rectangle {
                     width: 64px;
                     height: 72px;
@@ -267,7 +579,105 @@ export component DialerPage inherits Window {
                         image-fit: contain;
                     }
                     TouchArea {
-                        clicked => { root.delete-pressed(); }
+                        clicked => {
+                            root.backspace();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ===================== Bottom sheet =====================
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+                root.confirm-clear = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: Theme.surface-2;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.muted;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: "Dialer menu";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 700;
+                    }
+                }
+                SheetRow {
+                    label: "Voicemail (2 new)";
+                    clicked => {
+                        root.set-status("Opening voicemail…", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Call last (Marco)";
+                    clicked => {
+                        root.number = "+12125550101";
+                        root.call-toggle();
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Speed dial: Dad";
+                    clicked => {
+                        root.number = "+32478123456";
+                        root.recent-idx = 3;
+                        root.set-status("Loaded Dad's number", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                Divider { }
+
+                SheetRow {
+                    label: root.confirm-clear ? "Confirm: clear number" : "Clear number";
+                    destructive: true;
+                    clicked => {
+                        if (root.confirm-clear) {
+                            root.number = "";
+                            root.contact-added = false;
+                            root.recent-idx = -1;
+                            root.set-status("Cleared", false, true);
+                            root.sheet-open = false;
+                            root.confirm-clear = false;
+                        } else {
+                            root.confirm-clear = true;
+                        }
+                    }
+                }
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.sheet-open = false;
+                        root.confirm-clear = false;
                     }
                 }
             }

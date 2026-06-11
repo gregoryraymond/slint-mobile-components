@@ -1,29 +1,224 @@
 // SearchResultsPage
 // =====================================================================
-//
-// Search results page. AppBar with query as title, SegmentedControl
-// for facets, a result-count caption, then grouped FormSections of
-// SettingRows — every row a 56-px floor with consistent leading-icon
-// tiles and trailing chevrons.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { HeadingStyle } from "@mobile-components/heading.slint";
 import { SegmentedControl } from "@mobile-components/segmented-control.slint";
 import { FormSection } from "@mobile-components/form-section.slint";
-import { SettingRow } from "@mobile-components/setting-row.slint";
 import { Divider } from "@mobile-components/divider.slint";
 import { ScrollView } from "std-widgets.slint";
+
+component QueryChip inherits Rectangle {
+    in property <string> label;
+    in property <bool> active: false;
+    callback clicked();
+
+    horizontal-stretch: 0;
+    height: 30px;
+    border-radius: 15px;
+    background: root.active ? Theme.primary : Theme.surface-2;
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: center;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.active ? Theme.on-primary : Theme.on-surface;
+                font-size: Theme.font-size-caption;
+                font-weight: 700;
+            }
+        }
+    }
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component ResultRow inherits Rectangle {
+    in property <string> title;
+    in property <string> subtitle;
+    in property <int> tone-i: 0;
+    in property <int> facet: 0; // 0 hits 1 apps 2 files 3 mail 4 web
+    in property <bool> pinned: false;
+    in property <bool> visited: false;
+    callback row-clicked();
+    callback pin-clicked();
+
+    horizontal-stretch: 1;
+    min-height: 64px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+    opacity: root.visited ? 0.7 : 1.0;
+
+    ta := TouchArea {
+        clicked => {
+            root.row-clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 36px;
+                height: 36px;
+                border-radius: 8px;
+                background: root.tone-i == 1 ? Theme.accent-info.with-alpha(0.22) : (root.tone-i == 2 ? Theme.accent-warning.with-alpha(0.22) : (root.tone-i == 3 ? Theme.accent-success.with-alpha(0.22) : (root.tone-i == 4 ? Theme.accent-danger.with-alpha(0.22) : Theme.surface-2)));
+                Image {
+                    width: 18px;
+                    height: 18px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: root.facet == 1 ? @image-url("@mobile-components/icons/home.svg") : (root.facet == 2 ? @image-url("@mobile-components/icons/queue.svg") : (root.facet == 3 ? @image-url("@mobile-components/icons/send.svg") : (root.facet == 4 ? @image-url("@mobile-components/icons/pin.svg") : @image-url("@mobile-components/icons/star.svg"))));
+                    colorize: root.tone-i == 1 ? Theme.accent-info : (root.tone-i == 2 ? Theme.accent-warning : (root.tone-i == 3 ? Theme.accent-success : (root.tone-i == 4 ? Theme.accent-danger : Theme.muted)));
+                    image-fit: contain;
+                }
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: (root.pinned ? "★ " : "") + root.title + (root.visited ? " · visited" : "");
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 700;
+                overflow: elide;
+            }
+            Text {
+                text: root.subtitle;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+                overflow: elide;
+            }
+        }
+        Rectangle {
+            width: 32px;
+            height: 32px;
+            border-radius: 16px;
+            background: root.pinned ? Theme.accent-warning.with-alpha(0.22) : Theme.surface-2;
+            Text {
+                text: "★";
+                color: root.pinned ? Theme.accent-warning : Theme.muted;
+                font-size: 14px;
+                font-weight: 800;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                width: parent.width;
+                height: parent.height;
+            }
+            TouchArea {
+                clicked => {
+                    root.pin-clicked();
+                }
+            }
+        }
+    }
+}
+
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.destructive ? Theme.accent-danger : Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+        }
+    }
+}
 
 export component SearchResultsPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
 
-    in-out property <int> facet-index: 0;
+    in-out property <int> facet-index: 0; // 0 All 1 Apps 2 Files 3 Mail 4 Web
+    in-out property <int> query-idx: 0; // 0 atlas coffee, 1 slint conf, 2 brussels offices, 3 coffee menu
+    in-out property <int> shown: 7;
+    in-out property <bool> pin1: false;
+    in-out property <bool> pin2: false;
+    in-out property <bool> pin3: false;
+    in-out property <bool> pin4: false;
+    in-out property <bool> pin5: false;
+    in-out property <bool> pin6: false;
+    in-out property <bool> pin7: false;
+    in-out property <bool> visited1: false;
+    in-out property <bool> visited2: false;
+    in-out property <bool> visited3: false;
+    in-out property <bool> visited4: false;
+    in-out property <bool> visited5: false;
+    in-out property <bool> visited6: false;
+    in-out property <bool> visited7: false;
+    in-out property <bool> saved-search: false;
+    in-out property <bool> sheet-open: false;
+    in-out property <bool> confirm-clear: false;
+    in-out property <string> status-msg: "";
+    in-out property <bool> status-success: false;
+    in-out property <bool> status-danger: false;
 
     callback back-pressed();
     callback close-pressed();
-    callback result-pressed(string);
+    callback result-pressed(int);
+
+    function query-text() -> string {
+        return root.query-idx == 0 ? "atlas coffee" : (root.query-idx == 1 ? "slint conf" : (root.query-idx == 2 ? "brussels offices" : "coffee menu"));
+    }
+    function total-results() -> int {
+        return root.query-idx == 0 ? 247 : (root.query-idx == 1 ? 184 : (root.query-idx == 2 ? 412 : 92));
+    }
+    function visible-count() -> int {
+        if (root.facet-index == 0) {
+            return root.shown;
+        }
+        if (root.facet-index == 1) {
+            return 1;
+        }
+        if (root.facet-index == 2) {
+            return 3;
+        }
+        if (root.facet-index == 3) {
+            return 1;
+        }
+        return 2;
+    }
+    function show-row(facet: int) -> bool {
+        return root.facet-index == 0 || root.facet-index == facet;
+    }
+    function set-status(m: string, ok: bool, bad: bool) {
+        root.status-msg = m;
+        root.status-success = ok;
+        root.status-danger = bad;
+    }
+    function pinned-count() -> int {
+        return (root.pin1 ? 1 : 0) + (root.pin2 ? 1 : 0) + (root.pin3 ? 1 : 0) + (root.pin4 ? 1 : 0) + (root.pin5 ? 1 : 0) + (root.pin6 ? 1 : 0) + (root.pin7 ? 1 : 0);
+    }
 
     background: Theme.background;
 
@@ -31,12 +226,33 @@ export component SearchResultsPage inherits Window {
         spacing: 0;
 
         AppBar {
-            title: "atlas coffee";
+            title: root.query-text();
             title-style: HeadingStyle.mono;
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
-            trailing-icon: @image-url("@mobile-components/icons/close.svg");
-            leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.close-pressed(); }
+            trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
+            leading-pressed => {
+                root.back-pressed();
+            }
+            trailing-pressed => {
+                root.sheet-open = true;
+            }
+        }
+
+        if !root.status-msg.is-empty: Rectangle {
+            height: 28px;
+            background: root.status-success ? Theme.accent-success.with-alpha(0.16) : (root.status-danger ? Theme.accent-danger.with-alpha(0.16) : Theme.surface-2);
+            HorizontalLayout {
+                alignment: center;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.status-msg;
+                        color: root.status-success ? Theme.accent-success : (root.status-danger ? Theme.accent-danger : Theme.on-surface);
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                    }
+                }
+            }
         }
 
         ScrollView {
@@ -48,138 +264,420 @@ export component SearchResultsPage inherits Window {
                 spacing: Theme.spacing-md;
                 alignment: start;
 
-                // ----- Facets ---------------------------------------
+                // Recent queries chips.
+                HorizontalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    spacing: Theme.spacing-sm;
+                    QueryChip {
+                        label: "atlas coffee";
+                        active: root.query-idx == 0;
+                        clicked => {
+                            root.query-idx = 0;
+                            root.set-status("Showing atlas coffee · " + root.total-results() + " results", true, false);
+                        }
+                    }
+                    QueryChip {
+                        label: "slint conf";
+                        active: root.query-idx == 1;
+                        clicked => {
+                            root.query-idx = 1;
+                            root.set-status("Showing slint conf · " + root.total-results() + " results", true, false);
+                        }
+                    }
+                    QueryChip {
+                        label: "brussels offices";
+                        active: root.query-idx == 2;
+                        clicked => {
+                            root.query-idx = 2;
+                            root.set-status("Showing brussels offices · " + root.total-results() + " results", true, false);
+                        }
+                    }
+                    QueryChip {
+                        label: "coffee menu";
+                        active: root.query-idx == 3;
+                        clicked => {
+                            root.query-idx = 3;
+                            root.set-status("Showing coffee menu · " + root.total-results() + " results", true, false);
+                        }
+                    }
+                }
+
+                // Facets.
                 VerticalLayout {
                     padding-left: Theme.spacing-md;
                     padding-right: Theme.spacing-md;
                     SegmentedControl {
                         options: ["All", "Apps", "Files", "Mail", "Web"];
                         selected-index <=> root.facet-index;
+                        changed(i) => {
+                            root.set-status("Facet: " + (i == 0 ? "All" : (i == 1 ? "Apps" : (i == 2 ? "Files" : (i == 3 ? "Mail" : "Web")))), true, false);
+                        }
                     }
                 }
 
-                // ----- Count caption --------------------------------
+                // Count + save search.
                 HorizontalLayout {
                     padding-left: Theme.spacing-md;
                     padding-right: Theme.spacing-md;
-                    alignment: start;
-                    Text {
-                        text: "247 results · 0.12 s";
-                        color: Theme.muted;
-                        font-size: Theme.font-size-caption;
+                    alignment: stretch;
+                    VerticalLayout {
+                        alignment: center;
+                        horizontal-stretch: 1;
+                        Text {
+                            text: root.visible-count() + " of " + root.total-results() + " results · 0.12 s" + (root.pinned-count() > 0 ? " · " + root.pinned-count() + " pinned" : "");
+                            color: Theme.muted;
+                            font-size: Theme.font-size-caption;
+                        }
+                    }
+                    Rectangle {
+                        horizontal-stretch: 0;
+                        height: 28px;
+                        border-radius: 14px;
+                        background: root.saved-search ? Theme.accent-success.with-alpha(0.22) : Theme.surface-2;
+                        HorizontalLayout {
+                            padding-left: Theme.spacing-sm;
+                            padding-right: Theme.spacing-sm;
+                            alignment: center;
+                            VerticalLayout {
+                                alignment: center;
+                                Text {
+                                    text: root.saved-search ? "✓ Saved" : "Save search";
+                                    color: root.saved-search ? Theme.accent-success : Theme.on-surface;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 700;
+                                }
+                            }
+                        }
+                        TouchArea {
+                            clicked => {
+                                root.saved-search = !root.saved-search;
+                                root.set-status(root.saved-search ? "Search saved" : "Removed save", root.saved-search, false);
+                            }
+                        }
                     }
                 }
 
-                // ----- Top hits -------------------------------------
-                FormSection {
-                    title: "TOP HITS";
+                // "Did you mean" banner when query has a typo (query 3).
+                if root.query-idx == 3: VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    Rectangle {
+                        background: Theme.accent-info.with-alpha(0.16);
+                        border-radius: Theme.radius-md;
+                        height: 44px;
+                        HorizontalLayout {
+                            padding: Theme.spacing-md;
+                            VerticalLayout {
+                                alignment: center;
+                                horizontal-stretch: 1;
+                                Text {
+                                    text: "Did you mean: atlas-coffee.com/menu?";
+                                    color: Theme.accent-info;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 700;
+                                }
+                            }
+                            Rectangle {
+                                horizontal-stretch: 0;
+                                height: 28px;
+                                border-radius: 14px;
+                                background: Theme.accent-info;
+                                HorizontalLayout {
+                                    padding-left: Theme.spacing-sm;
+                                    padding-right: Theme.spacing-sm;
+                                    alignment: center;
+                                    VerticalLayout {
+                                        alignment: center;
+                                        Text {
+                                            text: "Search instead";
+                                            color: Theme.on-primary;
+                                            font-size: Theme.font-size-caption;
+                                            font-weight: 800;
+                                        }
+                                    }
+                                }
+                                TouchArea {
+                                    clicked => {
+                                        root.query-idx = 0;
+                                        root.set-status("Showing atlas coffee", true, false);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
 
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/pin.svg");
-                        tone: Tone.info;
+                if root.show-row(1) || root.show-row(2) || root.show-row(3) || root.show-row(4): FormSection {
+                    title: "TOP HITS · " + root.query-text();
+
+                    if root.show-row(1): ResultRow {
                         title: "Atlas Coffee Co.";
                         subtitle: "440 Avenue Louise · 1.2 km";
-                        clicked => { root.result-pressed("place"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
+                        tone-i: 1;
+                        facet: 1;
+                        pinned: root.pin1;
+                        visited: root.visited1;
+                        row-clicked => {
+                            root.visited1 = true;
+                            root.set-status("Opened place", true, false);
+                            root.result-pressed(1);
+                        }
+                        pin-clicked => {
+                            root.pin1 = !root.pin1;
+                            root.set-status(root.pin1 ? "Pinned" : "Unpinned", root.pin1, false);
                         }
                     }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/queue.svg");
-                        tone: Tone.warning;
+                    if root.show-row(1): Divider { }
+
+                    if root.show-row(4): ResultRow {
                         title: "atlas-coffee.com/menu";
                         subtitle: "…order the Atlas Coffee house blend on tap…";
-                        clicked => { root.result-pressed("menu"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
+                        tone-i: 2;
+                        facet: 4;
+                        pinned: root.pin2;
+                        visited: root.visited2;
+                        row-clicked => {
+                            root.visited2 = true;
+                            root.set-status("Opened web page", true, false);
+                            root.result-pressed(2);
+                        }
+                        pin-clicked => {
+                            root.pin2 = !root.pin2;
+                            root.set-status(root.pin2 ? "Pinned" : "Unpinned", root.pin2, false);
                         }
                     }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/star.svg");
-                        tone: Tone.success;
+                    if root.show-row(4): Divider { }
+
+                    if root.show-row(4): ResultRow {
                         title: "Atlas Coffee — review on Foodie";
                         subtitle: "…rated 4.7 by 312 Atlas Coffee regulars…";
-                        clicked => { root.result-pressed("review"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
+                        tone-i: 3;
+                        facet: 4;
+                        pinned: root.pin3;
+                        visited: root.visited3;
+                        row-clicked => {
+                            root.visited3 = true;
+                            root.set-status("Opened review", true, false);
+                            root.result-pressed(3);
+                        }
+                        pin-clicked => {
+                            root.pin3 = !root.pin3;
+                            root.set-status(root.pin3 ? "Pinned" : "Unpinned", root.pin3, false);
                         }
                     }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/send.svg");
+                    if root.show-row(4): Divider { }
+
+                    if root.show-row(3): ResultRow {
                         title: "Re: Atlas coffee order";
                         subtitle: "Sam · …picked up the Atlas coffee beans you wanted…";
-                        clicked => { root.result-pressed("mail"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
+                        tone-i: 0;
+                        facet: 3;
+                        pinned: root.pin4;
+                        visited: root.visited4;
+                        row-clicked => {
+                            root.visited4 = true;
+                            root.set-status("Opened mail", true, false);
+                            root.result-pressed(4);
+                        }
+                        pin-clicked => {
+                            root.pin4 = !root.pin4;
+                            root.set-status(root.pin4 ? "Pinned" : "Unpinned", root.pin4, false);
                         }
                     }
                 }
 
-                // ----- From your files ------------------------------
-                FormSection {
+                if root.show-row(2): FormSection {
                     title: "FROM YOUR FILES";
 
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/queue.svg");
-                        tone: Tone.info;
+                    ResultRow {
                         title: "atlas-coffee-receipts.pdf";
                         subtitle: "PDF · 412 KB · contains 14 matches";
-                        clicked => { root.result-pressed("receipts"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
+                        tone-i: 1;
+                        facet: 2;
+                        pinned: root.pin5;
+                        visited: root.visited5;
+                        row-clicked => {
+                            root.visited5 = true;
+                            root.set-status("Opened receipts", true, false);
+                            root.result-pressed(5);
+                        }
+                        pin-clicked => {
+                            root.pin5 = !root.pin5;
+                            root.set-status(root.pin5 ? "Pinned" : "Unpinned", root.pin5, false);
                         }
                     }
                     Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/menu.svg");
+
+                    ResultRow {
                         title: "Atlas Coffee — meeting notes.md";
                         subtitle: "MD · 12 KB · 3 matches";
-                        clicked => { root.result-pressed("notes"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
+                        tone-i: 0;
+                        facet: 2;
+                        pinned: root.pin6;
+                        visited: root.visited6;
+                        row-clicked => {
+                            root.visited6 = true;
+                            root.set-status("Opened notes", true, false);
+                            root.result-pressed(6);
+                        }
+                        pin-clicked => {
+                            root.pin6 = !root.pin6;
+                            root.set-status(root.pin6 ? "Pinned" : "Unpinned", root.pin6, false);
                         }
                     }
                     Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/podcast-cover.svg");
-                        tone: Tone.warning;
+
+                    ResultRow {
                         title: "Atlas-coffee-jingle.m4a";
                         subtitle: "Audio · 2.1 MB · 1 match in filename";
-                        clicked => { root.result-pressed("audio"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
+                        tone-i: 2;
+                        facet: 2;
+                        pinned: root.pin7;
+                        visited: root.visited7;
+                        row-clicked => {
+                            root.visited7 = true;
+                            root.set-status("Opened audio", true, false);
+                            root.result-pressed(7);
                         }
+                        pin-clicked => {
+                            root.pin7 = !root.pin7;
+                            root.set-status(root.pin7 ? "Pinned" : "Unpinned", root.pin7, false);
+                        }
+                    }
+                }
+
+                // Load more button.
+                if root.facet-index == 0 && root.shown < root.total-results(): VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    Rectangle {
+                        height: 44px;
+                        border-radius: 22px;
+                        background: Theme.surface-2;
+                        HorizontalLayout {
+                            alignment: center;
+                            VerticalLayout {
+                                alignment: center;
+                                Text {
+                                    text: "Load 10 more results";
+                                    color: Theme.accent-info;
+                                    font-size: Theme.font-size-body;
+                                    font-weight: 800;
+                                }
+                            }
+                        }
+                        TouchArea {
+                            clicked => {
+                                root.shown = min(root.total-results(), root.shown + 10);
+                                root.set-status("Showing " + root.shown + " of " + root.total-results(), true, false);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ===================== Bottom sheet =====================
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+                root.confirm-clear = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: Theme.surface-2;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.muted;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: "Search menu";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 700;
+                    }
+                }
+                SheetRow {
+                    label: root.saved-search ? "Unsave this search" : "Save this search";
+                    clicked => {
+                        root.saved-search = !root.saved-search;
+                        root.set-status(root.saved-search ? "Saved" : "Removed", root.saved-search, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Share results";
+                    clicked => {
+                        root.set-status("Link copied", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Unpin all (" + root.pinned-count() + ")";
+                    clicked => {
+                        root.pin1 = false;
+                        root.pin2 = false;
+                        root.pin3 = false;
+                        root.pin4 = false;
+                        root.pin5 = false;
+                        root.pin6 = false;
+                        root.pin7 = false;
+                        root.set-status("Pins cleared", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                Divider { }
+
+                SheetRow {
+                    label: root.confirm-clear ? "Confirm: clear history" : "Clear search history";
+                    destructive: true;
+                    clicked => {
+                        if (root.confirm-clear) {
+                            root.visited1 = false;
+                            root.visited2 = false;
+                            root.visited3 = false;
+                            root.visited4 = false;
+                            root.visited5 = false;
+                            root.visited6 = false;
+                            root.visited7 = false;
+                            root.set-status("History cleared", false, true);
+                            root.sheet-open = false;
+                            root.confirm-clear = false;
+                        } else {
+                            root.confirm-clear = true;
+                        }
+                    }
+                }
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.sheet-open = false;
+                        root.confirm-clear = false;
                     }
                 }
             }

@@ -1,10 +1,5 @@
 // HelpCenterPage
 // =====================================================================
-//
-// FAQ-style help index with a search field, popular articles, and
-// contact entry points. Pure showcase of `SettingRow` discipline — every
-// "article" / "channel" / "version" row is the same primitive, so the
-// leading tiles and titles all line up vertically.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
@@ -16,11 +11,160 @@ import { TextField } from "@mobile-components/text-field.slint";
 import { Divider } from "@mobile-components/divider.slint";
 import { ScrollView } from "std-widgets.slint";
 
+component TagPill inherits Rectangle {
+    in property <string> label;
+    in property <bool> active;
+    callback clicked();
+
+    horizontal-stretch: 0;
+    min-height: 32px;
+    background: root.active ? Theme.accent-info : Theme.surface-2;
+    border-radius: 16px;
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.active ? Theme.background : Theme.on-background;
+                font-size: Theme.font-size-caption;
+                font-weight: 600;
+            }
+        }
+    }
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component ActionPip inherits Rectangle {
+    in property <string> label;
+    in property <bool> active;
+    in property <color> accent: Theme.accent-info;
+    callback clicked();
+
+    horizontal-stretch: 0;
+    min-height: 30px;
+    background: root.active ? root.accent : Theme.surface-3;
+    border-radius: 6px;
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.active ? Theme.background : Theme.on-background;
+                font-size: Theme.font-size-caption;
+                font-weight: 600;
+            }
+        }
+    }
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component ArticleBlock inherits Rectangle {
+    in property <bool> expanded;
+    in property <int> helpful; // -1 / 0 / 1
+    in property <bool> bookmarked;
+    in property <int> votes;
+    callback helpful-pressed();
+    callback nothelpful-pressed();
+    callback bookmark-pressed();
+
+    background: root.expanded ? Theme.surface-2 : transparent;
+    VerticalLayout {
+        spacing: 0;
+        if root.expanded: Rectangle {
+            min-height: 56px;
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                padding-top: Theme.spacing-xs;
+                padding-bottom: Theme.spacing-xs;
+                spacing: Theme.spacing-sm;
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    Text {
+                        text: root.votes + " readers found this helpful";
+                        color: Theme.muted;
+                        font-size: Theme.font-size-caption;
+                    }
+                }
+                ActionPip {
+                    label: "Helpful";
+                    active: root.helpful == 1;
+                    accent: Theme.accent-success;
+                    clicked => {
+                        root.helpful-pressed();
+                    }
+                }
+                ActionPip {
+                    label: "Not";
+                    active: root.helpful == -1;
+                    accent: Theme.accent-danger;
+                    clicked => {
+                        root.nothelpful-pressed();
+                    }
+                }
+                ActionPip {
+                    label: root.bookmarked ? "Saved" : "Save";
+                    active: root.bookmarked;
+                    accent: Theme.accent-warning;
+                    clicked => {
+                        root.bookmark-pressed();
+                    }
+                }
+            }
+        }
+    }
+}
+
 export component HelpCenterPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
 
     in-out property <string> query;
+    in-out property <int> filter-section: 0; // 0 all, 1 popular, 2 contact, 3 app
+
+    in-out property <int> expanded: 0; // 0 none, 1..4
+    in-out property <int> bm-1: 0;
+    in-out property <int> bm-2: 0;
+    in-out property <int> bm-3: 0;
+    in-out property <int> bm-4: 0;
+    in-out property <int> hp-1: 0;
+    in-out property <int> hp-2: 0;
+    in-out property <int> hp-3: 0;
+    in-out property <int> hp-4: 0;
+    in-out property <int> votes-1: 128;
+    in-out property <int> votes-2: 86;
+    in-out property <int> votes-3: 47;
+    in-out property <int> votes-4: 213;
+
+    in-out property <bool> chat-open;
+    in-out property <bool> email-open;
+    in-out property <bool> chat-typing;
+    in-out property <int> chat-stage: 0; // 0 idle, 1 sent, 2 typing, 3 reply
+    in-out property <string> chat-last-user;
+    in-out property <string> chat-input;
+    in-out property <string> email-input;
+    in-out property <string> email-subject;
+
+    in-out property <bool> sheet-open;
+    in-out property <int> forum-count: 4823;
+    in-out property <int> locale-idx: 0;
+    in-out property <int> searches-run;
+
+    in-out property <string> status-msg;
+    in-out property <int> status-tone; // 0 default 1 success 2 danger 3 warning
 
     callback back-pressed();
     callback search-pressed();
@@ -29,15 +173,84 @@ export component HelpCenterPage inherits Window {
 
     background: Theme.background;
 
+    function set-status(m: string, tone: int) {
+        root.status-msg = m;
+        root.status-tone = tone;
+    }
+    function status-color() -> color {
+        return root.status-tone == 1 ? Theme.accent-success : (root.status-tone == 2 ? Theme.accent-danger : (root.status-tone == 3 ? Theme.accent-warning : Theme.accent-info));
+    }
+    function show-popular() -> bool {
+        return root.filter-section == 0 || root.filter-section == 1;
+    }
+    function show-contact() -> bool {
+        return root.filter-section == 0 || root.filter-section == 2;
+    }
+    function show-app() -> bool {
+        return root.filter-section == 0 || root.filter-section == 3;
+    }
+    function locale-label() -> string {
+        return root.locale-idx == 0 ? "en-GB" : (root.locale-idx == 1 ? "en-US" : (root.locale-idx == 2 ? "de-DE" : "fr-FR"));
+    }
+    function delta-helpful(prev: int, next: int, base: int) -> int {
+        // base count adjusted by transition prev → next
+        if (prev == next) {
+            return base;
+        }
+        return base + (next == 1 ? 1 : 0) - (prev == 1 ? 1 : 0);
+    }
+
+    // Reply Timer for live chat.
+    reply-timer := Timer {
+        interval: 1800ms;
+        running: root.chat-typing;
+        triggered => {
+            root.chat-typing = false;
+            root.chat-stage = 3;
+            root.set-status("Agent replied", 1);
+        }
+    }
+
     VerticalLayout {
         spacing: 0;
 
         AppBar {
-            title: "Help";
+            title: root.expanded > 0 ? "Article" : "Help";
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             trailing-icon: @image-url("@mobile-components/icons/search.svg");
-            leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.search-pressed(); }
+            leading-pressed => {
+                if (root.expanded > 0) {
+                    root.expanded = 0;
+                    root.set-status("Closed article", 0);
+                } else if (root.chat-open || root.email-open) {
+                    root.chat-open = false;
+                    root.email-open = false;
+                    root.set-status("Closed", 0);
+                } else {
+                    root.back-pressed();
+                }
+            }
+            trailing-pressed => {
+                root.sheet-open = true;
+            }
+        }
+
+        if !root.status-msg.is-empty: Rectangle {
+            height: 28px;
+            background: root.status-color().with-alpha(0.18);
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.status-msg;
+                        color: root.status-color();
+                        font-size: Theme.font-size-caption;
+                        font-weight: 600;
+                    }
+                }
+            }
         }
 
         ScrollView {
@@ -49,30 +262,136 @@ export component HelpCenterPage inherits Window {
                 spacing: Theme.spacing-md;
                 alignment: start;
 
-                // ----- Search field -----------------------------------
                 FormField {
-                    TextField {
-                        placeholder: "Search help articles";
-                        text <=> root.query;
+                    HorizontalLayout {
+                        spacing: Theme.spacing-sm;
+                        TextField {
+                            placeholder: "Search help articles";
+                            text <=> root.query;
+                            horizontal-stretch: 1;
+                        }
+                        Rectangle {
+                            horizontal-stretch: 0;
+                            min-width: 72px;
+                            min-height: 36px;
+                            background: Theme.accent-info;
+                            border-radius: Theme.radius-md;
+                            Text {
+                                text: "Go";
+                                color: Theme.background;
+                                font-size: Theme.font-size-body;
+                                font-weight: 600;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                width: parent.width;
+                                height: parent.height;
+                            }
+                            TouchArea {
+                                clicked => {
+                                    if (root.query.is-empty) {
+                                        root.set-status("Type a query first", 3);
+                                    } else {
+                                        root.searches-run = root.searches-run + 1;
+                                        root.set-status("No matches for \"" + root.query + "\" — try Live chat", 2);
+                                        root.search-pressed();
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                HorizontalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    spacing: Theme.spacing-sm;
+                    TagPill {
+                        label: "All";
+                        active: root.filter-section == 0;
+                        clicked => {
+                            root.filter-section = 0;
+                            root.set-status("Showing all sections", 0);
+                        }
+                    }
+                    TagPill {
+                        label: "Popular";
+                        active: root.filter-section == 1;
+                        clicked => {
+                            root.filter-section = 1;
+                            root.set-status("Popular articles only", 0);
+                        }
+                    }
+                    TagPill {
+                        label: "Contact";
+                        active: root.filter-section == 2;
+                        clicked => {
+                            root.filter-section = 2;
+                            root.set-status("Contact channels only", 0);
+                        }
+                    }
+                    TagPill {
+                        label: "App";
+                        active: root.filter-section == 3;
+                        clicked => {
+                            root.filter-section = 3;
+                            root.set-status("App metadata only", 0);
+                        }
+                    }
+                    Rectangle {
+                        horizontal-stretch: 1;
+                    }
+                }
+
+                if root.searches-run > 0: HorizontalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    Text {
+                        text: root.searches-run + " search" + (root.searches-run == 1 ? "" : "es") + " run this session";
+                        color: Theme.muted;
+                        font-size: Theme.font-size-caption;
                     }
                 }
 
                 // ----- POPULAR ----------------------------------------
-                FormSection {
+                if root.show-popular(): FormSection {
                     title: "POPULAR";
 
                     SettingRow {
                         icon: @image-url("@mobile-components/icons/inbox.svg");
                         tone: Tone.info;
                         title: "Getting started checklist";
-                        subtitle: "5 min read · updated last week.";
-                        clicked => { root.article-pressed("getting-started"); }
+                        subtitle: root.bm-1 == 1 ? "Saved · 5 min read" : "5 min read · updated last week.";
+                        clicked => {
+                            root.expanded = root.expanded == 1 ? 0 : 1;
+                            root.set-status(root.expanded == 1 ? "Opened: Getting started" : "Closed", 0);
+                            root.article-pressed("getting-started");
+                        }
                         Image {
                             width: 16px;
                             height: 16px;
                             source: @image-url("@mobile-components/icons/chevron-right.svg");
                             colorize: Theme.muted;
                             image-fit: contain;
+                        }
+                    }
+                    if root.expanded == 1: ArticleBlock {
+                        expanded: true;
+                        helpful: root.hp-1;
+                        bookmarked: root.bm-1 == 1;
+                        votes: root.votes-1;
+                        helpful-pressed => {
+                            root.votes-1 = root.delta-helpful(root.hp-1, root.hp-1 == 1 ? 0 : 1, root.votes-1);
+                            root.hp-1 = root.hp-1 == 1 ? 0 : 1;
+                            root.set-status(root.hp-1 == 1 ? "Thanks for the feedback" : "Cleared", root.hp-1 == 1 ? 1 : 0);
+                        }
+                        nothelpful-pressed => {
+                            root.votes-1 = root.delta-helpful(root.hp-1, root.hp-1 == -1 ? 0 : -1, root.votes-1);
+                            root.hp-1 = root.hp-1 == -1 ? 0 : -1;
+                            root.set-status(root.hp-1 == -1 ? "We'll improve this" : "Cleared", root.hp-1 == -1 ? 2 : 0);
+                        }
+                        bookmark-pressed => {
+                            root.bm-1 = root.bm-1 == 1 ? 0 : 1;
+                            root.set-status(root.bm-1 == 1 ? "Saved to your library" : "Removed bookmark", root.bm-1 == 1 ? 1 : 0);
                         }
                     }
                     Divider { }
@@ -80,8 +399,12 @@ export component HelpCenterPage inherits Window {
                         icon: @image-url("@mobile-components/icons/star.svg");
                         tone: Tone.warning;
                         title: "Upgrade to Pro";
-                        subtitle: "4 min read · updated last week.";
-                        clicked => { root.article-pressed("upgrade"); }
+                        subtitle: root.bm-2 == 1 ? "Saved · 4 min read" : "4 min read · updated last week.";
+                        clicked => {
+                            root.expanded = root.expanded == 2 ? 0 : 2;
+                            root.set-status(root.expanded == 2 ? "Opened: Upgrade to Pro" : "Closed", 0);
+                            root.article-pressed("upgrade");
+                        }
                         Image {
                             width: 16px;
                             height: 16px;
@@ -90,18 +413,62 @@ export component HelpCenterPage inherits Window {
                             image-fit: contain;
                         }
                     }
+                    if root.expanded == 2: ArticleBlock {
+                        expanded: true;
+                        helpful: root.hp-2;
+                        bookmarked: root.bm-2 == 1;
+                        votes: root.votes-2;
+                        helpful-pressed => {
+                            root.votes-2 = root.delta-helpful(root.hp-2, root.hp-2 == 1 ? 0 : 1, root.votes-2);
+                            root.hp-2 = root.hp-2 == 1 ? 0 : 1;
+                            root.set-status(root.hp-2 == 1 ? "Thanks for the feedback" : "Cleared", root.hp-2 == 1 ? 1 : 0);
+                        }
+                        nothelpful-pressed => {
+                            root.votes-2 = root.delta-helpful(root.hp-2, root.hp-2 == -1 ? 0 : -1, root.votes-2);
+                            root.hp-2 = root.hp-2 == -1 ? 0 : -1;
+                            root.set-status(root.hp-2 == -1 ? "We'll improve this" : "Cleared", root.hp-2 == -1 ? 2 : 0);
+                        }
+                        bookmark-pressed => {
+                            root.bm-2 = root.bm-2 == 1 ? 0 : 1;
+                            root.set-status(root.bm-2 == 1 ? "Saved to your library" : "Removed bookmark", root.bm-2 == 1 ? 1 : 0);
+                        }
+                    }
                     Divider { }
                     SettingRow {
                         icon: @image-url("@mobile-components/icons/bell.svg");
                         title: "Managing notifications";
-                        subtitle: "3 min read · updated last week.";
-                        clicked => { root.article-pressed("notifications"); }
+                        subtitle: root.bm-3 == 1 ? "Saved · 3 min read" : "3 min read · updated last week.";
+                        clicked => {
+                            root.expanded = root.expanded == 3 ? 0 : 3;
+                            root.set-status(root.expanded == 3 ? "Opened: Notifications" : "Closed", 0);
+                            root.article-pressed("notifications");
+                        }
                         Image {
                             width: 16px;
                             height: 16px;
                             source: @image-url("@mobile-components/icons/chevron-right.svg");
                             colorize: Theme.muted;
                             image-fit: contain;
+                        }
+                    }
+                    if root.expanded == 3: ArticleBlock {
+                        expanded: true;
+                        helpful: root.hp-3;
+                        bookmarked: root.bm-3 == 1;
+                        votes: root.votes-3;
+                        helpful-pressed => {
+                            root.votes-3 = root.delta-helpful(root.hp-3, root.hp-3 == 1 ? 0 : 1, root.votes-3);
+                            root.hp-3 = root.hp-3 == 1 ? 0 : 1;
+                            root.set-status(root.hp-3 == 1 ? "Thanks for the feedback" : "Cleared", root.hp-3 == 1 ? 1 : 0);
+                        }
+                        nothelpful-pressed => {
+                            root.votes-3 = root.delta-helpful(root.hp-3, root.hp-3 == -1 ? 0 : -1, root.votes-3);
+                            root.hp-3 = root.hp-3 == -1 ? 0 : -1;
+                            root.set-status(root.hp-3 == -1 ? "We'll improve this" : "Cleared", root.hp-3 == -1 ? 2 : 0);
+                        }
+                        bookmark-pressed => {
+                            root.bm-3 = root.bm-3 == 1 ? 0 : 1;
+                            root.set-status(root.bm-3 == 1 ? "Saved to your library" : "Removed bookmark", root.bm-3 == 1 ? 1 : 0);
                         }
                     }
                     Divider { }
@@ -109,8 +476,12 @@ export component HelpCenterPage inherits Window {
                         icon: @image-url("@mobile-components/icons/lock.svg");
                         tone: Tone.success;
                         title: "Securing your account";
-                        subtitle: "7 min read · updated last week.";
-                        clicked => { root.article-pressed("security"); }
+                        subtitle: root.bm-4 == 1 ? "Saved · 7 min read" : "7 min read · updated last week.";
+                        clicked => {
+                            root.expanded = root.expanded == 4 ? 0 : 4;
+                            root.set-status(root.expanded == 4 ? "Opened: Security" : "Closed", 0);
+                            root.article-pressed("security");
+                        }
                         Image {
                             width: 16px;
                             height: 16px;
@@ -119,24 +490,96 @@ export component HelpCenterPage inherits Window {
                             image-fit: contain;
                         }
                     }
+                    if root.expanded == 4: ArticleBlock {
+                        expanded: true;
+                        helpful: root.hp-4;
+                        bookmarked: root.bm-4 == 1;
+                        votes: root.votes-4;
+                        helpful-pressed => {
+                            root.votes-4 = root.delta-helpful(root.hp-4, root.hp-4 == 1 ? 0 : 1, root.votes-4);
+                            root.hp-4 = root.hp-4 == 1 ? 0 : 1;
+                            root.set-status(root.hp-4 == 1 ? "Thanks for the feedback" : "Cleared", root.hp-4 == 1 ? 1 : 0);
+                        }
+                        nothelpful-pressed => {
+                            root.votes-4 = root.delta-helpful(root.hp-4, root.hp-4 == -1 ? 0 : -1, root.votes-4);
+                            root.hp-4 = root.hp-4 == -1 ? 0 : -1;
+                            root.set-status(root.hp-4 == -1 ? "We'll improve this" : "Cleared", root.hp-4 == -1 ? 2 : 0);
+                        }
+                        bookmark-pressed => {
+                            root.bm-4 = root.bm-4 == 1 ? 0 : 1;
+                            root.set-status(root.bm-4 == 1 ? "Saved to your library" : "Removed bookmark", root.bm-4 == 1 ? 1 : 0);
+                        }
+                    }
                 }
 
                 // ----- CONTACT US -------------------------------------
-                FormSection {
+                if root.show-contact(): FormSection {
                     title: "CONTACT US";
 
                     SettingRow {
                         icon: @image-url("@mobile-components/icons/send.svg");
                         tone: Tone.info;
                         title: "Email support";
-                        subtitle: "Replies in 24 h.";
-                        clicked => { root.contact-pressed("email"); }
+                        subtitle: root.email-open ? "Composer open" : "Replies in 24 h.";
+                        clicked => {
+                            root.email-open = !root.email-open;
+                            root.chat-open = false;
+                            root.set-status(root.email-open ? "Compose an email" : "Closed composer", 0);
+                            root.contact-pressed("email");
+                        }
                         Image {
                             width: 16px;
                             height: 16px;
                             source: @image-url("@mobile-components/icons/chevron-right.svg");
                             colorize: Theme.muted;
                             image-fit: contain;
+                        }
+                    }
+                    if root.email-open: Rectangle {
+                        background: Theme.surface-2;
+                        VerticalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-sm;
+                            Text {
+                                text: "TO: support@example.com";
+                                color: Theme.muted;
+                                font-size: Theme.font-size-caption;
+                            }
+                            TextField {
+                                placeholder: "Subject";
+                                text <=> root.email-subject;
+                            }
+                            TextField {
+                                placeholder: "Describe your issue…";
+                                text <=> root.email-input;
+                            }
+                            HorizontalLayout {
+                                spacing: Theme.spacing-sm;
+                                alignment: end;
+                                ActionPip {
+                                    label: "Send";
+                                    active: !root.email-input.is-empty;
+                                    accent: Theme.accent-info;
+                                    clicked => {
+                                        if (root.email-input.is-empty) {
+                                            root.set-status("Add a message first", 3);
+                                        } else {
+                                            root.email-input = "";
+                                            root.email-subject = "";
+                                            root.email-open = false;
+                                            root.set-status("Email queued — reply in 24 h", 1);
+                                        }
+                                    }
+                                }
+                                ActionPip {
+                                    label: "Cancel";
+                                    active: false;
+                                    clicked => {
+                                        root.email-open = false;
+                                        root.set-status("Cancelled", 0);
+                                    }
+                                }
+                            }
                         }
                     }
                     Divider { }
@@ -144,8 +587,13 @@ export component HelpCenterPage inherits Window {
                         icon: @image-url("@mobile-components/icons/inbox.svg");
                         tone: Tone.success;
                         title: "Live chat";
-                        subtitle: "Mon–Fri 09:00–18:00 CET.";
-                        clicked => { root.contact-pressed("chat"); }
+                        subtitle: root.chat-open ? "Conversation open" : "Mon–Fri 09:00–18:00 CET.";
+                        clicked => {
+                            root.chat-open = !root.chat-open;
+                            root.email-open = false;
+                            root.set-status(root.chat-open ? "Connected to agent" : "Closed chat", root.chat-open ? 1 : 0);
+                            root.contact-pressed("chat");
+                        }
                         Image {
                             width: 16px;
                             height: 16px;
@@ -154,12 +602,100 @@ export component HelpCenterPage inherits Window {
                             image-fit: contain;
                         }
                     }
+                    if root.chat-open: Rectangle {
+                        background: Theme.surface-2;
+                        VerticalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-sm;
+                            Rectangle {
+                                background: Theme.surface-3;
+                                border-radius: 12px;
+                                min-height: 40px;
+                                HorizontalLayout {
+                                    padding: Theme.spacing-sm;
+                                    Text {
+                                        text: "Agent: Hi! What can I help with today?";
+                                        color: Theme.on-background;
+                                        font-size: Theme.font-size-body;
+                                        wrap: word-wrap;
+                                        horizontal-stretch: 1;
+                                    }
+                                }
+                            }
+                            if root.chat-stage >= 1: Rectangle {
+                                background: Theme.accent-info;
+                                border-radius: 12px;
+                                min-height: 40px;
+                                HorizontalLayout {
+                                    padding: Theme.spacing-sm;
+                                    Text {
+                                        text: "You: " + root.chat-last-user;
+                                        color: Theme.background;
+                                        font-size: Theme.font-size-body;
+                                        wrap: word-wrap;
+                                        horizontal-stretch: 1;
+                                    }
+                                }
+                            }
+                            if root.chat-typing: HorizontalLayout {
+                                Text {
+                                    text: "Agent is typing…";
+                                    color: Theme.muted;
+                                    font-size: Theme.font-size-caption;
+                                    font-italic: true;
+                                }
+                            }
+                            if root.chat-stage == 3: Rectangle {
+                                background: Theme.surface-3;
+                                border-radius: 12px;
+                                min-height: 40px;
+                                HorizontalLayout {
+                                    padding: Theme.spacing-sm;
+                                    Text {
+                                        text: "Agent: Got it — I've opened ticket #" + (1000 + mod(root.chat-last-user.character-count * 7, 9000)) + ". You'll hear back shortly.";
+                                        color: Theme.on-background;
+                                        font-size: Theme.font-size-body;
+                                        wrap: word-wrap;
+                                        horizontal-stretch: 1;
+                                    }
+                                }
+                            }
+                            HorizontalLayout {
+                                spacing: Theme.spacing-sm;
+                                TextField {
+                                    placeholder: "Type a message";
+                                    text <=> root.chat-input;
+                                    horizontal-stretch: 1;
+                                }
+                                ActionPip {
+                                    label: "Send";
+                                    active: !root.chat-input.is-empty && !root.chat-typing;
+                                    accent: Theme.accent-success;
+                                    clicked => {
+                                        if (root.chat-input.is-empty) {
+                                            root.set-status("Empty message", 3);
+                                        } else {
+                                            root.chat-last-user = root.chat-input;
+                                            root.chat-input = "";
+                                            root.chat-stage = 2;
+                                            root.chat-typing = true;
+                                            root.set-status("Sent — agent is typing", 0);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                     Divider { }
                     SettingRow {
                         icon: @image-url("@mobile-components/icons/profile.svg");
                         title: "Community forum";
-                        subtitle: "Get help from other users.";
-                        clicked => { root.contact-pressed("forum"); }
+                        subtitle: root.forum-count + " questions answered this week.";
+                        clicked => {
+                            root.forum-count = root.forum-count + 1;
+                            root.set-status("Opened forum — count refreshed", 0);
+                            root.contact-pressed("forum");
+                        }
                         Image {
                             width: 16px;
                             height: 16px;
@@ -171,7 +707,7 @@ export component HelpCenterPage inherits Window {
                 }
 
                 // ----- APP --------------------------------------------
-                FormSection {
+                if root.show-app(): FormSection {
                     title: "APP";
 
                     KeyValueRow {
@@ -184,9 +720,168 @@ export component HelpCenterPage inherits Window {
                         value: "d8e2-7710";
                     }
                     Divider { }
-                    KeyValueRow {
-                        label: "Locale";
-                        value: "en-GB";
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/pin.svg");
+                        title: "Locale";
+                        subtitle: root.locale-label() + " · tap to cycle";
+                        clicked => {
+                            root.locale-idx = mod(root.locale-idx + 1, 4);
+                            root.set-status("Locale → " + root.locale-label(), 0);
+                        }
+                        Text {
+                            text: root.locale-label();
+                            color: Theme.muted;
+                            font-size: Theme.font-size-caption;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: Theme.surface-1;
+            border-top-left-radius: 16px;
+            border-top-right-radius: 16px;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.muted;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    spacing: 2px;
+                    Text {
+                        text: "Quick actions";
+                        color: Theme.on-background;
+                        font-size: Theme.font-size-title;
+                        font-weight: 700;
+                    }
+                    Text {
+                        text: "Find an article fast or escalate";
+                        color: Theme.muted;
+                        font-size: Theme.font-size-caption;
+                    }
+                }
+                Rectangle {
+                    min-height: 48px;
+                    background: ta1.has-hover ? Theme.surface-2 : transparent;
+                    ta1 := TouchArea {
+                        clicked => {
+                            root.searches-run = root.searches-run + 1;
+                            root.search-pressed();
+                            root.sheet-open = false;
+                            root.set-status("Searching…", 0);
+                        }
+                    }
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-md;
+                        padding-right: Theme.spacing-md;
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: "Search articles";
+                                color: Theme.on-background;
+                                font-size: Theme.font-size-body;
+                            }
+                        }
+                    }
+                }
+                Rectangle {
+                    min-height: 48px;
+                    background: ta2.has-hover ? Theme.surface-2 : transparent;
+                    ta2 := TouchArea {
+                        clicked => {
+                            root.bm-1 = 0;
+                            root.bm-2 = 0;
+                            root.bm-3 = 0;
+                            root.bm-4 = 0;
+                            root.set-status("All bookmarks cleared", 1);
+                            root.sheet-open = false;
+                        }
+                    }
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-md;
+                        padding-right: Theme.spacing-md;
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: "Clear bookmarks";
+                                color: Theme.on-background;
+                                font-size: Theme.font-size-body;
+                            }
+                        }
+                    }
+                }
+                Rectangle {
+                    min-height: 48px;
+                    background: ta3.has-hover ? Theme.surface-2 : transparent;
+                    ta3 := TouchArea {
+                        clicked => {
+                            root.chat-open = true;
+                            root.email-open = false;
+                            root.filter-section = 2;
+                            root.set-status("Connected to agent", 1);
+                            root.sheet-open = false;
+                        }
+                    }
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-md;
+                        padding-right: Theme.spacing-md;
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: "Talk to a human now";
+                                color: Theme.accent-success;
+                                font-size: Theme.font-size-body;
+                                font-weight: 600;
+                            }
+                        }
+                    }
+                }
+                Rectangle {
+                    min-height: 48px;
+                    background: ta4.has-hover ? Theme.surface-2 : transparent;
+                    ta4 := TouchArea {
+                        clicked => {
+                            root.sheet-open = false;
+                            root.set-status("Cancelled", 0);
+                        }
+                    }
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-md;
+                        padding-right: Theme.spacing-md;
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: "Cancel";
+                                color: Theme.muted;
+                                font-size: Theme.font-size-body;
+                            }
+                        }
                     }
                 }
             }

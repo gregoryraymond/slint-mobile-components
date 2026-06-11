@@ -1,10 +1,5 @@
 // AppearanceSettingsPage
 // =====================================================================
-//
-// Theme + text-size + accent-colour preferences. Showcases the trailing
-// slot of `SettingRow` carrying very different widgets — `MobileSwitch`,
-// `SegmentedControl`, `Slider`, value `Text` + check `Image` — while
-// the rows themselves all share the same 56 px floor and 16 px gutters.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
@@ -16,19 +11,152 @@ import { SegmentedControl } from "@mobile-components/segmented-control.slint";
 import { Slider } from "@mobile-components/slider.slint";
 import { ScrollView } from "std-widgets.slint";
 
+component AccentSwatch inherits Rectangle {
+    in property <color> swatch;
+    in property <string> name;
+    in property <bool> selected: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    height: 80px;
+    border-radius: Theme.radius-md;
+    background: root.selected ? root.swatch.with-alpha(0.20) : Theme.surface-1;
+    border-width: root.selected ? 2px : 1px;
+    border-color: root.selected ? root.swatch : Theme.outline;
+
+    VerticalLayout {
+        spacing: 6px;
+        alignment: center;
+        HorizontalLayout {
+            alignment: center;
+            Rectangle {
+                width: 32px;
+                height: 32px;
+                border-radius: 16px;
+                background: root.swatch;
+                if root.selected: Text {
+                    text: "✓";
+                    color: Theme.on-primary;
+                    font-size: 16px;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+            }
+        }
+        Text {
+            text: root.name;
+            color: root.selected ? root.swatch : Theme.on-surface;
+            font-size: Theme.font-size-caption;
+            font-weight: 800;
+            horizontal-alignment: center;
+        }
+    }
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.destructive ? Theme.accent-danger : Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+        }
+    }
+}
+
 export component AppearanceSettingsPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
 
     in-out property <bool> match-system: false;
-    in-out property <int> theme-mode: 1;
+    in-out property <int> theme-mode: 1; // 0 Light, 1 Dark, 2 Auto
     in-out property <float> text-scale: 0.5;
     in-out property <int> accent-index: 0;
     in-out property <bool> high-contrast: false;
     in-out property <bool> reduce-motion: false;
+    in-out property <bool> sheet-open: false;
+    in-out property <bool> confirm-reset: false;
+    in-out property <string> status-msg: "";
+    in-out property <bool> status-success: false;
+    in-out property <bool> status-danger: false;
 
     callback back-pressed();
     callback accent-pressed(int);
+
+    function accent-name() -> string {
+        return root.accent-index == 0 ? "Blue" : (root.accent-index == 1 ? "Emerald" : (root.accent-index == 2 ? "Sunset" : (root.accent-index == 3 ? "Berry" : "Slate")));
+    }
+    function accent-color() -> color {
+        return root.accent-index == 0 ? Theme.accent-info : (root.accent-index == 1 ? Theme.accent-success : (root.accent-index == 2 ? Theme.accent-warning : (root.accent-index == 3 ? Theme.accent-danger : Theme.muted)));
+    }
+    function theme-label() -> string {
+        return root.match-system ? "System (Light)" : (root.theme-mode == 0 ? "Light" : (root.theme-mode == 1 ? "Dark" : "Auto"));
+    }
+    function preview-bg() -> color {
+        if (root.match-system || root.theme-mode == 0 || root.theme-mode == 2) {
+            return #f5f5fa;
+        }
+        return #1a1a2e;
+    }
+    function preview-fg() -> color {
+        if (root.match-system || root.theme-mode == 0 || root.theme-mode == 2) {
+            return #1a1a2e;
+        }
+        return #f5f5fa;
+    }
+    function scale-pct() -> int {
+        return floor(80 + root.text-scale * 80);
+    }
+    function preview-font-size() -> length {
+        return 12px + root.text-scale * 16px;
+    }
+    function set-status(m: string, ok: bool, bad: bool) {
+        root.status-msg = m;
+        root.status-success = ok;
+        root.status-danger = bad;
+    }
+    function pick-accent(i: int) {
+        root.accent-index = i;
+        root.set-status("Accent: " + root.accent-name(), true, false);
+        root.accent-pressed(i);
+    }
+    function reset() {
+        root.match-system = false;
+        root.theme-mode = 1;
+        root.text-scale = 0.5;
+        root.accent-index = 0;
+        root.high-contrast = false;
+        root.reduce-motion = false;
+        root.set-status("Reset to defaults", false, false);
+    }
 
     background: Theme.background;
 
@@ -36,9 +164,32 @@ export component AppearanceSettingsPage inherits Window {
         spacing: 0;
 
         AppBar {
-            title: "Appearance";
+            title: "Appearance · " + root.accent-name();
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
-            leading-pressed => { root.back-pressed(); }
+            trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
+            leading-pressed => {
+                root.back-pressed();
+            }
+            trailing-pressed => {
+                root.sheet-open = true;
+            }
+        }
+
+        if !root.status-msg.is-empty: Rectangle {
+            height: 28px;
+            background: root.status-success ? Theme.accent-success.with-alpha(0.16) : (root.status-danger ? Theme.accent-danger.with-alpha(0.16) : Theme.surface-2);
+            HorizontalLayout {
+                alignment: center;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.status-msg;
+                        color: root.status-success ? Theme.accent-success : (root.status-danger ? Theme.accent-danger : Theme.on-surface);
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                    }
+                }
+            }
         }
 
         ScrollView {
@@ -50,131 +201,431 @@ export component AppearanceSettingsPage inherits Window {
                 spacing: Theme.spacing-md;
                 alignment: start;
 
-                // ----- THEME ------------------------------------------
-                FormSection {
-                    title: "THEME";
-
-                    SettingRow {
-                        title: "Match system";
-                        subtitle: "Follow your OS light / dark setting.";
-                        MobileSwitch { checked <=> root.match-system; }
-                    }
-                    Divider { }
-                    SettingRow {
-                        title: "Theme mode";
-                        subtitle: "Override when not matching system.";
-                        SegmentedControl {
-                            width: 200px;
-                            options: ["Light", "Dark", "Auto"];
-                            selected-index <=> root.theme-mode;
+                // Live preview card.
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    Rectangle {
+                        background: root.preview-bg();
+                        border-radius: Theme.radius-md;
+                        height: 160px;
+                        border-width: root.high-contrast ? 2px : 0px;
+                        border-color: root.accent-color();
+                        animate background { duration: Theme.motion-fast; }
+                        VerticalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-sm;
+                            HorizontalLayout {
+                                spacing: Theme.spacing-sm;
+                                Rectangle {
+                                    horizontal-stretch: 0;
+                                    width: 36px;
+                                    height: 36px;
+                                    border-radius: 18px;
+                                    background: root.accent-color();
+                                    Text {
+                                        text: "★";
+                                        color: Theme.on-primary;
+                                        font-size: 18px;
+                                        font-weight: 800;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                        width: parent.width;
+                                        height: parent.height;
+                                    }
+                                }
+                                VerticalLayout {
+                                    alignment: center;
+                                    Text {
+                                        text: "Live preview";
+                                        color: root.preview-fg();
+                                        font-size: root.preview-font-size();
+                                        font-weight: 800;
+                                    }
+                                    Text {
+                                        text: root.theme-label() + " · " + root.accent-name() + " · " + root.scale-pct() + "%";
+                                        color: root.preview-fg().with-alpha(0.7);
+                                        font-size: Theme.font-size-caption;
+                                    }
+                                }
+                            }
+                            Text {
+                                text: "Hi, Greg. Here's what your reading surfaces will look like.";
+                                color: root.preview-fg();
+                                font-size: root.preview-font-size();
+                                wrap: word-wrap;
+                            }
+                            HorizontalLayout {
+                                spacing: Theme.spacing-sm;
+                                Rectangle {
+                                    horizontal-stretch: 0;
+                                    width: 80px;
+                                    height: 28px;
+                                    border-radius: 14px;
+                                    background: root.accent-color();
+                                    Text {
+                                        text: "Action";
+                                        color: Theme.on-primary;
+                                        font-size: Theme.font-size-caption;
+                                        font-weight: 800;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                        width: parent.width;
+                                        height: parent.height;
+                                    }
+                                }
+                                Rectangle {
+                                    horizontal-stretch: 0;
+                                    width: 80px;
+                                    height: 28px;
+                                    border-radius: 14px;
+                                    background: root.preview-fg().with-alpha(0.12);
+                                    border-width: 1px;
+                                    border-color: root.preview-fg().with-alpha(0.3);
+                                    Text {
+                                        text: "Cancel";
+                                        color: root.preview-fg();
+                                        font-size: Theme.font-size-caption;
+                                        font-weight: 800;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                        width: parent.width;
+                                        height: parent.height;
+                                    }
+                                }
+                                if root.reduce-motion: VerticalLayout {
+                                    alignment: center;
+                                    Text {
+                                        text: "♿ motion off";
+                                        color: root.accent-color();
+                                        font-size: Theme.font-size-caption;
+                                        font-weight: 800;
+                                    }
+                                }
+                            }
                         }
                     }
                 }
 
-                // ----- TEXT SIZE --------------------------------------
                 FormSection {
-                    title: "TEXT SIZE";
+                    title: "THEME · " + root.theme-label();
+
+                    SettingRow {
+                        title: "Match system";
+                        subtitle: root.match-system ? "Following OS · currently Light" : "Override below.";
+                        MobileSwitch {
+                            checked <=> root.match-system;
+                        }
+                    }
+                    Divider { }
+
+                    SettingRow {
+                        title: "Theme mode";
+                        subtitle: root.match-system ? "Disabled — turn off Match system to choose." : "Active.";
+                        SegmentedControl {
+                            width: 200px;
+                            options: ["Light", "Dark", "Auto"];
+                            selected-index <=> root.theme-mode;
+                            changed(i) => {
+                                root.set-status("Theme: " + (i == 0 ? "Light" : (i == 1 ? "Dark" : "Auto")), true, false);
+                            }
+                        }
+                    }
+                }
+
+                FormSection {
+                    title: "TEXT SIZE · " + root.scale-pct() + "%";
 
                     SettingRow {
                         title: "Adjust scaling";
-                        subtitle: "Affects all reading surfaces.";
+                        subtitle: "Live-updating preview above.";
                         Slider {
                             width: 160px;
                             value <=> root.text-scale;
                         }
                     }
+                    Divider { }
+
+                    Rectangle {
+                        min-height: 48px;
+                        HorizontalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-sm;
+                            Rectangle {
+                                horizontal-stretch: 1;
+                                height: 32px;
+                                border-radius: 16px;
+                                background: Theme.surface-2;
+                                HorizontalLayout {
+                                    alignment: center;
+                                    VerticalLayout {
+                                        alignment: center;
+                                        Text {
+                                            text: "Aa−";
+                                            color: Theme.on-surface;
+                                            font-size: Theme.font-size-body;
+                                            font-weight: 800;
+                                        }
+                                    }
+                                }
+                                TouchArea {
+                                    clicked => {
+                                        root.text-scale = max(0, root.text-scale - 0.1);
+                                        root.set-status("Text " + root.scale-pct() + "%", true, false);
+                                    }
+                                }
+                            }
+                            Rectangle {
+                                horizontal-stretch: 1;
+                                height: 32px;
+                                border-radius: 16px;
+                                background: Theme.surface-2;
+                                HorizontalLayout {
+                                    alignment: center;
+                                    VerticalLayout {
+                                        alignment: center;
+                                        Text {
+                                            text: "Aa";
+                                            color: Theme.on-surface;
+                                            font-size: Theme.font-size-body;
+                                            font-weight: 800;
+                                        }
+                                    }
+                                }
+                                TouchArea {
+                                    clicked => {
+                                        root.text-scale = 0.5;
+                                        root.set-status("Text reset to 100%", true, false);
+                                    }
+                                }
+                            }
+                            Rectangle {
+                                horizontal-stretch: 1;
+                                height: 32px;
+                                border-radius: 16px;
+                                background: Theme.surface-2;
+                                HorizontalLayout {
+                                    alignment: center;
+                                    VerticalLayout {
+                                        alignment: center;
+                                        Text {
+                                            text: "Aa+";
+                                            color: Theme.on-surface;
+                                            font-size: Theme.font-size-body;
+                                            font-weight: 800;
+                                        }
+                                    }
+                                }
+                                TouchArea {
+                                    clicked => {
+                                        root.text-scale = min(1.0, root.text-scale + 0.1);
+                                        root.set-status("Text " + root.scale-pct() + "%", true, false);
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
 
-                // ----- ACCENT COLOUR ----------------------------------
-                FormSection {
-                    title: "ACCENT COLOUR";
-
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/star.svg");
-                        tone: Tone.info;
-                        title: "Blue";
-                        clicked => { root.accent-pressed(0); }
-                        if root.accent-index == 0: Image {
-                            width: 18px;
-                            height: 18px;
-                            source: @image-url("@mobile-components/icons/check.svg");
-                            colorize: Theme.primary;
-                            image-fit: contain;
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    spacing: Theme.spacing-xs;
+                    Text {
+                        text: "ACCENT · " + root.accent-name();
+                        color: Theme.muted;
+                        font-size: 11px;
+                        font-weight: 800;
+                        letter-spacing: 2px;
+                    }
+                    HorizontalLayout {
+                        spacing: Theme.spacing-sm;
+                        AccentSwatch {
+                            swatch: Theme.accent-info;
+                            name: "Blue";
+                            selected: root.accent-index == 0;
+                            clicked => {
+                                root.pick-accent(0);
+                            }
+                        }
+                        AccentSwatch {
+                            swatch: Theme.accent-success;
+                            name: "Emerald";
+                            selected: root.accent-index == 1;
+                            clicked => {
+                                root.pick-accent(1);
+                            }
+                        }
+                        AccentSwatch {
+                            swatch: Theme.accent-warning;
+                            name: "Sunset";
+                            selected: root.accent-index == 2;
+                            clicked => {
+                                root.pick-accent(2);
+                            }
                         }
                     }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/star.svg");
-                        tone: Tone.success;
-                        title: "Emerald";
-                        clicked => { root.accent-pressed(1); }
-                        if root.accent-index == 1: Image {
-                            width: 18px;
-                            height: 18px;
-                            source: @image-url("@mobile-components/icons/check.svg");
-                            colorize: Theme.primary;
-                            image-fit: contain;
+                    HorizontalLayout {
+                        spacing: Theme.spacing-sm;
+                        AccentSwatch {
+                            swatch: Theme.accent-danger;
+                            name: "Berry";
+                            selected: root.accent-index == 3;
+                            clicked => {
+                                root.pick-accent(3);
+                            }
                         }
-                    }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/star.svg");
-                        tone: Tone.warning;
-                        title: "Sunset";
-                        clicked => { root.accent-pressed(2); }
-                        if root.accent-index == 2: Image {
-                            width: 18px;
-                            height: 18px;
-                            source: @image-url("@mobile-components/icons/check.svg");
-                            colorize: Theme.primary;
-                            image-fit: contain;
+                        AccentSwatch {
+                            swatch: Theme.muted;
+                            name: "Slate";
+                            selected: root.accent-index == 4;
+                            clicked => {
+                                root.pick-accent(4);
+                            }
                         }
-                    }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/star.svg");
-                        tone: Tone.danger;
-                        title: "Berry";
-                        clicked => { root.accent-pressed(3); }
-                        if root.accent-index == 3: Image {
-                            width: 18px;
-                            height: 18px;
-                            source: @image-url("@mobile-components/icons/check.svg");
-                            colorize: Theme.primary;
-                            image-fit: contain;
-                        }
-                    }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/star.svg");
-                        title: "Slate";
-                        clicked => { root.accent-pressed(4); }
-                        if root.accent-index == 4: Image {
-                            width: 18px;
-                            height: 18px;
-                            source: @image-url("@mobile-components/icons/check.svg");
-                            colorize: Theme.primary;
-                            image-fit: contain;
+                        Rectangle {
+                            horizontal-stretch: 1;
+                            height: 80px;
+                            border-radius: Theme.radius-md;
+                            background: Theme.surface-2;
+                            VerticalLayout {
+                                alignment: center;
+                                Text {
+                                    text: "↻";
+                                    color: Theme.muted;
+                                    font-size: 24px;
+                                    horizontal-alignment: center;
+                                }
+                                Text {
+                                    text: "Random";
+                                    color: Theme.muted;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 800;
+                                    horizontal-alignment: center;
+                                }
+                            }
+                            TouchArea {
+                                clicked => {
+                                    root.accent-index = mod(root.accent-index + 1 + mod(floor(root.text-scale * 100), 4), 5);
+                                    root.set-status("Random: " + root.accent-name(), true, false);
+                                }
+                            }
                         }
                     }
                 }
 
-                // ----- ADVANCED ---------------------------------------
                 FormSection {
                     title: "ADVANCED";
 
                     SettingRow {
                         icon: @image-url("@mobile-components/icons/pencil.svg");
                         title: "High contrast";
-                        subtitle: "Stronger separations between surfaces.";
-                        MobileSwitch { checked <=> root.high-contrast; }
+                        subtitle: root.high-contrast ? "Active — accent-coloured borders." : "Stronger separations between surfaces.";
+                        MobileSwitch {
+                            checked <=> root.high-contrast;
+                        }
                     }
                     Divider { }
+
                     SettingRow {
                         icon: @image-url("@mobile-components/icons/pin.svg");
                         title: "Reduce motion";
-                        subtitle: "Disables non-essential animations.";
-                        MobileSwitch { checked <=> root.reduce-motion; }
+                        subtitle: root.reduce-motion ? "Preview shows ♿ motion off badge." : "Disables non-essential animations.";
+                        MobileSwitch {
+                            checked <=> root.reduce-motion;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+                root.confirm-reset = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: Theme.surface-2;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.muted;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: "Appearance menu";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 700;
+                    }
+                }
+                SheetRow {
+                    label: root.theme-mode == 1 ? "Switch to Light" : "Switch to Dark";
+                    clicked => {
+                        root.theme-mode = root.theme-mode == 1 ? 0 : 1;
+                        root.match-system = false;
+                        root.set-status("Switched to " + (root.theme-mode == 0 ? "Light" : "Dark"), true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Cycle accent (now " + root.accent-name() + ")";
+                    clicked => {
+                        root.pick-accent(mod(root.accent-index + 1, 5));
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Toggle high contrast";
+                    clicked => {
+                        root.high-contrast = !root.high-contrast;
+                        root.set-status(root.high-contrast ? "High contrast on" : "Off", root.high-contrast, false);
+                        root.sheet-open = false;
+                    }
+                }
+                Divider { }
+
+                SheetRow {
+                    label: root.confirm-reset ? "Confirm: reset appearance" : "Reset to defaults";
+                    destructive: true;
+                    clicked => {
+                        if (root.confirm-reset) {
+                            root.reset();
+                            root.sheet-open = false;
+                            root.confirm-reset = false;
+                        } else {
+                            root.confirm-reset = true;
+                        }
+                    }
+                }
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.sheet-open = false;
+                        root.confirm-reset = false;
                     }
                 }
             }

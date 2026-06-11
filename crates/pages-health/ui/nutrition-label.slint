@@ -1,17 +1,20 @@
 // NutritionLabelPage
 // =====================================================================
 //
-// Read-only nutrition facts for a single product. Hero card (product
-// title + serving size), CALORIES block (single highlighted row),
-// MACROS block (KeyValueRows with `emphasis` on subtotal rows like
-// "Total fat" and "Carbohydrates" — mirrors the FDA label hierarchy),
-// and MICROS block (KeyValueRows in mg / %).
+// Nutrition facts for a single product — now interactive.
 //
-// Alignment discipline
-// --------------------
-// Every nutrient row is the same `KeyValueRow` so the value column
-// shares one right margin across every section. Subtotals use
-// `emphasis: true` for visual hierarchy.
+// What this screen does
+//   - Status banner under the AppBar.
+//   - Heart trailing icon toggles a saved-state badge in the hero.
+//   - "× servings" chip strip (1 / 2 / 3 / 4) scales every calorie,
+//     macro, and micro value in the table.
+//   - "Daily kcal target" chip strip (1500 / 2000 / 2500 / 3000) drives
+//     the `"<adjusted> % of <target>"` line on the calories row + the
+//     percent-of-daily for sodium / iron / calcium / vit D.
+//   - Tap the calories row to expand a small breakdown card (kcal from
+//     fat / carbs / protein).
+//   - Sticky "Log to diary" CTA with a two-tap confirm; once logged,
+//     a counter shows how many times the food has been added.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
@@ -19,7 +22,9 @@ import { Card } from "@mobile-components/card.slint";
 import { FormSection } from "@mobile-components/form-section.slint";
 import { SettingRow } from "@mobile-components/setting-row.slint";
 import { KeyValueRow } from "@mobile-components/key-value-row.slint";
+import { Chip } from "@mobile-components/chip.slint";
 import { Divider } from "@mobile-components/divider.slint";
+import { MobileButton } from "@mobile-components/button.slint";
 import { ScrollView } from "std-widgets.slint";
 
 export component NutritionLabelPage inherits Window {
@@ -27,6 +32,157 @@ export component NutritionLabelPage inherits Window {
     preferred-height: 892px;
 
     callback back-pressed();
+    callback heart-pressed();
+    callback log-pressed(int, int); // servings, kcal
+    callback servings-changed(int);
+
+    // ----- Interactive state -----
+    private property <int> servings: 1;
+    private property <int> daily-target: 2000;
+    private property <bool> saved: false;
+    private property <int> calorie-expanded: false ? 1 : 0; // we use a bool below
+    private property <bool> calorie-row-expanded: false;
+    private property <bool> log-confirming: false;
+    private property <int> log-count: 0;
+    private property <string> status-msg: "Pick servings · pick a daily target · log to diary";
+    private property <bool> status-is-success: false;
+    private property <bool> status-is-danger: false;
+
+    // ----- Base values per single serving -----
+    // Calories.
+    function base-kcal() -> int { return 180; }
+    // Macros (in tenths of grams — so we can do half-grams).
+    function base-fat-t() -> int { return 30; }       // 3.0 g
+    function base-sat-fat-t() -> int { return 5; }    // 0.5 g
+    function base-carb-t() -> int { return 320; }     // 32.0 g
+    function base-fibre-t() -> int { return 40; }     // 4.0 g
+    function base-sugar-t() -> int { return 30; }     // 3.0 g
+    function base-protein-t() -> int { return 70; }   // 7.0 g
+    // Micros — sodium / iron / calcium / vit D.
+    function base-sodium-mg() -> int { return 260; }
+    function base-iron-tenths() -> int { return 14; } // 1.4 mg
+    function base-calcium-mg() -> int { return 60; }
+    function base-vitd-tenths() -> int { return 4; }  // 0.4 µg
+
+    // FDA daily reference targets for micros — used for the "% daily"
+    // computation.
+    function daily-sodium-mg() -> int { return 2300; }
+    function daily-iron-mg-tenths() -> int { return 180; }  // 18 mg
+    function daily-calcium-mg() -> int { return 1300; }
+    function daily-vitd-tenths() -> int { return 200; }     // 20 µg
+
+    // ----- Scaled values per current servings -----
+    function kcal() -> int { return root.base-kcal() * root.servings; }
+    function fat-t() -> int { return root.base-fat-t() * root.servings; }
+    function sat-fat-t() -> int { return root.base-sat-fat-t() * root.servings; }
+    function carb-t() -> int { return root.base-carb-t() * root.servings; }
+    function fibre-t() -> int { return root.base-fibre-t() * root.servings; }
+    function sugar-t() -> int { return root.base-sugar-t() * root.servings; }
+    function protein-t() -> int { return root.base-protein-t() * root.servings; }
+    function sodium-mg() -> int { return root.base-sodium-mg() * root.servings; }
+    function iron-tenths() -> int { return root.base-iron-tenths() * root.servings; }
+    function calcium-mg() -> int { return root.base-calcium-mg() * root.servings; }
+    function vitd-tenths() -> int { return root.base-vitd-tenths() * root.servings; }
+
+    // ----- Format helpers -----
+    function fmt-tenths-g(t: int) -> string {
+        return mod(t, 10) == 0
+            ? floor(t / 10) + " g"
+            : floor(t / 10) + "." + mod(t, 10) + " g";
+    }
+    function fmt-tenths-mg(t: int) -> string {
+        return mod(t, 10) == 0
+            ? floor(t / 10) + " mg"
+            : floor(t / 10) + "." + mod(t, 10) + " mg";
+    }
+    function fmt-tenths-ug(t: int) -> string {
+        return mod(t, 10) == 0
+            ? floor(t / 10) + " µg"
+            : floor(t / 10) + "." + mod(t, 10) + " µg";
+    }
+    function add-commas(n: int) -> string {
+        return n < 1000 ? "" + n
+            : floor(n / 1000) + "," + (mod(n, 1000) < 10 ? "00" + mod(n, 1000)
+                : mod(n, 1000) < 100 ? "0" + mod(n, 1000)
+                : "" + mod(n, 1000));
+    }
+
+    // ----- % of daily -----
+    function kcal-pct() -> int {
+        return floor(root.kcal() * 100 / root.daily-target);
+    }
+    function sodium-pct() -> int {
+        return floor(root.sodium-mg() * 100 / root.daily-sodium-mg());
+    }
+    function iron-pct() -> int {
+        return floor(root.iron-tenths() * 100 / root.daily-iron-mg-tenths());
+    }
+    function calcium-pct() -> int {
+        return floor(root.calcium-mg() * 100 / root.daily-calcium-mg());
+    }
+    function vitd-pct() -> int {
+        return floor(root.vitd-tenths() * 100 / root.daily-vitd-tenths());
+    }
+
+    // Kcal breakdown estimates (4 kcal per g protein/carb, 9 per g fat).
+    function kcal-from-fat() -> int { return floor(root.fat-t() * 9 / 10); }
+    function kcal-from-carb() -> int { return floor(root.carb-t() * 4 / 10); }
+    function kcal-from-protein() -> int { return floor(root.protein-t() * 4 / 10); }
+
+    // ----- Mutations -----
+    public function set-servings(s: int) {
+        root.servings = s;
+        root.servings-changed(s);
+        root.status-msg = "Servings · × " + s + " · " + root.kcal() + " kcal · "
+            + root.kcal-pct() + "% of "
+            + root.add-commas(root.daily-target);
+        root.status-is-success = true;
+        root.status-is-danger = false;
+        root.log-confirming = false;
+    }
+    public function set-target(t: int) {
+        root.daily-target = t;
+        root.status-msg = "Daily target · " + root.add-commas(t)
+            + " kcal · this food is " + root.kcal-pct() + "%";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+        root.log-confirming = false;
+    }
+    public function tap-calories() {
+        root.calorie-row-expanded = !root.calorie-row-expanded;
+        root.status-msg = root.calorie-row-expanded
+            ? "Kcal breakdown · fat " + root.kcal-from-fat()
+                + " · carb " + root.kcal-from-carb()
+                + " · protein " + root.kcal-from-protein()
+            : "Collapsed breakdown";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function tap-heart() {
+        root.saved = !root.saved;
+        root.heart-pressed();
+        root.status-msg = root.saved
+            ? "Saved to favourites"
+            : "Removed from favourites";
+        root.status-is-success = root.saved;
+        root.status-is-danger = !root.saved;
+    }
+    public function do-log() {
+        if (!root.log-confirming) {
+            root.log-confirming = true;
+            root.status-msg = "Tap Log to diary again to confirm";
+            root.status-is-success = false;
+            root.status-is-danger = false;
+            return;
+        }
+        root.log-confirming = false;
+        root.log-count = root.log-count + 1;
+        root.log-pressed(root.servings, root.kcal());
+        root.status-msg = "Logged · × " + root.servings + " · " + root.kcal()
+            + " kcal (#" + root.log-count + ")";
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
 
     background: Theme.background;
 
@@ -36,7 +192,33 @@ export component NutritionLabelPage inherits Window {
         AppBar {
             title: "Nutrition";
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
+            trailing-icon: @image-url("@mobile-components/icons/heart.svg");
             leading-pressed => { root.back-pressed(); }
+            trailing-pressed => { root.tap-heart(); }
+        }
+
+        // ----- Status banner ---------------------------------------
+        Rectangle {
+            height: 32px;
+            background: root.status-is-danger ? Theme.accent-danger
+                : root.status-is-success ? Theme.accent-success
+                : Theme.surface-2;
+            animate background { duration: Theme.motion-fast; }
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                Text {
+                    text: root.status-msg;
+                    color: (root.status-is-danger || root.status-is-success)
+                        ? Theme.on-primary
+                        : Theme.on-surface;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+            }
         }
 
         ScrollView {
@@ -48,87 +230,233 @@ export component NutritionLabelPage inherits Window {
                 spacing: Theme.spacing-md;
                 alignment: start;
 
-                // ----- Hero card --------------------------------------------
+                // Hero card.
                 VerticalLayout {
                     padding-left: Theme.spacing-md;
                     padding-right: Theme.spacing-md;
                     Card {
-                        title: "Whole-grain bread, sliced";
-                        subtitle: "Serving size: 2 slices (60 g)";
+                        title: "Whole-grain bread, sliced"
+                            + (root.saved ? "  ♥" : "");
+                        subtitle: "Serving size: 2 slices (60 g) · viewing × "
+                            + root.servings;
                     }
                 }
 
-                // ----- CALORIES ---------------------------------------------
+                // Servings chip strip.
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    spacing: Theme.spacing-xs;
+                    Text {
+                        text: "× SERVINGS";
+                        color: Theme.muted;
+                        font-size: 10px;
+                        font-weight: 800;
+                        letter-spacing: 0.5px;
+                    }
+                    HorizontalLayout {
+                        spacing: Theme.spacing-sm;
+                        Rectangle {
+                            Chip { label: "× 1"; selected: root.servings == 1; }
+                            TouchArea { clicked => { root.set-servings(1); } }
+                        }
+                        Rectangle {
+                            Chip { label: "× 2"; selected: root.servings == 2; }
+                            TouchArea { clicked => { root.set-servings(2); } }
+                        }
+                        Rectangle {
+                            Chip { label: "× 3"; selected: root.servings == 3; }
+                            TouchArea { clicked => { root.set-servings(3); } }
+                        }
+                        Rectangle {
+                            Chip { label: "× 4"; selected: root.servings == 4; }
+                            TouchArea { clicked => { root.set-servings(4); } }
+                        }
+                    }
+                }
+
+                // Daily-target chip strip.
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    spacing: Theme.spacing-xs;
+                    Text {
+                        text: "DAILY KCAL TARGET";
+                        color: Theme.muted;
+                        font-size: 10px;
+                        font-weight: 800;
+                        letter-spacing: 0.5px;
+                    }
+                    HorizontalLayout {
+                        spacing: Theme.spacing-sm;
+                        Rectangle {
+                            Chip { label: "1,500"; selected: root.daily-target == 1500; }
+                            TouchArea { clicked => { root.set-target(1500); } }
+                        }
+                        Rectangle {
+                            Chip { label: "2,000"; selected: root.daily-target == 2000; }
+                            TouchArea { clicked => { root.set-target(2000); } }
+                        }
+                        Rectangle {
+                            Chip { label: "2,500"; selected: root.daily-target == 2500; }
+                            TouchArea { clicked => { root.set-target(2500); } }
+                        }
+                        Rectangle {
+                            Chip { label: "3,000"; selected: root.daily-target == 3000; }
+                            TouchArea { clicked => { root.set-target(3000); } }
+                        }
+                    }
+                }
+
+                // CALORIES — row tappable for breakdown.
                 FormSection {
                     title: "CALORIES";
 
                     SettingRow {
-                        title: "180 kcal";
-                        subtitle: "9 % of 2,000 kcal daily intake";
+                        title: root.kcal() + " kcal";
+                        subtitle: root.kcal-pct() + "% of "
+                            + root.add-commas(root.daily-target) + " kcal · tap for breakdown";
+                        clicked => { root.tap-calories(); }
+                    }
+                    if root.calorie-row-expanded: Rectangle {
+                        background: Theme.surface-2;
+                        VerticalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: 4px;
+                            HorizontalLayout {
+                                Text {
+                                    text: "From fat";
+                                    color: Theme.muted;
+                                    font-size: Theme.font-size-caption;
+                                    horizontal-stretch: 1;
+                                }
+                                Text {
+                                    text: root.kcal-from-fat() + " kcal";
+                                    color: Theme.accent-warning;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 800;
+                                }
+                            }
+                            HorizontalLayout {
+                                Text {
+                                    text: "From carbs";
+                                    color: Theme.muted;
+                                    font-size: Theme.font-size-caption;
+                                    horizontal-stretch: 1;
+                                }
+                                Text {
+                                    text: root.kcal-from-carb() + " kcal";
+                                    color: Theme.accent-info;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 800;
+                                }
+                            }
+                            HorizontalLayout {
+                                Text {
+                                    text: "From protein";
+                                    color: Theme.muted;
+                                    font-size: Theme.font-size-caption;
+                                    horizontal-stretch: 1;
+                                }
+                                Text {
+                                    text: root.kcal-from-protein() + " kcal";
+                                    color: Theme.accent-success;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 800;
+                                }
+                            }
+                        }
                     }
                 }
 
-                // ----- MACROS -----------------------------------------------
+                // MACROS — all values scaled by servings.
                 FormSection {
-                    title: "MACROS";
+                    title: "MACROS · × " + root.servings;
 
                     KeyValueRow {
                         label: "Total fat";
-                        value: "3 g";
+                        value: root.fmt-tenths-g(root.fat-t());
                         emphasis: true;
                     }
                     Divider { }
                     KeyValueRow {
                         label: "    Saturated fat";
-                        value: "0.5 g";
+                        value: root.fmt-tenths-g(root.sat-fat-t());
                     }
                     Divider { }
                     KeyValueRow {
                         label: "Carbohydrates";
-                        value: "32 g";
+                        value: root.fmt-tenths-g(root.carb-t());
                         emphasis: true;
                     }
                     Divider { }
                     KeyValueRow {
                         label: "    Fibre";
-                        value: "4 g";
+                        value: root.fmt-tenths-g(root.fibre-t());
                     }
                     Divider { }
                     KeyValueRow {
                         label: "    Sugars";
-                        value: "3 g";
+                        value: root.fmt-tenths-g(root.sugar-t());
                     }
                     Divider { }
                     KeyValueRow {
                         label: "Protein";
-                        value: "7 g";
+                        value: root.fmt-tenths-g(root.protein-t());
                         emphasis: true;
                     }
                 }
 
-                // ----- MICROS -----------------------------------------------
+                // MICROS — % uses daily references.
                 FormSection {
                     title: "MICROS";
 
                     KeyValueRow {
                         label: "Sodium";
-                        value: "260 mg · 11 %";
+                        value: root.sodium-mg() + " mg · "
+                            + root.sodium-pct() + " %";
                     }
                     Divider { }
                     KeyValueRow {
                         label: "Iron";
-                        value: "1.4 mg · 8 %";
+                        value: root.fmt-tenths-mg(root.iron-tenths())
+                            + " · " + root.iron-pct() + " %";
                     }
                     Divider { }
                     KeyValueRow {
                         label: "Calcium";
-                        value: "60 mg · 5 %";
+                        value: root.calcium-mg() + " mg · "
+                            + root.calcium-pct() + " %";
                     }
                     Divider { }
                     KeyValueRow {
                         label: "Vitamin D";
-                        value: "0.4 µg · 2 %";
+                        value: root.fmt-tenths-ug(root.vitd-tenths())
+                            + " · " + root.vitd-pct() + " %";
                     }
+                }
+            }
+        }
+
+        // Sticky Log to diary CTA.
+        Rectangle {
+            background: Theme.surface-1;
+            drop-shadow-blur: Theme.elevation-2-blur;
+            drop-shadow-color: Theme.elevation-2-color;
+            drop-shadow-offset-y: -4px;
+            height: 80px;
+            HorizontalLayout {
+                padding: Theme.spacing-md;
+                MobileButton {
+                    text: root.log-confirming
+                        ? "Tap again to confirm · " + root.kcal() + " kcal"
+                        : root.log-count > 0
+                            ? "Log to diary · × " + root.servings
+                                + " · logged " + root.log-count + "× today"
+                            : "Log to diary · × " + root.servings
+                                + " · " + root.kcal() + " kcal";
+                    tone: root.log-confirming ? Tone.success : Tone.info;
+                    clicked => { root.do-log(); }
                 }
             }
         }

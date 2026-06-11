@@ -10,18 +10,16 @@
 // What this screen does
 //   - AppBar with back + share trailing.
 //   - Issuer block (Card): logo (Avatar fallback), business name,
-//     invoice number, status pill (PAID / DUE / OVERDUE rendered as a
-//     Chip with status tone).
-//   - "Billed to" block: customer name + email + address (KeyValueRows
-//     are wrong here — addresses are multi-line — so use plain Text in
-//     a Card; rest of the page is KeyValueRow).
-//   - Line items section (FormSection title "ITEMS"): one KeyValueRow
-//     per item, label = item name + qty, value = subtotal.
-//   - Totals section (FormSection title "TOTALS"): subtotal, tax,
-//     discount (Tone.success), then a Divider and an `emphasis: true`
-//     KeyValueRow for the grand total.
-//   - Actions: "Download PDF" primary button, "Send reminder" text
-//     button.
+//     dates, and a tappable status pill (PAID / DUE / OVERDUE).
+//   - "Billed to" block: customer name + email + address.
+//   - Line items section (FormSection "ITEMS"): each item has an
+//     inline ± stepper that drives its quantity; setting to 0
+//     removes the line entirely.
+//   - Totals section (FormSection "TOTALS"): subtotal, tax (rate
+//     adjustable via ± buttons), loyalty discount toggle, then a
+//     Divider and an `emphasis: true` row for the grand total.
+//   - Actions: "Download PDF" two-tap confirm + counter, "Send
+//     reminder" disabled when status == PAID.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
@@ -32,7 +30,100 @@ import { FormSection } from "@mobile-components/form-section.slint";
 import { KeyValueRow } from "@mobile-components/key-value-row.slint";
 import { Divider } from "@mobile-components/divider.slint";
 import { MobileButton, TextButton } from "@mobile-components/button.slint";
+import { MobileSwitch } from "@mobile-components/switch.slint";
 import { ScrollView } from "std-widgets.slint";
+
+// Round ± button used inline in line-item rows and the tax-rate row.
+component RoundStep inherits Rectangle {
+    in property <string> label;
+    in property <bool> tone-success: false;
+    callback clicked();
+
+    width: 28px;
+    height: 28px;
+    border-radius: 14px;
+    background: root.tone-success ? Theme.accent-success
+        : touch.pressed ? Theme.surface-pressed
+        : Theme.surface-2;
+    animate background { duration: Theme.motion-fast; }
+
+    Text {
+        text: root.label;
+        color: root.tone-success ? Theme.on-primary : Theme.on-surface;
+        font-size: 16px;
+        font-weight: 800;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: parent.width;
+        height: parent.height;
+    }
+    touch := TouchArea { clicked => { root.clicked(); } }
+}
+
+// Custom line-item row: name + unit-price subline + ± stepper + total.
+component ItemRow inherits Rectangle {
+    in property <string> name;
+    in property <string> unit-display;
+    in property <int> qty;
+    in property <string> value-display;
+    callback inc-clicked();
+    callback dec-clicked();
+
+    horizontal-stretch: 1;
+    min-height: 56px;
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        spacing: Theme.spacing-sm;
+        alignment: stretch;
+
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: root.name;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+            Text {
+                text: root.unit-display + " · qty " + root.qty;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+            }
+        }
+
+        VerticalLayout {
+            alignment: center;
+            HorizontalLayout {
+                spacing: Theme.spacing-xs;
+                alignment: center;
+                RoundStep {
+                    label: "−";
+                    clicked => { root.dec-clicked(); }
+                }
+                RoundStep {
+                    label: "+";
+                    tone-success: true;
+                    clicked => { root.inc-clicked(); }
+                }
+            }
+        }
+
+        VerticalLayout {
+            alignment: center;
+            width: 72px;
+            Text {
+                text: root.value-display;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 700;
+                horizontal-alignment: right;
+            }
+        }
+    }
+}
 
 export component InvoicePage inherits Window {
     preferred-width: 412px;
@@ -42,6 +133,185 @@ export component InvoicePage inherits Window {
     callback share-pressed();
     callback download-pressed();
     callback remind-pressed();
+    callback status-changed(string);
+    callback total-changed(int);
+
+    // ----- Interactive state -----
+    // Line item quantities — set to 0 to drop the row.
+    private property <int> q0: 2; // House blend
+    private property <int> q1: 1; // Yirgacheffe
+    private property <int> q2: 1; // Cold-brew kit
+    private property <int> q3: 1; // Express shipping
+    private property <int> tax-rate: 21; // percent, 0..30
+    private property <bool> loyalty-on: true;
+    private property <int> status-mode: 0; // 0=PAID 1=DUE 2=OVERDUE
+    private property <bool> download-confirming: false;
+    private property <int> download-count: 0;
+    private property <int> reminder-count: 0;
+    private property <string> status-msg: "Adjust quantities · tap the status pill · cycle tax with ±";
+    private property <bool> status-is-success: false;
+    private property <bool> status-is-danger: false;
+
+    // ----- Per-item unit price (cents). -----
+    function unit-cents(i: int) -> int {
+        if (i == 0) { return 1400; }
+        if (i == 1) { return 1950; }
+        if (i == 2) { return 4200; }
+        return 995;
+    }
+    function item-name(i: int) -> string {
+        if (i == 0) { return "House blend · 250 g"; }
+        if (i == 1) { return "Single-origin Yirgacheffe · 250 g"; }
+        if (i == 2) { return "Cold-brew kit"; }
+        return "Express shipping";
+    }
+    function qty-for(i: int) -> int {
+        if (i == 0) { return root.q0; }
+        if (i == 1) { return root.q1; }
+        if (i == 2) { return root.q2; }
+        return root.q3;
+    }
+    function item-cents(i: int) -> int {
+        return root.unit-cents(i) * root.qty-for(i);
+    }
+    function subtotal-cents() -> int {
+        return root.item-cents(0) + root.item-cents(1)
+            + root.item-cents(2) + root.item-cents(3);
+    }
+    function tax-cents() -> int {
+        return floor(root.subtotal-cents() * root.tax-rate / 100);
+    }
+    function discount-cents() -> int {
+        return root.loyalty-on ? 500 : 0;
+    }
+    function total-cents() -> int {
+        return root.subtotal-cents() + root.tax-cents() - root.discount-cents();
+    }
+    function any-items() -> bool {
+        return root.q0 > 0 || root.q1 > 0 || root.q2 > 0 || root.q3 > 0;
+    }
+
+    function zpad3(n: int) -> string {
+        return n < 10 ? "00" + n : n < 100 ? "0" + n : "" + n;
+    }
+    function add-commas(n: int) -> string {
+        return n < 1000 ? "" + n
+            : floor(n / 1000) + "," + root.zpad3(mod(n, 1000));
+    }
+    function fmt-euros(c: int) -> string {
+        return "€ " + root.add-commas(floor(c / 100)) + "."
+            + (mod(c, 100) < 10 ? "0" + mod(c, 100) : "" + mod(c, 100));
+    }
+
+    function status-label(m: int) -> string {
+        if (m == 0) { return "PAID"; }
+        if (m == 1) { return "DUE"; }
+        return "OVERDUE";
+    }
+    function status-color(m: int) -> color {
+        if (m == 0) { return Theme.accent-success; }
+        if (m == 1) { return Theme.accent-warning; }
+        return Theme.accent-danger;
+    }
+
+    // ----- Mutations -----
+    public function inc-item(i: int) {
+        if (i == 0) { root.q0 = root.q0 + 1; }
+        if (i == 1) { root.q1 = root.q1 + 1; }
+        if (i == 2) { root.q2 = root.q2 + 1; }
+        if (i == 3) { root.q3 = root.q3 + 1; }
+        root.status-msg = root.item-name(i) + " · qty "
+            + root.qty-for(i) + " · " + root.fmt-euros(root.item-cents(i));
+        root.status-is-success = true;
+        root.status-is-danger = false;
+        root.total-changed(root.total-cents());
+    }
+    public function dec-item(i: int) {
+        if (i == 0 && root.q0 > 0) { root.q0 = root.q0 - 1; }
+        if (i == 1 && root.q1 > 0) { root.q1 = root.q1 - 1; }
+        if (i == 2 && root.q2 > 0) { root.q2 = root.q2 - 1; }
+        if (i == 3 && root.q3 > 0) { root.q3 = root.q3 - 1; }
+        if (root.qty-for(i) == 0) {
+            root.status-msg = "Removed " + root.item-name(i);
+        } else {
+            root.status-msg = root.item-name(i) + " · qty " + root.qty-for(i)
+                + " · " + root.fmt-euros(root.item-cents(i));
+        }
+        root.status-is-success = false;
+        root.status-is-danger = true;
+        root.total-changed(root.total-cents());
+    }
+    public function inc-tax() {
+        if (root.tax-rate < 30) {
+            root.tax-rate = root.tax-rate + 1;
+        }
+        root.status-msg = "Tax · " + root.tax-rate + "% · "
+            + root.fmt-euros(root.tax-cents());
+        root.status-is-success = false;
+        root.status-is-danger = false;
+        root.total-changed(root.total-cents());
+    }
+    public function dec-tax() {
+        if (root.tax-rate > 0) {
+            root.tax-rate = root.tax-rate - 1;
+        }
+        root.status-msg = "Tax · " + root.tax-rate + "% · "
+            + root.fmt-euros(root.tax-cents());
+        root.status-is-success = false;
+        root.status-is-danger = false;
+        root.total-changed(root.total-cents());
+    }
+    public function toggle-loyalty() {
+        root.loyalty-on = !root.loyalty-on;
+        root.status-msg = root.loyalty-on
+            ? "Loyalty discount applied (−€5.00)"
+            : "Loyalty discount removed";
+        root.status-is-success = root.loyalty-on;
+        root.status-is-danger = !root.loyalty-on;
+        root.total-changed(root.total-cents());
+    }
+    public function cycle-status() {
+        root.status-mode = mod(root.status-mode + 1, 3);
+        root.status-changed(root.status-label(root.status-mode));
+        root.status-msg = "Status: " + root.status-label(root.status-mode);
+        root.status-is-success = root.status-mode == 0;
+        root.status-is-danger = root.status-mode == 2;
+    }
+    public function tap-download() {
+        if (!root.download-confirming) {
+            root.download-confirming = true;
+            root.status-msg = "Tap Download PDF again to confirm";
+            root.status-is-success = false;
+            root.status-is-danger = false;
+            return;
+        }
+        root.download-confirming = false;
+        root.download-count = root.download-count + 1;
+        root.download-pressed();
+        root.status-msg = "Downloaded PDF (#" + root.download-count + ")";
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    public function tap-remind() {
+        if (root.status-mode == 0) {
+            root.status-msg = "Invoice is PAID · no reminder needed";
+            root.status-is-success = false;
+            root.status-is-danger = true;
+            return;
+        }
+        root.reminder-count = root.reminder-count + 1;
+        root.remind-pressed();
+        root.status-msg = "Reminder sent (#" + root.reminder-count
+            + ") · status: " + root.status-label(root.status-mode);
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    public function tap-share() {
+        root.share-pressed();
+        root.status-msg = "Share sheet · pick a recipient";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
 
     background: Theme.background;
 
@@ -53,7 +323,31 @@ export component InvoicePage inherits Window {
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             trailing-icon: @image-url("@mobile-components/icons/send.svg");
             leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.share-pressed(); }
+            trailing-pressed => { root.tap-share(); }
+        }
+
+        // ----- Status banner ----------------------------------------
+        Rectangle {
+            height: 32px;
+            background: root.status-is-danger ? Theme.accent-danger
+                : root.status-is-success ? Theme.accent-success
+                : Theme.surface-2;
+            animate background { duration: Theme.motion-fast; }
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                Text {
+                    text: root.status-msg;
+                    color: (root.status-is-danger || root.status-is-success)
+                        ? Theme.on-primary
+                        : Theme.on-surface;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+            }
         }
 
         ScrollView {
@@ -65,7 +359,7 @@ export component InvoicePage inherits Window {
                 spacing: Theme.spacing-md;
                 alignment: start;
 
-                // ----- Issuer header card -----------------------------------
+                // ----- Issuer header card ---------------------------
                 VerticalLayout {
                     padding-left: Theme.spacing-md;
                     padding-right: Theme.spacing-md;
@@ -102,20 +396,32 @@ export component InvoicePage inherits Window {
                             }
                             VerticalLayout {
                                 alignment: center;
-                                Text {
-                                    text: "PAID";
-                                    color: Theme.accent-success;
-                                    font-size: 10px;
-                                    font-weight: 800;
-                                    letter-spacing: 0.5px;
-                                    vertical-alignment: center;
+                                // Tappable status pill.
+                                Rectangle {
+                                    width: sp-text.preferred-width + 20px;
+                                    height: 26px;
+                                    border-radius: 13px;
+                                    background: root.status-color(root.status-mode);
+                                    animate background { duration: Theme.motion-fast; }
+                                    sp-text := Text {
+                                        text: root.status-label(root.status-mode);
+                                        color: Theme.on-primary;
+                                        font-size: 10px;
+                                        font-weight: 800;
+                                        letter-spacing: 0.5px;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                        width: parent.width;
+                                        height: parent.height;
+                                    }
+                                    TouchArea { clicked => { root.cycle-status(); } }
                                 }
                             }
                         }
                     }
                 }
 
-                // ----- Billed-to card ---------------------------------------
+                // ----- Billed-to card -------------------------------
                 VerticalLayout {
                     padding-left: Theme.spacing-md;
                     padding-right: Theme.spacing-md;
@@ -142,59 +448,173 @@ export component InvoicePage inherits Window {
                     }
                 }
 
-                // ----- Items ------------------------------------------------
+                // ----- Items ----------------------------------------
                 FormSection {
                     title: "ITEMS";
 
-                    KeyValueRow {
-                        label: "House blend · 250 g × 2";
-                        value: "€ 28.00";
+                    if root.q0 > 0: ItemRow {
+                        name: root.item-name(0);
+                        unit-display: root.fmt-euros(root.unit-cents(0));
+                        qty: root.q0;
+                        value-display: root.fmt-euros(root.item-cents(0));
+                        inc-clicked => { root.inc-item(0); }
+                        dec-clicked => { root.dec-item(0); }
                     }
-                    Divider { }
-                    KeyValueRow {
-                        label: "Single-origin Yirgacheffe · 250 g";
-                        value: "€ 19.50";
+                    if root.q0 > 0 && (root.q1 > 0 || root.q2 > 0 || root.q3 > 0): Divider { }
+
+                    if root.q1 > 0: ItemRow {
+                        name: root.item-name(1);
+                        unit-display: root.fmt-euros(root.unit-cents(1));
+                        qty: root.q1;
+                        value-display: root.fmt-euros(root.item-cents(1));
+                        inc-clicked => { root.inc-item(1); }
+                        dec-clicked => { root.dec-item(1); }
                     }
-                    Divider { }
-                    KeyValueRow {
-                        label: "Cold-brew kit";
-                        value: "€ 42.00";
+                    if root.q1 > 0 && (root.q2 > 0 || root.q3 > 0): Divider { }
+
+                    if root.q2 > 0: ItemRow {
+                        name: root.item-name(2);
+                        unit-display: root.fmt-euros(root.unit-cents(2));
+                        qty: root.q2;
+                        value-display: root.fmt-euros(root.item-cents(2));
+                        inc-clicked => { root.inc-item(2); }
+                        dec-clicked => { root.dec-item(2); }
                     }
-                    Divider { }
-                    KeyValueRow {
-                        label: "Express shipping";
-                        value: "€  9.95";
+                    if root.q2 > 0 && root.q3 > 0: Divider { }
+
+                    if root.q3 > 0: ItemRow {
+                        name: root.item-name(3);
+                        unit-display: root.fmt-euros(root.unit-cents(3));
+                        qty: root.q3;
+                        value-display: root.fmt-euros(root.item-cents(3));
+                        inc-clicked => { root.inc-item(3); }
+                        dec-clicked => { root.dec-item(3); }
+                    }
+
+                    if !root.any-items(): VerticalLayout {
+                        padding: Theme.spacing-lg;
+                        spacing: Theme.spacing-xs;
+                        alignment: center;
+                        Text {
+                            text: "All line items removed";
+                            color: Theme.muted;
+                            font-size: Theme.font-size-body;
+                            font-weight: 700;
+                            horizontal-alignment: center;
+                        }
+                        Text {
+                            text: "Tap + on the item rows above to add them back.";
+                            color: Theme.muted;
+                            font-size: Theme.font-size-caption;
+                            horizontal-alignment: center;
+                        }
                     }
                 }
 
-                // ----- Totals -----------------------------------------------
+                // ----- Totals ---------------------------------------
                 FormSection {
                     title: "TOTALS";
 
                     KeyValueRow {
                         label: "Subtotal";
-                        value: "€ 99.45";
+                        value: root.fmt-euros(root.subtotal-cents());
                     }
                     Divider { }
-                    KeyValueRow {
-                        label: "Tax · 21 %";
-                        value: "€ 20.88";
+                    // Tax row with ± stepper.
+                    Rectangle {
+                        min-height: 56px;
+                        HorizontalLayout {
+                            padding-left: Theme.spacing-md;
+                            padding-right: Theme.spacing-md;
+                            spacing: Theme.spacing-sm;
+                            alignment: stretch;
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                alignment: center;
+                                Text {
+                                    text: "Tax · " + root.tax-rate + " %";
+                                    color: Theme.on-surface;
+                                    font-size: Theme.font-size-body;
+                                }
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                HorizontalLayout {
+                                    spacing: Theme.spacing-xs;
+                                    RoundStep {
+                                        label: "−";
+                                        clicked => { root.dec-tax(); }
+                                    }
+                                    RoundStep {
+                                        label: "+";
+                                        tone-success: true;
+                                        clicked => { root.inc-tax(); }
+                                    }
+                                }
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                width: 72px;
+                                Text {
+                                    text: root.fmt-euros(root.tax-cents());
+                                    color: Theme.on-surface;
+                                    font-size: Theme.font-size-body;
+                                    horizontal-alignment: right;
+                                }
+                            }
+                        }
                     }
                     Divider { }
-                    KeyValueRow {
-                        label: "Loyalty discount";
-                        value: "− € 5.00";
-                        value-tone: Tone.success;
+                    // Loyalty discount row with switch.
+                    Rectangle {
+                        min-height: 56px;
+                        HorizontalLayout {
+                            padding-left: Theme.spacing-md;
+                            padding-right: Theme.spacing-md;
+                            spacing: Theme.spacing-sm;
+                            alignment: stretch;
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                alignment: center;
+                                Text {
+                                    text: "Loyalty discount";
+                                    color: Theme.on-surface;
+                                    font-size: Theme.font-size-body;
+                                }
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                MobileSwitch {
+                                    checked: root.loyalty-on;
+                                    toggled => { root.toggle-loyalty(); }
+                                }
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                width: 72px;
+                                Text {
+                                    text: root.loyalty-on
+                                        ? "− " + root.fmt-euros(root.discount-cents())
+                                        : "—";
+                                    color: root.loyalty-on
+                                        ? Theme.accent-success
+                                        : Theme.muted;
+                                    font-size: Theme.font-size-body;
+                                    font-weight: 700;
+                                    horizontal-alignment: right;
+                                }
+                            }
+                        }
                     }
                     Divider { }
                     KeyValueRow {
                         label: "Total";
-                        value: "€ 115.33";
+                        value: root.fmt-euros(root.total-cents());
                         emphasis: true;
                     }
                 }
 
-                // ----- Actions ----------------------------------------------
+                // ----- Actions --------------------------------------
                 VerticalLayout {
                     padding-left: Theme.spacing-md;
                     padding-right: Theme.spacing-md;
@@ -202,12 +622,21 @@ export component InvoicePage inherits Window {
                     alignment: stretch;
 
                     MobileButton {
-                        text: "Download PDF";
-                        clicked => { root.download-pressed(); }
+                        text: root.download-confirming
+                            ? "Tap again to download PDF"
+                            : root.download-count > 0
+                                ? "Download PDF (downloaded " + root.download-count + "×)"
+                                : "Download PDF";
+                        tone: root.download-confirming ? Tone.success : Tone.default;
+                        clicked => { root.tap-download(); }
                     }
                     TextButton {
-                        text: "Send payment reminder";
-                        clicked => { root.remind-pressed(); }
+                        text: root.status-mode == 0
+                            ? "Reminders disabled · invoice is PAID"
+                            : root.reminder-count > 0
+                                ? "Send another reminder (" + root.reminder-count + " sent)"
+                                : "Send payment reminder";
+                        clicked => { root.tap-remind(); }
                     }
                 }
             }

@@ -1,11 +1,5 @@
 // AccountSettingsPage
 // =====================================================================
-//
-// Profile-card header + grouped settings (account / privacy / notifs /
-// danger). Pure showcase of `SettingRow` + `FormSection` discipline —
-// every row is the same primitive with a different trailing slot, so
-// the leading tiles, titles, dividers and trailing controls line up
-// across the whole page.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
@@ -19,6 +13,37 @@ import { Divider } from "@mobile-components/divider.slint";
 import { MobileSwitch } from "@mobile-components/switch.slint";
 import { ScrollView } from "std-widgets.slint";
 
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    background: ta.has-hover ? Theme.surface-1 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.destructive ? Theme.accent-danger : Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+        }
+    }
+}
+
 export component AccountSettingsPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
@@ -29,11 +54,49 @@ export component AccountSettingsPage inherits Window {
     in-out property <bool> push-notifications: true;
     in-out property <bool> email-notifications: true;
     in-out property <bool> marketing-notifications: false;
+    in-out property <int> sub-idx: 0; // 0 Pro annual, 1 Pro monthly, 2 Free
+    in-out property <int> connected-apps: 3;
+    in-out property <bool> edit-mode: false;
+    in-out property <bool> signed-out: false;
+    in-out property <int> security-strength: 2; // 0 weak, 1 OK, 2 strong
+    in-out property <bool> sheet-open: false;
+    in-out property <bool> confirm-signout: false;
+    in-out property <string> status-msg: "";
+    in-out property <bool> status-success: false;
+    in-out property <bool> status-danger: false;
 
     callback back-pressed();
     callback row-pressed(string);
     callback profile-pressed();
     callback sign-out-pressed();
+
+    function sub-label() -> string {
+        return root.sub-idx == 0 ? "Pro · annual" : (root.sub-idx == 1 ? "Pro · monthly" : "Free");
+    }
+    function sub-renew() -> string {
+        return root.sub-idx == 0 ? "Renews 14 Jun 2026." : (root.sub-idx == 1 ? "Renews 14 Jul 2026." : "Upgrade for Pro features.");
+    }
+    function security-label() -> string {
+        return root.security-strength == 0 ? "Weak password" : (root.security-strength == 1 ? "OK · enable 2FA" : "Strong · 2FA active");
+    }
+    function notif-count() -> int {
+        return (root.push-notifications ? 1 : 0) + (root.email-notifications ? 1 : 0) + (root.marketing-notifications ? 1 : 0);
+    }
+    function set-status(m: string, ok: bool, bad: bool) {
+        root.status-msg = m;
+        root.status-success = ok;
+        root.status-danger = bad;
+    }
+    function cycle-sub() {
+        root.sub-idx = mod(root.sub-idx + 1, 3);
+        root.set-status("Plan: " + root.sub-label(), root.sub-idx != 2, root.sub-idx == 2);
+    }
+    function disconnect-app() {
+        if (root.connected-apps > 0) {
+            root.connected-apps = root.connected-apps - 1;
+            root.set-status(root.connected-apps == 0 ? "All apps disconnected" : "App disconnected · " + root.connected-apps + " left", root.connected-apps > 0, false);
+        }
+    }
 
     background: Theme.background;
 
@@ -41,12 +104,93 @@ export component AccountSettingsPage inherits Window {
         spacing: 0;
 
         AppBar {
-            title: "Account";
+            title: root.signed-out ? "Signed out" : (root.edit-mode ? "Editing account" : "Account");
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
-            leading-pressed => { root.back-pressed(); }
+            trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
+            leading-pressed => {
+                root.back-pressed();
+            }
+            trailing-pressed => {
+                root.sheet-open = true;
+            }
         }
 
-        ScrollView {
+        if !root.status-msg.is-empty: Rectangle {
+            height: 28px;
+            background: root.status-success ? Theme.accent-success.with-alpha(0.16) : (root.status-danger ? Theme.accent-danger.with-alpha(0.16) : Theme.surface-2);
+            HorizontalLayout {
+                alignment: center;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.status-msg;
+                        color: root.status-success ? Theme.accent-success : (root.status-danger ? Theme.accent-danger : Theme.on-surface);
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                    }
+                }
+            }
+        }
+
+        if root.signed-out: VerticalLayout {
+            vertical-stretch: 1;
+            alignment: center;
+            spacing: Theme.spacing-md;
+            padding: Theme.spacing-xl;
+            HorizontalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 96px;
+                    height: 96px;
+                    border-radius: 48px;
+                    background: Theme.accent-danger;
+                    Text {
+                        text: "✕";
+                        color: Theme.on-primary;
+                        font-size: 48px;
+                        font-weight: 800;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                }
+            }
+            Text {
+                text: "Signed out everywhere";
+                color: Theme.on-surface;
+                font-size: Theme.font-size-headline;
+                font-weight: 800;
+                horizontal-alignment: center;
+            }
+            Rectangle {
+                horizontal-stretch: 0;
+                width: 160px;
+                height: 40px;
+                border-radius: 20px;
+                background: Theme.primary;
+                HorizontalLayout {
+                    alignment: center;
+                    VerticalLayout {
+                        alignment: center;
+                        Text {
+                            text: "Sign back in";
+                            color: Theme.on-primary;
+                            font-size: Theme.font-size-body;
+                            font-weight: 800;
+                        }
+                    }
+                }
+                TouchArea {
+                    clicked => {
+                        root.signed-out = false;
+                        root.set-status("Welcome back", true, false);
+                    }
+                }
+            }
+        }
+
+        if !root.signed-out: ScrollView {
             vertical-stretch: 1;
 
             VerticalLayout {
@@ -55,14 +199,16 @@ export component AccountSettingsPage inherits Window {
                 spacing: Theme.spacing-md;
                 alignment: start;
 
-                // ----- Profile hero card ------------------------------
                 VerticalLayout {
                     padding-left: Theme.spacing-md;
                     padding-right: Theme.spacing-md;
-
                     Card {
                         tappable: true;
-                        clicked => { root.profile-pressed(); }
+                        clicked => {
+                            root.edit-mode = !root.edit-mode;
+                            root.set-status(root.edit-mode ? "Edit mode on" : "Saved", root.edit-mode, false);
+                            root.profile-pressed();
+                        }
 
                         HorizontalLayout {
                             spacing: Theme.spacing-md;
@@ -78,7 +224,7 @@ export component AccountSettingsPage inherits Window {
                                 spacing: Theme.spacing-xs;
 
                                 Text {
-                                    text: "Greg Raymond";
+                                    text: "Greg Raymond" + (root.edit-mode ? " ✎" : "");
                                     color: Theme.on-surface;
                                     font-size: 18px;
                                     font-weight: 700;
@@ -91,8 +237,13 @@ export component AccountSettingsPage inherits Window {
                                 }
                                 HorizontalLayout {
                                     alignment: start;
+                                    spacing: 6px;
                                     Chip {
-                                        label: "PRO";
+                                        label: root.sub-idx == 2 ? "FREE" : "PRO";
+                                        selected: root.sub-idx != 2;
+                                    }
+                                    if root.two-factor: Chip {
+                                        label: "2FA";
                                         selected: true;
                                     }
                                 }
@@ -111,7 +262,6 @@ export component AccountSettingsPage inherits Window {
                     }
                 }
 
-                // ----- ACCOUNT ----------------------------------------
                 FormSection {
                     title: "ACCOUNT";
 
@@ -119,8 +269,12 @@ export component AccountSettingsPage inherits Window {
                         icon: @image-url("@mobile-components/icons/profile.svg");
                         tone: Tone.info;
                         title: "Personal information";
-                        subtitle: "Name, photo, contact details.";
-                        clicked => { root.row-pressed("personal"); }
+                        subtitle: root.edit-mode ? "Tap to save" : "Name, photo, contact details.";
+                        clicked => {
+                            root.edit-mode = !root.edit-mode;
+                            root.set-status(root.edit-mode ? "Edit mode" : "Saved", root.edit-mode, false);
+                            root.row-pressed("personal");
+                        }
                         Image {
                             width: 16px;
                             height: 16px;
@@ -130,11 +284,17 @@ export component AccountSettingsPage inherits Window {
                         }
                     }
                     Divider { }
+
                     SettingRow {
                         icon: @image-url("@mobile-components/icons/lock.svg");
+                        tone: root.security-strength == 0 ? Tone.danger : (root.security-strength == 1 ? Tone.warning : Tone.success);
                         title: "Password & sign-in";
-                        subtitle: "Update password, security keys, passkeys.";
-                        clicked => { root.row-pressed("password"); }
+                        subtitle: root.security-label();
+                        clicked => {
+                            root.security-strength = mod(root.security-strength + 1, 3);
+                            root.set-status("Security: " + root.security-label(), root.security-strength == 2, root.security-strength == 0);
+                            root.row-pressed("password");
+                        }
                         Image {
                             width: 16px;
                             height: 16px;
@@ -144,16 +304,21 @@ export component AccountSettingsPage inherits Window {
                         }
                     }
                     Divider { }
+
                     SettingRow {
                         icon: @image-url("@mobile-components/icons/star.svg");
-                        tone: Tone.warning;
+                        tone: root.sub-idx == 2 ? Tone.default : Tone.warning;
                         title: "Subscription";
-                        subtitle: "Renews 14 Jun 2026.";
-                        clicked => { root.row-pressed("subscription"); }
+                        subtitle: root.sub-renew();
+                        clicked => {
+                            root.cycle-sub();
+                            root.row-pressed("subscription");
+                        }
                         Text {
-                            text: "Pro · annual";
-                            color: Theme.muted;
+                            text: root.sub-label();
+                            color: root.sub-idx == 2 ? Theme.muted : Theme.accent-warning;
                             font-size: Theme.font-size-body;
+                            font-weight: 700;
                             vertical-alignment: center;
                         }
                         Image {
@@ -165,15 +330,20 @@ export component AccountSettingsPage inherits Window {
                         }
                     }
                     Divider { }
+
                     SettingRow {
                         icon: @image-url("@mobile-components/icons/queue.svg");
                         title: "Connected apps";
-                        subtitle: "Third-party access to your account.";
-                        clicked => { root.row-pressed("connected"); }
+                        subtitle: root.connected-apps == 0 ? "No third-party access." : "Tap to disconnect one.";
+                        clicked => {
+                            root.disconnect-app();
+                            root.row-pressed("connected");
+                        }
                         Text {
-                            text: "3";
-                            color: Theme.muted;
+                            text: "" + root.connected-apps;
+                            color: root.connected-apps > 0 ? Theme.accent-info : Theme.muted;
                             font-size: Theme.font-size-body;
+                            font-weight: 700;
                             vertical-alignment: center;
                         }
                         Image {
@@ -186,7 +356,6 @@ export component AccountSettingsPage inherits Window {
                     }
                 }
 
-                // ----- PRIVACY & SECURITY -----------------------------
                 FormSection {
                     title: "PRIVACY & SECURITY";
 
@@ -194,63 +363,182 @@ export component AccountSettingsPage inherits Window {
                         icon: @image-url("@mobile-components/icons/lock.svg");
                         tone: Tone.success;
                         title: "Two-factor authentication";
-                        subtitle: "Authenticator app · 2 recovery codes left.";
-                        MobileSwitch { checked <=> root.two-factor; }
+                        subtitle: root.two-factor ? "Authenticator app · 2 recovery codes left." : "Disabled — turn on for stronger account security.";
+                        MobileSwitch {
+                            checked <=> root.two-factor;
+                        }
                     }
                     Divider { }
+
                     SettingRow {
                         icon: @image-url("@mobile-components/icons/menu.svg");
                         title: "Activity log";
-                        subtitle: "Sign-ins and security events.";
-                        MobileSwitch { checked <=> root.activity-log; }
+                        subtitle: root.activity-log ? "Logging sign-ins and events." : "Activity logging paused.";
+                        MobileSwitch {
+                            checked <=> root.activity-log;
+                        }
                     }
                     Divider { }
+
                     SettingRow {
                         icon: @image-url("@mobile-components/icons/pin.svg");
                         title: "Personalised analytics";
-                        subtitle: "Improve recommendations using your usage.";
-                        MobileSwitch { checked <=> root.analytics; }
+                        subtitle: root.analytics ? "Sharing usage to improve recs." : "Off — no usage shared.";
+                        MobileSwitch {
+                            checked <=> root.analytics;
+                        }
                     }
                 }
 
-                // ----- NOTIFICATIONS ----------------------------------
                 FormSection {
-                    title: "NOTIFICATIONS";
+                    title: "NOTIFICATIONS · " + root.notif-count() + " ACTIVE";
 
                     SettingRow {
                         icon: @image-url("@mobile-components/icons/bell.svg");
                         tone: Tone.info;
                         title: "Push notifications";
                         subtitle: "Mentions, alerts, account events.";
-                        MobileSwitch { checked <=> root.push-notifications; }
+                        MobileSwitch {
+                            checked <=> root.push-notifications;
+                        }
                     }
                     Divider { }
+
                     SettingRow {
                         icon: @image-url("@mobile-components/icons/send.svg");
                         title: "Email digest";
                         subtitle: "A weekly summary delivered Monday morning.";
-                        MobileSwitch { checked <=> root.email-notifications; }
+                        MobileSwitch {
+                            checked <=> root.email-notifications;
+                        }
                     }
                     Divider { }
+
                     SettingRow {
                         icon: @image-url("@mobile-components/icons/inbox.svg");
                         title: "Product updates";
                         subtitle: "New features, releases, tips.";
-                        MobileSwitch { checked <=> root.marketing-notifications; }
+                        MobileSwitch {
+                            checked <=> root.marketing-notifications;
+                        }
                     }
                 }
 
-                // ----- DANGER ZONE ------------------------------------
                 FormSection {
                     title: "DANGER ZONE";
 
                     SettingRow {
                         icon: @image-url("@mobile-components/icons/close.svg");
                         tone: Tone.danger;
-                        title: "Sign out everywhere";
+                        title: root.confirm-signout ? "Confirm: sign out everywhere" : "Sign out everywhere";
                         subtitle: "Ends sessions on all your devices.";
                         destructive: true;
-                        clicked => { root.sign-out-pressed(); }
+                        clicked => {
+                            if (root.confirm-signout) {
+                                root.signed-out = true;
+                                root.set-status("Signed out of all sessions", false, true);
+                                root.confirm-signout = false;
+                                root.sign-out-pressed();
+                            } else {
+                                root.confirm-signout = true;
+                                root.set-status("Tap again to confirm", false, true);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: Theme.surface-2;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.muted;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: "Account menu";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 700;
+                    }
+                }
+                SheetRow {
+                    label: root.edit-mode ? "Save profile" : "Edit profile";
+                    clicked => {
+                        root.edit-mode = !root.edit-mode;
+                        root.set-status(root.edit-mode ? "Edit mode" : "Saved", root.edit-mode, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Cycle subscription (now " + root.sub-label() + ")";
+                    clicked => {
+                        root.cycle-sub();
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Disconnect all apps (" + root.connected-apps + ")";
+                    clicked => {
+                        root.connected-apps = 0;
+                        root.set-status("All apps disconnected", false, true);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Mute all notifications";
+                    clicked => {
+                        root.push-notifications = false;
+                        root.email-notifications = false;
+                        root.marketing-notifications = false;
+                        root.set-status("All notifications off", !root.push-notifications, root.push-notifications);
+                        root.sheet-open = false;
+                    }
+                }
+                Divider { }
+
+                SheetRow {
+                    label: "Sign out everywhere";
+                    destructive: true;
+                    clicked => {
+                        root.signed-out = true;
+                        root.set-status("Signed out", false, true);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.sheet-open = false;
                     }
                 }
             }

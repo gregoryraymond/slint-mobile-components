@@ -6,11 +6,16 @@
 // (split a bill), and `CurrencyConverterPage` (FX maths). Demonstrates
 // an amount-entry surface:
 //
-//   - A recipient card (avatar + name + handle).
-//   - A large centred amount display with a currency glyph.
-//   - A from-account selector pill + a short note pill.
-//   - A numeric keypad (3x4, with a backspace key).
-//   - A sticky Send CTA echoing the amount.
+//   - A recipient card (avatar + name + handle). Tap to cycle through
+//     three contacts.
+//   - A large centred amount display, driven by the numeric keypad.
+//   - From-account + note selector pills — each opens a bottom-sheet
+//     picker.
+//   - A numeric keypad (3×4 with ⌫). Digit press appends, ⌫ trims,
+//     `.` is a no-op (whole dollars only for this demo).
+//   - A sticky Send CTA with a two-tap confirm. Disabled when amount
+//     is zero; after a successful send the amount resets to 0 and a
+//     counter increments.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
@@ -22,6 +27,7 @@ import { MobileButton } from "@mobile-components/button.slint";
 component Key inherits Rectangle {
     in property <string> digit;
     in property <int> kind: 0;
+    in property <bool> disabled: false;
     callback pressed();
 
     accessible-role: button;
@@ -32,6 +38,7 @@ component Key inherits Rectangle {
     height: 56px;
     border-radius: Theme.radius-md;
     background: touch.pressed ? Theme.surface-pressed : transparent;
+    opacity: root.disabled ? 0.4 : 1.0;
     animate background { duration: Theme.motion-fast; }
 
     if root.kind == 0: Text {
@@ -54,7 +61,11 @@ component Key inherits Rectangle {
         image-fit: contain;
     }
     touch := TouchArea {
-        clicked => { root.pressed(); }
+        clicked => {
+            if (!root.disabled) {
+                root.pressed();
+            }
+        }
     }
 }
 
@@ -130,17 +141,166 @@ component SelectorPill inherits Rectangle {
 export component SendMoneyPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
-    in property <string> recipient: "Marco Kessler";
-    in property <string> handle: "@marco.k · Northwind Bank";
-    in property <string> initials: "MK";
-    in property <string> amount: "240";
-    in property <string> account: "Everyday · ·· 4471";
-    in property <string> note: "Dinner + cab";
     callback back-pressed();
     callback key-pressed(string);
     callback account-pressed();
     callback note-pressed();
     callback send-pressed();
+    callback recipient-changed(string);
+    callback amount-changed(int);
+
+    // ----- Interactive state -----
+    private property <int> amount-units: 240;
+    private property <int> recipient-idx: 0; // 0=Marco 1=Aïsha 2=Devika
+    private property <int> account-idx: 0;   // 0=Everyday 1=Savings 2=Joint
+    private property <int> note-idx: 0;      // 0..4
+    private property <int> picker-target: -1; // -1 closed, 0 account, 1 note
+    private property <bool> send-confirming: false;
+    private property <int> send-count: 0;
+    private property <string> status-msg: "Tap digits to enter · pick a 'From' or note · then Send";
+    private property <bool> status-is-success: false;
+    private property <bool> status-is-danger: false;
+
+    // ----- Recipient metadata -----
+    function recipient-name(i: int) -> string {
+        if (i == 0) { return "Marco Kessler"; }
+        if (i == 1) { return "Aïsha Laurent"; }
+        return "Devika Sharma";
+    }
+    function recipient-handle(i: int) -> string {
+        if (i == 0) { return "@marco.k · Northwind Bank"; }
+        if (i == 1) { return "@aisha.l · Revolut"; }
+        return "@devika.s · HDFC";
+    }
+    function recipient-initials(i: int) -> string {
+        if (i == 0) { return "MK"; }
+        if (i == 1) { return "AL"; }
+        return "DS";
+    }
+
+    // ----- Account metadata -----
+    function account-display(i: int) -> string {
+        if (i == 0) { return "Everyday · ·· 4471"; }
+        if (i == 1) { return "Savings · ·· 8820"; }
+        return "Joint · ·· 1234";
+    }
+
+    // ----- Note metadata -----
+    function note-display(i: int) -> string {
+        if (i == 0) { return "Dinner + cab"; }
+        if (i == 1) { return "Rent share"; }
+        if (i == 2) { return "Concert tickets"; }
+        if (i == 3) { return "Birthday gift"; }
+        return "Refund";
+    }
+
+    // ----- Number formatting -----
+    function zpad3(n: int) -> string {
+        return n < 10 ? "00" + n : n < 100 ? "0" + n : "" + n;
+    }
+    function add-commas(n: int) -> string {
+        return n < 1000 ? "" + n
+            : n < 1000000 ? floor(n / 1000) + "," + root.zpad3(mod(n, 1000))
+            : floor(n / 1000000) + ","
+                + root.zpad3(floor(mod(n, 1000000) / 1000)) + ","
+                + root.zpad3(mod(n, 1000));
+    }
+    function amount-display() -> string { return root.add-commas(root.amount-units); }
+
+    // ----- Mutations -----
+    public function tap-digit(d: string) {
+        // Whole-dollar only — "." is a no-op for this demo.
+        if (d == ".") {
+            root.status-msg = "Whole dollars only — '.' ignored";
+            root.status-is-success = false;
+            root.status-is-danger = false;
+            return;
+        }
+        if (d == "del") {
+            root.amount-units = floor(root.amount-units / 10);
+            root.amount-changed(root.amount-units);
+            root.status-msg = root.amount-units == 0
+                ? "Cleared · enter an amount"
+                : "Backspace · $" + root.amount-display();
+            root.status-is-success = false;
+            root.status-is-danger = root.amount-units == 0;
+            root.send-confirming = false;
+            return;
+        }
+        if (root.amount-units > 99999) {
+            root.status-msg = "Max amount reached ($999,999)";
+            root.status-is-success = false;
+            root.status-is-danger = true;
+            return;
+        }
+        root.amount-units = root.amount-units * 10 + d.to-float();
+        root.amount-changed(root.amount-units);
+        root.status-msg = "$" + root.amount-display() + " to "
+            + root.recipient-name(root.recipient-idx);
+        root.status-is-success = root.amount-units > 0;
+        root.status-is-danger = false;
+        root.send-confirming = false;
+        root.key-pressed(d);
+    }
+    public function cycle-recipient() {
+        root.recipient-idx = mod(root.recipient-idx + 1, 3);
+        root.recipient-changed(root.recipient-name(root.recipient-idx));
+        root.status-msg = "Recipient · " + root.recipient-name(root.recipient-idx);
+        root.status-is-success = true;
+        root.status-is-danger = false;
+        root.send-confirming = false;
+    }
+    public function open-picker(t: int) {
+        root.picker-target = t;
+        root.status-msg = t == 0
+            ? "Pick a source account"
+            : "Pick a note preset";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function close-picker() { root.picker-target = -1; }
+    public function pick-account(i: int) {
+        root.account-idx = i;
+        root.account-pressed();
+        root.status-msg = "From · " + root.account-display(i);
+        root.status-is-success = true;
+        root.status-is-danger = false;
+        root.picker-target = -1;
+    }
+    public function pick-note(i: int) {
+        root.note-idx = i;
+        root.note-pressed();
+        root.status-msg = "Note · " + root.note-display(i);
+        root.status-is-success = true;
+        root.status-is-danger = false;
+        root.picker-target = -1;
+    }
+    public function do-send() {
+        if (root.amount-units == 0) {
+            root.status-msg = "Enter an amount first";
+            root.status-is-success = false;
+            root.status-is-danger = true;
+            return;
+        }
+        if (!root.send-confirming) {
+            root.send-confirming = true;
+            root.status-msg = "Tap again to send $" + root.amount-display()
+                + " to " + root.recipient-name(root.recipient-idx);
+            root.status-is-success = false;
+            root.status-is-danger = false;
+            return;
+        }
+        root.send-confirming = false;
+        root.send-count = root.send-count + 1;
+        root.send-pressed();
+        root.status-msg = "Sent $" + root.amount-display() + " to "
+            + root.recipient-name(root.recipient-idx)
+            + " (#" + root.send-count + ")";
+        root.status-is-success = true;
+        root.status-is-danger = false;
+        root.amount-units = 0;
+        root.amount-changed(0);
+    }
 
     background: Theme.background;
 
@@ -154,16 +314,41 @@ export component SendMoneyPage inherits Window {
             leading-pressed => { root.back-pressed(); }
         }
 
+        // ----- Status banner ---------------------------------------
+        Rectangle {
+            height: 32px;
+            background: root.status-is-danger ? Theme.accent-danger
+                : root.status-is-success ? Theme.accent-success
+                : Theme.surface-2;
+            animate background { duration: Theme.motion-fast; }
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                Text {
+                    text: root.status-msg;
+                    color: (root.status-is-danger || root.status-is-success)
+                        ? Theme.on-primary
+                        : Theme.on-surface;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+            }
+        }
+
         VerticalLayout {
             padding: Theme.spacing-md;
             spacing: Theme.spacing-md;
             alignment: start;
 
-            // Recipient card.
+            // Recipient card — tappable to cycle.
             Rectangle {
                 height: 76px;
                 border-radius: Theme.radius-md;
-                background: Theme.surface-1;
+                background: rec-touch.pressed ? Theme.surface-pressed : Theme.surface-1;
+                animate background { duration: Theme.motion-fast; }
                 drop-shadow-blur: Theme.elevation-1-blur;
                 drop-shadow-color: Theme.elevation-1-color;
                 drop-shadow-offset-y: Theme.elevation-1-y;
@@ -174,7 +359,7 @@ export component SendMoneyPage inherits Window {
                     VerticalLayout {
                         alignment: center;
                         Avatar {
-                            fallback: root.initials;
+                            fallback: root.recipient-initials(root.recipient-idx);
                             size: 44px;
                         }
                     }
@@ -183,13 +368,14 @@ export component SendMoneyPage inherits Window {
                         alignment: center;
                         spacing: 2px;
                         Text {
-                            text: "To " + root.recipient;
+                            text: "To " + root.recipient-name(root.recipient-idx);
                             color: Theme.on-surface;
                             font-size: Theme.font-size-body-large;
                             font-weight: 800;
                         }
                         Text {
-                            text: root.handle;
+                            text: root.recipient-handle(root.recipient-idx)
+                                + " · tap to swap";
                             color: Theme.muted;
                             font-size: Theme.font-size-caption;
                         }
@@ -204,6 +390,9 @@ export component SendMoneyPage inherits Window {
                             image-fit: contain;
                         }
                     }
+                }
+                rec-touch := TouchArea {
+                    clicked => { root.cycle-recipient(); }
                 }
             }
 
@@ -224,9 +413,11 @@ export component SendMoneyPage inherits Window {
                         }
                     }
                     Heading {
-                        text: root.amount;
+                        text: root.amount-display();
                         style: HeadingStyle.mono;
-                        color: Theme.on-background;
+                        color: root.amount-units == 0
+                            ? Theme.muted
+                            : Theme.on-background;
                         font-size: 60px;
                         font-weight: 700;
                         vertical-alignment: center;
@@ -240,48 +431,56 @@ export component SendMoneyPage inherits Window {
                 SelectorPill {
                     icon: @image-url("@mobile-components/icons/inbox.svg");
                     label: "FROM";
-                    value: root.account;
-                    clicked => { root.account-pressed(); }
+                    value: root.account-display(root.account-idx);
+                    clicked => { root.open-picker(0); }
                 }
                 SelectorPill {
                     icon: @image-url("@mobile-components/icons/pencil.svg");
                     label: "NOTE";
-                    value: root.note;
-                    clicked => { root.note-pressed(); }
+                    value: root.note-display(root.note-idx);
+                    clicked => { root.open-picker(1); }
                 }
             }
         }
 
         Rectangle { vertical-stretch: 1; }
 
-        // Keypad.
+        // Keypad — actually drives amount-units.
         VerticalLayout {
             padding-left: Theme.spacing-md;
             padding-right: Theme.spacing-md;
             spacing: Theme.spacing-xs;
             HorizontalLayout {
                 spacing: Theme.spacing-xs;
-                Key { digit: "1"; pressed => { root.key-pressed("1"); } }
-                Key { digit: "2"; pressed => { root.key-pressed("2"); } }
-                Key { digit: "3"; pressed => { root.key-pressed("3"); } }
+                Key { digit: "1"; pressed => { root.tap-digit("1"); } }
+                Key { digit: "2"; pressed => { root.tap-digit("2"); } }
+                Key { digit: "3"; pressed => { root.tap-digit("3"); } }
             }
             HorizontalLayout {
                 spacing: Theme.spacing-xs;
-                Key { digit: "4"; pressed => { root.key-pressed("4"); } }
-                Key { digit: "5"; pressed => { root.key-pressed("5"); } }
-                Key { digit: "6"; pressed => { root.key-pressed("6"); } }
+                Key { digit: "4"; pressed => { root.tap-digit("4"); } }
+                Key { digit: "5"; pressed => { root.tap-digit("5"); } }
+                Key { digit: "6"; pressed => { root.tap-digit("6"); } }
             }
             HorizontalLayout {
                 spacing: Theme.spacing-xs;
-                Key { digit: "7"; pressed => { root.key-pressed("7"); } }
-                Key { digit: "8"; pressed => { root.key-pressed("8"); } }
-                Key { digit: "9"; pressed => { root.key-pressed("9"); } }
+                Key { digit: "7"; pressed => { root.tap-digit("7"); } }
+                Key { digit: "8"; pressed => { root.tap-digit("8"); } }
+                Key { digit: "9"; pressed => { root.tap-digit("9"); } }
             }
             HorizontalLayout {
                 spacing: Theme.spacing-xs;
-                Key { digit: "."; pressed => { root.key-pressed("."); } }
-                Key { digit: "0"; pressed => { root.key-pressed("0"); } }
-                Key { kind: 1; pressed => { root.key-pressed("del"); } }
+                Key {
+                    digit: ".";
+                    disabled: true;
+                    pressed => { root.tap-digit("."); }
+                }
+                Key { digit: "0"; pressed => { root.tap-digit("0"); } }
+                Key {
+                    kind: 1;
+                    disabled: root.amount-units == 0;
+                    pressed => { root.tap-digit("del"); }
+                }
             }
         }
 
@@ -295,9 +494,143 @@ export component SendMoneyPage inherits Window {
             HorizontalLayout {
                 padding: Theme.spacing-md;
                 MobileButton {
-                    text: "Send $" + root.amount;
+                    text: root.amount-units == 0
+                        ? "Enter an amount"
+                        : root.send-confirming
+                            ? "Tap again to send $" + root.amount-display()
+                            : root.send-count > 0
+                                ? "Send $" + root.amount-display() + " (#"
+                                    + (root.send-count + 1) + ")"
+                                : "Send $" + root.amount-display();
                     primary: true;
-                    clicked => { root.send-pressed(); }
+                    tone: root.send-confirming ? Tone.success : Tone.default;
+                    enabled: root.amount-units > 0;
+                    clicked => { root.do-send(); }
+                }
+            }
+        }
+    }
+
+    // ----- Account / Note picker bottom sheet -----------------------
+    if root.picker-target >= 0: Rectangle {
+        Rectangle {
+            background: #00000099;
+            TouchArea {
+                clicked => { root.close-picker(); }
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            height: 400px;
+            background: Theme.surface-1;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding: Theme.spacing-lg;
+                spacing: Theme.spacing-md;
+
+                Rectangle {
+                    width: 40px;
+                    height: 4px;
+                    border-radius: 2px;
+                    background: Theme.muted;
+                }
+
+                Heading {
+                    text: root.picker-target == 0 ? "Pick source account" : "Pick a note";
+                    style: HeadingStyle.grotesk-bold;
+                    font-size: Theme.font-size-title;
+                }
+
+                // ACCOUNT picker rows.
+                if root.picker-target == 0: VerticalLayout {
+                    spacing: Theme.spacing-sm;
+                    for account-i in 3: Rectangle {
+                        height: 48px;
+                        border-radius: Theme.radius-md;
+                        background: root.account-idx == account-i
+                            ? Theme.accent-success
+                            : pick-touch.pressed ? Theme.surface-pressed : Theme.surface-2;
+                        animate background { duration: Theme.motion-fast; }
+                        HorizontalLayout {
+                            padding-left: Theme.spacing-md;
+                            padding-right: Theme.spacing-md;
+                            Text {
+                                text: root.account-display(account-i);
+                                color: root.account-idx == account-i
+                                    ? Theme.on-primary
+                                    : Theme.on-surface;
+                                font-size: Theme.font-size-body;
+                                font-weight: 700;
+                                vertical-alignment: center;
+                                horizontal-stretch: 1;
+                            }
+                            Text {
+                                text: root.account-idx == account-i ? "Current" : "Tap";
+                                color: root.account-idx == account-i
+                                    ? Theme.on-primary
+                                    : Theme.muted;
+                                font-size: Theme.font-size-caption;
+                                font-weight: 700;
+                                vertical-alignment: center;
+                            }
+                        }
+                        pick-touch := TouchArea {
+                            clicked => { root.pick-account(account-i); }
+                        }
+                    }
+                }
+
+                // NOTE picker rows.
+                if root.picker-target == 1: VerticalLayout {
+                    spacing: Theme.spacing-sm;
+                    for note-i in 5: Rectangle {
+                    height: 48px;
+                    border-radius: Theme.radius-md;
+                    background: root.note-idx == note-i
+                        ? Theme.accent-success
+                        : note-touch.pressed ? Theme.surface-pressed : Theme.surface-2;
+                    animate background { duration: Theme.motion-fast; }
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-md;
+                        padding-right: Theme.spacing-md;
+                        Text {
+                            text: root.note-display(note-i);
+                            color: root.note-idx == note-i
+                                ? Theme.on-primary
+                                : Theme.on-surface;
+                            font-size: Theme.font-size-body;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                        }
+                        Text {
+                            text: root.note-idx == note-i ? "Current" : "Tap";
+                            color: root.note-idx == note-i
+                                ? Theme.on-primary
+                                : Theme.muted;
+                            font-size: Theme.font-size-caption;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                        }
+                    }
+                    note-touch := TouchArea {
+                        clicked => { root.pick-note(note-i); }
+                    }
+                    }
+                }
+
+                Rectangle { vertical-stretch: 1; }
+
+                MobileButton {
+                    text: "Cancel";
+                    tone: Tone.danger;
+                    clicked => { root.close-picker(); }
                 }
             }
         }

@@ -6,26 +6,29 @@
 // `ReviewSummaryPage` (ratings). Demonstrates a clinical data surface:
 //
 //   - A panel header card: panel name + collected date + an overall
-//     status pill.
-//   - Result rows grouped by panel section: each shows the test name,
-//     the measured value + unit, the reference range, and a tone dot
-//     — green in-range, warning borderline, danger out-of-range.
-//   - A doctor's-note card at the bottom.
+//     status pill (count derived from the live result rows).
+//   - Filter chips (All / In range / Borderline / Out of range).
+//   - Result rows grouped by panel section; tap a row to expand
+//     Mark reviewed / Compare history / Ask doctor action pills.
+//   - Reviewed rows render a green ✓ badge next to the test name.
+//   - Doctor's-note card at the bottom is tappable for follow-up.
 
 import { ScrollView } from "std-widgets.slint";
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { SectionHeader } from "@mobile-components/section-header.slint";
+import { Chip } from "@mobile-components/chip.slint";
 import { Divider } from "@mobile-components/divider.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
 
-// One result row. `status`: 0 in-range / 1 borderline / 2 out-of-range.
 component ResultRow inherits Rectangle {
     in property <string> test;
     in property <string> value;
     in property <string> unit;
     in property <string> range;
     in property <int> status: 0;
+    in property <bool> reviewed: false;
+    in property <bool> expanded: false;
     callback clicked();
 
     accessible-role: button;
@@ -34,7 +37,9 @@ component ResultRow inherits Rectangle {
 
     horizontal-stretch: 1;
     min-height: 64px;
-    background: touch.pressed ? Theme.surface-pressed : transparent;
+    background: root.expanded ? Theme.surface-2
+        : touch.pressed ? Theme.surface-pressed
+        : transparent;
     animate background { duration: Theme.motion-fast; }
 
     HorizontalLayout {
@@ -42,7 +47,6 @@ component ResultRow inherits Rectangle {
         padding-right: Theme.spacing-md;
         spacing: Theme.spacing-md;
         alignment: stretch;
-        // Status dot.
         VerticalLayout {
             alignment: center;
             Rectangle {
@@ -59,11 +63,32 @@ component ResultRow inherits Rectangle {
             horizontal-stretch: 1;
             alignment: center;
             spacing: 2px;
-            Text {
-                text: root.test;
-                color: Theme.on-surface;
-                font-size: Theme.font-size-body;
-                font-weight: 700;
+            HorizontalLayout {
+                spacing: Theme.spacing-xs;
+                Text {
+                    text: root.test;
+                    color: Theme.on-surface;
+                    font-size: Theme.font-size-body;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                }
+                if root.reviewed: Rectangle {
+                    width: rv.preferred-width + 12px;
+                    height: 18px;
+                    border-radius: 4px;
+                    background: Theme.accent-success;
+                    rv := Text {
+                        text: "✓ REVIEWED";
+                        color: Theme.on-primary;
+                        font-size: 9px;
+                        font-weight: 800;
+                        letter-spacing: 0.5px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                }
             }
             Text {
                 text: "Ref: " + root.range;
@@ -111,9 +136,43 @@ component ResultRow inherits Rectangle {
             }
         }
     }
-    touch := TouchArea {
-        clicked => { root.clicked(); }
+    touch := TouchArea { clicked => { root.clicked(); } }
+}
+
+// Action pill for the expanded-row strip.
+component ActionPill inherits Rectangle {
+    in property <string> label;
+    in property <bool> primary: false;
+    in property <bool> active: false;
+    in property <bool> danger: false;
+    callback clicked();
+
+    height: 32px;
+    horizontal-stretch: 1;
+    border-radius: 16px;
+    background: root.danger ? Theme.accent-danger
+        : root.active ? Theme.accent-success
+        : root.primary ? Theme.accent-info
+        : Theme.surface-1;
+    border-width: 1px;
+    border-color: (root.danger || root.active || root.primary)
+        ? transparent
+        : Theme.outline;
+    animate background { duration: Theme.motion-fast; }
+
+    Text {
+        text: root.label;
+        color: (root.danger || root.active || root.primary)
+            ? Theme.on-primary
+            : Theme.on-surface;
+        font-size: Theme.font-size-caption;
+        font-weight: 700;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: parent.width;
+        height: parent.height;
     }
+    TouchArea { clicked => { root.clicked(); } }
 }
 
 export component LabResultsPage inherits Window {
@@ -124,6 +183,137 @@ export component LabResultsPage inherits Window {
     callback back-pressed();
     callback share-pressed();
     callback result-pressed(string);
+    callback result-reviewed(string, bool);
+    callback note-pressed();
+
+    // ----- Interactive state -----
+    private property <int> filter-mode: 0; // 0=All 1=In 2=Borderline 3=Out
+    private property <int> expanded-row: -1;
+    private property <bool> r0: false; // Sodium
+    private property <bool> r1: false; // Potassium
+    private property <bool> r2: false; // Chloride
+    private property <bool> r3: false; // Creatinine
+    private property <bool> r4: false; // ALT
+    private property <bool> r5: false; // Glucose
+    private property <bool> note-expanded: false;
+    private property <int> share-count: 0;
+    private property <string> status-msg: "Pick a filter · tap a row to mark reviewed · note is tappable";
+    private property <bool> status-is-success: false;
+    private property <bool> status-is-danger: false;
+
+    // ----- Result metadata -----
+    function status-for(i: int) -> int {
+        if (i == 1) { return 2; } // Potassium
+        if (i == 4) { return 1; } // ALT
+        if (i == 5) { return 2; } // Glucose
+        return 0;
+    }
+    function test-name(i: int) -> string {
+        if (i == 0) { return "Sodium"; }
+        if (i == 1) { return "Potassium"; }
+        if (i == 2) { return "Chloride"; }
+        if (i == 3) { return "Creatinine"; }
+        if (i == 4) { return "ALT"; }
+        return "Glucose, fasting";
+    }
+    function reviewed-for(i: int) -> bool {
+        if (i == 0) { return root.r0; }
+        if (i == 1) { return root.r1; }
+        if (i == 2) { return root.r2; }
+        if (i == 3) { return root.r3; }
+        if (i == 4) { return root.r4; }
+        return root.r5;
+    }
+    function row-shown(i: int) -> bool {
+        if (root.filter-mode == 0) { return true; }
+        if (root.filter-mode == 1) { return root.status-for(i) == 0; }
+        if (root.filter-mode == 2) { return root.status-for(i) == 1; }
+        return root.status-for(i) == 2;
+    }
+    function out-count() -> int {
+        return (root.status-for(0) == 2 ? 1 : 0)
+            + (root.status-for(1) == 2 ? 1 : 0)
+            + (root.status-for(2) == 2 ? 1 : 0)
+            + (root.status-for(3) == 2 ? 1 : 0)
+            + (root.status-for(4) == 2 ? 1 : 0)
+            + (root.status-for(5) == 2 ? 1 : 0);
+    }
+    function reviewed-count() -> int {
+        return (root.r0 ? 1 : 0) + (root.r1 ? 1 : 0) + (root.r2 ? 1 : 0)
+            + (root.r3 ? 1 : 0) + (root.r4 ? 1 : 0) + (root.r5 ? 1 : 0);
+    }
+    function visible-count() -> int {
+        return (root.row-shown(0) ? 1 : 0) + (root.row-shown(1) ? 1 : 0)
+            + (root.row-shown(2) ? 1 : 0) + (root.row-shown(3) ? 1 : 0)
+            + (root.row-shown(4) ? 1 : 0) + (root.row-shown(5) ? 1 : 0);
+    }
+    function filter-name(m: int) -> string {
+        if (m == 0) { return "All"; }
+        if (m == 1) { return "In range"; }
+        if (m == 2) { return "Borderline"; }
+        return "Out of range";
+    }
+
+    // ----- Mutations -----
+    public function set-filter(m: int) {
+        root.filter-mode = m;
+        root.expanded-row = -1;
+        root.status-msg = "Filter · " + root.filter-name(m)
+            + " · " + root.visible-count() + " visible";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function tap-row(i: int) {
+        root.expanded-row = root.expanded-row == i ? -1 : i;
+        root.result-pressed(root.test-name(i));
+        root.status-msg = root.expanded-row == i
+            ? root.test-name(i) + " · pick an action"
+            : "Collapsed " + root.test-name(i);
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function tap-review(i: int) {
+        if (i == 0) { root.r0 = !root.r0; }
+        if (i == 1) { root.r1 = !root.r1; }
+        if (i == 2) { root.r2 = !root.r2; }
+        if (i == 3) { root.r3 = !root.r3; }
+        if (i == 4) { root.r4 = !root.r4; }
+        if (i == 5) { root.r5 = !root.r5; }
+        root.result-reviewed(root.test-name(i), root.reviewed-for(i));
+        root.status-msg = root.reviewed-for(i)
+            ? "Reviewed " + root.test-name(i) + " (" + root.reviewed-count() + "/6)"
+            : "Un-reviewed " + root.test-name(i);
+        root.status-is-success = root.reviewed-for(i);
+        root.status-is-danger = !root.reviewed-for(i);
+    }
+    public function tap-compare(i: int) {
+        root.status-msg = "Compare history · " + root.test-name(i)
+            + " · last 6 panels";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function tap-ask(i: int) {
+        root.status-msg = "Question about " + root.test-name(i)
+            + " queued for Dr. Feldman";
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    public function tap-note() {
+        root.note-expanded = !root.note-expanded;
+        root.note-pressed();
+        root.status-msg = root.note-expanded
+            ? "Doctor's note expanded · reply to Dr. Feldman"
+            : "Doctor's note collapsed";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function tap-share() {
+        root.share-count = root.share-count + 1;
+        root.share-pressed();
+        root.status-msg = "Shared results (#" + root.share-count + ")";
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
 
     background: Theme.background;
 
@@ -136,182 +326,438 @@ export component LabResultsPage inherits Window {
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             trailing-icon: @image-url("@mobile-components/icons/send.svg");
             leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.share-pressed(); }
+            trailing-pressed => { root.tap-share(); }
         }
 
-        // Panel header + 6 result rows across 2 sections + doctor's note
-        // overflow a single 892-px screen, so everything below the
-        // pinned AppBar scrolls.
+        // ----- Status banner ---------------------------------------
+        Rectangle {
+            height: 32px;
+            background: root.status-is-danger ? Theme.accent-danger
+                : root.status-is-success ? Theme.accent-success
+                : Theme.surface-2;
+            animate background { duration: Theme.motion-fast; }
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                Text {
+                    text: root.status-msg;
+                    color: (root.status-is-danger || root.status-is-success)
+                        ? Theme.on-primary
+                        : Theme.on-surface;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+            }
+        }
+
         ScrollView {
             vertical-stretch: 1;
 
             VerticalLayout {
                 spacing: 0;
 
-        VerticalLayout {
-            padding: Theme.spacing-md;
-            spacing: Theme.spacing-md;
-            alignment: start;
-
-            // Panel header.
-            Rectangle {
-                border-radius: Theme.radius-md;
-                background: Theme.surface-1;
-                drop-shadow-blur: Theme.elevation-1-blur;
-                drop-shadow-color: Theme.elevation-1-color;
-                drop-shadow-offset-y: Theme.elevation-1-y;
                 VerticalLayout {
                     padding: Theme.spacing-md;
-                    spacing: Theme.spacing-sm;
-                    HorizontalLayout {
-                        VerticalLayout {
-                            horizontal-stretch: 1;
-                            spacing: 3px;
-                            Heading {
-                                text: root.panel;
-                                style: HeadingStyle.mono;
-                                color: Theme.on-surface;
-                                wrap: word-wrap;
-                            }
-                            Text {
-                                text: root.collected;
-                                color: Theme.muted;
-                                font-size: Theme.font-size-caption;
-                            }
-                        }
-                    }
-                    Rectangle {
-                        height: 32px;
-                        border-radius: 8px;
-                        background: Theme.accent-warning.with-alpha(0.16);
-                        HorizontalLayout {
-                            padding-left: 10px;
-                            spacing: 6px;
-                            alignment: start;
-                            VerticalLayout {
-                                alignment: center;
-                                Rectangle {
-                                    width: 8px;
-                                    height: 8px;
-                                    border-radius: 4px;
-                                    background: Theme.accent-warning;
-                                }
-                            }
-                            VerticalLayout {
-                                alignment: center;
-                                Text {
-                                    text: "2 results need attention — review with your doctor";
-                                    color: Theme.accent-warning;
-                                    font-size: Theme.font-size-caption;
-                                    font-weight: 700;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        SectionHeader { text: "ELECTROLYTES & FLUIDS"; }
-        ResultRow {
-            test: "Sodium";
-            value: "139";
-            unit: "mmol/L";
-            range: "135–145";
-            status: 0;
-            clicked => { root.result-pressed("Sodium"); }
-        }
-        Divider { }
-        ResultRow {
-            test: "Potassium";
-            value: "5.3";
-            unit: "mmol/L";
-            range: "3.5–5.1";
-            status: 2;
-            clicked => { root.result-pressed("Potassium"); }
-        }
-        Divider { }
-        ResultRow {
-            test: "Chloride";
-            value: "104";
-            unit: "mmol/L";
-            range: "98–107";
-            status: 0;
-            clicked => { root.result-pressed("Chloride"); }
-        }
-
-        SectionHeader { text: "KIDNEY & LIVER"; }
-        ResultRow {
-            test: "Creatinine";
-            value: "0.95";
-            unit: "mg/dL";
-            range: "0.70–1.30";
-            status: 0;
-            clicked => { root.result-pressed("Creatinine"); }
-        }
-        Divider { }
-        ResultRow {
-            test: "ALT";
-            value: "46";
-            unit: "U/L";
-            range: "7–45";
-            status: 1;
-            clicked => { root.result-pressed("ALT"); }
-        }
-        Divider { }
-        ResultRow {
-            test: "Glucose, fasting";
-            value: "118";
-            unit: "mg/dL";
-            range: "70–99";
-            status: 2;
-            clicked => { root.result-pressed("Glucose"); }
-        }
-
-        // Doctor's note.
-        Rectangle {
-            min-height: Theme.spacing-md;
-        }
-        Rectangle {
-            border-radius: Theme.radius-md;
-            background: Theme.accent-info.with-alpha(0.12);
-            HorizontalLayout {
-                padding: Theme.spacing-md;
-                spacing: Theme.spacing-sm;
-                alignment: stretch;
-                VerticalLayout {
+                    spacing: Theme.spacing-md;
                     alignment: start;
-                    Image {
-                        width: 18px;
-                        height: 18px;
-                        source: @image-url("@mobile-components/icons/pencil.svg");
-                        colorize: Theme.accent-info;
-                        image-fit: contain;
+
+                    // Panel header.
+                    Rectangle {
+                        border-radius: Theme.radius-md;
+                        background: Theme.surface-1;
+                        drop-shadow-blur: Theme.elevation-1-blur;
+                        drop-shadow-color: Theme.elevation-1-color;
+                        drop-shadow-offset-y: Theme.elevation-1-y;
+                        VerticalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-sm;
+                            HorizontalLayout {
+                                VerticalLayout {
+                                    horizontal-stretch: 1;
+                                    spacing: 3px;
+                                    Heading {
+                                        text: root.panel;
+                                        style: HeadingStyle.mono;
+                                        color: Theme.on-surface;
+                                        wrap: word-wrap;
+                                    }
+                                    Text {
+                                        text: root.collected + " · "
+                                            + root.reviewed-count() + " of 6 reviewed";
+                                        color: Theme.muted;
+                                        font-size: Theme.font-size-caption;
+                                    }
+                                }
+                            }
+                            Rectangle {
+                                height: 32px;
+                                border-radius: 8px;
+                                background: root.out-count() > 0
+                                    ? Theme.accent-warning.with-alpha(0.16)
+                                    : Theme.accent-success.with-alpha(0.16);
+                                animate background { duration: Theme.motion-fast; }
+                                HorizontalLayout {
+                                    padding-left: 10px;
+                                    spacing: 6px;
+                                    alignment: start;
+                                    VerticalLayout {
+                                        alignment: center;
+                                        Rectangle {
+                                            width: 8px;
+                                            height: 8px;
+                                            border-radius: 4px;
+                                            background: root.out-count() > 0
+                                                ? Theme.accent-warning
+                                                : Theme.accent-success;
+                                        }
+                                    }
+                                    VerticalLayout {
+                                        alignment: center;
+                                        Text {
+                                            text: root.out-count() > 0
+                                                ? root.out-count()
+                                                    + " result(s) need attention — review with your doctor"
+                                                : "All results in range";
+                                            color: root.out-count() > 0
+                                                ? Theme.accent-warning
+                                                : Theme.accent-success;
+                                            font-size: Theme.font-size-caption;
+                                            font-weight: 700;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Filter chips.
+                    HorizontalLayout {
+                        spacing: Theme.spacing-sm;
+                        Rectangle {
+                            Chip { label: "All"; selected: root.filter-mode == 0; }
+                            TouchArea { clicked => { root.set-filter(0); } }
+                        }
+                        Rectangle {
+                            Chip { label: "In range"; selected: root.filter-mode == 1; }
+                            TouchArea { clicked => { root.set-filter(1); } }
+                        }
+                        Rectangle {
+                            Chip { label: "Borderline"; selected: root.filter-mode == 2; }
+                            TouchArea { clicked => { root.set-filter(2); } }
+                        }
+                        Rectangle {
+                            Chip { label: "Out"; selected: root.filter-mode == 3; }
+                            TouchArea { clicked => { root.set-filter(3); } }
+                        }
                     }
                 }
+
+                SectionHeader { text: "ELECTROLYTES & FLUIDS"; }
+
+                if root.row-shown(0): VerticalLayout {
+                    spacing: 0;
+                    ResultRow {
+                        test: "Sodium";
+                        value: "139";
+                        unit: "mmol/L";
+                        range: "135–145";
+                        status: 0;
+                        reviewed: root.r0;
+                        expanded: root.expanded-row == 0;
+                        clicked => { root.tap-row(0); }
+                    }
+                    if root.expanded-row == 0: Rectangle {
+                        background: Theme.surface-2;
+                        HorizontalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-sm;
+                            ActionPill {
+                                label: root.r0 ? "✓ Reviewed" : "Mark reviewed";
+                                active: root.r0;
+                                clicked => { root.tap-review(0); }
+                            }
+                            ActionPill {
+                                label: "Compare";
+                                primary: true;
+                                clicked => { root.tap-compare(0); }
+                            }
+                            ActionPill {
+                                label: "Ask doc";
+                                clicked => { root.tap-ask(0); }
+                            }
+                        }
+                    }
+                }
+                if root.row-shown(0) && (root.row-shown(1) || root.row-shown(2)): Divider { }
+
+                if root.row-shown(1): VerticalLayout {
+                    spacing: 0;
+                    ResultRow {
+                        test: "Potassium";
+                        value: "5.3";
+                        unit: "mmol/L";
+                        range: "3.5–5.1";
+                        status: 2;
+                        reviewed: root.r1;
+                        expanded: root.expanded-row == 1;
+                        clicked => { root.tap-row(1); }
+                    }
+                    if root.expanded-row == 1: Rectangle {
+                        background: Theme.surface-2;
+                        HorizontalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-sm;
+                            ActionPill {
+                                label: root.r1 ? "✓ Reviewed" : "Mark reviewed";
+                                active: root.r1;
+                                clicked => { root.tap-review(1); }
+                            }
+                            ActionPill {
+                                label: "Compare";
+                                primary: true;
+                                clicked => { root.tap-compare(1); }
+                            }
+                            ActionPill {
+                                label: "Ask doc";
+                                clicked => { root.tap-ask(1); }
+                            }
+                        }
+                    }
+                }
+                if root.row-shown(1) && root.row-shown(2): Divider { }
+
+                if root.row-shown(2): VerticalLayout {
+                    spacing: 0;
+                    ResultRow {
+                        test: "Chloride";
+                        value: "104";
+                        unit: "mmol/L";
+                        range: "98–107";
+                        status: 0;
+                        reviewed: root.r2;
+                        expanded: root.expanded-row == 2;
+                        clicked => { root.tap-row(2); }
+                    }
+                    if root.expanded-row == 2: Rectangle {
+                        background: Theme.surface-2;
+                        HorizontalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-sm;
+                            ActionPill {
+                                label: root.r2 ? "✓ Reviewed" : "Mark reviewed";
+                                active: root.r2;
+                                clicked => { root.tap-review(2); }
+                            }
+                            ActionPill {
+                                label: "Compare";
+                                primary: true;
+                                clicked => { root.tap-compare(2); }
+                            }
+                            ActionPill {
+                                label: "Ask doc";
+                                clicked => { root.tap-ask(2); }
+                            }
+                        }
+                    }
+                }
+
+                SectionHeader { text: "KIDNEY & LIVER"; }
+
+                if root.row-shown(3): VerticalLayout {
+                    spacing: 0;
+                    ResultRow {
+                        test: "Creatinine";
+                        value: "0.95";
+                        unit: "mg/dL";
+                        range: "0.70–1.30";
+                        status: 0;
+                        reviewed: root.r3;
+                        expanded: root.expanded-row == 3;
+                        clicked => { root.tap-row(3); }
+                    }
+                    if root.expanded-row == 3: Rectangle {
+                        background: Theme.surface-2;
+                        HorizontalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-sm;
+                            ActionPill {
+                                label: root.r3 ? "✓ Reviewed" : "Mark reviewed";
+                                active: root.r3;
+                                clicked => { root.tap-review(3); }
+                            }
+                            ActionPill {
+                                label: "Compare";
+                                primary: true;
+                                clicked => { root.tap-compare(3); }
+                            }
+                            ActionPill {
+                                label: "Ask doc";
+                                clicked => { root.tap-ask(3); }
+                            }
+                        }
+                    }
+                }
+                if root.row-shown(3) && (root.row-shown(4) || root.row-shown(5)): Divider { }
+
+                if root.row-shown(4): VerticalLayout {
+                    spacing: 0;
+                    ResultRow {
+                        test: "ALT";
+                        value: "46";
+                        unit: "U/L";
+                        range: "7–45";
+                        status: 1;
+                        reviewed: root.r4;
+                        expanded: root.expanded-row == 4;
+                        clicked => { root.tap-row(4); }
+                    }
+                    if root.expanded-row == 4: Rectangle {
+                        background: Theme.surface-2;
+                        HorizontalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-sm;
+                            ActionPill {
+                                label: root.r4 ? "✓ Reviewed" : "Mark reviewed";
+                                active: root.r4;
+                                clicked => { root.tap-review(4); }
+                            }
+                            ActionPill {
+                                label: "Compare";
+                                primary: true;
+                                clicked => { root.tap-compare(4); }
+                            }
+                            ActionPill {
+                                label: "Ask doc";
+                                clicked => { root.tap-ask(4); }
+                            }
+                        }
+                    }
+                }
+                if root.row-shown(4) && root.row-shown(5): Divider { }
+
+                if root.row-shown(5): VerticalLayout {
+                    spacing: 0;
+                    ResultRow {
+                        test: "Glucose, fasting";
+                        value: "118";
+                        unit: "mg/dL";
+                        range: "70–99";
+                        status: 2;
+                        reviewed: root.r5;
+                        expanded: root.expanded-row == 5;
+                        clicked => { root.tap-row(5); }
+                    }
+                    if root.expanded-row == 5: Rectangle {
+                        background: Theme.surface-2;
+                        HorizontalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-sm;
+                            ActionPill {
+                                label: root.r5 ? "✓ Reviewed" : "Mark reviewed";
+                                active: root.r5;
+                                clicked => { root.tap-review(5); }
+                            }
+                            ActionPill {
+                                label: "Compare";
+                                primary: true;
+                                clicked => { root.tap-compare(5); }
+                            }
+                            ActionPill {
+                                label: "Ask doc";
+                                clicked => { root.tap-ask(5); }
+                            }
+                        }
+                    }
+                }
+
+                if root.visible-count() == 0: Rectangle {
+                    min-height: 140px;
+                    VerticalLayout {
+                        padding: Theme.spacing-lg;
+                        spacing: Theme.spacing-xs;
+                        alignment: center;
+                        Text {
+                            text: "No results in " + root.filter-name(root.filter-mode);
+                            color: Theme.muted;
+                            font-size: Theme.font-size-body;
+                            font-weight: 700;
+                            horizontal-alignment: center;
+                        }
+                        Text {
+                            text: "Tap All to see every measurement.";
+                            color: Theme.muted;
+                            font-size: Theme.font-size-caption;
+                            horizontal-alignment: center;
+                        }
+                    }
+                }
+
+                // Doctor's note — tappable.
+                Rectangle {
+                    min-height: Theme.spacing-md;
+                }
                 VerticalLayout {
-                    horizontal-stretch: 1;
-                    spacing: 3px;
-                    Text {
-                        text: "Note from Dr. Feldman";
-                        color: Theme.accent-info;
-                        font-size: Theme.font-size-caption;
-                        font-weight: 800;
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    Rectangle {
+                        border-radius: Theme.radius-md;
+                        background: note-touch.pressed
+                            ? Theme.accent-info.with-alpha(0.20)
+                            : Theme.accent-info.with-alpha(0.12);
+                        animate background { duration: Theme.motion-fast; }
+                        VerticalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-sm;
+                            HorizontalLayout {
+                                spacing: Theme.spacing-sm;
+                                alignment: stretch;
+                                VerticalLayout {
+                                    alignment: start;
+                                    Image {
+                                        width: 18px;
+                                        height: 18px;
+                                        source: @image-url("@mobile-components/icons/pencil.svg");
+                                        colorize: Theme.accent-info;
+                                        image-fit: contain;
+                                    }
+                                }
+                                VerticalLayout {
+                                    horizontal-stretch: 1;
+                                    spacing: 3px;
+                                    Text {
+                                        text: root.note-expanded
+                                            ? "Note from Dr. Feldman · tap to collapse"
+                                            : "Note from Dr. Feldman · tap to expand";
+                                        color: Theme.accent-info;
+                                        font-size: Theme.font-size-caption;
+                                        font-weight: 800;
+                                    }
+                                    Text {
+                                        text: "Slightly elevated glucose and potassium. Let's recheck fasting in 6 weeks — cut back on added sugar in the meantime.";
+                                        color: Theme.on-surface;
+                                        font-size: Theme.font-size-caption;
+                                        wrap: word-wrap;
+                                    }
+                                    if root.note-expanded: Text {
+                                        text: "Earlier panels showed similar potassium elevations after long runs — flagging both for follow-up. If anything changes (palpitations, lightheadedness, swelling), message the on-call line right away.";
+                                        color: Theme.muted;
+                                        font-size: Theme.font-size-caption;
+                                        wrap: word-wrap;
+                                    }
+                                }
+                            }
+                        }
+                        note-touch := TouchArea { clicked => { root.tap-note(); } }
                     }
-                    Text {
-                        text: "Slightly elevated glucose and potassium. Let's recheck fasting in 6 weeks — cut back on added sugar in the meantime.";
-                        color: Theme.on-surface;
-                        font-size: Theme.font-size-caption;
-                        wrap: word-wrap;
-                    }
+                }
+
+                Rectangle {
+                    min-height: Theme.spacing-md;
                 }
             }
         }
-
-        Rectangle {
-            min-height: Theme.spacing-md;
-        }
-            }   // end inner VerticalLayout
-        }       // end ScrollView
     }
 }

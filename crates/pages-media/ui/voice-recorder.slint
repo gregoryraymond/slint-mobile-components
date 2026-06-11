@@ -1,29 +1,15 @@
 // VoiceRecorderPage
 // =====================================================================
 //
-// Voice memo recorder — Apple Voice Memos / Otter / Just Press Record-
-// style. Distinct from `TimerPage` (countdown) and `PodcastPage`
-// (playback). Demonstrates:
-//
-//   - Big elapsed time display + recording badge with pulse-like
-//     accent-danger dot.
-//   - Live waveform strip — a row of variable-height bars (sparkline
-//     pattern reused from CryptoPortfolioPage but danger-toned to
-//     read as "live mic"). The bar values progress through the array
-//     so the strip reads as "recording activity over the last N
-//     seconds".
-//   - Transport row: pause/stop/discard with a big primary stop
-//     button in the centre.
-//   - "Recent recordings" list below: name + duration + when, with a
-//     mini sparkline icon per item.
+// Voice memo recorder — Apple Voice Memos / Otter / Just Press Record-style.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { SectionHeader } from "@mobile-components/section-header.slint";
 import { Divider } from "@mobile-components/divider.slint";
 import { HeadingStyle } from "@mobile-components/heading.slint";
+import { ScrollView } from "std-widgets.slint";
 
-// One waveform bar.
 component WaveBar inherits VerticalLayout {
     in property <int> value;
     in property <color> tint: Theme.accent-danger;
@@ -38,48 +24,61 @@ component WaveBar inherits VerticalLayout {
     }
 }
 
-// Live waveform strip — wraps a fixed-length array of integers.
 component Waveform inherits Rectangle {
     in property <[int]> bars;
     in property <color> tint: Theme.accent-danger;
 
     HorizontalLayout {
         spacing: 2px;
-        for value in root.bars : WaveBar {
+        for value in root.bars: WaveBar {
             value: value;
             tint: root.tint;
         }
     }
 }
 
-// Mini waveform shown inside a list row.
 component MiniWave inherits Rectangle {
     in property <[int]> bars;
+    in property <bool> active: false;
     width: 64px;
     height: 24px;
     HorizontalLayout {
         spacing: 1px;
-        for value in root.bars : VerticalLayout {
+        for value in root.bars: VerticalLayout {
             alignment: center;
             Rectangle {
                 width: 2px;
                 height: 3px + 18px * value / 100;
-                background: Theme.muted;
+                background: root.active ? Theme.accent-success : Theme.muted;
                 border-radius: 1px;
             }
         }
     }
 }
 
-// One past-recording row.
 component RecordingRow inherits Rectangle {
     in property <string> name;
     in property <string> when;
     in property <string> duration;
     in property <[int]> wave;
+    in property <bool> playing: false;
+    in property <bool> pinned: false;
+    in property <bool> deleted: false;
+    callback row-clicked();
+    callback pin-clicked();
+    callback delete-clicked();
 
     horizontal-stretch: 1;
     min-height: 56px;
+    opacity: root.deleted ? 0.5 : 1.0;
+    background: ta.has-hover ? Theme.surface-2 : (root.playing ? Theme.accent-success.with-alpha(0.10) : transparent);
+
+    ta := TouchArea {
+        clicked => {
+            root.row-clicked();
+        }
+    }
+
     HorizontalLayout {
         padding: Theme.spacing-md;
         spacing: Theme.spacing-md;
@@ -89,10 +88,10 @@ component RecordingRow inherits Rectangle {
             alignment: center;
             spacing: 2px;
             Text {
-                text: root.name;
-                color: Theme.on-surface;
+                text: (root.pinned ? "★ " : "") + root.name + (root.deleted ? " · deleted" : "");
+                color: root.playing ? Theme.accent-success : Theme.on-surface;
                 font-size: Theme.font-size-body;
-                font-weight: 600;
+                font-weight: root.playing ? 700 : 600;
                 overflow: elide;
             }
             Text {
@@ -103,7 +102,79 @@ component RecordingRow inherits Rectangle {
         }
         VerticalLayout {
             alignment: center;
-            MiniWave { bars: root.wave; }
+            MiniWave {
+                bars: root.wave;
+                active: root.playing;
+            }
+        }
+        // Pin button.
+        Rectangle {
+            width: 32px;
+            VerticalLayout {
+                alignment: center;
+                Image {
+                    width: 18px;
+                    height: 18px;
+                    source: @image-url("@mobile-components/icons/star.svg");
+                    colorize: root.pinned ? Theme.accent-warning : Theme.muted;
+                    image-fit: contain;
+                }
+            }
+            TouchArea {
+                clicked => {
+                    root.pin-clicked();
+                }
+            }
+        }
+        // Delete / restore button.
+        Rectangle {
+            width: 32px;
+            VerticalLayout {
+                alignment: center;
+                Image {
+                    width: 18px;
+                    height: 18px;
+                    source: root.deleted ? @image-url("@mobile-components/icons/play.svg") : @image-url("@mobile-components/icons/close.svg");
+                    colorize: root.deleted ? Theme.accent-success : Theme.accent-danger;
+                    image-fit: contain;
+                }
+            }
+            TouchArea {
+                clicked => {
+                    root.delete-clicked();
+                }
+            }
+        }
+    }
+}
+
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.destructive ? Theme.accent-danger : Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
         }
     }
 }
@@ -111,15 +182,60 @@ component RecordingRow inherits Rectangle {
 export component VoiceRecorderPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
-    in property <string> elapsed: "00:42";
-    in-out property <bool> recording: true;
+
+    in-out property <bool> recording: false;
     in-out property <bool> paused: false;
+    in-out property <int> elapsed-secs: 42;
+    in-out property <bool> confirm-discard: false;
+    in-out property <int> playing-memo: -1; // -1 none, else 0..2
+    in-out property <bool> pin0: false;
+    in-out property <bool> pin1: false;
+    in-out property <bool> pin2: false;
+    in-out property <bool> del0: false;
+    in-out property <bool> del1: false;
+    in-out property <bool> del2: false;
+    in-out property <int> saved-count: 0;
+    in-out property <int> input-mode: 0; // 0 mic 1 headset 2 phone
+    in-out property <bool> sheet-open: false;
+    in-out property <string> status-msg: "";
+    in-out property <bool> status-success: false;
+    in-out property <bool> status-danger: false;
+
     callback back-pressed();
     callback record-pressed();
     callback pause-pressed();
     callback stop-pressed();
     callback discard-pressed();
-    callback recording-pressed(string);
+    callback recording-pressed(int);
+
+    function pad2(n: int) -> string {
+        return n < 10 ? "0" + n : "" + n;
+    }
+    function fmt(s: int) -> string {
+        return root.pad2(floor(s / 60)) + ":" + root.pad2(mod(s, 60));
+    }
+    function status-text() -> string {
+        return root.recording && !root.paused ? "REC" : (root.paused ? "PAUSED" : (root.saved-count > 0 ? "SAVED" : "READY"));
+    }
+    function status-tint() -> color {
+        return root.recording && !root.paused ? Theme.accent-danger : (root.paused ? Theme.accent-warning : (root.saved-count > 0 ? Theme.accent-success : Theme.muted));
+    }
+    function input-label() -> string {
+        return root.input-mode == 0 ? "Built-in mic" : (root.input-mode == 1 ? "Headset" : "Phone");
+    }
+    function set-status(m: string, ok: bool, bad: bool) {
+        root.status-msg = m;
+        root.status-success = ok;
+        root.status-danger = bad;
+    }
+
+    tick := Timer {
+        interval: 1s;
+        running: root.recording && !root.paused;
+        triggered => {
+            root.elapsed-secs = root.elapsed-secs + 1;
+        }
+    }
 
     background: Theme.background;
 
@@ -131,208 +247,461 @@ export component VoiceRecorderPage inherits Window {
             title-style: HeadingStyle.plex-medium;
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
-            leading-pressed => { root.back-pressed(); }
-        }
-
-        // ----- Hero: elapsed + REC dot -----
-        VerticalLayout {
-            padding-top: Theme.spacing-lg;
-            spacing: Theme.spacing-sm;
-
-            HorizontalLayout {
-                alignment: center;
-                spacing: Theme.spacing-sm;
-                if root.recording: Rectangle {
-                    width: 12px;
-                    height: 12px;
-                    border-radius: Theme.radius-sm;
-                    background: Theme.accent-danger;
-                    y: 8px;
-                }
-                Text {
-                    text:
-                          root.recording && !root.paused ? "REC"
-                        : root.paused ? "PAUSED"
-                        : "READY";
-                    color:
-                          root.recording && !root.paused ? Theme.accent-danger
-                        : root.paused ? Theme.accent-warning
-                        : Theme.muted;
-                    font-family: "IBM Plex Sans";
-                    font-size: 13px;
-                    font-weight: 700;
-                    letter-spacing: 3px;
-                    vertical-alignment: center;
-                }
+            leading-pressed => {
+                root.set-status("Back", false, false);
+                root.back-pressed();
             }
-            HorizontalLayout {
-                alignment: center;
-                Text {
-                    text: root.elapsed;
-                    color: Theme.on-background;
-                    font-family: "IBM Plex Sans";
-                    font-size: 76px;
-                    font-weight: 400;
-                    letter-spacing: -2px;
-                }
-            }
-            HorizontalLayout {
-                alignment: center;
-                Text {
-                    text: "Untitled memo · " + (root.recording ? "live" : "draft");
-                    color: Theme.muted;
-                    font-size: Theme.font-size-caption;
-                }
+            trailing-pressed => {
+                root.sheet-open = true;
             }
         }
 
-        // ----- Waveform strip -----
-        VerticalLayout {
-            padding-left: Theme.spacing-md;
-            padding-right: Theme.spacing-md;
-            padding-top: Theme.spacing-md;
-            padding-bottom: Theme.spacing-md;
-            Rectangle {
-                height: 120px;
-                Waveform {
-                    horizontal-stretch: 1;
-                    height: parent.height;
-                    tint:
-                          root.recording && !root.paused ? Theme.accent-danger
-                        : root.paused ? Theme.accent-warning
-                        : Theme.muted;
-                    bars: [
-                        20, 32, 48, 28, 55, 42, 70, 38, 62, 80, 58, 44,
-                        66, 52, 78, 90, 64, 50, 72, 48, 84, 60, 38, 58,
-                        72, 88, 50, 62, 76, 42, 68, 80, 54, 46, 72, 64,
-                        58, 70, 42, 36, 50, 62, 78, 88, 70, 56, 44, 62
-                    ];
-                }
-            }
-        }
-
-        // ----- Transport row -----
-        Rectangle {
-            height: 120px;
+        // ----- Status banner -----
+        if !root.status-msg.is-empty: Rectangle {
+            height: 28px;
+            background: root.status-success ? Theme.accent-success.with-alpha(0.16) : (root.status-danger ? Theme.accent-danger.with-alpha(0.16) : Theme.surface-2);
             HorizontalLayout {
                 alignment: center;
-                spacing: Theme.spacing-lg;
-                // Discard.
                 VerticalLayout {
                     alignment: center;
-                    Rectangle {
-                        width: 56px;
-                        height: 56px;
-                        border-radius: self.width / 2;
-                        background: Theme.surface-1;
-                        Image {
-                            width: 22px;
-                            height: 22px;
-                            x: (parent.width - self.width) / 2;
-                            y: (parent.height - self.height) / 2;
-                            source: @image-url("@mobile-components/icons/close.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
+                    Text {
+                        text: root.status-msg;
+                        color: root.status-success ? Theme.accent-success : (root.status-danger ? Theme.accent-danger : Theme.on-surface);
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                    }
+                }
+            }
+        }
+
+        ScrollView {
+            vertical-stretch: 1;
+            VerticalLayout {
+                spacing: 0;
+
+                // ----- Hero: elapsed + REC dot -----
+                VerticalLayout {
+                    padding-top: Theme.spacing-lg;
+                    spacing: Theme.spacing-sm;
+
+                    HorizontalLayout {
+                        alignment: center;
+                        spacing: Theme.spacing-sm;
+                        if root.recording: Rectangle {
+                            width: 12px;
+                            height: 12px;
+                            border-radius: Theme.radius-sm;
+                            background: root.paused ? Theme.accent-warning : Theme.accent-danger;
+                            y: 8px;
                         }
-                        TouchArea {
-                            clicked => { root.discard-pressed(); }
+                        Text {
+                            text: root.status-text();
+                            color: root.status-tint();
+                            font-family: "IBM Plex Sans";
+                            font-size: 13px;
+                            font-weight: 700;
+                            letter-spacing: 3px;
+                            vertical-alignment: center;
+                        }
+                    }
+                    HorizontalLayout {
+                        alignment: center;
+                        Text {
+                            text: root.fmt(root.elapsed-secs);
+                            color: Theme.on-background;
+                            font-family: "IBM Plex Sans";
+                            font-size: 76px;
+                            font-weight: 400;
+                            letter-spacing: -2px;
+                        }
+                    }
+                    HorizontalLayout {
+                        alignment: center;
+                        Text {
+                            text: "Untitled memo · " + (root.recording ? (root.paused ? "paused" : "live") : (root.elapsed-secs > 0 ? "draft" : "ready")) + " · " + root.input-label();
+                            color: Theme.muted;
+                            font-size: Theme.font-size-caption;
                         }
                     }
                 }
-                // Big Stop (centre).
-                VerticalLayout {
+
+                // ----- Input source chip -----
+                HorizontalLayout {
+                    padding-top: Theme.spacing-sm;
                     alignment: center;
                     Rectangle {
-                        width: 88px;
-                        height: 88px;
-                        border-radius: self.width / 2;
-                        background: Theme.accent-danger;
-                        drop-shadow-blur: Theme.elevation-2-blur;
-                        drop-shadow-color: Theme.elevation-2-color;
-                        drop-shadow-offset-y: Theme.elevation-2-y;
-                        // Stop square inside.
-                        Rectangle {
-                            x: (parent.width - self.width) / 2;
-                            y: (parent.height - self.height) / 2;
-                            width: 32px;
-                            height: 32px;
-                            border-radius: 4px;
-                            background: #ffffff;
-                        }
-                        TouchArea {
-                            clicked => { root.stop-pressed(); }
-                        }
-                    }
-                }
-                // Pause / resume.
-                VerticalLayout {
-                    alignment: center;
-                    Rectangle {
-                        width: 56px;
-                        height: 56px;
-                        border-radius: self.width / 2;
-                        background: Theme.surface-1;
-                        Image {
-                            width: 22px;
-                            height: 22px;
-                            x: (parent.width - self.width) / 2;
-                            y: (parent.height - self.height) / 2;
-                            source: root.paused
-                                ? @image-url("@mobile-components/icons/play.svg")
-                                : @image-url("@mobile-components/icons/pause.svg");
-                            colorize: Theme.on-surface;
-                            image-fit: contain;
+                        horizontal-stretch: 0;
+                        height: 28px;
+                        border-radius: 14px;
+                        background: Theme.surface-2;
+                        HorizontalLayout {
+                            padding-left: Theme.spacing-md;
+                            padding-right: Theme.spacing-md;
+                            alignment: center;
+                            VerticalLayout {
+                                alignment: center;
+                                Text {
+                                    text: "Input: " + root.input-label();
+                                    color: Theme.on-surface;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 700;
+                                }
+                            }
                         }
                         TouchArea {
                             clicked => {
-                                root.paused = !root.paused;
-                                root.pause-pressed();
+                                root.input-mode = mod(root.input-mode + 1, 3);
+                                root.set-status("Source: " + root.input-label(), true, false);
                             }
                         }
                     }
                 }
-            }
-        }
 
-        Rectangle {
-            height: 32px;
-            horizontal-stretch: 1;
-            HorizontalLayout {
-                padding-left: Theme.spacing-md;
-                padding-right: Theme.spacing-md;
-                alignment: start;
-                Text {
-                    text: "RECENT MEMOS";
-                    color: Theme.muted;
-                    font-family: "IBM Plex Sans";
-                    font-size: 11px;
-                    font-weight: 700;
-                    letter-spacing: 3px;
-                    vertical-alignment: center;
+                // ----- Waveform strip -----
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-md;
+                    padding-bottom: Theme.spacing-md;
+                    Rectangle {
+                        height: 120px;
+                        Waveform {
+                            horizontal-stretch: 1;
+                            height: parent.height;
+                            tint: root.recording && !root.paused ? Theme.accent-danger : (root.paused ? Theme.accent-warning : Theme.muted);
+                            bars: [
+                                20, 32, 48, 28, 55, 42, 70, 38, 62, 80, 58, 44,
+                                66, 52, 78, 90, 64, 50, 72, 48, 84, 60, 38, 58,
+                                72, 88, 50, 62, 76, 42, 68, 80, 54, 46, 72, 64,
+                                58, 70, 42, 36, 50, 62, 78, 88, 70, 56, 44, 62
+                            ];
+                        }
+                    }
+                }
+
+                // ----- Transport row -----
+                Rectangle {
+                    height: 120px;
+                    HorizontalLayout {
+                        alignment: center;
+                        spacing: Theme.spacing-lg;
+
+                        // Discard.
+                        VerticalLayout {
+                            alignment: center;
+                            Rectangle {
+                                width: 56px;
+                                height: 56px;
+                                border-radius: self.width / 2;
+                                background: root.confirm-discard ? Theme.accent-danger : Theme.surface-1;
+                                Image {
+                                    width: 22px;
+                                    height: 22px;
+                                    x: (parent.width - self.width) / 2;
+                                    y: (parent.height - self.height) / 2;
+                                    source: @image-url("@mobile-components/icons/close.svg");
+                                    colorize: root.confirm-discard ? Theme.on-primary : Theme.muted;
+                                    image-fit: contain;
+                                }
+                                TouchArea {
+                                    clicked => {
+                                        if (root.confirm-discard) {
+                                            root.elapsed-secs = 0;
+                                            root.recording = false;
+                                            root.paused = false;
+                                            root.confirm-discard = false;
+                                            root.set-status("Discarded", false, true);
+                                            root.discard-pressed();
+                                        } else {
+                                            root.confirm-discard = true;
+                                            root.set-status("Tap again to discard", false, true);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Big Stop/Record (centre).
+                        VerticalLayout {
+                            alignment: center;
+                            Rectangle {
+                                width: 88px;
+                                height: 88px;
+                                border-radius: self.width / 2;
+                                background: Theme.accent-danger;
+                                drop-shadow-blur: Theme.elevation-2-blur;
+                                drop-shadow-color: Theme.elevation-2-color;
+                                drop-shadow-offset-y: Theme.elevation-2-y;
+
+                                if root.recording: Rectangle {
+                                    x: (parent.width - self.width) / 2;
+                                    y: (parent.height - self.height) / 2;
+                                    width: 32px;
+                                    height: 32px;
+                                    border-radius: 4px;
+                                    background: #ffffff;
+                                }
+                                if !root.recording: Rectangle {
+                                    x: (parent.width - self.width) / 2;
+                                    y: (parent.height - self.height) / 2;
+                                    width: 36px;
+                                    height: 36px;
+                                    border-radius: 18px;
+                                    background: #ffffff;
+                                }
+                                TouchArea {
+                                    clicked => {
+                                        if (root.recording) {
+                                            // Stop & save.
+                                            root.recording = false;
+                                            root.paused = false;
+                                            root.saved-count = root.saved-count + 1;
+                                            root.set-status("Saved memo (" + root.fmt(root.elapsed-secs) + ")", true, false);
+                                            root.elapsed-secs = 0;
+                                            root.stop-pressed();
+                                        } else {
+                                            // Begin.
+                                            root.recording = true;
+                                            root.paused = false;
+                                            root.confirm-discard = false;
+                                            root.set-status("Recording…", false, true);
+                                            root.record-pressed();
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Pause / resume.
+                        VerticalLayout {
+                            alignment: center;
+                            Rectangle {
+                                width: 56px;
+                                height: 56px;
+                                border-radius: self.width / 2;
+                                background: root.recording ? Theme.surface-1 : Theme.surface-3;
+                                opacity: root.recording ? 1.0 : 0.5;
+                                Image {
+                                    width: 22px;
+                                    height: 22px;
+                                    x: (parent.width - self.width) / 2;
+                                    y: (parent.height - self.height) / 2;
+                                    source: root.paused ? @image-url("@mobile-components/icons/play.svg") : @image-url("@mobile-components/icons/pause.svg");
+                                    colorize: Theme.on-surface;
+                                    image-fit: contain;
+                                }
+                                TouchArea {
+                                    enabled: root.recording;
+                                    clicked => {
+                                        root.paused = !root.paused;
+                                        root.set-status(root.paused ? "Paused" : "Resumed", !root.paused, root.paused);
+                                        root.pause-pressed();
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    height: 32px;
+                    horizontal-stretch: 1;
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-md;
+                        padding-right: Theme.spacing-md;
+                        alignment: stretch;
+                        Text {
+                            text: "RECENT MEMOS";
+                            color: Theme.muted;
+                            font-family: "IBM Plex Sans";
+                            font-size: 11px;
+                            font-weight: 700;
+                            letter-spacing: 3px;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                        }
+                        if root.saved-count > 0: Text {
+                            text: "+" + root.saved-count + " this session";
+                            color: Theme.accent-success;
+                            font-size: 11px;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+                RecordingRow {
+                    name: "Standup notes · Tuesday";
+                    when: "yesterday, 09:48";
+                    duration: "2:14";
+                    wave: [40, 28, 56, 72, 48, 62, 36, 78, 52, 44, 68, 30];
+                    playing: root.playing-memo == 0;
+                    pinned: root.pin0;
+                    deleted: root.del0;
+                    row-clicked => {
+                        if (root.del0) {
+                            return;
+                        }
+                        root.playing-memo = root.playing-memo == 0 ? -1 : 0;
+                        root.set-status(root.playing-memo == 0 ? "Playing standup notes" : "Stopped", root.playing-memo == 0, false);
+                        root.recording-pressed(0);
+                    }
+                    pin-clicked => {
+                        root.pin0 = !root.pin0;
+                        root.set-status(root.pin0 ? "Pinned" : "Unpinned", root.pin0, false);
+                    }
+                    delete-clicked => {
+                        root.del0 = !root.del0;
+                        if (root.del0 && root.playing-memo == 0) {
+                            root.playing-memo = -1;
+                        }
+                        root.set-status(root.del0 ? "Deleted standup notes" : "Restored", !root.del0, root.del0);
+                    }
+                }
+                Divider { }
+
+                RecordingRow {
+                    name: "Slint Conf venue walkthrough";
+                    when: "Mon, 11:32";
+                    duration: "8:42";
+                    wave: [60, 48, 72, 88, 64, 50, 76, 42, 58, 80, 66, 54];
+                    playing: root.playing-memo == 1;
+                    pinned: root.pin1;
+                    deleted: root.del1;
+                    row-clicked => {
+                        if (root.del1) {
+                            return;
+                        }
+                        root.playing-memo = root.playing-memo == 1 ? -1 : 1;
+                        root.set-status(root.playing-memo == 1 ? "Playing venue walkthrough" : "Stopped", root.playing-memo == 1, false);
+                        root.recording-pressed(1);
+                    }
+                    pin-clicked => {
+                        root.pin1 = !root.pin1;
+                        root.set-status(root.pin1 ? "Pinned" : "Unpinned", root.pin1, false);
+                    }
+                    delete-clicked => {
+                        root.del1 = !root.del1;
+                        if (root.del1 && root.playing-memo == 1) {
+                            root.playing-memo = -1;
+                        }
+                        root.set-status(root.del1 ? "Deleted walkthrough" : "Restored", !root.del1, root.del1);
+                    }
+                }
+                Divider { }
+
+                RecordingRow {
+                    name: "Voicemail · Mum";
+                    when: "Sun, 18:14";
+                    duration: "0:48";
+                    wave: [22, 35, 28, 50, 32, 26, 42, 28, 35, 30, 24, 32];
+                    playing: root.playing-memo == 2;
+                    pinned: root.pin2;
+                    deleted: root.del2;
+                    row-clicked => {
+                        if (root.del2) {
+                            return;
+                        }
+                        root.playing-memo = root.playing-memo == 2 ? -1 : 2;
+                        root.set-status(root.playing-memo == 2 ? "Playing voicemail" : "Stopped", root.playing-memo == 2, false);
+                        root.recording-pressed(2);
+                    }
+                    pin-clicked => {
+                        root.pin2 = !root.pin2;
+                        root.set-status(root.pin2 ? "Pinned" : "Unpinned", root.pin2, false);
+                    }
+                    delete-clicked => {
+                        root.del2 = !root.del2;
+                        if (root.del2 && root.playing-memo == 2) {
+                            root.playing-memo = -1;
+                        }
+                        root.set-status(root.del2 ? "Deleted voicemail" : "Restored", !root.del2, root.del2);
+                    }
+                }
+
+                Rectangle {
+                    height: Theme.spacing-xl;
                 }
             }
         }
-        RecordingRow {
-            name: "Standup notes · Tuesday";
-            when: "yesterday, 09:48";
-            duration: "2:14";
-            wave: [40, 28, 56, 72, 48, 62, 36, 78, 52, 44, 68, 30];
-        }
-        Divider { }
-        RecordingRow {
-            name: "Slint Conf venue walkthrough";
-            when: "Mon, 11:32";
-            duration: "8:42";
-            wave: [60, 48, 72, 88, 64, 50, 76, 42, 58, 80, 66, 54];
-        }
-        Divider { }
-        RecordingRow {
-            name: "Voicemail · Mum";
-            when: "Sun, 18:14";
-            duration: "0:48";
-            wave: [22, 35, 28, 50, 32, 26, 42, 28, 35, 30, 24, 32];
-        }
+    }
 
-        Rectangle { vertical-stretch: 1; }
+    // ===================== Bottom sheet =====================
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: Theme.surface-2;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.muted;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: "Recorder options";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 700;
+                    }
+                }
+                SheetRow {
+                    label: "Cycle input source (" + root.input-label() + ")";
+                    clicked => {
+                        root.input-mode = mod(root.input-mode + 1, 3);
+                        root.set-status("Source: " + root.input-label(), true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Reset elapsed timer";
+                    clicked => {
+                        root.elapsed-secs = 0;
+                        root.set-status("Reset timer", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Restore all deleted";
+                    clicked => {
+                        root.del0 = false;
+                        root.del1 = false;
+                        root.del2 = false;
+                        root.set-status("All memos restored", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                Divider { }
+
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.sheet-open = false;
+                    }
+                }
+            }
+        }
     }
 }

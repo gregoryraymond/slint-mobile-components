@@ -6,13 +6,16 @@
 // cards) and `WalletPage` (account overview). Demonstrates:
 //
 //   - Branded gradient hero card with merchant name + balance + last-4
-//     of the gift code (the "card face").
+//     of the gift code (the "card face"). Tap to flip the card to the
+//     terms-of-use side.
 //   - QR / barcode placeholder card beneath — a faux-QR grid pattern
-//     (same approach as the `BoardingPassPage` QR) + redemption code
-//     in monospace + Add to Wallet CTA.
+//     + redemption code in monospace (tap to "copy") + Add to Wallet
+//     CTA (two-tap confirm).
+//   - "Redeem now" button opens a bottom sheet with quick-amount
+//     buttons that deduct from the balance live and prepend a row to
+//     the recent activity list.
 //   - "How to use" mini info card.
-//   - Recent activity list of redemptions, each showing where + when +
-//     amount drawn down + remaining balance.
+//   - Recent activity list of redemptions, each tappable.
 
 import { ScrollView } from "std-widgets.slint";
 import { Theme, Tone } from "@mobile-theme/theme.slint";
@@ -38,14 +41,14 @@ component FauxQR inherits Rectangle {
                 width: 9px;
                 height: 9px;
                 background:
-                      (row-index < 3 && col-index < 3)                ? #000000
-                    : (row-index < 3 && col-index >= 13)              ? #000000
-                    : (row-index >= 13 && col-index < 3)              ? #000000
-                    : (row-index == 1 && col-index == 1)              ? #ffffff
-                    : (row-index == 1 && col-index == 14)             ? #ffffff
-                    : (row-index == 14 && col-index == 1)             ? #ffffff
-                    : (mod(row-index * 7 + col-index * 5, 3) == 0)    ? #000000
-                    : (mod(row-index * 3 + col-index * 11, 5) == 0)   ? #000000
+                      (row-index < 3 && col-index < 3) ? #000000
+                    : (row-index < 3 && col-index >= 13) ? #000000
+                    : (row-index >= 13 && col-index < 3) ? #000000
+                    : (row-index == 1 && col-index == 1) ? #ffffff
+                    : (row-index == 1 && col-index == 14) ? #ffffff
+                    : (row-index == 14 && col-index == 1) ? #ffffff
+                    : (mod(row-index * 7 + col-index * 5, 3) == 0) ? #000000
+                    : (mod(row-index * 3 + col-index * 11, 5) == 0) ? #000000
                     : #ffffff;
             }
         }
@@ -58,9 +61,15 @@ component RedemptionRow inherits Rectangle {
     in property <string> when;
     in property <string> amount;
     in property <string> remaining;
+    in property <bool> fresh: false;
+    callback clicked();
 
     horizontal-stretch: 1;
     min-height: 56px;
+    background: root.fresh ? Theme.accent-success.with-alpha(0.12)
+        : touch.pressed ? Theme.surface-pressed
+        : transparent;
+    animate background { duration: Theme.motion-fast; }
     HorizontalLayout {
         padding-left: Theme.spacing-md;
         padding-right: Theme.spacing-md;
@@ -70,11 +79,32 @@ component RedemptionRow inherits Rectangle {
             horizontal-stretch: 1;
             alignment: center;
             spacing: 2px;
-            Text {
-                text: root.merchant;
-                color: Theme.on-surface;
-                font-size: Theme.font-size-body;
-                font-weight: 600;
+            HorizontalLayout {
+                spacing: Theme.spacing-xs;
+                Text {
+                    text: root.merchant;
+                    color: Theme.on-surface;
+                    font-size: Theme.font-size-body;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                }
+                if root.fresh: Rectangle {
+                    width: nm.preferred-width + 12px;
+                    height: 18px;
+                    border-radius: 4px;
+                    background: Theme.accent-success;
+                    nm := Text {
+                        text: "NEW";
+                        color: Theme.on-primary;
+                        font-size: 9px;
+                        font-weight: 800;
+                        letter-spacing: 0.5px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                }
             }
             Text {
                 text: root.when;
@@ -100,19 +130,150 @@ component RedemptionRow inherits Rectangle {
             }
         }
     }
+    touch := TouchArea { clicked => { root.clicked(); } }
 }
 
 export component GiftCardPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
     in property <string> merchant: "Patagonia";
-    in property <string> balance: "$94.50";
     in property <string> issued: "Issued Mar 14, 2026 · expires Mar 14, 2028";
     in property <string> code: "PATA-3MK4-9R12-X8DE";
     callback back-pressed();
     callback share-pressed();
     callback add-to-wallet-pressed();
     callback redemption-pressed(string);
+    callback code-copied(string);
+    callback balance-changed(int);
+    callback redeemed(int);
+
+    // ----- Interactive state -----
+    private property <bool> card-flipped: false;
+    private property <bool> wallet-confirming: false;
+    private property <bool> wallet-added: false;
+    private property <bool> redeem-sheet-open: false;
+    private property <int> balance-cents: 9450; // starts at $94.50
+    // Up to 3 fresh redemptions stacked on top of the static history.
+    private property <int> nr-count: 0;
+    private property <int> nr1-amount: 0;
+    private property <int> nr1-balance: 0;
+    private property <int> nr2-amount: 0;
+    private property <int> nr2-balance: 0;
+    private property <int> nr3-amount: 0;
+    private property <int> nr3-balance: 0;
+    private property <string> status-msg: "Tap the card to flip · Redeem to spend · code is tappable";
+    private property <bool> status-is-success: false;
+    private property <bool> status-is-danger: false;
+
+    // ----- Helpers -----
+    function zpad3(n: int) -> string {
+        return n < 10 ? "00" + n : n < 100 ? "0" + n : "" + n;
+    }
+    function add-commas(n: int) -> string {
+        return n < 1000 ? "" + n
+            : floor(n / 1000) + "," + root.zpad3(mod(n, 1000));
+    }
+    function fmt-cents(c: int) -> string {
+        return "$" + root.add-commas(floor(c / 100)) + "."
+            + (mod(c, 100) < 10 ? "0" + mod(c, 100) : "" + mod(c, 100));
+    }
+    function balance-text() -> string { return root.fmt-cents(root.balance-cents); }
+
+    // ----- Mutations -----
+    public function flip-card() {
+        root.card-flipped = !root.card-flipped;
+        root.status-msg = root.card-flipped
+            ? "Showing terms · tap to flip back"
+            : "Showing balance · tap to flip to terms";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function copy-code() {
+        root.code-copied(root.code);
+        root.status-msg = "Code copied · " + root.code;
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    public function tap-wallet() {
+        if (root.wallet-added) {
+            // Already added — toggle back to editable.
+            root.wallet-added = false;
+            root.wallet-confirming = false;
+            root.status-msg = "Removed from Wallet";
+            root.status-is-success = false;
+            root.status-is-danger = true;
+            return;
+        }
+        if (!root.wallet-confirming) {
+            root.wallet-confirming = true;
+            root.status-msg = "Tap Add to Wallet again to confirm";
+            root.status-is-success = false;
+            root.status-is-danger = false;
+            return;
+        }
+        root.wallet-confirming = false;
+        root.wallet-added = true;
+        root.add-to-wallet-pressed();
+        root.status-msg = "Added to Wallet ✓";
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    public function open-redeem-sheet() {
+        root.redeem-sheet-open = true;
+        root.status-msg = "Pick an amount to redeem";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function close-redeem-sheet() {
+        root.redeem-sheet-open = false;
+    }
+    public function do-redeem(cents: int) {
+        if (cents > root.balance-cents) {
+            root.status-msg = "Insufficient balance for " + root.fmt-cents(cents);
+            root.status-is-success = false;
+            root.status-is-danger = true;
+            return;
+        }
+        if (root.nr-count >= 3) {
+            root.status-msg = "Demo limit · 3 fresh redemptions max";
+            root.status-is-success = false;
+            root.status-is-danger = true;
+            return;
+        }
+        root.balance-cents = root.balance-cents - cents;
+        root.nr-count = root.nr-count + 1;
+        if (root.nr-count == 1) {
+            root.nr1-amount = cents;
+            root.nr1-balance = root.balance-cents;
+        }
+        if (root.nr-count == 2) {
+            root.nr2-amount = cents;
+            root.nr2-balance = root.balance-cents;
+        }
+        if (root.nr-count == 3) {
+            root.nr3-amount = cents;
+            root.nr3-balance = root.balance-cents;
+        }
+        root.redeemed(cents);
+        root.balance-changed(root.balance-cents);
+        root.status-msg = "Redeemed " + root.fmt-cents(cents)
+            + " · " + root.balance-text() + " left";
+        root.status-is-success = true;
+        root.status-is-danger = false;
+        root.redeem-sheet-open = false;
+    }
+    public function tap-redemption(name: string, amount: string) {
+        root.redemption-pressed(name);
+        root.status-msg = "Redemption · " + name + " · " + amount;
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function tap-share() {
+        root.share-pressed();
+        root.status-msg = "Share sheet · pick a recipient";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
 
     background: Theme.background;
 
@@ -125,188 +286,448 @@ export component GiftCardPage inherits Window {
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             trailing-icon: @image-url("@mobile-components/icons/send.svg");
             leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.share-pressed(); }
+            trailing-pressed => { root.tap-share(); }
         }
 
-        // Hero card + QR card + how-to + 3 redemption rows overflow a
-        // single 892-px screen, so everything below the pinned AppBar
-        // scrolls.
+        // ----- Status banner ---------------------------------------
+        Rectangle {
+            height: 32px;
+            background: root.status-is-danger ? Theme.accent-danger
+                : root.status-is-success ? Theme.accent-success
+                : Theme.surface-2;
+            animate background { duration: Theme.motion-fast; }
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                Text {
+                    text: root.status-msg;
+                    color: (root.status-is-danger || root.status-is-success)
+                        ? Theme.on-primary
+                        : Theme.on-surface;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+            }
+        }
+
         ScrollView {
             vertical-stretch: 1;
 
             VerticalLayout {
                 spacing: 0;
 
-        VerticalLayout {
-            padding: Theme.spacing-md;
-            spacing: Theme.spacing-md;
-            alignment: start;
-
-            // Branded hero.
-            Rectangle {
-                horizontal-stretch: 1;
-                height: 200px;
-                border-radius: Theme.radius-lg;
-                background: @linear-gradient(135deg, #b91c1c 0%, #451a03 100%);
-                drop-shadow-blur: Theme.elevation-2-blur;
-                drop-shadow-color: Theme.elevation-2-color;
-                drop-shadow-offset-y: Theme.elevation-2-y;
-                clip: true;
-
                 VerticalLayout {
-                    padding: Theme.spacing-md;
-                    spacing: Theme.spacing-xs;
-                    Heading {
-                        text: root.merchant;
-                        style: HeadingStyle.serif-display;
-                        color: Theme.on-primary;
-                        font-size: 26px;
-                    }
-                    Text {
-                        text: "GIFT CARD";
-                        color: #ffffffaa;
-                        font-size: 11px;
-                        font-weight: 800;
-                        letter-spacing: 2px;
-                    }
-                    Rectangle { vertical-stretch: 1; }
-                    Text {
-                        text: "BALANCE";
-                        color: #ffffffaa;
-                        font-size: 10px;
-                        font-weight: 800;
-                        letter-spacing: 0.5px;
-                    }
-                    Heading {
-                        text: root.balance;
-                        style: HeadingStyle.serif-display;
-                        color: Theme.on-primary;
-                        font-size: 38px;
-                    }
-                }
-
-                // Top-right brand mark.
-                Rectangle {
-                    x: parent.width - 64px;
-                    y: 16px;
-                    width: 48px;
-                    height: 48px;
-                    border-radius: Theme.radius-md;
-                    background: #ffffff22;
-                    Text {
-                        text: "P";
-                        color: Theme.on-primary;
-                        font-size: Theme.font-size-headline;
-                        font-weight: 800;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                        width: parent.width;
-                        height: parent.height;
-                    }
-                }
-            }
-
-            // QR card.
-            Rectangle {
-                horizontal-stretch: 1;
-                height: 232px;
-                background: Theme.surface-1;
-                border-radius: Theme.radius-md;
-                drop-shadow-blur: Theme.elevation-1-blur;
-                drop-shadow-color: Theme.elevation-1-color;
-                drop-shadow-offset-y: Theme.elevation-1-y;
-
-                HorizontalLayout {
                     padding: Theme.spacing-md;
                     spacing: Theme.spacing-md;
-                    alignment: stretch;
+                    alignment: start;
 
-                    VerticalLayout {
-                        alignment: center;
-                        FauxQR { }
-                    }
-                    VerticalLayout {
+                    // Branded hero — flips between front and back.
+                    Rectangle {
                         horizontal-stretch: 1;
-                        alignment: center;
-                        spacing: Theme.spacing-xs;
+                        height: 200px;
+                        border-radius: Theme.radius-lg;
+                        background: root.card-flipped
+                            ? @linear-gradient(135deg, #1f2937 0%, #0b1220 100%)
+                            : @linear-gradient(135deg, #b91c1c 0%, #451a03 100%);
+                        animate background { duration: Theme.motion-fast; }
+                        drop-shadow-blur: Theme.elevation-2-blur;
+                        drop-shadow-color: Theme.elevation-2-color;
+                        drop-shadow-offset-y: Theme.elevation-2-y;
+                        clip: true;
+
+                        // Front side ---------------------------------
+                        if !root.card-flipped: VerticalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-xs;
+                            Heading {
+                                text: root.merchant;
+                                style: HeadingStyle.serif-display;
+                                color: Theme.on-primary;
+                                font-size: 26px;
+                            }
+                            Text {
+                                text: "GIFT CARD";
+                                color: #ffffffaa;
+                                font-size: 11px;
+                                font-weight: 800;
+                                letter-spacing: 2px;
+                            }
+                            Rectangle { vertical-stretch: 1; }
+                            Text {
+                                text: "BALANCE · TAP TO FLIP";
+                                color: #ffffffaa;
+                                font-size: 10px;
+                                font-weight: 800;
+                                letter-spacing: 0.5px;
+                            }
+                            Heading {
+                                text: root.balance-text();
+                                style: HeadingStyle.serif-display;
+                                color: Theme.on-primary;
+                                font-size: 38px;
+                            }
+                        }
+
+                        // Back side ----------------------------------
+                        if root.card-flipped: VerticalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-xs;
+                            Text {
+                                text: "TERMS";
+                                color: #ffffffaa;
+                                font-size: 11px;
+                                font-weight: 800;
+                                letter-spacing: 2px;
+                            }
+                            Text {
+                                text: "Non-refundable. Single-use code only. Cannot be combined with discount codes.";
+                                color: Theme.on-primary;
+                                font-size: Theme.font-size-caption;
+                                font-weight: 600;
+                                wrap: word-wrap;
+                            }
+                            Rectangle { vertical-stretch: 1; }
+                            Text {
+                                text: root.issued;
+                                color: #ffffffaa;
+                                font-size: 10px;
+                                font-weight: 600;
+                            }
+                            Text {
+                                text: "Issued by Patagonia, Inc. · tap to flip back";
+                                color: #ffffffaa;
+                                font-size: 10px;
+                                font-weight: 600;
+                            }
+                        }
+
+                        // Top-right brand mark — always present.
+                        Rectangle {
+                            x: parent.width - 64px;
+                            y: 16px;
+                            width: 48px;
+                            height: 48px;
+                            border-radius: Theme.radius-md;
+                            background: #ffffff22;
+                            Text {
+                                text: "P";
+                                color: Theme.on-primary;
+                                font-size: Theme.font-size-headline;
+                                font-weight: 800;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                width: parent.width;
+                                height: parent.height;
+                            }
+                        }
+
+                        TouchArea { clicked => { root.flip-card(); } }
+                    }
+
+                    // QR card.
+                    Rectangle {
+                        horizontal-stretch: 1;
+                        height: 280px;
+                        background: Theme.surface-1;
+                        border-radius: Theme.radius-md;
+                        drop-shadow-blur: Theme.elevation-1-blur;
+                        drop-shadow-color: Theme.elevation-1-color;
+                        drop-shadow-offset-y: Theme.elevation-1-y;
+
+                        HorizontalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-md;
+                            alignment: stretch;
+
+                            VerticalLayout {
+                                alignment: center;
+                                FauxQR { }
+                            }
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                alignment: center;
+                                spacing: Theme.spacing-xs;
+                                Text {
+                                    text: "REDEMPTION CODE · TAP TO COPY";
+                                    color: Theme.muted;
+                                    font-size: 10px;
+                                    font-weight: 800;
+                                    letter-spacing: 0.5px;
+                                }
+                                Rectangle {
+                                    background: code-touch.pressed
+                                        ? Theme.surface-pressed
+                                        : Theme.surface-2;
+                                    border-radius: Theme.radius-sm;
+                                    animate background { duration: Theme.motion-fast; }
+                                    VerticalLayout {
+                                        padding: Theme.spacing-sm;
+                                        Text {
+                                            text: root.code;
+                                            color: Theme.on-surface;
+                                            font-size: Theme.font-size-body;
+                                            font-family: "Menlo";
+                                            font-weight: 700;
+                                            letter-spacing: 1px;
+                                            wrap: word-wrap;
+                                        }
+                                    }
+                                    code-touch := TouchArea {
+                                        clicked => { root.copy-code(); }
+                                    }
+                                }
+                                Text {
+                                    text: root.issued;
+                                    color: Theme.muted;
+                                    font-size: Theme.font-size-caption;
+                                    wrap: word-wrap;
+                                }
+                                MobileButton {
+                                    text: root.wallet-added
+                                        ? "Added to Wallet ✓ · tap to remove"
+                                        : root.wallet-confirming
+                                            ? "Tap again to confirm"
+                                            : "Add to Wallet";
+                                    tone: root.wallet-added ? Tone.success
+                                        : root.wallet-confirming ? Tone.warning
+                                        : Tone.info;
+                                    clicked => { root.tap-wallet(); }
+                                }
+                                MobileButton {
+                                    text: "Redeem · " + root.balance-text();
+                                    tone: Tone.success;
+                                    clicked => { root.open-redeem-sheet(); }
+                                }
+                            }
+                        }
+                    }
+
+                    // How-to info card.
+                    Rectangle {
+                        horizontal-stretch: 1;
+                        background: Theme.surface-2;
+                        border-radius: Theme.radius-md;
+                        VerticalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-xs;
+                            Text {
+                                text: "How to redeem";
+                                color: Theme.on-surface;
+                                font-size: Theme.font-size-body;
+                                font-weight: 700;
+                            }
+                            Text {
+                                text: "Show the QR at the register, or paste the code into the checkout's Gift card field at patagonia.com.";
+                                color: Theme.muted;
+                                font-size: Theme.font-size-caption;
+                                wrap: word-wrap;
+                            }
+                        }
+                    }
+                }
+
+                SectionHeader {
+                    text: "recent redemptions · " + (root.nr-count + 3) + " total";
+                }
+
+                // Fresh redemptions appear at the top, most recent first.
+                if root.nr-count >= 3: RedemptionRow {
+                    merchant: "Demo · just now";
+                    when: "Just redeemed · #3";
+                    amount: "−" + root.fmt-cents(root.nr3-amount);
+                    remaining: root.fmt-cents(root.nr3-balance);
+                    fresh: true;
+                    clicked => {
+                        root.tap-redemption("Demo · just now",
+                            "−" + root.fmt-cents(root.nr3-amount));
+                    }
+                }
+                if root.nr-count >= 3: Divider { }
+                if root.nr-count >= 2: RedemptionRow {
+                    merchant: "Demo · just now";
+                    when: "Just redeemed · #2";
+                    amount: "−" + root.fmt-cents(root.nr2-amount);
+                    remaining: root.fmt-cents(root.nr2-balance);
+                    fresh: true;
+                    clicked => {
+                        root.tap-redemption("Demo · just now",
+                            "−" + root.fmt-cents(root.nr2-amount));
+                    }
+                }
+                if root.nr-count >= 2: Divider { }
+                if root.nr-count >= 1: RedemptionRow {
+                    merchant: "Demo · just now";
+                    when: "Just redeemed · #1";
+                    amount: "−" + root.fmt-cents(root.nr1-amount);
+                    remaining: root.fmt-cents(root.nr1-balance);
+                    fresh: true;
+                    clicked => {
+                        root.tap-redemption("Demo · just now",
+                            "−" + root.fmt-cents(root.nr1-amount));
+                    }
+                }
+                if root.nr-count >= 1: Divider { }
+
+                RedemptionRow {
+                    merchant: "Patagonia · Hayes Valley";
+                    when: "Mon, May 12 · 14:18";
+                    amount: "−$48.50";
+                    remaining: "$94.50";
+                    clicked => {
+                        root.tap-redemption("Patagonia · Hayes Valley", "−$48.50");
+                    }
+                }
+                Divider { }
+                RedemptionRow {
+                    merchant: "patagonia.com";
+                    when: "Apr 30 · 22:08";
+                    amount: "−$32.00";
+                    remaining: "$143.00";
+                    clicked => {
+                        root.tap-redemption("patagonia.com", "−$32.00");
+                    }
+                }
+                Divider { }
+                RedemptionRow {
+                    merchant: "Patagonia · Soho NYC";
+                    when: "Apr 14 · 16:42";
+                    amount: "−$25.00";
+                    remaining: "$175.00";
+                    clicked => {
+                        root.tap-redemption("Patagonia · Soho NYC", "−$25.00");
+                    }
+                }
+            }
+        }
+    }
+
+    // ----- Redeem bottom sheet ---------------------------------------
+    if root.redeem-sheet-open: Rectangle {
+        Rectangle {
+            background: #00000099;
+            TouchArea {
+                clicked => { root.close-redeem-sheet(); }
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            height: 360px;
+            background: Theme.surface-1;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding: Theme.spacing-lg;
+                spacing: Theme.spacing-md;
+
+                Rectangle {
+                    width: 40px;
+                    height: 4px;
+                    border-radius: 2px;
+                    background: Theme.muted;
+                }
+
+                Heading {
+                    text: "Redeem from " + root.balance-text();
+                    style: HeadingStyle.grotesk-bold;
+                    font-size: Theme.font-size-title;
+                }
+                Text {
+                    text: "Tap an amount — it gets deducted from the card balance.";
+                    color: Theme.muted;
+                    font-size: Theme.font-size-caption;
+                }
+
+                HorizontalLayout {
+                    spacing: Theme.spacing-sm;
+                    Rectangle {
+                        height: 56px;
+                        horizontal-stretch: 1;
+                        border-radius: Theme.radius-md;
+                        background: Theme.accent-info;
                         Text {
-                            text: "REDEMPTION CODE";
-                            color: Theme.muted;
-                            font-size: 10px;
+                            text: "$5";
+                            color: Theme.on-primary;
+                            font-size: Theme.font-size-body-large;
                             font-weight: 800;
-                            letter-spacing: 0.5px;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
                         }
+                        TouchArea { clicked => { root.do-redeem(500); } }
+                    }
+                    Rectangle {
+                        height: 56px;
+                        horizontal-stretch: 1;
+                        border-radius: Theme.radius-md;
+                        background: Theme.accent-info;
                         Text {
-                            text: root.code;
-                            color: Theme.on-surface;
-                            font-size: Theme.font-size-body;
-                            font-family: "Menlo";
-                            font-weight: 700;
-                            letter-spacing: 1px;
-                            wrap: word-wrap;
+                            text: "$10";
+                            color: Theme.on-primary;
+                            font-size: Theme.font-size-body-large;
+                            font-weight: 800;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
                         }
-                        Text {
-                            text: root.issued;
-                            color: Theme.muted;
-                            font-size: Theme.font-size-caption;
-                            wrap: word-wrap;
-                        }
-                        MobileButton {
-                            text: "Add to Wallet";
-                            tone: Tone.info;
-                            clicked => { root.add-to-wallet-pressed(); }
-                        }
+                        TouchArea { clicked => { root.do-redeem(1000); } }
                     }
                 }
-            }
+                HorizontalLayout {
+                    spacing: Theme.spacing-sm;
+                    Rectangle {
+                        height: 56px;
+                        horizontal-stretch: 1;
+                        border-radius: Theme.radius-md;
+                        background: Theme.accent-info;
+                        Text {
+                            text: "$25";
+                            color: Theme.on-primary;
+                            font-size: Theme.font-size-body-large;
+                            font-weight: 800;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
+                        }
+                        TouchArea { clicked => { root.do-redeem(2500); } }
+                    }
+                    Rectangle {
+                        height: 56px;
+                        horizontal-stretch: 1;
+                        border-radius: Theme.radius-md;
+                        background: Theme.accent-info;
+                        Text {
+                            text: "$50";
+                            color: Theme.on-primary;
+                            font-size: Theme.font-size-body-large;
+                            font-weight: 800;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
+                        }
+                        TouchArea { clicked => { root.do-redeem(5000); } }
+                    }
+                }
 
-            // How-to info card.
-            Rectangle {
-                horizontal-stretch: 1;
-                background: Theme.surface-2;
-                border-radius: Theme.radius-md;
-                VerticalLayout {
-                    padding: Theme.spacing-md;
-                    spacing: Theme.spacing-xs;
-                    Text {
-                        text: "How to redeem";
-                        color: Theme.on-surface;
-                        font-size: Theme.font-size-body;
-                        font-weight: 700;
-                    }
-                    Text {
-                        text: "Show the QR at the register, or paste the code into the checkout's Gift card field at patagonia.com.";
-                        color: Theme.muted;
-                        font-size: Theme.font-size-caption;
-                        wrap: word-wrap;
-                    }
+                Rectangle { vertical-stretch: 1; }
+
+                MobileButton {
+                    text: "Cancel";
+                    tone: Tone.danger;
+                    clicked => { root.close-redeem-sheet(); }
                 }
             }
         }
-
-        SectionHeader { text: "recent redemptions"; }
-
-        RedemptionRow {
-            merchant: "Patagonia · Hayes Valley";
-            when: "Mon, May 12 · 14:18";
-            amount: "−$48.50";
-            remaining: "$94.50";
-        }
-        Divider { }
-        RedemptionRow {
-            merchant: "patagonia.com";
-            when: "Apr 30 · 22:08";
-            amount: "−$32.00";
-            remaining: "$143.00";
-        }
-        Divider { }
-        RedemptionRow {
-            merchant: "Patagonia · Soho NYC";
-            when: "Apr 14 · 16:42";
-            amount: "−$25.00";
-            remaining: "$175.00";
-        }
-            }   // end inner VerticalLayout
-        }       // end ScrollView
     }
 }

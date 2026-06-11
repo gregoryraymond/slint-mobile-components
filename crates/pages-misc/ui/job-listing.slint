@@ -1,17 +1,5 @@
 // JobListingPage
 // =====================================================================
-//
-// Single job posting view — the "tap into a listing from a job feed"
-// surface. Demonstrates:
-//
-//   - Company header card: square logo placeholder + company name +
-//     "Apply by" date + bookmark trailing.
-//   - Role title block: large headline + meta chip row (Remote / Full-
-//     time / Senior) + salary band + posted date.
-//   - Sectioned description: ABOUT / REQUIREMENTS / WHAT WE OFFER, with
-//     bullet-style rows under each, the bullet glyph rendered as a
-//     small primary disc on the leading edge.
-//   - Sticky bottom CTA bar: Save (secondary) + Apply now (primary).
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
@@ -21,33 +9,50 @@ import { MobileButton } from "@mobile-components/button.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
 import { ScrollView } from "std-widgets.slint";
 
-// One bullet point in the description sections.
 component Bullet inherits Rectangle {
     in property <string> text;
-    in property <Tone> tone: Tone.default;
+    in property <int> tone-i: 0; // 0 default 1 info 2 success 3 warning 4 danger
+    in property <bool> checked: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
 
     HorizontalLayout {
         padding-top: Theme.spacing-xs;
         padding-bottom: Theme.spacing-xs;
+        padding-left: Theme.spacing-xs;
+        padding-right: Theme.spacing-xs;
         spacing: Theme.spacing-sm;
         alignment: stretch;
         VerticalLayout {
             alignment: start;
             padding-top: 6px;
             Rectangle {
-                width: 6px;
-                height: 6px;
-                border-radius: 3px;
-                background:
-                      root.tone == Tone.success ? Theme.accent-success
-                    : root.tone == Tone.warning ? Theme.accent-warning
-                    : root.tone == Tone.danger  ? Theme.accent-danger
-                    : root.tone == Tone.info    ? Theme.accent-info
-                    : Theme.primary;
+                width: 12px;
+                height: 12px;
+                border-radius: 6px;
+                background: root.checked ? Theme.accent-success : (root.tone-i == 1 ? Theme.accent-info : (root.tone-i == 2 ? Theme.accent-success : (root.tone-i == 3 ? Theme.accent-warning : (root.tone-i == 4 ? Theme.accent-danger : Theme.primary))));
+                if root.checked: Text {
+                    text: "✓";
+                    color: Theme.on-primary;
+                    font-size: 9px;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
             }
         }
         Text {
-            text: root.text;
+            text: root.text + (root.checked ? "  ✓ matched" : "");
             color: Theme.on-surface;
             font-size: Theme.font-size-body;
             wrap: word-wrap;
@@ -56,8 +61,6 @@ component Bullet inherits Rectangle {
     }
 }
 
-// One section header inside the description (smaller than the page-
-// level SectionHeader so the role title still anchors the page).
 component DescSectionHeader inherits Rectangle {
     in property <string> text;
     height: 36px;
@@ -73,19 +76,119 @@ component DescSectionHeader inherits Rectangle {
     }
 }
 
+component TagChip inherits Rectangle {
+    in property <string> label;
+    in property <bool> selected: false;
+    callback clicked();
+
+    horizontal-stretch: 0;
+    height: 28px;
+    border-radius: 14px;
+    background: root.selected ? Theme.accent-info.with-alpha(0.22) : Theme.surface-2;
+    border-width: root.selected ? 1px : 0px;
+    border-color: Theme.accent-info;
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: center;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.selected ? Theme.accent-info : Theme.on-surface;
+                font-size: Theme.font-size-caption;
+                font-weight: 700;
+            }
+        }
+    }
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.destructive ? Theme.accent-danger : Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+        }
+    }
+}
+
 export component JobListingPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
     in property <string> company: "Patagonia";
-    in property <string> apply-by: "Apply by Fri, May 30";
     in property <string> role: "Senior Mobile Engineer";
     in property <string> salary: "$165K — $200K · equity";
     in property <string> location: "San Francisco · Hybrid";
-    in property <string> posted: "Posted 3 days ago · 142 applicants";
+
+    in-out property <bool> saved: false;
+    in-out property <int> apply-state: 0; // 0 not applied, 1 in progress, 2 applied
+    in-out property <bool> confirm-apply: false;
+    in-out property <int> share-mode: 0; // 0 share 1 copied 2 messaged 3 emailed
+    in-out property <bool> tag-remote: true;
+    in-out property <bool> tag-fulltime: false;
+    in-out property <bool> tag-senior: false;
+    in-out property <bool> tag-rust: false;
+    in-out property <bool> match-r1: false;
+    in-out property <bool> match-r2: false;
+    in-out property <bool> match-r3: false;
+    in-out property <bool> match-r4: false;
+    in-out property <bool> applicants-tracked: false;
+    in-out property <int> applicants: 142;
+    in-out property <bool> sheet-open: false;
+    in-out property <bool> confirm-hide: false;
+    in-out property <string> status-msg: "";
+    in-out property <bool> status-success: false;
+    in-out property <bool> status-danger: false;
+
     callback back-pressed();
     callback save-pressed();
     callback share-pressed();
     callback apply-pressed();
+
+    function apply-label() -> string {
+        return root.apply-state == 0 ? "Apply now" : (root.apply-state == 1 ? "Confirm apply" : "Applied ✓");
+    }
+    function share-label() -> string {
+        return root.share-mode == 0 ? "Share" : (root.share-mode == 1 ? "Copied" : (root.share-mode == 2 ? "Sent" : "Emailed"));
+    }
+    function match-count() -> int {
+        return (root.match-r1 ? 1 : 0) + (root.match-r2 ? 1 : 0) + (root.match-r3 ? 1 : 0) + (root.match-r4 ? 1 : 0);
+    }
+    function fit-summary() -> string {
+        return root.match-count() == 0 ? "Tap the bullets to log your matches" : (root.match-count() >= 3 ? "Strong fit (" + root.match-count() + " / 4)" : "Partial fit (" + root.match-count() + " / 4)");
+    }
+    function set-status(m: string, ok: bool, bad: bool) {
+        root.status-msg = m;
+        root.status-success = ok;
+        root.status-danger = bad;
+    }
 
     background: Theme.background;
 
@@ -96,20 +199,41 @@ export component JobListingPage inherits Window {
             title: "JOB LISTING";
             title-style: HeadingStyle.uppercase-spaced;
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
-            trailing-icon: @image-url("@mobile-components/icons/send.svg");
-            leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.share-pressed(); }
+            trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
+            leading-pressed => {
+                root.back-pressed();
+            }
+            trailing-pressed => {
+                root.sheet-open = true;
+            }
+        }
+
+        // Status banner.
+        if !root.status-msg.is-empty: Rectangle {
+            height: 28px;
+            background: root.status-success ? Theme.accent-success.with-alpha(0.16) : (root.status-danger ? Theme.accent-danger.with-alpha(0.16) : Theme.surface-2);
+            HorizontalLayout {
+                alignment: center;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.status-msg;
+                        color: root.status-success ? Theme.accent-success : (root.status-danger ? Theme.accent-danger : Theme.on-surface);
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                    }
+                }
+            }
         }
 
         ScrollView {
             vertical-stretch: 1;
             horizontal-stretch: 1;
-            viewport-width: 412px;
-            viewport-height: 1400px;
             VerticalLayout {
                 padding-left: Theme.spacing-md;
                 padding-right: Theme.spacing-md;
-                padding-bottom: Theme.spacing-md;
+                padding-top: Theme.spacing-md;
+                padding-bottom: Theme.spacing-xl;
                 spacing: Theme.spacing-md;
                 alignment: start;
 
@@ -125,7 +249,6 @@ export component JobListingPage inherits Window {
                         padding: Theme.spacing-md;
                         spacing: Theme.spacing-md;
                         alignment: stretch;
-                        // Logo placeholder.
                         Rectangle {
                             width: 48px;
                             height: 48px;
@@ -153,7 +276,7 @@ export component JobListingPage inherits Window {
                                 font-weight: 700;
                             }
                             Text {
-                                text: root.apply-by;
+                                text: "Apply by Fri, May 30";
                                 color: Theme.accent-warning;
                                 font-size: Theme.font-size-caption;
                                 font-weight: 600;
@@ -161,21 +284,57 @@ export component JobListingPage inherits Window {
                         }
                         VerticalLayout {
                             alignment: center;
-                            Image {
-                                width: 22px;
-                                height: 22px;
-                                source: @image-url("@mobile-components/icons/queue.svg");
-                                colorize: Theme.muted;
-                                image-fit: contain;
+                            Rectangle {
+                                width: 36px;
+                                height: 36px;
+                                border-radius: 18px;
+                                background: root.saved ? Theme.accent-warning.with-alpha(0.22) : Theme.surface-2;
+                                Image {
+                                    width: 18px;
+                                    height: 18px;
+                                    x: (parent.width - self.width) / 2;
+                                    y: (parent.height - self.height) / 2;
+                                    source: @image-url("@mobile-components/icons/queue.svg");
+                                    colorize: root.saved ? Theme.accent-warning : Theme.muted;
+                                    image-fit: contain;
+                                }
                                 TouchArea {
-                                    clicked => { root.save-pressed(); }
+                                    clicked => {
+                                        root.saved = !root.saved;
+                                        root.set-status(root.saved ? "Saved to bookmarks" : "Bookmark removed", root.saved, !root.saved);
+                                        root.save-pressed();
+                                    }
+                                }
+                            }
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            Rectangle {
+                                width: 36px;
+                                height: 36px;
+                                border-radius: 18px;
+                                background: root.share-mode != 0 ? Theme.accent-info.with-alpha(0.22) : Theme.surface-2;
+                                Image {
+                                    width: 18px;
+                                    height: 18px;
+                                    x: (parent.width - self.width) / 2;
+                                    y: (parent.height - self.height) / 2;
+                                    source: @image-url("@mobile-components/icons/send.svg");
+                                    colorize: root.share-mode != 0 ? Theme.accent-info : Theme.muted;
+                                    image-fit: contain;
+                                }
+                                TouchArea {
+                                    clicked => {
+                                        root.share-mode = mod(root.share-mode + 1, 4);
+                                        root.set-status(root.share-label(), root.share-mode != 0, false);
+                                        root.share-pressed();
+                                    }
                                 }
                             }
                         }
                     }
                 }
 
-                // ----- Role header -----
                 Heading {
                     text: root.role;
                     style: HeadingStyle.serif-light;
@@ -196,21 +355,80 @@ export component JobListingPage inherits Window {
                 }
                 HorizontalLayout {
                     spacing: Theme.spacing-sm;
-                    Chip { label: "Remote"; selected: true; }
-                    Chip { label: "Full-time"; }
-                    Chip { label: "Senior"; }
-                    Chip { label: "Rust"; }
+                    TagChip {
+                        label: "Remote";
+                        selected: root.tag-remote;
+                        clicked => {
+                            root.tag-remote = !root.tag-remote;
+                        }
+                    }
+                    TagChip {
+                        label: "Full-time";
+                        selected: root.tag-fulltime;
+                        clicked => {
+                            root.tag-fulltime = !root.tag-fulltime;
+                        }
+                    }
+                    TagChip {
+                        label: "Senior";
+                        selected: root.tag-senior;
+                        clicked => {
+                            root.tag-senior = !root.tag-senior;
+                        }
+                    }
+                    TagChip {
+                        label: "Rust";
+                        selected: root.tag-rust;
+                        clicked => {
+                            root.tag-rust = !root.tag-rust;
+                        }
+                    }
                 }
-                Text {
-                    text: root.posted;
-                    color: Theme.muted;
-                    font-size: Theme.font-size-caption;
+                HorizontalLayout {
+                    spacing: Theme.spacing-sm;
+                    alignment: start;
+                    VerticalLayout {
+                        alignment: center;
+                        horizontal-stretch: 1;
+                        Text {
+                            text: "Posted 3 days ago · " + root.applicants + " applicants";
+                            color: Theme.muted;
+                            font-size: Theme.font-size-caption;
+                        }
+                    }
+                    Rectangle {
+                        horizontal-stretch: 0;
+                        height: 24px;
+                        border-radius: 12px;
+                        background: root.applicants-tracked ? Theme.accent-info.with-alpha(0.22) : Theme.surface-2;
+                        HorizontalLayout {
+                            padding-left: Theme.spacing-sm;
+                            padding-right: Theme.spacing-sm;
+                            alignment: center;
+                            VerticalLayout {
+                                alignment: center;
+                                Text {
+                                    text: root.applicants-tracked ? "Tracking" : "Track";
+                                    color: root.applicants-tracked ? Theme.accent-info : Theme.on-surface;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 700;
+                                }
+                            }
+                        }
+                        TouchArea {
+                            clicked => {
+                                root.applicants-tracked = !root.applicants-tracked;
+                                root.set-status(root.applicants-tracked ? "Tracking applicant count" : "No longer tracking", root.applicants-tracked, false);
+                            }
+                        }
+                    }
                 }
 
                 Divider { }
 
-                // ----- About -----
-                DescSectionHeader { text: "About the role"; }
+                DescSectionHeader {
+                    text: "About the role";
+                }
                 Text {
                     text: "We're hiring a senior engineer to lead the mobile platform team. You'll own the Slint-on-Android stack end-to-end: cargo-apk builds, the gesture system, theme distribution, and the design-system rollout currently in iteration 16.";
                     color: Theme.on-surface;
@@ -218,51 +436,82 @@ export component JobListingPage inherits Window {
                     wrap: word-wrap;
                 }
 
-                // ----- Requirements -----
-                DescSectionHeader { text: "What we're looking for"; }
+                DescSectionHeader {
+                    text: "What we're looking for · " + root.fit-summary();
+                }
                 Bullet {
                     text: "6+ years shipping production mobile clients in Rust, Swift, or Kotlin.";
+                    checked: root.match-r1;
+                    clicked => {
+                        root.match-r1 = !root.match-r1;
+                        root.set-status(root.match-r1 ? "Marked match" : "Match cleared", root.match-r1, false);
+                    }
                 }
                 Bullet {
                     text: "Direct experience with a declarative UI framework (Slint, Compose, SwiftUI, Flutter).";
+                    checked: root.match-r2;
+                    clicked => {
+                        root.match-r2 = !root.match-r2;
+                        root.set-status(root.match-r2 ? "Marked match" : "Match cleared", root.match-r2, false);
+                    }
                 }
                 Bullet {
                     text: "Comfortable owning build pipelines and reproducible toolchains (cargo, Bazel, Gradle).";
-                    tone: Tone.info;
+                    tone-i: 1;
+                    checked: root.match-r3;
+                    clicked => {
+                        root.match-r3 = !root.match-r3;
+                        root.set-status(root.match-r3 ? "Marked match" : "Match cleared", root.match-r3, false);
+                    }
                 }
                 Bullet {
                     text: "Track record of mentoring 2+ engineers.";
-                    tone: Tone.success;
+                    tone-i: 2;
+                    checked: root.match-r4;
+                    clicked => {
+                        root.match-r4 = !root.match-r4;
+                        root.set-status(root.match-r4 ? "Marked match" : "Match cleared", root.match-r4, false);
+                    }
                 }
 
-                // ----- Offer -----
-                DescSectionHeader { text: "What we offer"; }
+                DescSectionHeader {
+                    text: "What we offer";
+                }
                 Bullet {
                     text: "Salary $165K – $200K + meaningful equity.";
-                    tone: Tone.success;
+                    tone-i: 2;
+                    clicked => { }
                 }
                 Bullet {
                     text: "Hybrid 3 days / week in SF, or fully remote in PT/MT/CT zones.";
-                    tone: Tone.info;
+                    tone-i: 1;
+                    clicked => { }
                 }
                 Bullet {
                     text: "Time, gear and conference budgets uncapped within reason.";
+                    clicked => { }
                 }
                 Bullet {
                     text: "Quarterly retreats; last one was Asilomar.";
+                    clicked => { }
                 }
 
                 Divider { }
 
-                // ----- Skills gap -----
-                DescSectionHeader { text: "How you compare"; }
-                Bullet {
-                    text: "Your Rust experience exceeds the bar.";
-                    tone: Tone.success;
+                DescSectionHeader {
+                    text: "How you compare";
                 }
                 Bullet {
-                    text: "You haven't shipped Compose or SwiftUI before — likely fine, mention transferable declarative-UI work.";
-                    tone: Tone.warning;
+                    text: root.tag-rust ? "Rust signal added — strong match." : "Tap the Rust chip above to flag your skill.";
+                    tone-i: root.tag-rust ? 2 : 3;
+                    clicked => {
+                        root.tag-rust = !root.tag-rust;
+                    }
+                }
+                Bullet {
+                    text: root.match-count() >= 3 ? "You've logged " + root.match-count() + " / 4 requirements — apply with confidence." : "You've logged " + root.match-count() + " / 4 requirements — keep marking matches above.";
+                    tone-i: root.match-count() >= 3 ? 2 : 3;
+                    clicked => { }
                 }
             }
         }
@@ -278,16 +527,134 @@ export component JobListingPage inherits Window {
                 padding: Theme.spacing-md;
                 spacing: Theme.spacing-md;
                 MobileButton {
-                    text: "Save";
+                    text: root.saved ? "Saved ✓" : "Save";
                     primary: false;
                     horizontal-stretch: 1;
-                    clicked => { root.save-pressed(); }
+                    clicked => {
+                        root.saved = !root.saved;
+                        root.set-status(root.saved ? "Saved" : "Unsaved", root.saved, !root.saved);
+                        root.save-pressed();
+                    }
                 }
                 MobileButton {
-                    text: "Apply now";
+                    text: root.apply-label();
                     horizontal-stretch: 2;
-                    tone: Tone.info;
-                    clicked => { root.apply-pressed(); }
+                    tone: root.apply-state == 2 ? Tone.success : Tone.info;
+                    clicked => {
+                        if (root.apply-state == 0) {
+                            root.apply-state = 1;
+                            root.set-status("Tap again to confirm", false, false);
+                        } else if (root.apply-state == 1) {
+                            root.apply-state = 2;
+                            root.applicants = root.applicants + 1;
+                            root.set-status("Application submitted ✓", true, false);
+                            root.apply-pressed();
+                        } else {
+                            root.apply-state = 0;
+                            root.applicants = root.applicants - 1;
+                            root.set-status("Application withdrawn", false, true);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ===================== Bottom sheet =====================
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+                root.confirm-hide = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: Theme.surface-2;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.muted;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: "Listing actions";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 700;
+                    }
+                }
+                SheetRow {
+                    label: root.saved ? "Remove bookmark" : "Save listing";
+                    clicked => {
+                        root.saved = !root.saved;
+                        root.set-status(root.saved ? "Saved" : "Removed", root.saved, !root.saved);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Share (" + root.share-label() + ")";
+                    clicked => {
+                        root.share-mode = mod(root.share-mode + 1, 4);
+                        root.set-status(root.share-label(), root.share-mode != 0, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: root.applicants-tracked ? "Stop tracking applicants" : "Track applicant count";
+                    clicked => {
+                        root.applicants-tracked = !root.applicants-tracked;
+                        root.sheet-open = false;
+                    }
+                }
+                Divider { }
+
+                SheetRow {
+                    label: root.confirm-hide ? "Confirm: hide from feed" : "Hide from feed";
+                    destructive: true;
+                    clicked => {
+                        if (root.confirm-hide) {
+                            root.set-status("Hidden", false, true);
+                            root.sheet-open = false;
+                            root.confirm-hide = false;
+                        } else {
+                            root.confirm-hide = true;
+                        }
+                    }
+                }
+                SheetRow {
+                    label: "Report job";
+                    destructive: true;
+                    clicked => {
+                        root.set-status("Reported — thanks", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.sheet-open = false;
+                        root.confirm-hide = false;
+                    }
                 }
             }
         }

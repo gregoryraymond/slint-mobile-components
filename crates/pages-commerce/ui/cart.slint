@@ -32,10 +32,11 @@ component CartLine inherits Rectangle {
     in-out property <int> qty: 1;
     in property <brush> thumb-fill;
     callback removed();
+    callback saved-for-later();
     callback qty-changed();
 
     horizontal-stretch: 1;
-    min-height: 120px;
+    min-height: 140px;
 
     HorizontalLayout {
         padding: Theme.spacing-md;
@@ -71,18 +72,21 @@ component CartLine inherits Rectangle {
                 }
                 // Remove button.
                 Rectangle {
-                    width: 20px;
-                    height: 20px;
+                    width: 28px;
+                    height: 28px;
+                    border-radius: self.width / 2;
+                    background: remove-touch.pressed ? Theme.surface-pressed : transparent;
+                    animate background { duration: Theme.motion-fast; }
                     Image {
                         width: 14px;
                         height: 14px;
                         x: (parent.width - self.width) / 2;
                         y: (parent.height - self.height) / 2;
                         source: @image-url("@mobile-components/icons/close.svg");
-                        colorize: Theme.muted;
+                        colorize: Theme.accent-danger;
                         image-fit: contain;
                     }
-                    TouchArea {
+                    remove-touch := TouchArea {
                         clicked => { root.removed(); }
                     }
                 }
@@ -91,6 +95,35 @@ component CartLine inherits Rectangle {
                 text: root.variant;
                 color: Theme.muted;
                 font-size: Theme.font-size-caption;
+            }
+            // Save-for-later link beneath the variant.
+            HorizontalLayout {
+                alignment: start;
+                Rectangle {
+                    width: 110px;
+                    height: 24px;
+                    border-radius: 12px;
+                    background: save-touch.pressed
+                        ? Theme.surface-pressed
+                        : Theme.surface-2;
+                    animate background { duration: Theme.motion-fast; }
+                    Text {
+                        text: "Save for later";
+                        color: Theme.primary;
+                        font-size: 10px;
+                        font-weight: 800;
+                        letter-spacing: 0.5px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        x: 0;
+                        y: 0;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                    save-touch := TouchArea {
+                        clicked => { root.saved-for-later(); }
+                    }
+                }
             }
             Rectangle { vertical-stretch: 1; }
             HorizontalLayout {
@@ -149,11 +182,234 @@ component TotalRow inherits Rectangle {
 export component CartPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
-    in property <string> total: "$216.40";
     callback back-pressed();
     callback save-for-later-pressed();
     callback promo-applied(string);
+    callback promo-rejected(string);
     callback checkout-pressed();
+    callback order-placed(string /* order-number */);
+
+    // ----- Per-line state -----
+    //
+    // Three slots in the cart. Each line has its own qty, presence,
+    // and saved flag; promoting these to separate `q*` / `p*` / `s*`
+    // properties means each `Stepper`'s `value <=>` binding works
+    // without needing to mutate an array element from a slint
+    // expression (which the language can't do).
+    in-out property <int> q0: 1;
+    in-out property <int> q1: 1;
+    in-out property <int> q2: 2;
+    private property <bool> p0: true;
+    private property <bool> p1: true;
+    private property <bool> p2: true;
+    private property <bool> s0: false;
+    private property <bool> s1: false;
+    private property <bool> s2: false;
+
+    private property <int> price0-cents: 12900;
+    private property <int> price1-cents: 4500;
+    private property <int> price2-cents: 2400;
+
+    // ---- Promo / shipping / checkout state ----
+    in-out property <string> promo-input: "EARLYSPRING";
+    private property <string> applied-promo: "";
+    private property <int> applied-discount-cents: 0;
+    // 0 = Standard, 1 = Express
+    private property <int> shipping-method: 0;
+
+    private property <bool> checkout-done: false;
+    private property <string> order-number: "T-289-4451";
+
+    // ---- Status banner ----
+    private property <string> status-msg: "Tap quantity ± or remove × to update the totals";
+    private property <bool> status-is-success: false;
+    private property <bool> status-is-danger: false;
+
+    // ----- Helpers -----
+    function subtotal-cents() -> int {
+        return (root.p0 ? root.q0 * root.price0-cents : 0)
+            + (root.p1 ? root.q1 * root.price1-cents : 0)
+            + (root.p2 ? root.q2 * root.price2-cents : 0);
+    }
+    function shipping-cents() -> int {
+        // Express is always 19.99; Standard is free over $200, else 8.40.
+        if (root.shipping-method == 1) {
+            return 1999;
+        }
+        if (root.subtotal-cents() >= 20000) {
+            return 0;
+        }
+        return 840;
+    }
+    function tax-cents() -> int {
+        return root.subtotal-cents() * 8 / 100;
+    }
+    function discount-cents() -> int {
+        // Re-check threshold for BIGSAVE so the promo auto-invalidates
+        // if the visitor edits down past $200.
+        if (root.applied-promo == "BIGSAVE" && root.subtotal-cents() < 20000) {
+            return 0;
+        }
+        return root.applied-discount-cents;
+    }
+    function total-cents() -> int {
+        return root.subtotal-cents()
+            + root.shipping-cents()
+            + root.tax-cents()
+            - root.discount-cents();
+    }
+    function items-in-cart() -> int {
+        return (root.p0 ? root.q0 : 0)
+            + (root.p1 ? root.q1 : 0)
+            + (root.p2 ? root.q2 : 0);
+    }
+    function cart-empty() -> bool {
+        return !root.p0 && !root.p1 && !root.p2;
+    }
+    function saved-count() -> int {
+        return (root.s0 ? 1 : 0)
+            + (root.s1 ? 1 : 0)
+            + (root.s2 ? 1 : 0);
+    }
+    function format-cents(c: int) -> string {
+        // Always-two-decimal cents formatting.
+        return "$" + (c / 100)
+            + "."
+            + (mod(c, 100) < 10 ? "0" : "")
+            + mod(c, 100);
+    }
+
+    // ----- Handlers -----
+    function remove-line(i: int) {
+        if (i == 0) { root.p0 = false; }
+        if (i == 1) { root.p1 = false; }
+        if (i == 2) { root.p2 = false; }
+        root.status-msg = "Item removed from cart";
+        root.status-is-success = false;
+        root.status-is-danger = true;
+    }
+    function save-line(i: int) {
+        if (i == 0) {
+            root.p0 = false;
+            root.s0 = true;
+        }
+        if (i == 1) {
+            root.p1 = false;
+            root.s1 = true;
+        }
+        if (i == 2) {
+            root.p2 = false;
+            root.s2 = true;
+        }
+        root.status-msg = "Saved for later";
+        root.status-is-success = true;
+        root.status-is-danger = false;
+        root.save-for-later-pressed();
+    }
+    function restore-saved(i: int) {
+        if (i == 0) {
+            root.p0 = true;
+            root.s0 = false;
+        }
+        if (i == 1) {
+            root.p1 = true;
+            root.s1 = false;
+        }
+        if (i == 2) {
+            root.p2 = true;
+            root.s2 = false;
+        }
+        root.status-msg = "Moved back to cart";
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    function apply-promo() {
+        if (root.promo-input == "SPRING25") {
+            root.applied-promo = "SPRING25";
+            root.applied-discount-cents = 2500;
+            root.status-msg = "Promo SPRING25 applied (-$25.00)";
+            root.status-is-success = true;
+            root.status-is-danger = false;
+            root.promo-applied(root.promo-input);
+        } else if (root.promo-input == "FREE10") {
+            root.applied-promo = "FREE10";
+            root.applied-discount-cents = 1000;
+            root.status-msg = "Promo FREE10 applied (-$10.00)";
+            root.status-is-success = true;
+            root.status-is-danger = false;
+            root.promo-applied(root.promo-input);
+        } else if (root.promo-input == "BIGSAVE") {
+            if (root.subtotal-cents() < 20000) {
+                root.status-msg = "BIGSAVE requires a $200+ subtotal";
+                root.status-is-success = false;
+                root.status-is-danger = true;
+                root.promo-rejected(root.promo-input);
+                return;
+            }
+            root.applied-promo = "BIGSAVE";
+            root.applied-discount-cents = 5000;
+            root.status-msg = "Promo BIGSAVE applied (-$50.00)";
+            root.status-is-success = true;
+            root.status-is-danger = false;
+            root.promo-applied(root.promo-input);
+        } else {
+            root.applied-promo = "";
+            root.applied-discount-cents = 0;
+            root.status-msg = "Promo " + root.promo-input + " not recognised";
+            root.status-is-success = false;
+            root.status-is-danger = true;
+            root.promo-rejected(root.promo-input);
+        }
+    }
+    function clear-promo() {
+        root.applied-promo = "";
+        root.applied-discount-cents = 0;
+        root.promo-input = "";
+        root.status-msg = "Promo cleared";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    function set-shipping(m: int) {
+        root.shipping-method = m;
+        root.status-msg = m == 0
+            ? "Standard shipping selected"
+            : "Express shipping selected";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    function press-checkout() {
+        if (root.cart-empty()) {
+            root.status-msg = "Your cart is empty";
+            root.status-is-success = false;
+            root.status-is-danger = true;
+            return;
+        }
+        root.checkout-done = true;
+        root.status-msg = "Order placed -- confirmation #" + root.order-number;
+        root.status-is-success = true;
+        root.status-is-danger = false;
+        root.checkout-pressed();
+        root.order-placed(root.order-number);
+    }
+    function press-reset() {
+        root.checkout-done = false;
+        root.p0 = true;
+        root.p1 = true;
+        root.p2 = true;
+        root.s0 = false;
+        root.s1 = false;
+        root.s2 = false;
+        root.q0 = 1;
+        root.q1 = 1;
+        root.q2 = 2;
+        root.applied-promo = "";
+        root.applied-discount-cents = 0;
+        root.promo-input = "EARLYSPRING";
+        root.shipping-method = 0;
+        root.status-msg = "Cart reset";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
 
     background: Theme.background;
 
@@ -161,122 +417,542 @@ export component CartPage inherits Window {
         spacing: 0;
 
         AppBar {
-            title: "CART · 3 ITEMS";
+            title: "CART · " + root.items-in-cart() + " ITEM" + (root.items-in-cart() == 1 ? "" : "S");
             title-style: HeadingStyle.caps-tight;
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             trailing-icon: @image-url("@mobile-components/icons/queue.svg");
             leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.save-for-later-pressed(); }
+            trailing-pressed => { root.press-reset(); }
         }
 
-        // The line items + promo + totals card can overflow a single
-        // 892-px screen once the cart grows, so the middle region scrolls
-        // between the pinned AppBar and the sticky checkout footer below.
-        ScrollView {
+        // ----- Status banner -----
+        Rectangle {
+            background: root.status-is-danger ? Theme.accent-danger
+                : root.status-is-success ? Theme.accent-success
+                : Theme.surface-2;
+            height: 32px;
+            animate background { duration: Theme.motion-fast; }
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                Text {
+                    text: root.status-msg;
+                    color: (root.status-is-danger || root.status-is-success)
+                        ? Theme.on-primary
+                        : Theme.on-surface;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+            }
+        }
+
+        // ----- Checkout-success panel (replaces the cart) -----
+        if root.checkout-done: VerticalLayout {
+            vertical-stretch: 1;
+            padding: Theme.spacing-lg;
+            spacing: Theme.spacing-md;
+            alignment: center;
+
+            HorizontalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 96px;
+                    height: 96px;
+                    border-radius: self.width / 2;
+                    background: @linear-gradient(135deg, Theme.accent-success 0%, #1a8a4a 100%);
+                    Text {
+                        text: "✓";
+                        color: Theme.on-primary;
+                        font-size: 48px;
+                        font-weight: 800;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        x: 0;
+                        y: 0;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                }
+            }
+            Heading {
+                text: "Order placed";
+                style: HeadingStyle.serif-display;
+                color: Theme.on-background;
+                horizontal-alignment: center;
+            }
+            Text {
+                text: "Confirmation #" + root.order-number + "\nWe'll email a receipt to you@example.com.";
+                color: Theme.muted;
+                font-size: Theme.font-size-body;
+                horizontal-alignment: center;
+                wrap: word-wrap;
+            }
+            MobileButton {
+                text: "Start a new cart";
+                primary: true;
+                clicked => { root.press-reset(); }
+            }
+        }
+
+        // ----- Cart contents (hidden after checkout) -----
+        if !root.checkout-done: ScrollView {
             vertical-stretch: 1;
 
             VerticalLayout {
                 spacing: 0;
 
-        VerticalLayout {
-            padding-top: 0;
-            spacing: 0;
+                // Empty-cart hero -----------------------------------------
+                if root.cart-empty(): VerticalLayout {
+                    padding: Theme.spacing-xl;
+                    spacing: Theme.spacing-md;
+                    alignment: center;
+                    HorizontalLayout {
+                        alignment: center;
+                        Rectangle {
+                            width: 88px;
+                            height: 88px;
+                            border-radius: 24px;
+                            background: Theme.surface-1;
+                            border-width: 1px;
+                            border-color: Theme.outline;
+                            Text {
+                                text: "🛒";
+                                color: Theme.muted;
+                                font-size: 44px;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                x: 0;
+                                y: 0;
+                                width: parent.width;
+                                height: parent.height;
+                            }
+                        }
+                    }
+                    Text {
+                        text: "Your cart is empty";
+                        color: Theme.on-background;
+                        font-size: Theme.font-size-body-large;
+                        font-weight: 700;
+                        horizontal-alignment: center;
+                    }
+                    Text {
+                        text: root.saved-count() > 0
+                            ? "You have " + root.saved-count() + " item" + (root.saved-count() == 1 ? "" : "s") + " saved for later below."
+                            : "Tap Reset to restore the demo cart.";
+                        color: Theme.muted;
+                        font-size: Theme.font-size-body;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+                    MobileButton {
+                        text: "Reset demo cart";
+                        primary: false;
+                        clicked => { root.press-reset(); }
+                    }
+                }
 
-            CartLine {
-                name: "Houdini windbreaker";
-                variant: "Slate blue · M";
-                price: "$129.00";
-                qty: 1;
-                thumb-fill: @linear-gradient(135deg, #506b8e 0%, #1f2a3b 100%);
-            }
-            Divider { }
-            CartLine {
-                name: "Capilene base layer";
-                variant: "Olive · L";
-                price: "$45.00";
-                qty: 1;
-                thumb-fill: @linear-gradient(135deg, #6b8e50 0%, #2a3b1f 100%);
-            }
-            Divider { }
-            CartLine {
-                name: "Trail crew socks";
-                variant: "Charcoal · 3-pack";
-                price: "$24.00";
-                qty: 2;
-                thumb-fill: @linear-gradient(135deg, #3a3a3a 0%, #1a1a1a 100%);
-            }
-        }
+                // Active cart lines ---------------------------------------
+                if !root.cart-empty(): VerticalLayout {
+                    padding-top: 0;
+                    spacing: 0;
 
-        VerticalLayout {
-            padding-left: Theme.spacing-md;
-            padding-right: Theme.spacing-md;
-            padding-top: Theme.spacing-md;
-            spacing: Theme.spacing-md;
+                    if root.p0: CartLine {
+                        name: "Houdini windbreaker";
+                        variant: "Slate blue · M";
+                        price: root.format-cents(root.q0 * root.price0-cents);
+                        qty <=> root.q0;
+                        thumb-fill: @linear-gradient(135deg, #506b8e 0%, #1f2a3b 100%);
+                        removed => { root.remove-line(0); }
+                        saved-for-later => { root.save-line(0); }
+                    }
+                    if root.p0 && (root.p1 || root.p2): Divider { }
+                    if root.p1: CartLine {
+                        name: "Capilene base layer";
+                        variant: "Olive · L";
+                        price: root.format-cents(root.q1 * root.price1-cents);
+                        qty <=> root.q1;
+                        thumb-fill: @linear-gradient(135deg, #6b8e50 0%, #2a3b1f 100%);
+                        removed => { root.remove-line(1); }
+                        saved-for-later => { root.save-line(1); }
+                    }
+                    if root.p1 && root.p2: Divider { }
+                    if root.p2: CartLine {
+                        name: "Trail crew socks";
+                        variant: "Charcoal · 3-pack";
+                        price: root.format-cents(root.q2 * root.price2-cents);
+                        qty <=> root.q2;
+                        thumb-fill: @linear-gradient(135deg, #3a3a3a 0%, #1a1a1a 100%);
+                        removed => { root.remove-line(2); }
+                        saved-for-later => { root.save-line(2); }
+                    }
+                }
 
-            // Promo code row.
-            Rectangle {
-                background: Theme.surface-1;
-                border-radius: Theme.radius-md;
-                height: 72px;
-                drop-shadow-blur: Theme.elevation-1-blur;
-                drop-shadow-color: Theme.elevation-1-color;
-                drop-shadow-offset-y: Theme.elevation-1-y;
-                HorizontalLayout {
-                    padding: Theme.spacing-sm;
+                // Promo + shipping + totals (always visible while there's
+                // anything in the cart, so the visitor can experiment) ----
+                if !root.cart-empty(): VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-md;
+                    spacing: Theme.spacing-md;
+
+                    // Promo code row.
+                    Rectangle {
+                        background: Theme.surface-1;
+                        border-radius: Theme.radius-md;
+                        height: 72px;
+                        drop-shadow-blur: Theme.elevation-1-blur;
+                        drop-shadow-color: Theme.elevation-1-color;
+                        drop-shadow-offset-y: Theme.elevation-1-y;
+                        HorizontalLayout {
+                            padding: Theme.spacing-sm;
+                            spacing: Theme.spacing-sm;
+                            alignment: stretch;
+                            VerticalLayout {
+                                alignment: center;
+                                horizontal-stretch: 1;
+                                TextField {
+                                    label: "";
+                                    placeholder: "SPRING25 · FREE10 · BIGSAVE";
+                                    text <=> root.promo-input;
+                                }
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                MobileButton {
+                                    text: root.applied-promo != ""
+                                        ? "Clear"
+                                        : "Apply";
+                                    primary: false;
+                                    horizontal-stretch: 0;
+                                    min-width: 84px;
+                                    clicked => {
+                                        if (root.applied-promo != "") {
+                                            root.clear-promo();
+                                        } else {
+                                            root.apply-promo();
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Shipping method picker (segmented control).
+                    HorizontalLayout {
+                        spacing: 0;
+                        Rectangle {
+                            horizontal-stretch: 1;
+                            height: 44px;
+                            border-top-left-radius: Theme.radius-md;
+                            border-bottom-left-radius: Theme.radius-md;
+                            background: root.shipping-method == 0
+                                ? Theme.primary
+                                : (std-touch.pressed ? Theme.surface-pressed : Theme.surface-2);
+                            border-width: 1px;
+                            border-color: Theme.outline;
+                            animate background { duration: Theme.motion-fast; }
+                            VerticalLayout {
+                                padding: 4px;
+                                Text {
+                                    text: "Standard · "
+                                        + (root.subtotal-cents() >= 20000
+                                            ? "Free"
+                                            : "$8.40");
+                                    color: root.shipping-method == 0
+                                        ? Theme.on-primary
+                                        : Theme.on-surface;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 700;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    horizontal-stretch: 1;
+                                }
+                                Text {
+                                    text: "3-5 days";
+                                    color: root.shipping-method == 0
+                                        ? Theme.on-primary
+                                        : Theme.muted;
+                                    font-size: 9px;
+                                    font-weight: 700;
+                                    horizontal-alignment: center;
+                                }
+                            }
+                            std-touch := TouchArea {
+                                clicked => { root.set-shipping(0); }
+                            }
+                        }
+                        Rectangle {
+                            horizontal-stretch: 1;
+                            height: 44px;
+                            border-top-right-radius: Theme.radius-md;
+                            border-bottom-right-radius: Theme.radius-md;
+                            background: root.shipping-method == 1
+                                ? Theme.primary
+                                : (exp-touch.pressed ? Theme.surface-pressed : Theme.surface-2);
+                            border-width: 1px;
+                            border-color: Theme.outline;
+                            animate background { duration: Theme.motion-fast; }
+                            VerticalLayout {
+                                padding: 4px;
+                                Text {
+                                    text: "Express · $19.99";
+                                    color: root.shipping-method == 1
+                                        ? Theme.on-primary
+                                        : Theme.on-surface;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 700;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                                Text {
+                                    text: "Next day";
+                                    color: root.shipping-method == 1
+                                        ? Theme.on-primary
+                                        : Theme.muted;
+                                    font-size: 9px;
+                                    font-weight: 700;
+                                    horizontal-alignment: center;
+                                }
+                            }
+                            exp-touch := TouchArea {
+                                clicked => { root.set-shipping(1); }
+                            }
+                        }
+                    }
+
+                    // Totals card.
+                    Rectangle {
+                        background: Theme.surface-1;
+                        border-radius: Theme.radius-md;
+                        drop-shadow-blur: Theme.elevation-1-blur;
+                        drop-shadow-color: Theme.elevation-1-color;
+                        drop-shadow-offset-y: Theme.elevation-1-y;
+
+                        VerticalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-xs;
+                            TotalRow {
+                                label: "Subtotal";
+                                value: root.format-cents(root.subtotal-cents());
+                            }
+                            TotalRow {
+                                label: root.shipping-method == 0
+                                    ? "Shipping (Standard, 3-5 days)"
+                                    : "Shipping (Express, next day)";
+                                value: root.shipping-cents() == 0
+                                    ? "FREE"
+                                    : root.format-cents(root.shipping-cents());
+                            }
+                            TotalRow {
+                                label: "Estimated tax (8%)";
+                                value: root.format-cents(root.tax-cents());
+                            }
+                            if root.discount-cents() > 0: TotalRow {
+                                label: "Promo · " + root.applied-promo;
+                                value: "-" + root.format-cents(root.discount-cents());
+                            }
+                            Divider { }
+                            TotalRow {
+                                label: "Total";
+                                value: root.format-cents(root.total-cents());
+                                emphasize: true;
+                            }
+                        }
+                    }
+                }
+
+                // ---- Saved-for-later list (scrollable inline) ----
+                if root.saved-count() > 0: SectionHeader {
+                    text: "SAVED FOR LATER · " + root.saved-count();
+                }
+                if root.saved-count() > 0: VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-bottom: Theme.spacing-md;
                     spacing: Theme.spacing-sm;
-                    alignment: stretch;
-                    VerticalLayout {
-                        alignment: center;
-                        horizontal-stretch: 1;
-                        TextField {
-                            label: "";
-                            placeholder: "Promo code";
-                            text: "EARLYSPRING";
+                    if root.s0: Rectangle {
+                        height: 64px;
+                        background: Theme.surface-1;
+                        border-radius: Theme.radius-md;
+                        HorizontalLayout {
+                            padding: Theme.spacing-sm;
+                            spacing: Theme.spacing-sm;
+                            Rectangle {
+                                width: 48px;
+                                height: 48px;
+                                border-radius: Theme.radius-sm;
+                                background: @linear-gradient(135deg, #506b8e 0%, #1f2a3b 100%);
+                            }
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                alignment: center;
+                                Text {
+                                    text: "Houdini windbreaker";
+                                    color: Theme.on-surface;
+                                    font-size: Theme.font-size-body;
+                                    font-weight: 700;
+                                }
+                                Text {
+                                    text: "Slate blue · M · " + root.format-cents(root.price0-cents);
+                                    color: Theme.muted;
+                                    font-size: Theme.font-size-caption;
+                                }
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: 96px;
+                                    height: 32px;
+                                    border-radius: 16px;
+                                    background: restore0.pressed
+                                        ? Theme.primary-pressed
+                                        : Theme.primary;
+                                    animate background { duration: Theme.motion-fast; }
+                                    Text {
+                                        text: "Move back";
+                                        color: Theme.on-primary;
+                                        font-size: 11px;
+                                        font-weight: 800;
+                                        letter-spacing: 0.5px;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                        x: 0;
+                                        y: 0;
+                                        width: parent.width;
+                                        height: parent.height;
+                                    }
+                                    restore0 := TouchArea {
+                                        clicked => { root.restore-saved(0); }
+                                    }
+                                }
+                            }
                         }
                     }
-                    VerticalLayout {
-                        alignment: center;
-                        MobileButton {
-                            text: "Apply";
-                            primary: false;
-                            horizontal-stretch: 0;
-                            min-width: 84px;
-                            clicked => { root.promo-applied(""); }
+                    if root.s1: Rectangle {
+                        height: 64px;
+                        background: Theme.surface-1;
+                        border-radius: Theme.radius-md;
+                        HorizontalLayout {
+                            padding: Theme.spacing-sm;
+                            spacing: Theme.spacing-sm;
+                            Rectangle {
+                                width: 48px;
+                                height: 48px;
+                                border-radius: Theme.radius-sm;
+                                background: @linear-gradient(135deg, #6b8e50 0%, #2a3b1f 100%);
+                            }
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                alignment: center;
+                                Text {
+                                    text: "Capilene base layer";
+                                    color: Theme.on-surface;
+                                    font-size: Theme.font-size-body;
+                                    font-weight: 700;
+                                }
+                                Text {
+                                    text: "Olive · L · " + root.format-cents(root.price1-cents);
+                                    color: Theme.muted;
+                                    font-size: Theme.font-size-caption;
+                                }
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: 96px;
+                                    height: 32px;
+                                    border-radius: 16px;
+                                    background: restore1.pressed
+                                        ? Theme.primary-pressed
+                                        : Theme.primary;
+                                    animate background { duration: Theme.motion-fast; }
+                                    Text {
+                                        text: "Move back";
+                                        color: Theme.on-primary;
+                                        font-size: 11px;
+                                        font-weight: 800;
+                                        letter-spacing: 0.5px;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                        x: 0;
+                                        y: 0;
+                                        width: parent.width;
+                                        height: parent.height;
+                                    }
+                                    restore1 := TouchArea {
+                                        clicked => { root.restore-saved(1); }
+                                    }
+                                }
+                            }
                         }
                     }
-                }
-            }
-
-            // Totals card.
-            Rectangle {
-                background: Theme.surface-1;
-                border-radius: Theme.radius-md;
-                drop-shadow-blur: Theme.elevation-1-blur;
-                drop-shadow-color: Theme.elevation-1-color;
-                drop-shadow-offset-y: Theme.elevation-1-y;
-                height: 192px;
-
-                VerticalLayout {
-                    padding: Theme.spacing-md;
-                    spacing: Theme.spacing-xs;
-                    TotalRow { label: "Subtotal"; value: "$222.00"; }
-                    TotalRow { label: "Shipping (Standard, 3–5 days)"; value: "$8.40"; }
-                    TotalRow { label: "Estimated tax"; value: "$18.00"; }
-                    TotalRow { label: "Promo · EARLYSPRING"; value: "−$32.00"; }
-                    Divider { }
-                    TotalRow {
-                        label: "Total";
-                        value: "$216.40";
-                        emphasize: true;
+                    if root.s2: Rectangle {
+                        height: 64px;
+                        background: Theme.surface-1;
+                        border-radius: Theme.radius-md;
+                        HorizontalLayout {
+                            padding: Theme.spacing-sm;
+                            spacing: Theme.spacing-sm;
+                            Rectangle {
+                                width: 48px;
+                                height: 48px;
+                                border-radius: Theme.radius-sm;
+                                background: @linear-gradient(135deg, #3a3a3a 0%, #1a1a1a 100%);
+                            }
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                alignment: center;
+                                Text {
+                                    text: "Trail crew socks";
+                                    color: Theme.on-surface;
+                                    font-size: Theme.font-size-body;
+                                    font-weight: 700;
+                                }
+                                Text {
+                                    text: "Charcoal · 3-pack · " + root.format-cents(root.price2-cents);
+                                    color: Theme.muted;
+                                    font-size: Theme.font-size-caption;
+                                }
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: 96px;
+                                    height: 32px;
+                                    border-radius: 16px;
+                                    background: restore2.pressed
+                                        ? Theme.primary-pressed
+                                        : Theme.primary;
+                                    animate background { duration: Theme.motion-fast; }
+                                    Text {
+                                        text: "Move back";
+                                        color: Theme.on-primary;
+                                        font-size: 11px;
+                                        font-weight: 800;
+                                        letter-spacing: 0.5px;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                        x: 0;
+                                        y: 0;
+                                        width: parent.width;
+                                        height: parent.height;
+                                    }
+                                    restore2 := TouchArea {
+                                        clicked => { root.restore-saved(2); }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
-            }   // end inner VerticalLayout
-        }       // end ScrollView
 
-        // Sticky checkout footer.
-        Rectangle {
+        // ----- Sticky checkout footer (hidden during success state) -----
+        if !root.checkout-done: Rectangle {
             background: Theme.surface-1;
             drop-shadow-blur: Theme.elevation-2-blur;
             drop-shadow-color: Theme.elevation-2-color;
@@ -285,9 +961,12 @@ export component CartPage inherits Window {
             HorizontalLayout {
                 padding: Theme.spacing-md;
                 MobileButton {
-                    text: "Checkout · " + root.total;
+                    text: root.cart-empty()
+                        ? "Cart is empty"
+                        : "Checkout · " + root.format-cents(root.total-cents());
                     tone: Tone.info;
-                    clicked => { root.checkout-pressed(); }
+                    enabled: !root.cart-empty();
+                    clicked => { root.press-checkout(); }
                 }
             }
         }

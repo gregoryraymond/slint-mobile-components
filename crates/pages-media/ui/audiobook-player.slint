@@ -1,24 +1,26 @@
 // AudiobookPlayerPage
 // =====================================================================
 //
-// Audiobook now-playing screen — Audible / Libby style. Distinct from
-// `PodcastPage` (episode-oriented now-playing) and `MusicLibraryPage`
-// (browse grid). Demonstrates a long-form-audio surface:
+// Audiobook now-playing screen — Audible / Libby style.
 //
-//   - Large cover art with a soft gradient frame.
-//   - Title + author + the current chapter line.
-//   - A chapter scrubber: elapsed / remaining + a progress track.
-//   - Transport row: back-15s / skip-chapter / big play-pause /
-//     skip-chapter / forward-30s.
-//   - A pill row: playback speed + sleep timer.
-//   - A scrollable chapter list with the active chapter highlighted.
+// Interactive behaviour
+//   - Timer ticks elapsed-sec while playing. Progress + scrubber +
+//     elapsed/remaining labels derive from it.
+//   - Play/pause, skip-back-15, skip-forward-30, prev/next chapter all
+//     mutate state.
+//   - Chapter rows are tappable to jump (sets current-chapter-idx,
+//     resets elapsed to 0). Finished = `i < current-chapter-idx`.
+//   - Speed pill opens a bottom sheet with 5 presets (0.75× → 2×).
+//   - Sleep pill opens a bottom sheet with 4 presets (Off / 10 / 20 /
+//     30 min). The sleep countdown decrements via the same Timer and
+//     auto-pauses playback when it hits 0.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { Divider } from "@mobile-components/divider.slint";
+import { MobileButton } from "@mobile-components/button.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
 
-// One chapter row.
 component ChapterRow inherits Rectangle {
     in property <string> index;
     in property <string> title;
@@ -110,7 +112,6 @@ component ChapterRow inherits Rectangle {
     }
 }
 
-// A round transport button. `kind`: 0 ghost / 1 filled-primary.
 component TransportButton inherits Rectangle {
     in property <image> icon;
     in property <length> diameter: 48px;
@@ -141,7 +142,6 @@ component TransportButton inherits Rectangle {
     }
 }
 
-// A small rounded info pill (speed / sleep timer).
 component InfoPill inherits Rectangle {
     in property <image> icon;
     in property <string> label;
@@ -160,13 +160,6 @@ component InfoPill inherits Rectangle {
     HorizontalLayout {
         alignment: center;
         spacing: 6px;
-        // Each child wrapped in a `VerticalLayout { alignment: center; }`
-        // so both the icon and the label sit at the same vertical
-        // midline. `vertical-alignment` on Image/Text only centers the
-        // glyph inside its own bounding box — it doesn't align two
-        // different children to each other inside a HorizontalLayout
-        // (HorizontalLayout has no `vertical-alignment` knob). Without
-        // these wrappers the icon was offset relative to the label.
         VerticalLayout {
             alignment: center;
             Image {
@@ -197,13 +190,7 @@ export component AudiobookPlayerPage inherits Window {
     preferred-height: 892px;
     in property <string> page-title: "The Light Between Tides";
     in property <string> author: "Marisol Vega";
-    in property <string> chapter: "Chapter 7 · The Long Crossing";
-    in property <string> elapsed: "12:48";
-    in property <string> remaining: "-18:32";
-    in property <float> progress: 0.41;
     in-out property <bool> playing: true;
-    in property <string> speed: "1.25×";
-    in property <string> sleep-timer: "20 min";
     callback back-pressed();
     callback queue-pressed();
     callback toggle-play();
@@ -214,6 +201,204 @@ export component AudiobookPlayerPage inherits Window {
     callback speed-pressed();
     callback sleep-pressed();
     callback chapter-pressed(string);
+    callback chapter-changed(int);
+    callback speed-changed(string);
+    callback sleep-changed(string);
+
+    // ----- Interactive state -----
+    private property <int> elapsed-sec: 768; // 12:48
+    private property <int> current-chapter-idx: 1; // 0..3
+    private property <int> speed-idx: 2; // 0..4 (1.25×)
+    private property <int> sleep-idx: 2; // 0=off 1=10 2=20 3=30 min
+    private property <int> sleep-tick: 0; // sub-minute counter
+    private property <int> sleep-remaining-min: 20;
+    private property <bool> speed-sheet-open: false;
+    private property <bool> sleep-sheet-open: false;
+    private property <int> queue-count: 0;
+    private property <string> status-msg: "Tap a chapter to jump · use the pills to change speed / sleep timer";
+    private property <bool> status-is-success: false;
+    private property <bool> status-is-danger: false;
+
+    // ----- Timer drives elapsed + sleep countdown. -----
+    Timer {
+        interval: 1s;
+        running: root.playing;
+        triggered => {
+            if (root.elapsed-sec < root.chapter-duration(root.current-chapter-idx)) {
+                root.elapsed-sec = root.elapsed-sec + 1;
+            }
+            // Sleep countdown — once per 60 ticks, decrement remaining minutes.
+            if (root.sleep-idx > 0 && root.sleep-remaining-min > 0) {
+                root.sleep-tick = root.sleep-tick + 1;
+                if (root.sleep-tick >= 60) {
+                    root.sleep-tick = 0;
+                    root.sleep-remaining-min = root.sleep-remaining-min - 1;
+                    if (root.sleep-remaining-min == 0) {
+                        root.playing = false;
+                    }
+                }
+            }
+        }
+    }
+
+    // ----- Chapter metadata -----
+    function chapter-title(i: int) -> string {
+        if (i == 0) { return "The Harbour Master"; }
+        if (i == 1) { return "The Long Crossing"; }
+        if (i == 2) { return "Salt and Iron"; }
+        return "What the Lighthouse Knew";
+    }
+    function chapter-duration(i: int) -> int {
+        if (i == 0) { return 1450; } // 24:10
+        if (i == 1) { return 1880; } // 31:20
+        if (i == 2) { return 1665; } // 27:45
+        return 1742; // 29:02
+    }
+    function chapter-duration-display(i: int) -> string {
+        return root.fmt-time(root.chapter-duration(i));
+    }
+    function current-chapter-display() -> string {
+        return "Chapter " + (root.current-chapter-idx + 6) + " · "
+            + root.chapter-title(root.current-chapter-idx);
+    }
+
+    // ----- Helpers -----
+    function fmt-time(t: int) -> string {
+        return floor(t / 60) + ":"
+            + (mod(t, 60) < 10 ? "0" + mod(t, 60) : "" + mod(t, 60));
+    }
+    function remaining-sec() -> int {
+        return max(0, root.chapter-duration(root.current-chapter-idx) - root.elapsed-sec);
+    }
+    function progress() -> float {
+        return root.chapter-duration(root.current-chapter-idx) == 0
+            ? 0.0
+            : root.elapsed-sec * 1.0 / root.chapter-duration(root.current-chapter-idx);
+    }
+    function speed-label(i: int) -> string {
+        if (i == 0) { return "0.75×"; }
+        if (i == 1) { return "1×"; }
+        if (i == 2) { return "1.25×"; }
+        if (i == 3) { return "1.5×"; }
+        return "2×";
+    }
+    function sleep-label(i: int) -> string {
+        if (i == 0) { return "Off"; }
+        if (i == 1) { return "10 min"; }
+        if (i == 2) { return "20 min"; }
+        return "30 min";
+    }
+    function sleep-minutes(i: int) -> int {
+        if (i == 0) { return 0; }
+        if (i == 1) { return 10; }
+        if (i == 2) { return 20; }
+        return 30;
+    }
+
+    // ----- Mutations -----
+    public function tap-play() {
+        root.playing = !root.playing;
+        root.toggle-play();
+        root.status-msg = root.playing
+            ? "Playing · " + root.chapter-title(root.current-chapter-idx)
+            : "Paused · " + root.fmt-time(root.elapsed-sec);
+        root.status-is-success = root.playing;
+        root.status-is-danger = false;
+    }
+    public function tap-back-15() {
+        root.elapsed-sec = max(0, root.elapsed-sec - 15);
+        root.back-15();
+        root.status-msg = "−15 s · " + root.fmt-time(root.elapsed-sec);
+        root.status-is-success = false;
+        root.status-is-danger = true;
+    }
+    public function tap-forward-30() {
+        root.elapsed-sec = min(
+            root.chapter-duration(root.current-chapter-idx),
+            root.elapsed-sec + 30);
+        root.forward-30();
+        root.status-msg = "+30 s · " + root.fmt-time(root.elapsed-sec);
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    public function tap-prev-chapter() {
+        if (root.current-chapter-idx > 0) {
+            root.current-chapter-idx = root.current-chapter-idx - 1;
+            root.elapsed-sec = 0;
+        }
+        root.prev-chapter();
+        root.chapter-changed(root.current-chapter-idx);
+        root.status-msg = "Chapter · " + root.chapter-title(root.current-chapter-idx);
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function tap-next-chapter() {
+        if (root.current-chapter-idx < 3) {
+            root.current-chapter-idx = root.current-chapter-idx + 1;
+            root.elapsed-sec = 0;
+        }
+        root.next-chapter();
+        root.chapter-changed(root.current-chapter-idx);
+        root.status-msg = "Chapter · " + root.chapter-title(root.current-chapter-idx);
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    public function tap-chapter(i: int, label: string) {
+        root.current-chapter-idx = i;
+        root.elapsed-sec = 0;
+        root.chapter-pressed(label);
+        root.chapter-changed(i);
+        root.status-msg = "Jumped to " + root.chapter-title(i);
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    public function open-speed() {
+        root.speed-sheet-open = true;
+        root.speed-pressed();
+        root.status-msg = "Pick a playback speed";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function close-speed() { root.speed-sheet-open = false; }
+    public function pick-speed(i: int) {
+        root.speed-idx = i;
+        root.speed-changed(root.speed-label(i));
+        root.status-msg = "Speed · " + root.speed-label(i);
+        root.status-is-success = true;
+        root.status-is-danger = false;
+        root.speed-sheet-open = false;
+    }
+    public function open-sleep() {
+        root.sleep-sheet-open = true;
+        root.sleep-pressed();
+        root.status-msg = "Pick a sleep timer";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function close-sleep() { root.sleep-sheet-open = false; }
+    public function pick-sleep(i: int) {
+        root.sleep-idx = i;
+        root.sleep-remaining-min = root.sleep-minutes(i);
+        root.sleep-tick = 0;
+        root.sleep-changed(root.sleep-label(i));
+        root.status-msg = "Sleep timer · " + root.sleep-label(i);
+        root.status-is-success = i > 0;
+        root.status-is-danger = i == 0;
+        root.sleep-sheet-open = false;
+    }
+    public function tap-queue() {
+        root.queue-count = root.queue-count + 1;
+        root.queue-pressed();
+        root.status-msg = "Queue opened (#" + root.queue-count + ")";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function tap-back() {
+        root.back-pressed();
+        root.status-msg = "Back · returning to library";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
 
     background: Theme.background;
 
@@ -225,8 +410,32 @@ export component AudiobookPlayerPage inherits Window {
             title-style: HeadingStyle.serif-light;
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             trailing-icon: @image-url("@mobile-components/icons/queue.svg");
-            leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.queue-pressed(); }
+            leading-pressed => { root.tap-back(); }
+            trailing-pressed => { root.tap-queue(); }
+        }
+
+        // ----- Status banner ---------------------------------------
+        Rectangle {
+            height: 32px;
+            background: root.status-is-danger ? Theme.accent-danger
+                : root.status-is-success ? Theme.accent-success
+                : Theme.surface-2;
+            animate background { duration: Theme.motion-fast; }
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                Text {
+                    text: root.status-msg;
+                    color: (root.status-is-danger || root.status-is-success)
+                        ? Theme.on-primary
+                        : Theme.on-surface;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+            }
         }
 
         VerticalLayout {
@@ -234,7 +443,6 @@ export component AudiobookPlayerPage inherits Window {
             spacing: Theme.spacing-md;
             alignment: start;
 
-            // Cover art.
             HorizontalLayout {
                 alignment: center;
                 Rectangle {
@@ -259,7 +467,6 @@ export component AudiobookPlayerPage inherits Window {
                 }
             }
 
-            // Title block.
             VerticalLayout {
                 spacing: Theme.spacing-xs;
                 Heading {
@@ -280,7 +487,7 @@ export component AudiobookPlayerPage inherits Window {
                     horizontal-alignment: center;
                 }
                 Text {
-                    text: root.chapter;
+                    text: root.current-chapter-display();
                     color: Theme.primary;
                     font-family: "Inter";
                     font-size: 11px;
@@ -290,7 +497,6 @@ export component AudiobookPlayerPage inherits Window {
                 }
             }
 
-            // Scrubber.
             VerticalLayout {
                 spacing: 6px;
                 Rectangle {
@@ -299,14 +505,13 @@ export component AudiobookPlayerPage inherits Window {
                     background: Theme.surface-variant;
                     Rectangle {
                         x: 0;
-                        width: parent.width * root.progress;
+                        width: parent.width * root.progress();
                         height: parent.height;
                         border-radius: 3px;
                         background: Theme.primary;
                     }
-                    // Thumb.
                     Rectangle {
-                        x: parent.width * root.progress - self.width / 2;
+                        x: parent.width * root.progress() - self.width / 2;
                         y: (parent.height - self.height) / 2;
                         width: 14px;
                         height: 14px;
@@ -318,14 +523,14 @@ export component AudiobookPlayerPage inherits Window {
                 }
                 HorizontalLayout {
                     Text {
-                        text: root.elapsed;
+                        text: root.fmt-time(root.elapsed-sec);
                         color: Theme.muted;
                         font-size: Theme.font-size-caption;
                         font-weight: 600;
                         horizontal-stretch: 1;
                     }
                     Text {
-                        text: root.remaining;
+                        text: "-" + root.fmt-time(root.remaining-sec());
                         color: Theme.muted;
                         font-size: Theme.font-size-caption;
                         font-weight: 600;
@@ -333,18 +538,17 @@ export component AudiobookPlayerPage inherits Window {
                 }
             }
 
-            // Transport row.
             HorizontalLayout {
                 alignment: space-around;
                 TransportButton {
                     icon: @image-url("@mobile-components/icons/skip-back.svg");
                     diameter: 44px;
-                    clicked => { root.back-15(); }
+                    clicked => { root.tap-back-15(); }
                 }
                 TransportButton {
                     icon: @image-url("@mobile-components/icons/skip-back.svg");
                     diameter: 52px;
-                    clicked => { root.prev-chapter(); }
+                    clicked => { root.tap-prev-chapter(); }
                 }
                 TransportButton {
                     icon: root.playing
@@ -352,35 +556,33 @@ export component AudiobookPlayerPage inherits Window {
                         : @image-url("@mobile-components/icons/play.svg");
                     diameter: 72px;
                     kind: 1;
-                    clicked => {
-                        root.playing = !root.playing;
-                        root.toggle-play();
-                    }
+                    clicked => { root.tap-play(); }
                 }
                 TransportButton {
                     icon: @image-url("@mobile-components/icons/skip-forward.svg");
                     diameter: 52px;
-                    clicked => { root.next-chapter(); }
+                    clicked => { root.tap-next-chapter(); }
                 }
                 TransportButton {
                     icon: @image-url("@mobile-components/icons/skip-forward.svg");
                     diameter: 44px;
-                    clicked => { root.forward-30(); }
+                    clicked => { root.tap-forward-30(); }
                 }
             }
 
-            // Pill row.
             HorizontalLayout {
                 spacing: Theme.spacing-sm;
                 InfoPill {
                     icon: @image-url("@mobile-components/icons/play.svg");
-                    label: "Speed " + root.speed;
-                    clicked => { root.speed-pressed(); }
+                    label: "Speed " + root.speed-label(root.speed-idx);
+                    clicked => { root.open-speed(); }
                 }
                 InfoPill {
                     icon: @image-url("@mobile-components/icons/bell.svg");
-                    label: "Sleep " + root.sleep-timer;
-                    clicked => { root.sleep-pressed(); }
+                    label: root.sleep-idx == 0
+                        ? "Sleep Off"
+                        : "Sleep " + root.sleep-remaining-min + " min";
+                    clicked => { root.open-sleep(); }
                 }
             }
         }
@@ -397,7 +599,7 @@ export component AudiobookPlayerPage inherits Window {
                 VerticalLayout {
                     alignment: center;
                     Text {
-                        text: "CHAPTERS";
+                        text: "CHAPTERS · " + root.current-chapter-idx + " of 4 done";
                         color: Theme.muted;
                         font-family: "Fraunces 9pt";
                         font-size: 11px;
@@ -411,33 +613,208 @@ export component AudiobookPlayerPage inherits Window {
         ChapterRow {
             index: "6";
             title: "The Harbour Master";
-            duration: "24:10";
-            finished: true;
-            clicked => { root.chapter-pressed("6"); }
+            duration: root.chapter-duration-display(0);
+            finished: 0 < root.current-chapter-idx;
+            active: root.current-chapter-idx == 0;
+            clicked => { root.tap-chapter(0, "6"); }
         }
         Divider { }
         ChapterRow {
             index: "7";
             title: "The Long Crossing";
-            duration: "31:20";
-            active: true;
-            clicked => { root.chapter-pressed("7"); }
+            duration: root.chapter-duration-display(1);
+            finished: 1 < root.current-chapter-idx;
+            active: root.current-chapter-idx == 1;
+            clicked => { root.tap-chapter(1, "7"); }
         }
         Divider { }
         ChapterRow {
             index: "8";
             title: "Salt and Iron";
-            duration: "27:45";
-            clicked => { root.chapter-pressed("8"); }
+            duration: root.chapter-duration-display(2);
+            finished: 2 < root.current-chapter-idx;
+            active: root.current-chapter-idx == 2;
+            clicked => { root.tap-chapter(2, "8"); }
         }
         Divider { }
         ChapterRow {
             index: "9";
             title: "What the Lighthouse Knew";
-            duration: "29:02";
-            clicked => { root.chapter-pressed("9"); }
+            duration: root.chapter-duration-display(3);
+            finished: 3 < root.current-chapter-idx;
+            active: root.current-chapter-idx == 3;
+            clicked => { root.tap-chapter(3, "9"); }
         }
 
         Rectangle { vertical-stretch: 1; }
+    }
+
+    // ----- Speed bottom sheet ----------------------------------------
+    if root.speed-sheet-open: Rectangle {
+        Rectangle {
+            background: #00000099;
+            TouchArea {
+                clicked => { root.close-speed(); }
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            height: 380px;
+            background: Theme.surface-1;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding: Theme.spacing-lg;
+                spacing: Theme.spacing-md;
+
+                Rectangle {
+                    width: 40px;
+                    height: 4px;
+                    border-radius: 2px;
+                    background: Theme.muted;
+                }
+
+                Heading {
+                    text: "Playback speed";
+                    style: HeadingStyle.grotesk-bold;
+                    font-size: Theme.font-size-title;
+                }
+
+                for speed-i in 5 : Rectangle {
+                    height: 44px;
+                    border-radius: Theme.radius-md;
+                    background: root.speed-idx == speed-i
+                        ? Theme.accent-success
+                        : speed-touch.pressed ? Theme.surface-pressed : Theme.surface-2;
+                    animate background { duration: Theme.motion-fast; }
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-md;
+                        padding-right: Theme.spacing-md;
+                        Text {
+                            text: root.speed-label(speed-i);
+                            color: root.speed-idx == speed-i
+                                ? Theme.on-primary
+                                : Theme.on-surface;
+                            font-size: Theme.font-size-body;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                        }
+                        Text {
+                            text: root.speed-idx == speed-i ? "Current" : "Tap";
+                            color: root.speed-idx == speed-i
+                                ? Theme.on-primary
+                                : Theme.muted;
+                            font-size: Theme.font-size-caption;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                        }
+                    }
+                    speed-touch := TouchArea {
+                        clicked => { root.pick-speed(speed-i); }
+                    }
+                }
+
+                Rectangle { vertical-stretch: 1; }
+
+                MobileButton {
+                    text: "Close";
+                    tone: Tone.danger;
+                    clicked => { root.close-speed(); }
+                }
+            }
+        }
+    }
+
+    // ----- Sleep timer bottom sheet ----------------------------------
+    if root.sleep-sheet-open: Rectangle {
+        Rectangle {
+            background: #00000099;
+            TouchArea {
+                clicked => { root.close-sleep(); }
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            height: 360px;
+            background: Theme.surface-1;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding: Theme.spacing-lg;
+                spacing: Theme.spacing-md;
+
+                Rectangle {
+                    width: 40px;
+                    height: 4px;
+                    border-radius: 2px;
+                    background: Theme.muted;
+                }
+
+                Heading {
+                    text: "Sleep timer";
+                    style: HeadingStyle.grotesk-bold;
+                    font-size: Theme.font-size-title;
+                }
+                Text {
+                    text: "Auto-pause when the timer hits zero.";
+                    color: Theme.muted;
+                    font-size: Theme.font-size-caption;
+                }
+
+                for sleep-i in 4 : Rectangle {
+                    height: 44px;
+                    border-radius: Theme.radius-md;
+                    background: root.sleep-idx == sleep-i
+                        ? Theme.accent-success
+                        : sleep-touch.pressed ? Theme.surface-pressed : Theme.surface-2;
+                    animate background { duration: Theme.motion-fast; }
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-md;
+                        padding-right: Theme.spacing-md;
+                        Text {
+                            text: root.sleep-label(sleep-i);
+                            color: root.sleep-idx == sleep-i
+                                ? Theme.on-primary
+                                : Theme.on-surface;
+                            font-size: Theme.font-size-body;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                        }
+                        Text {
+                            text: root.sleep-idx == sleep-i ? "Current" : "Tap";
+                            color: root.sleep-idx == sleep-i
+                                ? Theme.on-primary
+                                : Theme.muted;
+                            font-size: Theme.font-size-caption;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                        }
+                    }
+                    sleep-touch := TouchArea {
+                        clicked => { root.pick-sleep(sleep-i); }
+                    }
+                }
+
+                Rectangle { vertical-stretch: 1; }
+
+                MobileButton {
+                    text: "Close";
+                    tone: Tone.danger;
+                    clicked => { root.close-sleep(); }
+                }
+            }
+        }
     }
 }

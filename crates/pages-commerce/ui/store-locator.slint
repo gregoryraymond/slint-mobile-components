@@ -8,12 +8,11 @@
 //
 // What this screen does
 //   - AppBar "Stores" + back + search trailing icon.
-//   - Top search field (TextField inside a FormField with no label).
-//   - NEARBY FormSection containing 5 store SettingRows; each one has
-//       - leading icon = home.svg tinted Tone.info,
-//       - title  = "<store name> · <neighbourhood>",
-//       - subtitle = "<address> · <distance> · open until <time>",
-//       - trailing = chevron.
+//   - Map strip with floating +/− zoom and recenter buttons.
+//   - Top search field with live clear button + status feedback.
+//   - Chip strip filters (All / Late / Under 2 km / Saved).
+//   - NEARBY FormSection containing 5 store SettingRows; each one
+//     expands on tap to reveal Directions / Call / Save action pills.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
@@ -21,9 +20,40 @@ import { FormSection } from "@mobile-components/form-section.slint";
 import { FormField } from "@mobile-components/form-field.slint";
 import { SettingRow } from "@mobile-components/setting-row.slint";
 import { TextField } from "@mobile-components/text-field.slint";
+import { Chip } from "@mobile-components/chip.slint";
 import { Divider } from "@mobile-components/divider.slint";
 import { MapEmbed, Tile, Layer } from "@mapping/map.slint";
 import { ScrollView } from "std-widgets.slint";
+
+// A pill button rendered in an expanded-row action strip.
+component ActionPill inherits Rectangle {
+    in property <string> label;
+    in property <bool> primary: false;
+    in property <bool> active: false;
+    callback clicked();
+
+    height: 32px;
+    horizontal-stretch: 1;
+    border-radius: 16px;
+    background: root.active ? Theme.accent-success
+        : root.primary ? Theme.accent-info
+        : Theme.surface-1;
+    border-width: 1px;
+    border-color: (root.active || root.primary) ? transparent : Theme.outline;
+    animate background { duration: Theme.motion-fast; }
+
+    Text {
+        text: root.label;
+        color: (root.active || root.primary) ? Theme.on-primary : Theme.on-surface;
+        font-size: Theme.font-size-caption;
+        font-weight: 700;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: parent.width;
+        height: parent.height;
+    }
+    TouchArea { clicked => { root.clicked(); } }
+}
 
 export component StoreLocatorPage inherits Window {
     preferred-width: 412px;
@@ -34,10 +64,13 @@ export component StoreLocatorPage inherits Window {
     callback back-pressed();
     callback search-pressed();
     callback store-pressed(string);
+    callback directions-pressed(string);
+    callback call-pressed(string);
+    callback favourite-toggled(string, bool);
 
     // Map camera — bind from Rust via slint_mapping::MapController, or
-    // leave at defaults for a static demo. A small map strip sits between
-    // the AppBar and the search field to show the locations on a map.
+    // leave at defaults for a static demo. Initial values are captured
+    // so the recenter button can restore them.
     in-out property <float> map-latitude: 51.5074;
     in-out property <float> map-longitude: -0.1276;
     in-out property <float> map-zoom: 13.0;
@@ -47,6 +80,139 @@ export component StoreLocatorPage inherits Window {
     callback map-zoom-by(float, length, length);
     out property <length> map-viewport-width: map.width;
     out property <length> map-viewport-height: map.height;
+
+    // ----- Interactive state -----
+    // filter-mode: 0=All  1=Late (close >= 19:00)  2=<2km  3=Saved
+    private property <int> filter-mode: 0;
+    private property <int> expanded-store: -1; // index 0-4 or -1
+    private property <bool> f0: false;
+    private property <bool> f1: true; // Châtelain pre-saved
+    private property <bool> f2: false;
+    private property <bool> f3: false;
+    private property <bool> f4: false;
+    private property <string> status-msg: "Tap a chip to filter · tap a store to expand";
+    private property <bool> status-is-success: false;
+    private property <bool> status-is-danger: false;
+
+    // ----- Helpers -----
+    function filter-name(m: int) -> string {
+        if (m == 0) { return "All stores"; }
+        if (m == 1) { return "Open late (19:00+)"; }
+        if (m == 2) { return "Under 2 km"; }
+        return "Saved";
+    }
+    function fav(i: int) -> bool {
+        if (i == 0) { return root.f0; }
+        if (i == 1) { return root.f1; }
+        if (i == 2) { return root.f2; }
+        if (i == 3) { return root.f3; }
+        return root.f4;
+    }
+    function fav-count() -> int {
+        return (root.f0 ? 1 : 0) + (root.f1 ? 1 : 0) + (root.f2 ? 1 : 0)
+            + (root.f3 ? 1 : 0) + (root.f4 ? 1 : 0);
+    }
+    // Per-store filter visibility against the active mode.
+    function s0-visible() -> bool { // Sablon — 1.2 km, 19:00
+        return root.filter-mode == 0 || root.filter-mode == 1
+            || root.filter-mode == 2 || (root.filter-mode == 3 && root.f0);
+    }
+    function s1-visible() -> bool { // Châtelain — 1.8 km, 20:00
+        return root.filter-mode == 0 || root.filter-mode == 1
+            || root.filter-mode == 2 || (root.filter-mode == 3 && root.f1);
+    }
+    function s2-visible() -> bool { // Flagey — 2.4 km, 18:00
+        return root.filter-mode == 0 || (root.filter-mode == 3 && root.f2);
+    }
+    function s3-visible() -> bool { // Saint-Gilles — 3.1 km, 19:30
+        return root.filter-mode == 0 || root.filter-mode == 1
+            || (root.filter-mode == 3 && root.f3);
+    }
+    function s4-visible() -> bool { // Schaerbeek — 4.7 km, 18:00
+        return root.filter-mode == 0 || (root.filter-mode == 3 && root.f4);
+    }
+    function any-visible() -> bool {
+        return root.s0-visible() || root.s1-visible() || root.s2-visible()
+            || root.s3-visible() || root.s4-visible();
+    }
+    function store-name(i: int) -> string {
+        if (i == 0) { return "Sablon"; }
+        if (i == 1) { return "Châtelain"; }
+        if (i == 2) { return "Flagey"; }
+        if (i == 3) { return "Saint-Gilles"; }
+        return "Schaerbeek";
+    }
+
+    // ----- Mutations -----
+    public function set-filter(m: int) {
+        root.filter-mode = m;
+        root.status-msg = "Filter: " + root.filter-name(m);
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function toggle-expand(i: int) {
+        root.expanded-store = root.expanded-store == i ? -1 : i;
+        root.status-msg = root.expanded-store == i
+            ? root.store-name(i) + " · tap a pill to act"
+            : "Collapsed " + root.store-name(i);
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function toggle-fav(i: int) {
+        if (i == 0) { root.f0 = !root.f0; }
+        if (i == 1) { root.f1 = !root.f1; }
+        if (i == 2) { root.f2 = !root.f2; }
+        if (i == 3) { root.f3 = !root.f3; }
+        if (i == 4) { root.f4 = !root.f4; }
+        root.favourite-toggled(root.store-name(i), root.fav(i));
+        root.status-msg = root.fav(i)
+            ? "Saved " + root.store-name(i) + " (" + root.fav-count() + " total)"
+            : "Removed " + root.store-name(i) + " (" + root.fav-count() + " total)";
+        root.status-is-success = root.fav(i);
+        root.status-is-danger = !root.fav(i);
+    }
+    public function tap-directions(i: int) {
+        root.directions-pressed(root.store-name(i));
+        root.status-msg = "Directions to " + root.store-name(i) + " · 0 km · 0 min";
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    public function tap-call(i: int) {
+        root.call-pressed(root.store-name(i));
+        root.status-msg = "Calling " + root.store-name(i) + "…";
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    public function clear-query() {
+        root.query = "";
+        root.status-msg = "Search cleared";
+        root.status-is-success = false;
+        root.status-is-danger = true;
+    }
+    public function do-zoom(delta: float) {
+        root.map-zoom = root.map-zoom + delta;
+        root.map-zoom-by(delta, root.map-viewport-width / 2, root.map-viewport-height / 2);
+        root.status-msg = "Zoom: " + (delta > 0 ? "in" : "out")
+            + " · level " + round(root.map-zoom * 10) / 10;
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function recenter() {
+        root.map-latitude = 51.5074;
+        root.map-longitude = -0.1276;
+        root.map-zoom = 13.0;
+        root.status-msg = "Recentered map on Brussels";
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    // Live status update as the user types.
+    changed query => {
+        root.status-msg = root.query.is-empty
+            ? "Search cleared"
+            : "Searching: " + root.query;
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
 
     background: Theme.background;
 
@@ -58,10 +224,39 @@ export component StoreLocatorPage inherits Window {
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             trailing-icon: @image-url("@mobile-components/icons/search.svg");
             leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.search-pressed(); }
+            trailing-pressed => {
+                root.search-pressed();
+                root.status-msg = "Focused on search field";
+                root.status-is-success = false;
+                root.status-is-danger = false;
+            }
         }
 
-        // ----- Map strip -----------------------------------------------
+        // ----- Status banner ---------------------------------------
+        Rectangle {
+            height: 32px;
+            background: root.status-is-danger ? Theme.accent-danger
+                : root.status-is-success ? Theme.accent-success
+                : Theme.surface-2;
+            animate background { duration: Theme.motion-fast; }
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                Text {
+                    text: root.status-msg;
+                    color: (root.status-is-danger || root.status-is-success)
+                        ? Theme.on-primary
+                        : Theme.on-surface;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+            }
+        }
+
+        // ----- Map strip with floating controls --------------------
         Rectangle {
             height: 220px;
             background: Theme.surface-2;
@@ -80,6 +275,73 @@ export component StoreLocatorPage inherits Window {
                 pan(dx, dy) => { root.map-pan(dx, dy); }
                 zoom-by(d, ax, ay) => { root.map-zoom-by(d, ax, ay); }
             }
+
+            // + (zoom in) — top-right.
+            Rectangle {
+                x: parent.width - self.width - Theme.spacing-md;
+                y: Theme.spacing-md;
+                width: 40px;
+                height: 40px;
+                border-radius: self.width / 2;
+                background: Theme.surface-1;
+                drop-shadow-blur: Theme.elevation-2-blur;
+                drop-shadow-color: Theme.elevation-2-color;
+                drop-shadow-offset-y: Theme.elevation-2-y;
+                Image {
+                    width: 16px;
+                    height: 16px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: @image-url("@mobile-components/icons/plus.svg");
+                    colorize: Theme.on-surface;
+                    image-fit: contain;
+                }
+                TouchArea { clicked => { root.do-zoom(0.5); } }
+            }
+            // − (zoom out) — below +.
+            Rectangle {
+                x: parent.width - self.width - Theme.spacing-md;
+                y: Theme.spacing-md + 48px;
+                width: 40px;
+                height: 40px;
+                border-radius: self.width / 2;
+                background: Theme.surface-1;
+                drop-shadow-blur: Theme.elevation-2-blur;
+                drop-shadow-color: Theme.elevation-2-color;
+                drop-shadow-offset-y: Theme.elevation-2-y;
+                Image {
+                    width: 16px;
+                    height: 16px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: @image-url("@mobile-components/icons/minus.svg");
+                    colorize: Theme.on-surface;
+                    image-fit: contain;
+                }
+                TouchArea { clicked => { root.do-zoom(-0.5); } }
+            }
+            // Recenter — bottom-right.
+            Rectangle {
+                x: parent.width - self.width - Theme.spacing-md;
+                y: parent.height - self.height - Theme.spacing-md;
+                width: 40px;
+                height: 40px;
+                border-radius: self.width / 2;
+                background: Theme.accent-info;
+                drop-shadow-blur: Theme.elevation-2-blur;
+                drop-shadow-color: Theme.elevation-2-color;
+                drop-shadow-offset-y: Theme.elevation-2-y;
+                Image {
+                    width: 18px;
+                    height: 18px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: @image-url("@mobile-components/icons/pin.svg");
+                    colorize: Theme.on-primary;
+                    image-fit: contain;
+                }
+                TouchArea { clicked => { root.recenter(); } }
+            }
         }
 
         ScrollView {
@@ -89,96 +351,307 @@ export component StoreLocatorPage inherits Window {
                 padding-top: Theme.spacing-md;
                 padding-bottom: Theme.spacing-xl;
                 spacing: Theme.spacing-md;
-                // alignment: start: pin children at the top, let the
-                // ScrollView handle overflow. `stretch` distributes
-                // leftover space into each child, which inflated the
-                // search TextField into a tall textarea-sized box.
                 alignment: start;
 
-                // ----- Search ------------------------------------------
-                FormField {
-                    TextField {
-                        placeholder: "Search city or postcode";
-                        text <=> root.query;
+                // ----- Search row with live clear button --------------
+                HorizontalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    spacing: Theme.spacing-sm;
+                    FormField {
+                        horizontal-stretch: 1;
+                        TextField {
+                            placeholder: "Search city or postcode";
+                            text <=> root.query;
+                        }
+                    }
+                    if !root.query.is-empty: Rectangle {
+                        width: 40px;
+                        height: 40px;
+                        border-radius: 20px;
+                        background: Theme.surface-2;
+                        Image {
+                            width: 14px;
+                            height: 14px;
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                            source: @image-url("@mobile-components/icons/close.svg");
+                            colorize: Theme.on-surface;
+                            image-fit: contain;
+                        }
+                        TouchArea { clicked => { root.clear-query(); } }
                     }
                 }
 
-                // ----- NEARBY ------------------------------------------
-                FormSection {
-                    title: "NEARBY";
+                // ----- Filter chips ---------------------------------
+                HorizontalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    spacing: Theme.spacing-sm;
+                    Rectangle {
+                        Chip { label: "All"; selected: root.filter-mode == 0; }
+                        TouchArea { clicked => { root.set-filter(0); } }
+                    }
+                    Rectangle {
+                        Chip { label: "Open late"; selected: root.filter-mode == 1; }
+                        TouchArea { clicked => { root.set-filter(1); } }
+                    }
+                    Rectangle {
+                        Chip { label: "< 2 km"; selected: root.filter-mode == 2; }
+                        TouchArea { clicked => { root.set-filter(2); } }
+                    }
+                    Rectangle {
+                        Chip {
+                            label: "Saved · " + root.fav-count();
+                            selected: root.filter-mode == 3;
+                        }
+                        TouchArea { clicked => { root.set-filter(3); } }
+                    }
+                }
 
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/home.svg");
-                        tone: Tone.info;
-                        title: "Atlas Coffee · Sablon";
-                        subtitle: "Rue Lebeau 14 · 1.2 km · open until 19:00";
-                        clicked => { root.store-pressed("sablon"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
+                // ----- NEARBY section -------------------------------
+                FormSection {
+                    title: "NEARBY · " + root.filter-name(root.filter-mode);
+
+                    if root.s0-visible(): VerticalLayout {
+                        spacing: 0;
+                        SettingRow {
+                            icon: @image-url("@mobile-components/icons/home.svg");
+                            tone: Tone.info;
+                            title: "Atlas Coffee · Sablon" + (root.f0 ? "  ♥" : "");
+                            subtitle: "Rue Lebeau 14 · 1.2 km · open until 19:00";
+                            clicked => {
+                                root.toggle-expand(0);
+                                root.store-pressed("sablon");
+                            }
+                            Image {
+                                width: 16px;
+                                height: 16px;
+                                source: @image-url("@mobile-components/icons/chevron-right.svg");
+                                colorize: root.expanded-store == 0 ? Theme.accent-info : Theme.muted;
+                                image-fit: contain;
+                            }
+                        }
+                        if root.expanded-store == 0: Rectangle {
+                            background: Theme.surface-2;
+                            HorizontalLayout {
+                                padding: Theme.spacing-md;
+                                spacing: Theme.spacing-sm;
+                                ActionPill {
+                                    label: "Directions";
+                                    primary: true;
+                                    clicked => { root.tap-directions(0); }
+                                }
+                                ActionPill {
+                                    label: "Call";
+                                    primary: true;
+                                    clicked => { root.tap-call(0); }
+                                }
+                                ActionPill {
+                                    label: root.f0 ? "Saved ♥" : "Save";
+                                    active: root.f0;
+                                    clicked => { root.toggle-fav(0); }
+                                }
+                            }
                         }
                     }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/home.svg");
-                        tone: Tone.info;
-                        title: "Atlas Coffee · Châtelain";
-                        subtitle: "Place du Châtelain 3 · 1.8 km · open until 20:00";
-                        clicked => { root.store-pressed("chatelain"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
+                    if root.s0-visible() && (root.s1-visible() || root.s2-visible()
+                        || root.s3-visible() || root.s4-visible()): Divider { }
+
+                    if root.s1-visible(): VerticalLayout {
+                        spacing: 0;
+                        SettingRow {
+                            icon: @image-url("@mobile-components/icons/home.svg");
+                            tone: Tone.info;
+                            title: "Atlas Coffee · Châtelain" + (root.f1 ? "  ♥" : "");
+                            subtitle: "Place du Châtelain 3 · 1.8 km · open until 20:00";
+                            clicked => {
+                                root.toggle-expand(1);
+                                root.store-pressed("chatelain");
+                            }
+                            Image {
+                                width: 16px;
+                                height: 16px;
+                                source: @image-url("@mobile-components/icons/chevron-right.svg");
+                                colorize: root.expanded-store == 1 ? Theme.accent-info : Theme.muted;
+                                image-fit: contain;
+                            }
+                        }
+                        if root.expanded-store == 1: Rectangle {
+                            background: Theme.surface-2;
+                            HorizontalLayout {
+                                padding: Theme.spacing-md;
+                                spacing: Theme.spacing-sm;
+                                ActionPill {
+                                    label: "Directions";
+                                    primary: true;
+                                    clicked => { root.tap-directions(1); }
+                                }
+                                ActionPill {
+                                    label: "Call";
+                                    primary: true;
+                                    clicked => { root.tap-call(1); }
+                                }
+                                ActionPill {
+                                    label: root.f1 ? "Saved ♥" : "Save";
+                                    active: root.f1;
+                                    clicked => { root.toggle-fav(1); }
+                                }
+                            }
                         }
                     }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/home.svg");
-                        tone: Tone.info;
-                        title: "Atlas Coffee · Flagey";
-                        subtitle: "Place Eugène Flagey 22 · 2.4 km · open until 18:00";
-                        clicked => { root.store-pressed("flagey"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
+                    if root.s1-visible() && (root.s2-visible()
+                        || root.s3-visible() || root.s4-visible()): Divider { }
+
+                    if root.s2-visible(): VerticalLayout {
+                        spacing: 0;
+                        SettingRow {
+                            icon: @image-url("@mobile-components/icons/home.svg");
+                            tone: Tone.info;
+                            title: "Atlas Coffee · Flagey" + (root.f2 ? "  ♥" : "");
+                            subtitle: "Place Eugène Flagey 22 · 2.4 km · open until 18:00";
+                            clicked => {
+                                root.toggle-expand(2);
+                                root.store-pressed("flagey");
+                            }
+                            Image {
+                                width: 16px;
+                                height: 16px;
+                                source: @image-url("@mobile-components/icons/chevron-right.svg");
+                                colorize: root.expanded-store == 2 ? Theme.accent-info : Theme.muted;
+                                image-fit: contain;
+                            }
+                        }
+                        if root.expanded-store == 2: Rectangle {
+                            background: Theme.surface-2;
+                            HorizontalLayout {
+                                padding: Theme.spacing-md;
+                                spacing: Theme.spacing-sm;
+                                ActionPill {
+                                    label: "Directions";
+                                    primary: true;
+                                    clicked => { root.tap-directions(2); }
+                                }
+                                ActionPill {
+                                    label: "Call";
+                                    primary: true;
+                                    clicked => { root.tap-call(2); }
+                                }
+                                ActionPill {
+                                    label: root.f2 ? "Saved ♥" : "Save";
+                                    active: root.f2;
+                                    clicked => { root.toggle-fav(2); }
+                                }
+                            }
                         }
                     }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/home.svg");
-                        tone: Tone.info;
-                        title: "Atlas Coffee · Saint-Gilles";
-                        subtitle: "Chaussée de Waterloo 88 · 3.1 km · open until 19:30";
-                        clicked => { root.store-pressed("saint-gilles"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
+                    if root.s2-visible() && (root.s3-visible()
+                        || root.s4-visible()): Divider { }
+
+                    if root.s3-visible(): VerticalLayout {
+                        spacing: 0;
+                        SettingRow {
+                            icon: @image-url("@mobile-components/icons/home.svg");
+                            tone: Tone.info;
+                            title: "Atlas Coffee · Saint-Gilles" + (root.f3 ? "  ♥" : "");
+                            subtitle: "Chaussée de Waterloo 88 · 3.1 km · open until 19:30";
+                            clicked => {
+                                root.toggle-expand(3);
+                                root.store-pressed("saint-gilles");
+                            }
+                            Image {
+                                width: 16px;
+                                height: 16px;
+                                source: @image-url("@mobile-components/icons/chevron-right.svg");
+                                colorize: root.expanded-store == 3 ? Theme.accent-info : Theme.muted;
+                                image-fit: contain;
+                            }
+                        }
+                        if root.expanded-store == 3: Rectangle {
+                            background: Theme.surface-2;
+                            HorizontalLayout {
+                                padding: Theme.spacing-md;
+                                spacing: Theme.spacing-sm;
+                                ActionPill {
+                                    label: "Directions";
+                                    primary: true;
+                                    clicked => { root.tap-directions(3); }
+                                }
+                                ActionPill {
+                                    label: "Call";
+                                    primary: true;
+                                    clicked => { root.tap-call(3); }
+                                }
+                                ActionPill {
+                                    label: root.f3 ? "Saved ♥" : "Save";
+                                    active: root.f3;
+                                    clicked => { root.toggle-fav(3); }
+                                }
+                            }
                         }
                     }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/home.svg");
-                        tone: Tone.info;
-                        title: "Atlas Coffee · Schaerbeek";
-                        subtitle: "Avenue Louis Bertrand 41 · 4.7 km · open until 18:00";
-                        clicked => { root.store-pressed("schaerbeek"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
+                    if root.s3-visible() && root.s4-visible(): Divider { }
+
+                    if root.s4-visible(): VerticalLayout {
+                        spacing: 0;
+                        SettingRow {
+                            icon: @image-url("@mobile-components/icons/home.svg");
+                            tone: Tone.info;
+                            title: "Atlas Coffee · Schaerbeek" + (root.f4 ? "  ♥" : "");
+                            subtitle: "Avenue Louis Bertrand 41 · 4.7 km · open until 18:00";
+                            clicked => {
+                                root.toggle-expand(4);
+                                root.store-pressed("schaerbeek");
+                            }
+                            Image {
+                                width: 16px;
+                                height: 16px;
+                                source: @image-url("@mobile-components/icons/chevron-right.svg");
+                                colorize: root.expanded-store == 4 ? Theme.accent-info : Theme.muted;
+                                image-fit: contain;
+                            }
+                        }
+                        if root.expanded-store == 4: Rectangle {
+                            background: Theme.surface-2;
+                            HorizontalLayout {
+                                padding: Theme.spacing-md;
+                                spacing: Theme.spacing-sm;
+                                ActionPill {
+                                    label: "Directions";
+                                    primary: true;
+                                    clicked => { root.tap-directions(4); }
+                                }
+                                ActionPill {
+                                    label: "Call";
+                                    primary: true;
+                                    clicked => { root.tap-call(4); }
+                                }
+                                ActionPill {
+                                    label: root.f4 ? "Saved ♥" : "Save";
+                                    active: root.f4;
+                                    clicked => { root.toggle-fav(4); }
+                                }
+                            }
+                        }
+                    }
+
+                    // Empty state when no store passes the filter.
+                    if !root.any-visible(): VerticalLayout {
+                        padding: Theme.spacing-lg;
+                        spacing: Theme.spacing-xs;
+                        alignment: center;
+                        Text {
+                            text: "No stores match \"" + root.filter-name(root.filter-mode) + "\"";
+                            color: Theme.muted;
+                            font-size: Theme.font-size-body;
+                            font-weight: 700;
+                            horizontal-alignment: center;
+                        }
+                        Text {
+                            text: "Tap All above to see every nearby location.";
+                            color: Theme.muted;
+                            font-size: Theme.font-size-caption;
+                            horizontal-alignment: center;
                         }
                     }
                 }

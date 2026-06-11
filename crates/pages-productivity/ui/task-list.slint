@@ -1,31 +1,23 @@
 // TaskListPage
 // =====================================================================
-//
-// A todo list. SegmentedControl across the top, then morning / afternoon
-// FormSections of SettingRows. A small "check square" in each row's
-// trailing slot keeps the checkboxes lined up at a single right margin.
-// FAB-styled "New task" button anchored bottom-right.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { HeadingStyle } from "@mobile-components/heading.slint";
 import { SegmentedControl } from "@mobile-components/segmented-control.slint";
 import { FormSection } from "@mobile-components/form-section.slint";
-import { SettingRow } from "@mobile-components/setting-row.slint";
+import { ProgressBar } from "@mobile-components/progress-bar.slint";
 import { Divider } from "@mobile-components/divider.slint";
 import { Fab } from "@mobile-components/button.slint";
 import { ScrollView } from "std-widgets.slint";
 
-// Standalone check-box square (no row chrome) — sits in SettingRow's
-// trailing slot so the boxes column-align across the whole list.
 component CheckSquare inherits Rectangle {
-    in-out property <bool> checked: false;
-    callback toggled(bool);
+    in property <bool> checked: false;
 
     width: 22px;
     height: 22px;
     border-radius: Theme.radius-sm;
-    background: root.checked ? Theme.primary : transparent;
+    background: root.checked ? Theme.accent-success : transparent;
     border-width: root.checked ? 0px : 2px;
     border-color: Theme.outline;
 
@@ -40,11 +32,147 @@ component CheckSquare inherits Rectangle {
         colorize: Theme.on-primary;
         image-fit: contain;
     }
+}
 
-    touch := TouchArea {
+component TaskRow inherits Rectangle {
+    in property <string> title;
+    in property <string> subtitle;
+    in property <int> tone-i: 0;
+    in property <bool> done: false;
+    in property <bool> starred: false;
+    in property <bool> postponed: false;
+    callback row-clicked();
+    callback star-clicked();
+    callback postpone-clicked();
+
+    horizontal-stretch: 1;
+    min-height: 64px;
+    opacity: root.done ? 0.55 : 1.0;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+
+    ta := TouchArea {
         clicked => {
-            root.checked = !root.checked;
-            root.toggled(root.checked);
+            root.row-clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 32px;
+                height: 32px;
+                border-radius: 8px;
+                background: root.tone-i == 1 ? Theme.accent-info.with-alpha(0.22) : (root.tone-i == 2 ? Theme.accent-warning.with-alpha(0.22) : (root.tone-i == 3 ? Theme.accent-success.with-alpha(0.22) : (root.tone-i == 4 ? Theme.accent-danger.with-alpha(0.22) : Theme.surface-2)));
+                Image {
+                    width: 16px;
+                    height: 16px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: @image-url("@mobile-components/icons/pin.svg");
+                    colorize: root.tone-i == 1 ? Theme.accent-info : (root.tone-i == 2 ? Theme.accent-warning : (root.tone-i == 3 ? Theme.accent-success : (root.tone-i == 4 ? Theme.accent-danger : Theme.muted)));
+                    image-fit: contain;
+                }
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: (root.starred ? "★ " : "") + root.title + (root.postponed ? " · tomorrow" : "") + (root.done ? " ✓" : "");
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 700;
+                overflow: elide;
+            }
+            Text {
+                text: root.subtitle;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+            }
+        }
+        Rectangle {
+            width: 32px;
+            height: 32px;
+            border-radius: 16px;
+            background: root.starred ? Theme.accent-warning.with-alpha(0.22) : Theme.surface-2;
+            Text {
+                text: "★";
+                color: root.starred ? Theme.accent-warning : Theme.muted;
+                font-size: 14px;
+                font-weight: 800;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                width: parent.width;
+                height: parent.height;
+            }
+            TouchArea {
+                clicked => {
+                    root.star-clicked();
+                }
+            }
+        }
+        Rectangle {
+            width: 32px;
+            height: 32px;
+            border-radius: 16px;
+            background: root.postponed ? Theme.accent-info.with-alpha(0.22) : Theme.surface-2;
+            Text {
+                text: root.postponed ? "↺" : "→";
+                color: root.postponed ? Theme.accent-info : Theme.muted;
+                font-size: 14px;
+                font-weight: 800;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                width: parent.width;
+                height: parent.height;
+            }
+            TouchArea {
+                clicked => {
+                    root.postpone-clicked();
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            CheckSquare {
+                checked: root.done;
+            }
+        }
+    }
+}
+
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.destructive ? Theme.accent-danger : Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
         }
     }
 }
@@ -53,11 +181,137 @@ export component TaskListPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
 
-    in-out property <int> view-index: 0;
+    in-out property <int> view-index: 0; // 0 Today 1 Upcoming 2 Anytime 3 Done
+    in-out property <bool> d0: true;
+    in-out property <bool> d1: true;
+    in-out property <bool> d2: false;
+    in-out property <bool> d3: false;
+    in-out property <bool> d4: false;
+    in-out property <bool> d5: false;
+    in-out property <bool> d6: false;
+    in-out property <bool> s0: false;
+    in-out property <bool> s1: true;
+    in-out property <bool> s2: false;
+    in-out property <bool> s3: false;
+    in-out property <bool> s4: false;
+    in-out property <bool> s5: true;
+    in-out property <bool> s6: false;
+    in-out property <bool> p0: false;
+    in-out property <bool> p1: false;
+    in-out property <bool> p2: false;
+    in-out property <bool> p3: false;
+    in-out property <bool> p4: false;
+    in-out property <bool> p5: false;
+    in-out property <bool> p6: false;
+    in-out property <int> new-tasks: 0;
+    in-out property <bool> sheet-open: false;
+    in-out property <bool> confirm-clear: false;
+    in-out property <string> status-msg: "";
+    in-out property <bool> status-success: false;
+    in-out property <bool> status-danger: false;
 
     callback back-pressed();
     callback add-pressed();
     callback new-task-pressed();
+
+    function done-count() -> int {
+        return (root.d0 ? 1 : 0) + (root.d1 ? 1 : 0) + (root.d2 ? 1 : 0) + (root.d3 ? 1 : 0) + (root.d4 ? 1 : 0) + (root.d5 ? 1 : 0) + (root.d6 ? 1 : 0);
+    }
+    function total-tasks() -> int {
+        return 7 + root.new-tasks;
+    }
+    function progress() -> float {
+        return root.done-count() * 1.0 / root.total-tasks();
+    }
+    function view-name() -> string {
+        return root.view-index == 0 ? "Today" : (root.view-index == 1 ? "Upcoming" : (root.view-index == 2 ? "Anytime" : "Done"));
+    }
+    function row-visible(i: int) -> bool {
+        if (root.view-index == 3) {
+            return i == 0 ? root.d0 : (i == 1 ? root.d1 : (i == 2 ? root.d2 : (i == 3 ? root.d3 : (i == 4 ? root.d4 : (i == 5 ? root.d5 : root.d6)))));
+        }
+        if (root.view-index == 1) {
+            return i == 0 ? root.p0 && !root.d0 : (i == 1 ? root.p1 && !root.d1 : (i == 2 ? root.p2 && !root.d2 : (i == 3 ? root.p3 && !root.d3 : (i == 4 ? root.p4 && !root.d4 : (i == 5 ? root.p5 && !root.d5 : root.p6 && !root.d6)))));
+        }
+        if (root.view-index == 0) {
+            return !(i == 0 ? root.d0 || root.p0 : (i == 1 ? root.d1 || root.p1 : (i == 2 ? root.d2 || root.p2 : (i == 3 ? root.d3 || root.p3 : (i == 4 ? root.d4 || root.p4 : (i == 5 ? root.d5 || root.p5 : root.d6 || root.p6))))));
+        }
+        return !(i == 0 ? root.d0 : (i == 1 ? root.d1 : (i == 2 ? root.d2 : (i == 3 ? root.d3 : (i == 4 ? root.d4 : (i == 5 ? root.d5 : root.d6))))));
+    }
+    function set-status(m: string, ok: bool, bad: bool) {
+        root.status-msg = m;
+        root.status-success = ok;
+        root.status-danger = bad;
+    }
+    function toggle-done(i: int) {
+        if (i == 0) {
+            root.d0 = !root.d0;
+        }
+        if (i == 1) {
+            root.d1 = !root.d1;
+        }
+        if (i == 2) {
+            root.d2 = !root.d2;
+        }
+        if (i == 3) {
+            root.d3 = !root.d3;
+        }
+        if (i == 4) {
+            root.d4 = !root.d4;
+        }
+        if (i == 5) {
+            root.d5 = !root.d5;
+        }
+        if (i == 6) {
+            root.d6 = !root.d6;
+        }
+    }
+    function toggle-star(i: int) {
+        if (i == 0) {
+            root.s0 = !root.s0;
+        }
+        if (i == 1) {
+            root.s1 = !root.s1;
+        }
+        if (i == 2) {
+            root.s2 = !root.s2;
+        }
+        if (i == 3) {
+            root.s3 = !root.s3;
+        }
+        if (i == 4) {
+            root.s4 = !root.s4;
+        }
+        if (i == 5) {
+            root.s5 = !root.s5;
+        }
+        if (i == 6) {
+            root.s6 = !root.s6;
+        }
+    }
+    function toggle-postpone(i: int) {
+        if (i == 0) {
+            root.p0 = !root.p0;
+        }
+        if (i == 1) {
+            root.p1 = !root.p1;
+        }
+        if (i == 2) {
+            root.p2 = !root.p2;
+        }
+        if (i == 3) {
+            root.p3 = !root.p3;
+        }
+        if (i == 4) {
+            root.p4 = !root.p4;
+        }
+        if (i == 5) {
+            root.p5 = !root.p5;
+        }
+        if (i == 6) {
+            root.p6 = !root.p6;
+        }
+    }
 
     background: Theme.background;
 
@@ -65,107 +319,378 @@ export component TaskListPage inherits Window {
         spacing: 0;
 
         AppBar {
-            title: "Today";
+            title: root.view-name() + " · " + root.done-count() + "/" + root.total-tasks();
             title-style: HeadingStyle.serif-display;
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
-            trailing-icon: @image-url("@mobile-components/icons/plus.svg");
-            leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.add-pressed(); }
+            trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
+            leading-pressed => {
+                root.back-pressed();
+            }
+            trailing-pressed => {
+                root.sheet-open = true;
+            }
+        }
+
+        if !root.status-msg.is-empty: Rectangle {
+            height: 28px;
+            background: root.status-success ? Theme.accent-success.with-alpha(0.16) : (root.status-danger ? Theme.accent-danger.with-alpha(0.16) : Theme.surface-2);
+            HorizontalLayout {
+                alignment: center;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.status-msg;
+                        color: root.status-success ? Theme.accent-success : (root.status-danger ? Theme.accent-danger : Theme.on-surface);
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                    }
+                }
+            }
+        }
+
+        // Progress strip.
+        VerticalLayout {
+            padding: Theme.spacing-md;
+            spacing: Theme.spacing-xs;
+            ProgressBar {
+                value: root.progress();
+            }
+            Text {
+                text: root.done-count() + " of " + root.total-tasks() + " done · " + floor(root.progress() * 100) + "%";
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+                font-weight: 700;
+            }
         }
 
         ScrollView {
             vertical-stretch: 1;
 
             VerticalLayout {
-                padding-top: Theme.spacing-md;
-                padding-bottom: Theme.spacing-xl + 56px;  // leave room for FAB
+                padding-bottom: Theme.spacing-xl + 56px;
                 spacing: Theme.spacing-md;
                 alignment: start;
 
-                // ----- View switcher --------------------------------
                 VerticalLayout {
                     padding-left: Theme.spacing-md;
                     padding-right: Theme.spacing-md;
                     SegmentedControl {
                         options: ["Today", "Upcoming", "Anytime", "Done"];
                         selected-index <=> root.view-index;
+                        changed(i) => {
+                            root.set-status(root.view-name() + " · " + root.done-count() + " done", true, false);
+                        }
                     }
                 }
 
-                // ----- Morning --------------------------------------
                 FormSection {
-                    title: "MORNING";
+                    title: root.view-name();
 
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/pin.svg");
-                        tone: Tone.info;
+                    if root.row-visible(0): TaskRow {
                         title: "Stand-up";
                         subtitle: "due 09:30 · ~15 min";
-                        CheckSquare { checked: true; }
+                        tone-i: 1;
+                        done: root.d0;
+                        starred: root.s0;
+                        postponed: root.p0;
+                        row-clicked => {
+                            root.toggle-done(0);
+                            root.set-status(root.d0 ? "Done" : "Reopened", root.d0, false);
+                        }
+                        star-clicked => {
+                            root.toggle-star(0);
+                            root.set-status(root.s0 ? "Starred" : "Unstarred", root.s0, false);
+                        }
+                        postpone-clicked => {
+                            root.toggle-postpone(0);
+                            root.set-status(root.p0 ? "Postponed to tomorrow" : "Restored to today", !root.p0, root.p0);
+                        }
                     }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/pin.svg");
-                        tone: Tone.warning;
+                    if root.row-visible(0): Divider { }
+
+                    if root.row-visible(1): TaskRow {
                         title: "Review iteration 14 PRs";
                         subtitle: "due 10:30 · ~45 min";
-                        CheckSquare { checked: true; }
+                        tone-i: 2;
+                        done: root.d1;
+                        starred: root.s1;
+                        postponed: root.p1;
+                        row-clicked => {
+                            root.toggle-done(1);
+                            root.set-status(root.d1 ? "Done" : "Reopened", root.d1, false);
+                        }
+                        star-clicked => {
+                            root.toggle-star(1);
+                            root.set-status(root.s1 ? "Starred" : "Unstarred", root.s1, false);
+                        }
+                        postpone-clicked => {
+                            root.toggle-postpone(1);
+                            root.set-status(root.p1 ? "Postponed" : "Restored", !root.p1, root.p1);
+                        }
                     }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/pin.svg");
-                        tone: Tone.info;
+                    if root.row-visible(1): Divider { }
+
+                    if root.row-visible(2): TaskRow {
                         title: "Draft Slint 2.0 release notes";
                         subtitle: "due 11:00 · ~30 min";
-                        CheckSquare { }
+                        tone-i: 1;
+                        done: root.d2;
+                        starred: root.s2;
+                        postponed: root.p2;
+                        row-clicked => {
+                            root.toggle-done(2);
+                            root.set-status(root.d2 ? "Done" : "Reopened", root.d2, false);
+                        }
+                        star-clicked => {
+                            root.toggle-star(2);
+                            root.set-status(root.s2 ? "Starred" : "Unstarred", root.s2, false);
+                        }
+                        postpone-clicked => {
+                            root.toggle-postpone(2);
+                            root.set-status(root.p2 ? "Postponed" : "Restored", !root.p2, root.p2);
+                        }
                     }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/pin.svg");
-                        tone: Tone.danger;
+                    if root.row-visible(2): Divider { }
+
+                    if root.row-visible(3): TaskRow {
                         title: "Tax document upload";
                         subtitle: "due noon · ~10 min";
-                        CheckSquare { }
+                        tone-i: 4;
+                        done: root.d3;
+                        starred: root.s3;
+                        postponed: root.p3;
+                        row-clicked => {
+                            root.toggle-done(3);
+                            root.set-status(root.d3 ? "Done" : "Reopened", root.d3, false);
+                        }
+                        star-clicked => {
+                            root.toggle-star(3);
+                            root.set-status(root.s3 ? "Starred" : "Unstarred", root.s3, false);
+                        }
+                        postpone-clicked => {
+                            root.toggle-postpone(3);
+                            root.set-status(root.p3 ? "Postponed" : "Restored", !root.p3, root.p3);
+                        }
+                    }
+                    if root.row-visible(3): Divider { }
+
+                    if root.row-visible(4): TaskRow {
+                        title: "Lunch with Sam";
+                        subtitle: "due 13:00 · ~60 min";
+                        tone-i: 1;
+                        done: root.d4;
+                        starred: root.s4;
+                        postponed: root.p4;
+                        row-clicked => {
+                            root.toggle-done(4);
+                            root.set-status(root.d4 ? "Done" : "Reopened", root.d4, false);
+                        }
+                        star-clicked => {
+                            root.toggle-star(4);
+                            root.set-status(root.s4 ? "Starred" : "Unstarred", root.s4, false);
+                        }
+                        postpone-clicked => {
+                            root.toggle-postpone(4);
+                            root.set-status(root.p4 ? "Postponed" : "Restored", !root.p4, root.p4);
+                        }
+                    }
+                    if root.row-visible(4): Divider { }
+
+                    if root.row-visible(5): TaskRow {
+                        title: "Field-test the document scanner";
+                        subtitle: "due 15:00 · ~45 min";
+                        tone-i: 2;
+                        done: root.d5;
+                        starred: root.s5;
+                        postponed: root.p5;
+                        row-clicked => {
+                            root.toggle-done(5);
+                            root.set-status(root.d5 ? "Done" : "Reopened", root.d5, false);
+                        }
+                        star-clicked => {
+                            root.toggle-star(5);
+                            root.set-status(root.s5 ? "Starred" : "Unstarred", root.s5, false);
+                        }
+                        postpone-clicked => {
+                            root.toggle-postpone(5);
+                            root.set-status(root.p5 ? "Postponed" : "Restored", !root.p5, root.p5);
+                        }
+                    }
+                    if root.row-visible(5): Divider { }
+
+                    if root.row-visible(6): TaskRow {
+                        title: "1:1 with Maya";
+                        subtitle: "due 16:00 · ~30 min";
+                        tone-i: 3;
+                        done: root.d6;
+                        starred: root.s6;
+                        postponed: root.p6;
+                        row-clicked => {
+                            root.toggle-done(6);
+                            root.set-status(root.d6 ? "Done" : "Reopened", root.d6, false);
+                        }
+                        star-clicked => {
+                            root.toggle-star(6);
+                            root.set-status(root.s6 ? "Starred" : "Unstarred", root.s6, false);
+                        }
+                        postpone-clicked => {
+                            root.toggle-postpone(6);
+                            root.set-status(root.p6 ? "Postponed" : "Restored", !root.p6, root.p6);
+                        }
                     }
                 }
 
-                // ----- Afternoon ------------------------------------
-                FormSection {
-                    title: "AFTERNOON";
+                if root.new-tasks > 0: FormSection {
+                    title: "NEW THIS SESSION · " + root.new-tasks;
 
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/pin.svg");
-                        tone: Tone.info;
-                        title: "Lunch with Sam";
-                        subtitle: "due 13:00 · ~60 min";
-                        CheckSquare { }
-                    }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/pin.svg");
-                        tone: Tone.warning;
-                        title: "Field-test the document scanner";
-                        subtitle: "due 15:00 · ~45 min";
-                        CheckSquare { }
-                    }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/pin.svg");
-                        tone: Tone.success;
-                        title: "1:1 with Maya";
-                        subtitle: "due 16:00 · ~30 min";
-                        CheckSquare { }
+                    for t[i] in [{ idx: 1 }, { idx: 2 }, { idx: 3 }]: VerticalLayout {
+                        spacing: 0;
+                        if t.idx <= root.new-tasks: TaskRow {
+                            title: "Untitled task " + t.idx;
+                            subtitle: "added just now";
+                            tone-i: 0;
+                            done: false;
+                            starred: false;
+                            postponed: false;
+                            row-clicked => {
+                                root.set-status("Untitled task done", true, false);
+                            }
+                            star-clicked => { }
+                            postpone-clicked => { }
+                        }
+                        if t.idx <= root.new-tasks && t.idx < root.new-tasks: Divider { }
                     }
                 }
             }
         }
     }
 
-    // ----- FAB ----------------------------------------------------------
     Fab {
         x: root.width - self.width - Theme.spacing-md;
         y: root.height - self.height - Theme.spacing-md;
         accessible-label: "New task";
-        clicked => { root.new-task-pressed(); }
+        clicked => {
+            root.new-tasks = min(3, root.new-tasks + 1);
+            root.set-status("New task added", true, false);
+            root.new-task-pressed();
+        }
+    }
+
+    // ===================== Bottom sheet =====================
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+                root.confirm-clear = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: Theme.surface-2;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.muted;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: "Task list menu";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 700;
+                    }
+                }
+                SheetRow {
+                    label: "Mark all done";
+                    clicked => {
+                        root.d0 = true;
+                        root.d1 = true;
+                        root.d2 = true;
+                        root.d3 = true;
+                        root.d4 = true;
+                        root.d5 = true;
+                        root.d6 = true;
+                        root.set-status("All marked done", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Restore all postponed";
+                    clicked => {
+                        root.p0 = false;
+                        root.p1 = false;
+                        root.p2 = false;
+                        root.p3 = false;
+                        root.p4 = false;
+                        root.p5 = false;
+                        root.p6 = false;
+                        root.set-status("All restored to today", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Postpone all to tomorrow";
+                    clicked => {
+                        root.p0 = true;
+                        root.p1 = true;
+                        root.p2 = true;
+                        root.p3 = true;
+                        root.p4 = true;
+                        root.p5 = true;
+                        root.p6 = true;
+                        root.set-status("All postponed", false, true);
+                        root.sheet-open = false;
+                    }
+                }
+                Divider { }
+
+                SheetRow {
+                    label: root.confirm-clear ? "Confirm: clear completed" : "Clear completed tasks";
+                    destructive: true;
+                    clicked => {
+                        if (root.confirm-clear) {
+                            root.d0 = false;
+                            root.d1 = false;
+                            root.d2 = false;
+                            root.d3 = false;
+                            root.d4 = false;
+                            root.d5 = false;
+                            root.d6 = false;
+                            root.set-status("Completed cleared", false, true);
+                            root.sheet-open = false;
+                            root.confirm-clear = false;
+                        } else {
+                            root.confirm-clear = true;
+                        }
+                    }
+                }
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.sheet-open = false;
+                        root.confirm-clear = false;
+                    }
+                }
+            }
+        }
     }
 }

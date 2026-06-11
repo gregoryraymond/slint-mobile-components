@@ -1,29 +1,5 @@
 // ChatPage
 // =====================================================================
-//
-// Conversation template — direct-message / customer-support / 1:1 chat
-// screen. Demonstrates a distinct visual pattern (alternating bubbles
-// with rounded corners on opposite sides) that none of the other
-// templates exercise. Useful scaffolding for messengers, AI-chat
-// interfaces, and support inboxes.
-//
-// Specification
-// -------------
-//
-// Geometry
-//   - `AppBar` with back + more, the title carrying the partner's name
-//     plus a tiny presence line below.
-//   - Scrollable conversation area filling the middle.
-//   - Input row pinned to the bottom — `TextField` + send button.
-//
-// Bubble shape
-//   - Incoming (from: "them"): left-aligned, `surface-2` fill, tail at
-//     bottom-left (smaller radius there so the bubble visually "points"
-//     toward the avatar).
-//   - Outgoing (from: "me"): right-aligned, `Theme.primary` fill,
-//     `on-primary` text, tail at bottom-right.
-//   - Bubble width capped at ~70 % of viewport so very long messages
-//     wrap rather than stretch corner-to-corner.
 
 import { Theme } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
@@ -31,6 +7,7 @@ import { Avatar } from "@mobile-components/avatar.slint";
 import { BottomBar } from "@mobile-components/bottom-bar.slint";
 import { TextField } from "@mobile-components/text-field.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
+import { Divider } from "@mobile-components/divider.slint";
 import { ScrollView } from "std-widgets.slint";
 
 export enum ChatSender {
@@ -38,27 +15,25 @@ export enum ChatSender {
     them,
 }
 
-export struct ChatMessage {
-    from: ChatSender,
-    text: string,
-    time: string,
-}
-
 component MessageBubble inherits Rectangle {
-    in property <ChatSender> sender;
+    in property <int> sender; // 0 me, 1 them
     in property <string> text;
     in property <string> time;
     in property <string> partner-initials: "P";
+    in property <bool> reacted: false;
+    in property <bool> seen: true;
+    callback react-clicked();
+    callback bubble-clicked();
 
     horizontal-stretch: 1;
 
     HorizontalLayout {
-        alignment: root.sender == ChatSender.me ? end : start;
+        alignment: root.sender == 0 ? end : start;
         spacing: Theme.spacing-sm;
-        padding-left: root.sender == ChatSender.me ? 56px : 0px;
-        padding-right: root.sender == ChatSender.them ? 56px : 0px;
+        padding-left: root.sender == 0 ? 56px : 0px;
+        padding-right: root.sender == 1 ? 56px : 0px;
 
-        if root.sender == ChatSender.them: VerticalLayout {
+        if root.sender == 1: VerticalLayout {
             alignment: end;
             Avatar {
                 fallback: root.partner-initials;
@@ -69,36 +44,146 @@ component MessageBubble inherits Rectangle {
         VerticalLayout {
             spacing: 2px;
             Rectangle {
-                background: root.sender == ChatSender.me
-                    ? Theme.primary
-                    : Theme.surface-2;
+                background: root.sender == 0 ? Theme.primary : Theme.surface-2;
                 border-radius: Theme.radius-md;
-                // Tail corner — points toward the speaker.
-                border-bottom-left-radius:
-                    root.sender == ChatSender.them ? 4px : Theme.radius-md;
-                border-bottom-right-radius:
-                    root.sender == ChatSender.me ? 4px : Theme.radius-md;
+                border-bottom-left-radius: root.sender == 1 ? 4px : Theme.radius-md;
+                border-bottom-right-radius: root.sender == 0 ? 4px : Theme.radius-md;
 
                 VerticalLayout {
                     padding: Theme.spacing-sm + 2px;
                     Text {
                         text: root.text;
-                        color: root.sender == ChatSender.me
-                            ? Theme.on-primary
-                            : Theme.on-surface;
+                        color: root.sender == 0 ? Theme.on-primary : Theme.on-surface;
                         font-size: Theme.font-size-body-large;
                         wrap: word-wrap;
+                    }
+                }
+                if root.reacted: Rectangle {
+                    x: root.sender == 0 ? -8px : parent.width - 24px;
+                    y: parent.height - 14px;
+                    width: 24px;
+                    height: 24px;
+                    border-radius: 12px;
+                    background: Theme.background;
+                    border-width: 1px;
+                    border-color: Theme.outline;
+                    Text {
+                        text: "❤";
+                        color: Theme.accent-danger;
+                        font-size: 11px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                }
+                TouchArea {
+                    clicked => {
+                        root.bubble-clicked();
                     }
                 }
             }
 
             HorizontalLayout {
-                alignment: root.sender == ChatSender.me ? end : start;
+                alignment: root.sender == 0 ? end : start;
+                spacing: 4px;
                 Text {
                     text: root.time;
                     color: Theme.muted;
                     font-size: Theme.font-size-caption;
                 }
+                if root.sender == 0: Text {
+                    text: root.seen ? "✓✓" : "✓";
+                    color: root.seen ? Theme.accent-info : Theme.muted;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 800;
+                }
+            }
+            HorizontalLayout {
+                alignment: root.sender == 0 ? end : start;
+                Rectangle {
+                    horizontal-stretch: 0;
+                    height: 22px;
+                    border-radius: 11px;
+                    background: root.reacted ? Theme.accent-danger.with-alpha(0.22) : Theme.surface-2;
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-sm;
+                        padding-right: Theme.spacing-sm;
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: root.reacted ? "❤ Liked" : "♡ React";
+                                color: root.reacted ? Theme.accent-danger : Theme.muted;
+                                font-size: 10px;
+                                font-weight: 800;
+                            }
+                        }
+                    }
+                    TouchArea {
+                        clicked => {
+                            root.react-clicked();
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+component QuickReply inherits Rectangle {
+    in property <string> label;
+    callback clicked();
+
+    horizontal-stretch: 0;
+    height: 30px;
+    border-radius: 15px;
+    background: Theme.surface-2;
+    HorizontalLayout {
+        padding-left: Theme.spacing-sm;
+        padding-right: Theme.spacing-sm;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: Theme.accent-info;
+                font-size: Theme.font-size-caption;
+                font-weight: 700;
+            }
+        }
+    }
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.destructive ? Theme.accent-danger : Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
             }
         }
     }
@@ -108,20 +193,78 @@ export component ChatPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
     in property <string> partner-name: "Petra Lindquist";
-    in property <string> partner-status: "online · typing…";
     in property <string> partner-initials: "PL";
-    in property <[ChatMessage]> messages: [
-        { from: ChatSender.them, text: "Hey — got time to look at the surface tier naming today?", time: "10:32" },
-        { from: ChatSender.me, text: "Yeah, just finishing the InboxPage refinement. 10 min.", time: "10:34" },
-        { from: ChatSender.them, text: "No rush. I'm leaning toward `surface-1 / -2 / -3` over the longer names. Shorter is better when you read it twenty times a screen.", time: "10:35" },
-        { from: ChatSender.me, text: "Agree. Locked it in DESIGN.md.", time: "10:41" },
-        { from: ChatSender.them, text: "Perfect. Coffee at 11?", time: "10:42" },
-        { from: ChatSender.me, text: "👍", time: "10:42" },
-    ];
+
     in-out property <string> draft;
+    in-out property <bool> r0: false;
+    in-out property <bool> r1: false;
+    in-out property <bool> r2: false;
+    in-out property <bool> r3: false;
+    in-out property <bool> r4: false;
+    in-out property <bool> r5: false;
+    in-out property <int> sent-extra: 0; // 0..3 extra "me" messages
+    in-out property <bool> rs0: false;
+    in-out property <bool> rs1: false;
+    in-out property <bool> rs2: false;
+    in-out property <int> reply-extra: 0; // partner replies after each sent
+    in-out property <bool> partner-typing: false;
+    in-out property <bool> partner-online: true;
+    in-out property <bool> muted: false;
+    in-out property <bool> pinned: false;
+    in-out property <bool> sheet-open: false;
+    in-out property <bool> confirm-clear: false;
+    in-out property <string> status-msg: "";
+    in-out property <bool> status-success: false;
+    in-out property <bool> status-danger: false;
+
     callback back-pressed();
     callback more-pressed();
     callback send-pressed(string);
+    callback call-pressed();
+
+    function sent-template(i: int) -> string {
+        return i == 0 ? "Sounds good ✨" : (i == 1 ? "Let me check and circle back." : "I'll send the design link in a sec.");
+    }
+    function reply-template(i: int) -> string {
+        return i == 0 ? "🚀 Awesome, thanks!" : (i == 1 ? "👀 Looking now…" : "Got it — let's pair on it after coffee.");
+    }
+    function status-line() -> string {
+        return root.muted ? "muted" : (root.partner-typing ? "typing…" : (root.partner-online ? "online" : "last seen 14:02"));
+    }
+    function set-status(m: string, ok: bool, bad: bool) {
+        root.status-msg = m;
+        root.status-success = ok;
+        root.status-danger = bad;
+    }
+    function send-draft() {
+        if (root.sent-extra < 3 && !root.draft.is-empty) {
+            root.sent-extra = root.sent-extra + 1;
+            root.draft = "";
+            root.partner-typing = true;
+            root.set-status("Sent ✓", true, false);
+            root.send-pressed(root.draft);
+        }
+    }
+    function send-template(t: string) {
+        if (root.sent-extra < 3) {
+            root.sent-extra = root.sent-extra + 1;
+            root.partner-typing = true;
+            root.set-status("Sent: " + t, true, false);
+        }
+    }
+
+    // Simulated partner reply timer.
+    reply-tick := Timer {
+        interval: 1500ms;
+        running: root.partner-typing;
+        triggered => {
+            root.partner-typing = false;
+            if (root.reply-extra < root.sent-extra) {
+                root.reply-extra = root.reply-extra + 1;
+                root.set-status("New reply from " + root.partner-name, true, false);
+            }
+        }
+    }
 
     background: Theme.background;
 
@@ -129,26 +272,133 @@ export component ChatPage inherits Window {
         spacing: 0;
 
         AppBar {
-            title: root.partner-name;
+            title: (root.pinned ? "★ " : "") + root.partner-name + (root.muted ? " · muted" : "");
             title-style: HeadingStyle.plex-medium;
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
-            leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.more-pressed(); }
+            leading-pressed => {
+                root.back-pressed();
+            }
+            trailing-pressed => {
+                root.sheet-open = true;
+            }
         }
 
-        // Presence/status line under the bar.
+        // Presence + action chips row.
         Rectangle {
-            height: 20px;
+            height: 36px;
             HorizontalLayout {
                 padding-left: Theme.spacing-md;
-                Text {
-                    text: root.partner-status;
-                    color: Theme.muted;
-                    font-family: "IBM Plex Sans";
-                    font-size: Theme.font-size-caption;
-                    font-italic: true;
-                    vertical-alignment: center;
+                padding-right: Theme.spacing-md;
+                spacing: Theme.spacing-sm;
+                alignment: stretch;
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    HorizontalLayout {
+                        spacing: 4px;
+                        alignment: start;
+                        if root.partner-online: Rectangle {
+                            width: 8px;
+                            height: 8px;
+                            border-radius: 4px;
+                            background: Theme.accent-success;
+                            y: 6px;
+                        }
+                        Text {
+                            text: root.status-line();
+                            color: root.partner-typing ? Theme.accent-info : Theme.muted;
+                            font-family: "IBM Plex Sans";
+                            font-size: Theme.font-size-caption;
+                            font-italic: root.partner-typing;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+                Rectangle {
+                    horizontal-stretch: 0;
+                    width: 36px;
+                    height: 28px;
+                    border-radius: 14px;
+                    background: Theme.accent-success.with-alpha(0.22);
+                    Text {
+                        text: "☎";
+                        color: Theme.accent-success;
+                        font-size: 14px;
+                        font-weight: 800;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                    TouchArea {
+                        clicked => {
+                            root.set-status("Calling " + root.partner-name + "…", true, false);
+                            root.call-pressed();
+                        }
+                    }
+                }
+                Rectangle {
+                    horizontal-stretch: 0;
+                    width: 36px;
+                    height: 28px;
+                    border-radius: 14px;
+                    background: root.pinned ? Theme.accent-warning.with-alpha(0.22) : Theme.surface-2;
+                    Text {
+                        text: "★";
+                        color: root.pinned ? Theme.accent-warning : Theme.muted;
+                        font-size: 14px;
+                        font-weight: 800;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                    TouchArea {
+                        clicked => {
+                            root.pinned = !root.pinned;
+                            root.set-status(root.pinned ? "Pinned chat" : "Unpinned", root.pinned, false);
+                        }
+                    }
+                }
+                Rectangle {
+                    horizontal-stretch: 0;
+                    width: 36px;
+                    height: 28px;
+                    border-radius: 14px;
+                    background: root.muted ? Theme.accent-danger.with-alpha(0.22) : Theme.surface-2;
+                    Text {
+                        text: root.muted ? "🔕" : "🔔";
+                        color: root.muted ? Theme.accent-danger : Theme.muted;
+                        font-size: 12px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                    TouchArea {
+                        clicked => {
+                            root.muted = !root.muted;
+                            root.set-status(root.muted ? "Notifications muted" : "Unmuted", !root.muted, root.muted);
+                        }
+                    }
+                }
+            }
+        }
+
+        if !root.status-msg.is-empty: Rectangle {
+            height: 28px;
+            background: root.status-success ? Theme.accent-success.with-alpha(0.16) : (root.status-danger ? Theme.accent-danger.with-alpha(0.16) : Theme.surface-2);
+            HorizontalLayout {
+                alignment: center;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.status-msg;
+                        color: root.status-success ? Theme.accent-success : (root.status-danger ? Theme.accent-danger : Theme.on-surface);
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                    }
                 }
             }
         }
@@ -161,11 +411,192 @@ export component ChatPage inherits Window {
                 padding: Theme.spacing-md;
                 spacing: Theme.spacing-sm;
 
-                for msg in root.messages: MessageBubble {
-                    sender: msg.from;
-                    text: msg.text;
-                    time: msg.time;
+                MessageBubble {
+                    sender: 1;
+                    text: "Hey — got time to look at the surface tier naming today?";
+                    time: "10:32";
                     partner-initials: root.partner-initials;
+                    reacted: root.r0;
+                    seen: true;
+                    react-clicked => {
+                        root.r0 = !root.r0;
+                        root.set-status(root.r0 ? "Reacted ❤" : "Reaction cleared", root.r0, false);
+                    }
+                    bubble-clicked => {
+                        root.r0 = !root.r0;
+                    }
+                }
+                MessageBubble {
+                    sender: 0;
+                    text: "Yeah, just finishing the InboxPage refinement. 10 min.";
+                    time: "10:34";
+                    reacted: root.r1;
+                    seen: true;
+                    react-clicked => {
+                        root.r1 = !root.r1;
+                        root.set-status(root.r1 ? "Reacted ❤" : "Reaction cleared", root.r1, false);
+                    }
+                    bubble-clicked => {
+                        root.r1 = !root.r1;
+                    }
+                }
+                MessageBubble {
+                    sender: 1;
+                    text: "No rush. I'm leaning toward `surface-1 / -2 / -3` over the longer names. Shorter is better when you read it twenty times a screen.";
+                    time: "10:35";
+                    partner-initials: root.partner-initials;
+                    reacted: root.r2;
+                    react-clicked => {
+                        root.r2 = !root.r2;
+                        root.set-status(root.r2 ? "Reacted ❤" : "Reaction cleared", root.r2, false);
+                    }
+                    bubble-clicked => {
+                        root.r2 = !root.r2;
+                    }
+                }
+                MessageBubble {
+                    sender: 0;
+                    text: "Agree. Locked it in DESIGN.md.";
+                    time: "10:41";
+                    reacted: root.r3;
+                    seen: true;
+                    react-clicked => {
+                        root.r3 = !root.r3;
+                        root.set-status(root.r3 ? "Reacted ❤" : "Reaction cleared", root.r3, false);
+                    }
+                    bubble-clicked => {
+                        root.r3 = !root.r3;
+                    }
+                }
+                MessageBubble {
+                    sender: 1;
+                    text: "Perfect. Coffee at 11?";
+                    time: "10:42";
+                    partner-initials: root.partner-initials;
+                    reacted: root.r4;
+                    react-clicked => {
+                        root.r4 = !root.r4;
+                        root.set-status(root.r4 ? "Reacted ❤" : "Reaction cleared", root.r4, false);
+                    }
+                    bubble-clicked => {
+                        root.r4 = !root.r4;
+                    }
+                }
+                MessageBubble {
+                    sender: 0;
+                    text: "👍";
+                    time: "10:42";
+                    reacted: root.r5;
+                    seen: true;
+                    react-clicked => {
+                        root.r5 = !root.r5;
+                        root.set-status(root.r5 ? "Reacted ❤" : "Reaction cleared", root.r5, false);
+                    }
+                    bubble-clicked => {
+                        root.r5 = !root.r5;
+                    }
+                }
+
+                // Dynamic sent messages.
+                for sent[i] in [{ idx: 1 }, { idx: 2 }, { idx: 3 }]: VerticalLayout {
+                    spacing: Theme.spacing-sm;
+                    if sent.idx <= root.sent-extra: MessageBubble {
+                        sender: 0;
+                        text: root.sent-template(sent.idx - 1);
+                        time: "10:" + (45 + sent.idx);
+                        reacted: sent.idx == 1 ? root.rs0 : (sent.idx == 2 ? root.rs1 : root.rs2);
+                        seen: root.reply-extra >= sent.idx;
+                        react-clicked => {
+                            if (sent.idx == 1) {
+                                root.rs0 = !root.rs0;
+                            }
+                            if (sent.idx == 2) {
+                                root.rs1 = !root.rs1;
+                            }
+                            if (sent.idx == 3) {
+                                root.rs2 = !root.rs2;
+                            }
+                        }
+                        bubble-clicked => { }
+                    }
+                    if sent.idx <= root.reply-extra: MessageBubble {
+                        sender: 1;
+                        text: root.reply-template(sent.idx - 1);
+                        time: "10:" + (45 + sent.idx);
+                        partner-initials: root.partner-initials;
+                        reacted: false;
+                        react-clicked => { }
+                        bubble-clicked => { }
+                    }
+                }
+
+                if root.partner-typing: HorizontalLayout {
+                    alignment: start;
+                    spacing: Theme.spacing-sm;
+                    VerticalLayout {
+                        alignment: center;
+                        Avatar {
+                            fallback: root.partner-initials;
+                            size: 28px;
+                        }
+                    }
+                    Rectangle {
+                        horizontal-stretch: 0;
+                        height: 32px;
+                        border-radius: 16px;
+                        background: Theme.surface-2;
+                        HorizontalLayout {
+                            padding-left: Theme.spacing-md;
+                            padding-right: Theme.spacing-md;
+                            VerticalLayout {
+                                alignment: center;
+                                Text {
+                                    text: "● ● ●";
+                                    color: Theme.muted;
+                                    font-size: 12px;
+                                    font-weight: 800;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Quick replies strip.
+        if root.draft.is-empty && root.sent-extra < 3: Rectangle {
+            height: 44px;
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                spacing: Theme.spacing-sm;
+                alignment: start;
+                VerticalLayout {
+                    alignment: center;
+                    QuickReply {
+                        label: "Sounds good ✨";
+                        clicked => {
+                            root.send-template(root.sent-template(0));
+                        }
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    QuickReply {
+                        label: "Let me check…";
+                        clicked => {
+                            root.send-template(root.sent-template(1));
+                        }
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    QuickReply {
+                        label: "Send link";
+                        clicked => {
+                            root.send-template(root.sent-template(2));
+                        }
+                    }
                 }
             }
         }
@@ -189,13 +620,13 @@ export component ChatPage inherits Window {
                     width: 48px;
                     height: 48px;
                     border-radius: self.width / 2;
-                    background: send-touch.pressed
-                        ? Theme.primary-pressed
-                        : Theme.primary;
+                    background: send-touch.pressed ? Theme.primary-pressed : (root.draft.is-empty ? Theme.surface-2 : Theme.primary);
 
                     accessible-role: button;
-                    accessible-label: "Send";
-                    accessible-action-default => { root.send-pressed(root.draft); }
+                    accessible-label: root.draft.is-empty ? "Voice" : "Send";
+                    accessible-action-default => {
+                        root.send-draft();
+                    }
 
                     animate background { duration: Theme.motion-fast; }
 
@@ -204,13 +635,123 @@ export component ChatPage inherits Window {
                         height: 22px;
                         x: (parent.width - self.width) / 2;
                         y: (parent.height - self.height) / 2;
-                        source: @image-url("@mobile-components/icons/send.svg");
-                        colorize: Theme.on-primary;
+                        source: root.draft.is-empty ? @image-url("@mobile-components/icons/star.svg") : @image-url("@mobile-components/icons/send.svg");
+                        colorize: root.draft.is-empty ? Theme.muted : Theme.on-primary;
                         image-fit: contain;
                     }
 
                     send-touch := TouchArea {
-                        clicked => { root.send-pressed(root.draft); }
+                        clicked => {
+                            if (root.draft.is-empty) {
+                                root.set-status("🎙 Recording voice…", true, false);
+                            } else {
+                                root.send-draft();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ===================== Bottom sheet =====================
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+                root.confirm-clear = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: Theme.surface-2;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.muted;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: root.partner-name;
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 700;
+                    }
+                }
+                SheetRow {
+                    label: root.muted ? "Unmute notifications" : "Mute notifications";
+                    clicked => {
+                        root.muted = !root.muted;
+                        root.set-status(root.muted ? "Muted" : "Unmuted", !root.muted, root.muted);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: root.pinned ? "Unpin chat" : "Pin chat";
+                    clicked => {
+                        root.pinned = !root.pinned;
+                        root.set-status(root.pinned ? "Pinned" : "Unpinned", root.pinned, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: root.partner-online ? "Mark partner offline" : "Mark partner online";
+                    clicked => {
+                        root.partner-online = !root.partner-online;
+                        root.set-status(root.partner-online ? "Partner online" : "Partner offline", root.partner-online, false);
+                        root.sheet-open = false;
+                    }
+                }
+                Divider { }
+
+                SheetRow {
+                    label: root.confirm-clear ? "Confirm: clear chat" : "Clear chat";
+                    destructive: true;
+                    clicked => {
+                        if (root.confirm-clear) {
+                            root.sent-extra = 0;
+                            root.reply-extra = 0;
+                            root.r0 = false;
+                            root.r1 = false;
+                            root.r2 = false;
+                            root.r3 = false;
+                            root.r4 = false;
+                            root.r5 = false;
+                            root.rs0 = false;
+                            root.rs1 = false;
+                            root.rs2 = false;
+                            root.set-status("Chat cleared", false, true);
+                            root.sheet-open = false;
+                            root.confirm-clear = false;
+                        } else {
+                            root.confirm-clear = true;
+                        }
+                    }
+                }
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.sheet-open = false;
+                        root.confirm-clear = false;
                     }
                 }
             }

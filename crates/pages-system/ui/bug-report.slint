@@ -1,10 +1,5 @@
 // BugReportPage
 // =====================================================================
-//
-// A "report a bug" form. Mixes the form-field stack used by signup with
-// the grouped-settings stack used by account-settings — so the labels,
-// inputs, attachment rows and toggle rows all share the same gutter
-// inset (16 px) and vertical rhythm regardless of slot type.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
@@ -19,6 +14,139 @@ import { SegmentedControl } from "@mobile-components/segmented-control.slint";
 import { Divider } from "@mobile-components/divider.slint";
 import { ScrollView } from "std-widgets.slint";
 
+component AreaChip inherits Rectangle {
+    in property <string> label;
+    in property <bool> active: false;
+    callback clicked();
+
+    horizontal-stretch: 0;
+    height: 28px;
+    border-radius: 14px;
+    background: root.active ? Theme.primary : Theme.surface-2;
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: center;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.active ? Theme.on-primary : Theme.on-surface;
+                font-size: Theme.font-size-caption;
+                font-weight: 700;
+            }
+        }
+    }
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component AttachmentRow inherits Rectangle {
+    in property <string> name;
+    in property <string> meta;
+    in property <bool> removed: false;
+    callback toggle-clicked();
+
+    horizontal-stretch: 1;
+    min-height: 56px;
+    opacity: root.removed ? 0.5 : 1.0;
+
+    HorizontalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 32px;
+                height: 32px;
+                border-radius: 8px;
+                background: Theme.surface-2;
+                Image {
+                    width: 18px;
+                    height: 18px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: @image-url("@mobile-components/icons/menu.svg");
+                    colorize: Theme.muted;
+                    image-fit: contain;
+                }
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: root.name + (root.removed ? " · removed" : "");
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 700;
+            }
+            Text {
+                text: root.meta;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+            }
+        }
+        Rectangle {
+            width: 32px;
+            height: 32px;
+            border-radius: 16px;
+            background: root.removed ? Theme.accent-success.with-alpha(0.22) : Theme.accent-danger.with-alpha(0.22);
+            Text {
+                text: root.removed ? "↺" : "✕";
+                color: root.removed ? Theme.accent-success : Theme.accent-danger;
+                font-size: 14px;
+                font-weight: 800;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                width: parent.width;
+                height: parent.height;
+            }
+            TouchArea {
+                clicked => {
+                    root.toggle-clicked();
+                }
+            }
+        }
+    }
+}
+
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    background: ta.has-hover ? Theme.surface-1 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.destructive ? Theme.accent-danger : Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+        }
+    }
+}
+
 export component BugReportPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
@@ -28,11 +156,70 @@ export component BugReportPage inherits Window {
     in-out property <string> what-should-have-happened;
     in-out property <int> severity: 1;
     in-out property <bool> include-diagnostics: true;
+    in-out property <int> area-idx: 0; // 0 UI 1 Perf 2 Crash 3 Other
+    in-out property <bool> attach1-removed: false;
+    in-out property <bool> attach2-removed: false;
+    in-out property <int> new-attachments: 0;
+    in-out property <bool> recording: false;
+    in-out property <int> record-secs: 0;
+    in-out property <bool> sent: false;
+    in-out property <string> ticket-id: "BUG-9248";
+    in-out property <bool> sheet-open: false;
+    in-out property <bool> confirm-discard: false;
+    in-out property <string> status-msg: "";
+    in-out property <bool> status-success: false;
+    in-out property <bool> status-danger: false;
 
     callback back-pressed();
     callback send-pressed();
     callback add-screenshot-pressed();
     callback remove-attachment(string);
+
+    function area-label() -> string {
+        return root.area-idx == 0 ? "UI" : (root.area-idx == 1 ? "Performance" : (root.area-idx == 2 ? "Crash" : "Other"));
+    }
+    function severity-label() -> string {
+        return root.severity == 0 ? "Minor" : (root.severity == 1 ? "Major" : "Crash");
+    }
+    function attachment-count() -> int {
+        return (root.attach1-removed ? 0 : 1) + (root.attach2-removed ? 0 : 1) + root.new-attachments;
+    }
+    function can-send() -> bool {
+        return !root.bug-title.is-empty && !root.what-happened.is-empty;
+    }
+    function pad2(n: int) -> string {
+        return n < 10 ? "0" + n : "" + n;
+    }
+    function record-time() -> string {
+        return root.pad2(floor(root.record-secs / 60)) + ":" + root.pad2(mod(root.record-secs, 60));
+    }
+    function set-status(m: string, ok: bool, bad: bool) {
+        root.status-msg = m;
+        root.status-success = ok;
+        root.status-danger = bad;
+    }
+    function do-send() {
+        if (!root.can-send()) {
+            root.set-status("Title and description required", false, true);
+            return;
+        }
+        root.sent = true;
+        root.set-status("✓ Bug filed · " + root.ticket-id, true, false);
+        root.send-pressed();
+    }
+    function fill-demo() {
+        root.bug-title = "Drawer shadow clips on the right edge";
+        root.what-happened = "When I swipe the side drawer open in portrait, the inner shadow on the right edge gets cut off at the screen border.";
+        root.what-should-have-happened = "Shadow should extend onto the page surface beneath the drawer like it does on the left edge.";
+    }
+
+    record-tick := Timer {
+        interval: 1s;
+        running: root.recording;
+        triggered => {
+            root.record-secs = root.record-secs + 1;
+        }
+    }
 
     background: Theme.background;
 
@@ -40,19 +227,75 @@ export component BugReportPage inherits Window {
         spacing: 0;
 
         AppBar {
-            title: "Report a bug";
+            title: root.sent ? root.ticket-id + " · sent" : "Report a bug" + (root.severity == 2 ? " · CRASH" : "");
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
-            leading-pressed => { root.back-pressed(); }
+            trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
+            leading-pressed => {
+                root.back-pressed();
+            }
+            trailing-pressed => {
+                root.sheet-open = true;
+            }
         }
 
-        // Send action lives just under the bar so it stays reachable.
         HorizontalLayout {
             padding-left: Theme.spacing-md;
             padding-right: Theme.spacing-md;
-            alignment: end;
-            TextButton {
-                text: "Send";
-                clicked => { root.send-pressed(); }
+            padding-top: Theme.spacing-sm;
+            padding-bottom: Theme.spacing-sm;
+            spacing: Theme.spacing-sm;
+            alignment: stretch;
+            VerticalLayout {
+                alignment: center;
+                horizontal-stretch: 1;
+                Text {
+                    text: root.attachment-count() + " attachments · area: " + root.area-label();
+                    color: Theme.muted;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                }
+            }
+            Rectangle {
+                horizontal-stretch: 0;
+                height: 32px;
+                border-radius: 16px;
+                background: root.can-send() ? Theme.primary : Theme.surface-2;
+                HorizontalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    VerticalLayout {
+                        alignment: center;
+                        Text {
+                            text: root.sent ? "✓ Sent" : "Send";
+                            color: root.can-send() ? Theme.on-primary : Theme.muted;
+                            font-size: Theme.font-size-caption;
+                            font-weight: 800;
+                        }
+                    }
+                }
+                TouchArea {
+                    enabled: root.can-send() && !root.sent;
+                    clicked => {
+                        root.do-send();
+                    }
+                }
+            }
+        }
+
+        if !root.status-msg.is-empty: Rectangle {
+            height: 28px;
+            background: root.status-success ? Theme.accent-success.with-alpha(0.16) : (root.status-danger ? Theme.accent-danger.with-alpha(0.16) : Theme.surface-2);
+            HorizontalLayout {
+                alignment: center;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.status-msg;
+                        color: root.status-success ? Theme.accent-success : (root.status-danger ? Theme.accent-danger : Theme.on-surface);
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                    }
+                }
             }
         }
 
@@ -65,13 +308,112 @@ export component BugReportPage inherits Window {
                 spacing: Theme.spacing-md;
                 alignment: start;
 
-                // ----- Free-text fields -------------------------------
+                if root.sent: VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    Rectangle {
+                        background: Theme.accent-success.with-alpha(0.16);
+                        border-radius: Theme.radius-md;
+                        VerticalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-xs;
+                            Text {
+                                text: "Bug filed ✓";
+                                color: Theme.accent-success;
+                                font-size: Theme.font-size-headline;
+                                font-weight: 800;
+                            }
+                            Text {
+                                text: "Tracking under " + root.ticket-id + ". Engineering has been paged based on " + root.severity-label() + " severity.";
+                                color: Theme.on-surface;
+                                font-size: Theme.font-size-body;
+                                wrap: word-wrap;
+                            }
+                            Rectangle {
+                                horizontal-stretch: 0;
+                                width: 140px;
+                                height: 32px;
+                                border-radius: 16px;
+                                background: Theme.surface-2;
+                                HorizontalLayout {
+                                    alignment: center;
+                                    VerticalLayout {
+                                        alignment: center;
+                                        Text {
+                                            text: "Edit report";
+                                            color: Theme.accent-success;
+                                            font-size: Theme.font-size-caption;
+                                            font-weight: 800;
+                                        }
+                                    }
+                                }
+                                TouchArea {
+                                    clicked => {
+                                        root.sent = false;
+                                        root.set-status("Reopened for editing", false, false);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Affected area chips.
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    spacing: Theme.spacing-xs;
+                    Text {
+                        text: "AFFECTED AREA · " + root.area-label();
+                        color: Theme.muted;
+                        font-size: 11px;
+                        font-weight: 800;
+                        letter-spacing: 2px;
+                    }
+                    HorizontalLayout {
+                        spacing: Theme.spacing-sm;
+                        AreaChip {
+                            label: "UI";
+                            active: root.area-idx == 0;
+                            clicked => {
+                                root.area-idx = 0;
+                                root.set-status("Area: UI", true, false);
+                            }
+                        }
+                        AreaChip {
+                            label: "Performance";
+                            active: root.area-idx == 1;
+                            clicked => {
+                                root.area-idx = 1;
+                                root.set-status("Area: Performance", true, false);
+                            }
+                        }
+                        AreaChip {
+                            label: "Crash";
+                            active: root.area-idx == 2;
+                            clicked => {
+                                root.area-idx = 2;
+                                root.severity = 2;
+                                root.set-status("Area: Crash · severity → Crash", false, true);
+                            }
+                        }
+                        AreaChip {
+                            label: "Other";
+                            active: root.area-idx == 3;
+                            clicked => {
+                                root.area-idx = 3;
+                                root.set-status("Area: Other", true, false);
+                            }
+                        }
+                    }
+                }
+
                 VerticalLayout {
                     spacing: Theme.spacing-md;
                     alignment: stretch;
 
                     FormField {
-                        label: "Title";
+                        label: "Title" + (root.bug-title.is-empty ? " · required" : "");
                         required: true;
                         TextField {
                             placeholder: "Brief summary of the issue";
@@ -80,7 +422,7 @@ export component BugReportPage inherits Window {
                     }
 
                     FormField {
-                        label: "What happened?";
+                        label: "What happened?" + (root.what-happened.is-empty ? " · required" : "");
                         TextField {
                             placeholder: "Tell us what you were doing and what went wrong";
                             text <=> root.what-happened;
@@ -96,66 +438,148 @@ export component BugReportPage inherits Window {
                     }
                 }
 
-                // ----- SEVERITY ---------------------------------------
                 FormSection {
-                    title: "SEVERITY";
+                    title: "SEVERITY · " + root.severity-label();
 
                     SettingRow {
                         title: "How bad is it?";
-                        subtitle: "Helps us triage and prioritise.";
+                        subtitle: root.severity == 2 ? "🔴 Crash — engineering paged on send." : (root.severity == 1 ? "🟠 Major — review within 1 day." : "🟢 Minor — fits into next sprint.");
                         SegmentedControl {
                             width: 220px;
                             options: ["Minor", "Major", "Crash"];
                             selected-index <=> root.severity;
+                            changed(i) => {
+                                root.set-status("Severity: " + root.severity-label(), i == 0, i == 2);
+                            }
                         }
                     }
                 }
 
-                // ----- ATTACHMENTS ------------------------------------
                 FormSection {
-                    title: "ATTACHMENTS";
+                    title: "ATTACHMENTS · " + root.attachment-count();
 
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/menu.svg");
-                        title: "screenshot-001.png";
-                        subtitle: "412 KB";
-                        Image {
-                            width: 18px;
-                            height: 18px;
-                            source: @image-url("@mobile-components/icons/close.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
-                            TouchArea {
-                                clicked => { root.remove-attachment("screenshot-001.png"); }
+                    AttachmentRow {
+                        name: "screenshot-001.png";
+                        meta: "412 KB";
+                        removed: root.attach1-removed;
+                        toggle-clicked => {
+                            root.attach1-removed = !root.attach1-removed;
+                            root.set-status(root.attach1-removed ? "Removed screenshot-001" : "Restored", !root.attach1-removed, root.attach1-removed);
+                            root.remove-attachment("screenshot-001.png");
+                        }
+                    }
+                    Divider { }
+
+                    AttachmentRow {
+                        name: "screenshot-002.png";
+                        meta: "318 KB";
+                        removed: root.attach2-removed;
+                        toggle-clicked => {
+                            root.attach2-removed = !root.attach2-removed;
+                            root.set-status(root.attach2-removed ? "Removed screenshot-002" : "Restored", !root.attach2-removed, root.attach2-removed);
+                            root.remove-attachment("screenshot-002.png");
+                        }
+                    }
+
+                    for nt[i] in [{ idx: 1 }, { idx: 2 }, { idx: 3 }]: VerticalLayout {
+                        spacing: 0;
+                        if nt.idx <= root.new-attachments: Divider { }
+                        if nt.idx <= root.new-attachments: AttachmentRow {
+                            name: "screenshot-00" + (nt.idx + 2) + ".png";
+                            meta: "added · 240 KB";
+                            removed: false;
+                            toggle-clicked => {
+                                root.new-attachments = max(0, root.new-attachments - 1);
+                                root.set-status("Removed attachment", false, true);
                             }
                         }
                     }
                     Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/menu.svg");
-                        title: "screenshot-002.png";
-                        subtitle: "318 KB";
-                        Image {
-                            width: 18px;
-                            height: 18px;
-                            source: @image-url("@mobile-components/icons/close.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
-                            TouchArea {
-                                clicked => { root.remove-attachment("screenshot-002.png"); }
+
+                    Rectangle {
+                        min-height: 48px;
+                        HorizontalLayout {
+                            padding: Theme.spacing-md;
+                            VerticalLayout {
+                                alignment: center;
+                                horizontal-stretch: 1;
+                                Text {
+                                    text: root.new-attachments >= 3 ? "Max screenshots reached" : "+ Add screenshot";
+                                    color: root.new-attachments >= 3 ? Theme.muted : Theme.accent-info;
+                                    font-size: Theme.font-size-body;
+                                    font-weight: 800;
+                                }
                             }
                         }
-                    }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/plus.svg");
-                        tone: Tone.info;
-                        title: "Add screenshot";
-                        clicked => { root.add-screenshot-pressed(); }
+                        TouchArea {
+                            enabled: root.new-attachments < 3;
+                            clicked => {
+                                root.new-attachments = root.new-attachments + 1;
+                                root.set-status("Attached screenshot-00" + (root.new-attachments + 2), true, false);
+                                root.add-screenshot-pressed();
+                            }
+                        }
                     }
                 }
 
-                // ----- DIAGNOSTICS ------------------------------------
+                FormSection {
+                    title: "SESSION RECORDING";
+
+                    Rectangle {
+                        min-height: 56px;
+                        HorizontalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-md;
+                            VerticalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: 36px;
+                                    height: 36px;
+                                    border-radius: 18px;
+                                    background: root.recording ? Theme.accent-danger : Theme.surface-2;
+                                    Text {
+                                        text: root.recording ? "■" : "●";
+                                        color: root.recording ? Theme.on-primary : Theme.accent-danger;
+                                        font-size: 18px;
+                                        font-weight: 800;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                        width: parent.width;
+                                        height: parent.height;
+                                    }
+                                    TouchArea {
+                                        clicked => {
+                                            root.recording = !root.recording;
+                                            if (!root.recording) {
+                                                root.set-status("Recording stopped · " + root.record-time() + " captured", true, false);
+                                            } else {
+                                                root.record-secs = 0;
+                                                root.set-status("Recording started", false, true);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                alignment: center;
+                                spacing: 2px;
+                                Text {
+                                    text: root.recording ? "Recording · " + root.record-time() : (root.record-secs > 0 ? "Captured · " + root.record-time() : "Capture a session video");
+                                    color: Theme.on-surface;
+                                    font-size: Theme.font-size-body;
+                                    font-weight: 700;
+                                }
+                                Text {
+                                    text: "Auto-attaches when sent.";
+                                    color: Theme.muted;
+                                    font-size: Theme.font-size-caption;
+                                }
+                            }
+                        }
+                    }
+                }
+
                 FormSection {
                     title: "DIAGNOSTICS";
                     caption: "Helps engineering find the issue faster.";
@@ -165,27 +589,138 @@ export component BugReportPage inherits Window {
                         value: "1.4.2 · 3187";
                     }
                     Divider { }
+
                     KeyValueRow {
                         label: "OS";
                         value: "Android 14";
                     }
                     Divider { }
+
                     KeyValueRow {
                         label: "Device";
                         value: "Pixel 8 Pro";
                     }
                     Divider { }
+
                     KeyValueRow {
                         label: "Locale";
                         value: "en-GB";
                     }
                     Divider { }
+
                     SettingRow {
                         icon: @image-url("@mobile-components/icons/lock.svg");
                         tone: Tone.info;
                         title: "Include diagnostics in report";
-                        subtitle: "Attaches the table above to the bug.";
-                        MobileSwitch { checked <=> root.include-diagnostics; }
+                        subtitle: root.include-diagnostics ? "Will attach the table above." : "Diagnostics will NOT be sent.";
+                        MobileSwitch {
+                            checked <=> root.include-diagnostics;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+                root.confirm-discard = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: Theme.surface-2;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.muted;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: "Bug report menu";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 700;
+                    }
+                }
+                SheetRow {
+                    label: "Fill with demo data";
+                    clicked => {
+                        root.fill-demo();
+                        root.set-status("Demo filled", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: root.recording ? "Stop recording" : "Start session recording";
+                    clicked => {
+                        root.recording = !root.recording;
+                        if (root.recording) {
+                            root.record-secs = 0;
+                        }
+                        root.set-status(root.recording ? "Recording" : "Stopped", !root.recording, root.recording);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: root.include-diagnostics ? "Drop diagnostics" : "Include diagnostics";
+                    clicked => {
+                        root.include-diagnostics = !root.include-diagnostics;
+                        root.set-status(root.include-diagnostics ? "Diagnostics on" : "Diagnostics off", root.include-diagnostics, !root.include-diagnostics);
+                        root.sheet-open = false;
+                    }
+                }
+                Divider { }
+
+                SheetRow {
+                    label: root.confirm-discard ? "Confirm: discard report" : "Discard report";
+                    destructive: true;
+                    clicked => {
+                        if (root.confirm-discard) {
+                            root.bug-title = "";
+                            root.what-happened = "";
+                            root.what-should-have-happened = "";
+                            root.severity = 1;
+                            root.area-idx = 0;
+                            root.recording = false;
+                            root.record-secs = 0;
+                            root.new-attachments = 0;
+                            root.attach1-removed = false;
+                            root.attach2-removed = false;
+                            root.set-status("Discarded", false, true);
+                            root.sheet-open = false;
+                            root.confirm-discard = false;
+                        } else {
+                            root.confirm-discard = true;
+                        }
+                    }
+                }
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.sheet-open = false;
+                        root.confirm-discard = false;
                     }
                 }
             }

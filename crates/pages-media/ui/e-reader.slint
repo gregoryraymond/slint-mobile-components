@@ -1,20 +1,22 @@
 // EReaderPage
 // =====================================================================
 //
-// Kindle / Books-style e-reader. The surface is intentionally typo-
-// heavy and chrome-light — a reader-mode page that mostly gets out of
-// the user's way. Demonstrates:
+// Kindle / Books-style e-reader, now interactive.
 //
-//   - Minimal top bar: book title (no leading icon — the reader is its
-//     own mode) + a few trailing affordances (bookmark, settings).
-//   - Big chapter label + body prose. The body uses
-//     `font-size: Theme.font-size-body-large` to mimic a comfortable
-//     e-reader font size. Wraps to the page width with generous
-//     padding.
-//   - Footer "page X of Y" + a slim progress bar across the bottom.
+//   - Tap the left half of the body to go back a page, tap the right
+//     half to go forward; `page-current` is clamped 1..page-total.
+//   - AppBar trailing bookmark toggles the current page in one of 3
+//     bookmark slots; a `★ BOOKMARKED` pill appears in the body when
+//     the current page is in the list.
+//   - The footer ⋮ opens a bottom sheet with font-size and theme
+//     controls (Day / Sepia / Night). Theme actually changes the body
+//     background + text colour and chapter heading tint.
+//   - Reading-time-left, progress bar width, and `Page X of Y` all
+//     derive from `page-current` live.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
+import { MobileButton } from "@mobile-components/button.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
 
 export component EReaderPage inherits Window {
@@ -24,127 +26,568 @@ export component EReaderPage inherits Window {
     in property <string> chapter: "Chapter 14 — The Decoupling of Syntax and Form";
     in property <string> body:
         "When the first general-purpose declarative UI frameworks crossed over from research into production, the practitioners who picked them up quickly noticed something: the languages had become smaller, but their reach had grown.\n\nIn the era of imperative UIs, the runtime offered every primitive the platform supported, and the framework was a way to combine them. The declarative turn inverted that — the framework offered a tiny set of primitives, and the platform was a way to back them. Designers wrote a few hundred lines of declarations and shipped on three operating systems.\n\nIt is hard, today, to recover the surprise this caused. Programmers who had spent decades carrying mutable state through every component were now writing pure descriptions and watching them update. They were not relieved of complexity so much as they had moved it: the framework had taken on the bookkeeping that the programmer used to carry. Whether that was a good trade depended on what the framework's owners chose to do next.\n\nThe answer, as we now know, was: design tokens.";
-    in property <int> page-current: 142;
     in property <int> page-total: 388;
-    in property <float> progress: 0.367;
-    in property <string> reading-time-left: "4 min left in chapter";
     callback back-pressed();
     callback bookmark-pressed();
     callback settings-pressed();
+    callback page-changed(int);
+    callback theme-changed(string);
 
-    background: Theme.background;
+    // ----- Interactive state -----
+    private property <int> page-current: 142;
+    private property <int> bm0: -1;
+    private property <int> bm1: -1;
+    private property <int> bm2: -1;
+    private property <int> font-size-idx: 2; // 0..3 (small / med / large / xl)
+    private property <int> theme-mode: 0; // 0=Day 1=Sepia 2=Night
+    private property <bool> settings-open: false;
+    private property <string> status-msg: "Tap left/right of the body to turn pages · bookmark + theme controls in the bar";
+    private property <bool> status-is-success: false;
+    private property <bool> status-is-danger: false;
+
+    // ----- Helpers -----
+    function bm-count() -> int {
+        return (root.bm0 >= 0 ? 1 : 0) + (root.bm1 >= 0 ? 1 : 0)
+            + (root.bm2 >= 0 ? 1 : 0);
+    }
+    function current-bookmarked() -> bool {
+        return root.bm0 == root.page-current
+            || root.bm1 == root.page-current
+            || root.bm2 == root.page-current;
+    }
+    function progress() -> float {
+        return root.page-current * 1.0 / root.page-total;
+    }
+    function pages-left() -> int {
+        return root.page-total - root.page-current;
+    }
+    function reading-time-left() -> string {
+        return floor(root.pages-left() * 6 / 10) + " min left at this pace";
+    }
+    function font-size-px(i: int) -> length {
+        if (i == 0) { return 14px; }
+        if (i == 1) { return 16px; }
+        if (i == 2) { return 18px; }
+        return 20px;
+    }
+    function font-size-label(i: int) -> string {
+        if (i == 0) { return "Small"; }
+        if (i == 1) { return "Medium"; }
+        if (i == 2) { return "Large"; }
+        return "X-Large";
+    }
+    function theme-name(m: int) -> string {
+        if (m == 0) { return "Day"; }
+        if (m == 1) { return "Sepia"; }
+        return "Night";
+    }
+    function theme-bg(m: int) -> color {
+        if (m == 0) { return Theme.background; }
+        if (m == 1) { return #f4e4bc; }
+        return #1a1a1a;
+    }
+    function theme-text(m: int) -> color {
+        if (m == 0) { return Theme.on-surface; }
+        if (m == 1) { return #2c1810; }
+        return #d4d4d4;
+    }
+    function theme-muted(m: int) -> color {
+        if (m == 0) { return Theme.muted; }
+        if (m == 1) { return #806e4a; }
+        return #888888;
+    }
+    function theme-accent(m: int) -> color {
+        if (m == 0) { return Theme.accent-info; }
+        if (m == 1) { return #b45309; }
+        return #4f8cff;
+    }
+
+    // ----- Mutations -----
+    public function prev-page() {
+        if (root.page-current > 1) {
+            root.page-current = root.page-current - 1;
+            root.page-changed(root.page-current);
+            root.status-msg = "← Page " + root.page-current
+                + " · " + root.pages-left() + " left";
+            root.status-is-success = false;
+            root.status-is-danger = false;
+        } else {
+            root.status-msg = "Already at page 1";
+            root.status-is-success = false;
+            root.status-is-danger = true;
+        }
+    }
+    public function next-page() {
+        if (root.page-current < root.page-total) {
+            root.page-current = root.page-current + 1;
+            root.page-changed(root.page-current);
+            root.status-msg = "Page " + root.page-current
+                + " → · " + root.pages-left() + " left";
+            root.status-is-success = true;
+            root.status-is-danger = false;
+        } else {
+            root.status-msg = "End of book reached";
+            root.status-is-success = true;
+            root.status-is-danger = false;
+        }
+    }
+    public function toggle-bookmark() {
+        if (root.current-bookmarked()) {
+            // Remove from whichever slot has it.
+            if (root.bm0 == root.page-current) { root.bm0 = -1; }
+            if (root.bm1 == root.page-current) { root.bm1 = -1; }
+            if (root.bm2 == root.page-current) { root.bm2 = -1; }
+            root.status-msg = "Bookmark removed from page " + root.page-current;
+            root.status-is-success = false;
+            root.status-is-danger = true;
+        } else {
+            // Add to first empty slot.
+            if (root.bm0 < 0) {
+                root.bm0 = root.page-current;
+            } else if (root.bm1 < 0) {
+                root.bm1 = root.page-current;
+            } else if (root.bm2 < 0) {
+                root.bm2 = root.page-current;
+            } else {
+                root.status-msg = "Bookmark slots full (3 max) · remove one first";
+                root.status-is-success = false;
+                root.status-is-danger = true;
+                return;
+            }
+            root.status-msg = "Bookmarked page " + root.page-current
+                + " (" + root.bm-count() + " of 3)";
+            root.status-is-success = true;
+            root.status-is-danger = false;
+        }
+        root.bookmark-pressed();
+    }
+    public function open-settings() {
+        root.settings-open = true;
+        root.settings-pressed();
+        root.status-msg = "Reader settings · pick font size + theme";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function close-settings() { root.settings-open = false; }
+    public function set-font(i: int) {
+        root.font-size-idx = i;
+        root.status-msg = "Font · " + root.font-size-label(i);
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    public function set-theme(m: int) {
+        root.theme-mode = m;
+        root.theme-changed(root.theme-name(m));
+        root.status-msg = "Theme · " + root.theme-name(m);
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    public function jump-to-bookmark(slot: int) {
+        if (slot == 0 && root.bm0 >= 0) {
+            root.page-current = root.bm0;
+        } else if (slot == 1 && root.bm1 >= 0) {
+            root.page-current = root.bm1;
+        } else if (slot == 2 && root.bm2 >= 0) {
+            root.page-current = root.bm2;
+        }
+        root.page-changed(root.page-current);
+        root.status-msg = "Jumped to bookmark · page " + root.page-current;
+        root.status-is-success = true;
+        root.status-is-danger = false;
+        root.settings-open = false;
+    }
+
+    background: root.theme-bg(root.theme-mode);
 
     VerticalLayout {
         spacing: 0;
 
-        // Minimal top bar — uses the existing AppBar so navigation
-        // patterns stay consistent across screens.
         AppBar {
             title: root.book-title;
             title-style: HeadingStyle.serif-display;
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             trailing-icon: @image-url("@mobile-components/icons/queue.svg");
             leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.bookmark-pressed(); }
+            trailing-pressed => { root.toggle-bookmark(); }
+        }
+
+        // ----- Status banner ---------------------------------------
+        Rectangle {
+            height: 32px;
+            background: root.status-is-danger ? Theme.accent-danger
+                : root.status-is-success ? Theme.accent-success
+                : Theme.surface-2;
+            animate background { duration: Theme.motion-fast; }
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                Text {
+                    text: root.status-msg;
+                    color: (root.status-is-danger || root.status-is-success)
+                        ? Theme.on-primary
+                        : Theme.on-surface;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+            }
         }
 
         // ----- Chapter title + body -----
-        VerticalLayout {
-            padding-left: Theme.spacing-lg;
-            padding-right: Theme.spacing-lg;
-            padding-top: Theme.spacing-lg;
-            spacing: Theme.spacing-lg;
+        Rectangle {
+            background: root.theme-bg(root.theme-mode);
+            animate background { duration: Theme.motion-fast; }
             vertical-stretch: 1;
-            alignment: start;
+            VerticalLayout {
+                padding-left: Theme.spacing-lg;
+                padding-right: Theme.spacing-lg;
+                padding-top: Theme.spacing-lg;
+                spacing: Theme.spacing-lg;
+                alignment: start;
 
-            Heading {
-                style: HeadingStyle.serif-display;
-                text: root.chapter;
-                font-italic: true;
-                font-weight: 400;
-                font-size: 26px;
-                color: Theme.on-background;
-                wrap: word-wrap;
+                HorizontalLayout {
+                    spacing: Theme.spacing-sm;
+                    Heading {
+                        style: HeadingStyle.serif-display;
+                        text: root.chapter;
+                        font-italic: true;
+                        font-weight: 400;
+                        font-size: 26px;
+                        color: root.theme-accent(root.theme-mode);
+                        horizontal-stretch: 1;
+                        wrap: word-wrap;
+                    }
+                    if root.current-bookmarked(): Rectangle {
+                        width: bm.preferred-width + 14px;
+                        height: 22px;
+                        border-radius: 11px;
+                        background: Theme.accent-warning;
+                        y: 4px;
+                        bm := Text {
+                            text: "★ BOOKMARKED";
+                            color: Theme.on-primary;
+                            font-size: 10px;
+                            font-weight: 800;
+                            letter-spacing: 0.5px;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
+                        }
+                    }
+                }
+                Text {
+                    text: root.body;
+                    color: root.theme-text(root.theme-mode);
+                    font-family: "Fraunces 9pt";
+                    font-size: root.font-size-px(root.font-size-idx);
+                    wrap: word-wrap;
+                    letter-spacing: 0.2px;
+                }
             }
-            Text {
-                text: root.body;
-                color: Theme.on-surface;
-                font-family: "Fraunces 9pt";
-                font-size: Theme.font-size-body-large;
-                wrap: word-wrap;
-                // Slight extra "line height" feel via letter-spacing
-                // since Slint doesn't expose `line-height` on Text.
-                letter-spacing: 0.2px;
+            // Tap zones for page turn.
+            TouchArea {
+                x: 0;
+                y: 0;
+                width: parent.width / 2;
+                height: parent.height;
+                clicked => { root.prev-page(); }
+            }
+            TouchArea {
+                x: parent.width / 2;
+                y: 0;
+                width: parent.width / 2;
+                height: parent.height;
+                clicked => { root.next-page(); }
             }
         }
 
-        // ----- Reading time hint -----
-        HorizontalLayout {
-            padding-left: Theme.spacing-lg;
-            padding-right: Theme.spacing-lg;
-            padding-top: Theme.spacing-xs;
-            padding-bottom: Theme.spacing-xs;
-            alignment: stretch;
-            VerticalLayout {
-                alignment: center;
-                horizontal-stretch: 1;
-                Text {
-                    text: root.reading-time-left;
-                    color: Theme.muted;
-                    font-size: Theme.font-size-caption;
-                    font-weight: 600;
+        // ----- Reading time hint + settings -----
+        Rectangle {
+            background: root.theme-bg(root.theme-mode);
+            HorizontalLayout {
+                padding-left: Theme.spacing-lg;
+                padding-right: Theme.spacing-lg;
+                padding-top: Theme.spacing-xs;
+                padding-bottom: Theme.spacing-xs;
+                alignment: stretch;
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    Text {
+                        text: root.reading-time-left();
+                        color: root.theme-muted(root.theme-mode);
+                        font-size: Theme.font-size-caption;
+                        font-weight: 600;
+                    }
                 }
-            }
-            VerticalLayout {
-                alignment: center;
-                Image {
-                    width: 18px;
-                    height: 18px;
-                    source: @image-url("@mobile-components/icons/more-vertical.svg");
-                    colorize: Theme.muted;
-                    image-fit: contain;
-                    TouchArea {
-                        clicked => { root.settings-pressed(); }
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 32px;
+                        height: 32px;
+                        border-radius: 16px;
+                        background: more-touch.pressed
+                            ? root.theme-muted(root.theme-mode).with-alpha(0.2)
+                            : transparent;
+                        animate background { duration: Theme.motion-fast; }
+                        Image {
+                            width: 18px;
+                            height: 18px;
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                            source: @image-url("@mobile-components/icons/more-vertical.svg");
+                            colorize: root.theme-muted(root.theme-mode);
+                            image-fit: contain;
+                        }
+                        more-touch := TouchArea {
+                            clicked => { root.open-settings(); }
+                        }
                     }
                 }
             }
         }
 
-        // ----- Slim progress + page indicator -----
-        VerticalLayout {
-            padding-bottom: Theme.spacing-md;
-            spacing: Theme.spacing-xs;
+        // ----- Slim progress -----
+        Rectangle {
+            background: root.theme-bg(root.theme-mode);
+            VerticalLayout {
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
 
-            // Page X of Y.
-            HorizontalLayout {
-                padding-left: Theme.spacing-lg;
-                padding-right: Theme.spacing-lg;
-                alignment: stretch;
-                Text {
-                    text: "Page " + root.page-current + " of " + root.page-total;
-                    color: Theme.muted;
-                    font-size: 11px;
-                    font-weight: 600;
-                    horizontal-stretch: 1;
+                HorizontalLayout {
+                    padding-left: Theme.spacing-lg;
+                    padding-right: Theme.spacing-lg;
+                    alignment: stretch;
+                    Text {
+                        text: "Page " + root.page-current + " of " + root.page-total;
+                        color: root.theme-muted(root.theme-mode);
+                        font-size: 11px;
+                        font-weight: 600;
+                        horizontal-stretch: 1;
+                    }
+                    Text {
+                        text: floor(100 * root.progress()) + "%";
+                        color: root.theme-muted(root.theme-mode);
+                        font-size: 11px;
+                        font-weight: 600;
+                    }
                 }
-                Text {
-                    text: (100 * root.progress) + "%";
-                    color: Theme.muted;
-                    font-size: 11px;
-                    font-weight: 600;
+
+                Rectangle {
+                    height: 3px;
+                    background: root.theme-muted(root.theme-mode).with-alpha(0.3);
+                    Rectangle {
+                        x: 0;
+                        y: 0;
+                        width: parent.width * root.progress();
+                        height: parent.height;
+                        background: root.theme-accent(root.theme-mode);
+                    }
                 }
             }
+        }
+    }
 
-            // Slim bar.
-            Rectangle {
-                height: 3px;
-                background: Theme.surface-variant;
+    // ----- Settings bottom sheet -------------------------------------
+    if root.settings-open: Rectangle {
+        Rectangle {
+            background: #00000099;
+            TouchArea {
+                clicked => { root.close-settings(); }
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            height: 480px;
+            background: Theme.surface-1;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding: Theme.spacing-lg;
+                spacing: Theme.spacing-md;
+
                 Rectangle {
-                    x: 0;
-                    y: 0;
-                    width: parent.width * root.progress;
-                    height: parent.height;
-                    background: Theme.accent-info;
+                    width: 40px;
+                    height: 4px;
+                    border-radius: 2px;
+                    background: Theme.muted;
+                }
+
+                Heading {
+                    text: "Reader settings";
+                    style: HeadingStyle.grotesk-bold;
+                    font-size: Theme.font-size-title;
+                }
+
+                // Font size.
+                Text {
+                    text: "TEXT SIZE";
+                    color: Theme.muted;
+                    font-size: 10px;
+                    font-weight: 800;
+                    letter-spacing: 0.5px;
+                }
+                HorizontalLayout {
+                    spacing: Theme.spacing-sm;
+                    for font-i in 4 : Rectangle {
+                        horizontal-stretch: 1;
+                        height: 48px;
+                        border-radius: Theme.radius-md;
+                        background: root.font-size-idx == font-i
+                            ? Theme.accent-info
+                            : Theme.surface-2;
+                        animate background { duration: Theme.motion-fast; }
+                        Text {
+                            text: root.font-size-label(font-i);
+                            color: root.font-size-idx == font-i
+                                ? Theme.on-primary
+                                : Theme.on-surface;
+                            font-size: Theme.font-size-caption;
+                            font-weight: 700;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
+                        }
+                        TouchArea { clicked => { root.set-font(font-i); } }
+                    }
+                }
+
+                // Theme.
+                Text {
+                    text: "THEME";
+                    color: Theme.muted;
+                    font-size: 10px;
+                    font-weight: 800;
+                    letter-spacing: 0.5px;
+                }
+                HorizontalLayout {
+                    spacing: Theme.spacing-sm;
+                    for theme-i in 3 : Rectangle {
+                        horizontal-stretch: 1;
+                        height: 56px;
+                        border-radius: Theme.radius-md;
+                        background: root.theme-bg(theme-i);
+                        border-width: root.theme-mode == theme-i ? 3px : 1px;
+                        border-color: root.theme-mode == theme-i
+                            ? Theme.accent-info
+                            : Theme.outline;
+                        animate border-width { duration: Theme.motion-fast; }
+                        Text {
+                            text: root.theme-name(theme-i);
+                            color: root.theme-text(theme-i);
+                            font-size: Theme.font-size-caption;
+                            font-weight: 800;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
+                        }
+                        TouchArea { clicked => { root.set-theme(theme-i); } }
+                    }
+                }
+
+                // Bookmarks list.
+                Text {
+                    text: "BOOKMARKS · " + root.bm-count() + " of 3";
+                    color: Theme.muted;
+                    font-size: 10px;
+                    font-weight: 800;
+                    letter-spacing: 0.5px;
+                }
+                if root.bm0 >= 0: Rectangle {
+                    height: 36px;
+                    border-radius: Theme.radius-sm;
+                    background: Theme.surface-2;
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-md;
+                        Text {
+                            text: "★ Page " + root.bm0;
+                            color: Theme.on-surface;
+                            font-size: Theme.font-size-caption;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                        }
+                        Text {
+                            text: "Jump →";
+                            color: Theme.accent-info;
+                            font-size: Theme.font-size-caption;
+                            font-weight: 800;
+                            vertical-alignment: center;
+                        }
+                    }
+                    TouchArea { clicked => { root.jump-to-bookmark(0); } }
+                }
+                if root.bm1 >= 0: Rectangle {
+                    height: 36px;
+                    border-radius: Theme.radius-sm;
+                    background: Theme.surface-2;
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-md;
+                        Text {
+                            text: "★ Page " + root.bm1;
+                            color: Theme.on-surface;
+                            font-size: Theme.font-size-caption;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                        }
+                        Text {
+                            text: "Jump →";
+                            color: Theme.accent-info;
+                            font-size: Theme.font-size-caption;
+                            font-weight: 800;
+                            vertical-alignment: center;
+                        }
+                    }
+                    TouchArea { clicked => { root.jump-to-bookmark(1); } }
+                }
+                if root.bm2 >= 0: Rectangle {
+                    height: 36px;
+                    border-radius: Theme.radius-sm;
+                    background: Theme.surface-2;
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-md;
+                        Text {
+                            text: "★ Page " + root.bm2;
+                            color: Theme.on-surface;
+                            font-size: Theme.font-size-caption;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                        }
+                        Text {
+                            text: "Jump →";
+                            color: Theme.accent-info;
+                            font-size: Theme.font-size-caption;
+                            font-weight: 800;
+                            vertical-alignment: center;
+                        }
+                    }
+                    TouchArea { clicked => { root.jump-to-bookmark(2); } }
+                }
+                if root.bm-count() == 0: Text {
+                    text: "No bookmarks yet · tap the bar trailing icon";
+                    color: Theme.muted;
+                    font-size: Theme.font-size-caption;
+                    font-italic: true;
+                }
+
+                Rectangle { vertical-stretch: 1; }
+
+                MobileButton {
+                    text: "Done";
+                    tone: Tone.info;
+                    clicked => { root.close-settings(); }
                 }
             }
         }

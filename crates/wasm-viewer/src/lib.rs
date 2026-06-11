@@ -304,6 +304,51 @@ pub fn set_mobile(_mobile: bool) {
     }
 }
 
+/// Number of pages successfully compiled so far. JS callers use this
+/// in end-to-end tests to wait until the catalogue has loaded enough
+/// cells to bother interacting with, instead of relying on
+/// wall-clock sleeps that drift across runners.
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
+pub fn loaded_count() -> i32 {
+    #[cfg(target_arch = "wasm32")]
+    {
+        VIEWER_HANDLE.with(|h| {
+            h.borrow()
+                .as_ref()
+                .and_then(|weak| weak.upgrade())
+                .map(|v| v.get_loaded())
+                .unwrap_or(0)
+        })
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        0
+    }
+}
+
+/// Reports whether the mobile layout is currently active. The slint
+/// `mobile` property flips on the `changed canvas-w` side-effect when
+/// the canvas drops below 600 dp; this getter lets a test confirm
+/// that the layout actually swapped without trying to parse the
+/// rendered canvas pixels.
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
+pub fn is_mobile() -> bool {
+    #[cfg(target_arch = "wasm32")]
+    {
+        VIEWER_HANDLE.with(|h| {
+            h.borrow()
+                .as_ref()
+                .and_then(|weak| weak.upgrade())
+                .map(|v| v.get_mobile())
+                .unwrap_or(false)
+        })
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        false
+    }
+}
+
 /// Embedded source-count probe — wasm-bindgen exports this so a
 /// JS caller can read it (`init().then(() => embedded_file_count())`)
 /// to confirm the build embedded what build.rs produced. Also

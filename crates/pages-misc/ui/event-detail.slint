@@ -1,11 +1,7 @@
 // EventDetailPage
 // =====================================================================
 //
-// Single calendar event detail. Hero card with title + a MetaRow of
-// when / where / attendee-count chips. Then KeyValueRows under DETAILS,
-// a SettingRow for the description, attendee SettingRows with a status
-// Chip in the trailing slot, and a primary "Join meeting" + secondary
-// "Decline" pair at the bottom.
+// Single calendar event detail.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
@@ -18,16 +14,215 @@ import { KeyValueRow } from "@mobile-components/key-value-row.slint";
 import { MetaRow, MetaChip } from "@mobile-components/meta-row.slint";
 import { Divider } from "@mobile-components/divider.slint";
 import { MobileButton, TextButton } from "@mobile-components/button.slint";
+import { SegmentedControl } from "@mobile-components/segmented-control.slint";
 import { ScrollView } from "std-widgets.slint";
+
+component AttendeeRow inherits Rectangle {
+    in property <string> name;
+    in property <string> role;
+    in property <int> status: 0; // 0 ACCEPTED 1 TENTATIVE 2 PENDING 3 DECLINED
+    in property <bool> organizer: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 56px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 32px;
+                height: 32px;
+                border-radius: 8px;
+                background: root.organizer ? Theme.accent-info.with-alpha(0.22) : Theme.surface-2;
+                Image {
+                    width: 18px;
+                    height: 18px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: @image-url("@mobile-components/icons/profile.svg");
+                    colorize: root.organizer ? Theme.accent-info : Theme.muted;
+                    image-fit: contain;
+                }
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: root.name;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+            Text {
+                text: root.role;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                horizontal-stretch: 0;
+                height: 24px;
+                border-radius: 12px;
+                background: root.status == 0 ? Theme.accent-success.with-alpha(0.22) : (root.status == 1 ? Theme.accent-warning.with-alpha(0.22) : (root.status == 3 ? Theme.accent-danger.with-alpha(0.22) : Theme.surface-2));
+                HorizontalLayout {
+                    padding-left: Theme.spacing-sm;
+                    padding-right: Theme.spacing-sm;
+                    alignment: center;
+                    VerticalLayout {
+                        alignment: center;
+                        Text {
+                            text: root.status == 0 ? "ACCEPTED" : (root.status == 1 ? "TENTATIVE" : (root.status == 2 ? "PENDING" : "DECLINED"));
+                            color: root.status == 0 ? Theme.accent-success : (root.status == 1 ? Theme.accent-warning : (root.status == 3 ? Theme.accent-danger : Theme.muted));
+                            font-size: 10px;
+                            font-weight: 800;
+                            letter-spacing: 0.5px;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+component Chip2 inherits Rectangle {
+    in property <string> label;
+    in property <bool> active: false;
+    callback clicked();
+
+    horizontal-stretch: 0;
+    height: 28px;
+    border-radius: 14px;
+    background: root.active ? Theme.primary : Theme.surface-2;
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: center;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.active ? Theme.on-primary : Theme.on-surface;
+                font-size: Theme.font-size-caption;
+                font-weight: 700;
+            }
+        }
+    }
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.destructive ? Theme.accent-danger : Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+        }
+    }
+}
 
 export component EventDetailPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
 
+    in-out property <int> my-rsvp: 0; // 0 Accepted 1 Tentative 2 Declined
+    in-out property <int> reminder-mode: 1; // 0 off, 1 5min, 2 10min, 3 30min
+    in-out property <int> show-as: 0; // 0 Busy 1 Free 2 OOO
+    in-out property <bool> notif-on: true;
+    in-out property <bool> desc-expanded: false;
+    in-out property <bool> in-call: false;
+    in-out property <int> a1-status: 0;
+    in-out property <int> a2-status: 0;
+    in-out property <int> a3-status: 1;
+    in-out property <int> a4-status: 2;
+    in-out property <int> a5-status: 0;
+    in-out property <bool> sheet-open: false;
+    in-out property <bool> confirm-delete: false;
+    in-out property <string> status-msg: "";
+    in-out property <bool> status-success: false;
+    in-out property <bool> status-danger: false;
+
     callback back-pressed();
     callback more-pressed();
     callback join-pressed();
     callback decline-pressed();
+    callback rsvp-changed(int);
+    callback attendee-pressed(int);
+
+    function rsvp-label() -> string {
+        return root.my-rsvp == 0 ? "Going" : (root.my-rsvp == 1 ? "Maybe" : "Declined");
+    }
+    function reminder-label() -> string {
+        return root.reminder-mode == 0 ? "No reminder" : (root.reminder-mode == 1 ? "5 min before" : (root.reminder-mode == 2 ? "10 min before" : "30 min before"));
+    }
+    function show-as-label() -> string {
+        return root.show-as == 0 ? "Busy" : (root.show-as == 1 ? "Free" : "Out of office");
+    }
+    function attendee-count() -> int {
+        return (root.a1-status == 0 ? 1 : 0) + (root.a2-status == 0 ? 1 : 0) + (root.a3-status == 0 ? 1 : 0) + (root.a4-status == 0 ? 1 : 0) + (root.a5-status == 0 ? 1 : 0) + (root.my-rsvp == 0 ? 1 : 0);
+    }
+    function set-status(m: string, ok: bool, bad: bool) {
+        root.status-msg = m;
+        root.status-success = ok;
+        root.status-danger = bad;
+    }
+    function cycle-attendee(i: int) {
+        if (i == 1) {
+            root.a1-status = mod(root.a1-status + 1, 4);
+        }
+        if (i == 2) {
+            root.a2-status = mod(root.a2-status + 1, 4);
+        }
+        if (i == 3) {
+            root.a3-status = mod(root.a3-status + 1, 4);
+        }
+        if (i == 4) {
+            root.a4-status = mod(root.a4-status + 1, 4);
+        }
+        if (i == 5) {
+            root.a5-status = mod(root.a5-status + 1, 4);
+        }
+        root.set-status("Attendee status updated", true, false);
+    }
 
     background: Theme.background;
 
@@ -39,8 +234,31 @@ export component EventDetailPage inherits Window {
             title-style: HeadingStyle.plex-medium;
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
-            leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.more-pressed(); }
+            leading-pressed => {
+                root.back-pressed();
+            }
+            trailing-pressed => {
+                root.sheet-open = true;
+                root.more-pressed();
+            }
+        }
+
+        // Status banner.
+        if !root.status-msg.is-empty: Rectangle {
+            height: 28px;
+            background: root.status-success ? Theme.accent-success.with-alpha(0.16) : (root.status-danger ? Theme.accent-danger.with-alpha(0.16) : Theme.surface-2);
+            HorizontalLayout {
+                alignment: center;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.status-msg;
+                        color: root.status-success ? Theme.accent-success : (root.status-danger ? Theme.accent-danger : Theme.on-surface);
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                    }
+                }
+            }
         }
 
         ScrollView {
@@ -68,9 +286,67 @@ export component EventDetailPage inherits Window {
                                 items: [
                                     { text: "Today, 14:00–15:00" },
                                     { text: "Conference Room A" },
-                                    { text: "12 attendees" },
+                                    { text: "" },
                                 ];
                             }
+                            Text {
+                                text: root.attendee-count() + " attendees · " + root.rsvp-label();
+                                color: Theme.muted;
+                                font-size: Theme.font-size-caption;
+                            }
+                        }
+                    }
+                }
+
+                // ----- RSVP segmented control ----------------------------
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    spacing: Theme.spacing-xs;
+                    Text {
+                        text: "YOUR RSVP";
+                        color: Theme.muted;
+                        font-size: 11px;
+                        font-weight: 700;
+                        letter-spacing: 2px;
+                    }
+                    SegmentedControl {
+                        options: ["Going", "Maybe", "Decline"];
+                        selected-index <=> root.my-rsvp;
+                        changed(i) => {
+                            root.set-status("RSVP: " + root.rsvp-label(), i == 0, i == 2);
+                            root.rsvp-changed(i);
+                        }
+                    }
+                }
+
+                // ----- Quick chips ---------------------------------------
+                HorizontalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    spacing: Theme.spacing-sm;
+                    Chip2 {
+                        label: "🔔 " + root.reminder-label();
+                        active: root.reminder-mode != 0;
+                        clicked => {
+                            root.reminder-mode = mod(root.reminder-mode + 1, 4);
+                            root.set-status(root.reminder-label(), root.reminder-mode != 0, false);
+                        }
+                    }
+                    Chip2 {
+                        label: root.show-as-label();
+                        active: root.show-as != 0;
+                        clicked => {
+                            root.show-as = mod(root.show-as + 1, 3);
+                            root.set-status("Show as " + root.show-as-label(), true, false);
+                        }
+                    }
+                    Chip2 {
+                        label: root.notif-on ? "Notif on" : "Notif off";
+                        active: root.notif-on;
+                        clicked => {
+                            root.notif-on = !root.notif-on;
+                            root.set-status(root.notif-on ? "Notifications on" : "Notifications off", root.notif-on, !root.notif-on);
                         }
                     }
                 }
@@ -84,16 +360,19 @@ export component EventDetailPage inherits Window {
                         value: "Today · 14:00–15:00";
                     }
                     Divider { }
+
                     KeyValueRow {
                         label: "Where";
                         value: "Conference Room A";
                     }
                     Divider { }
+
                     KeyValueRow {
                         label: "Organizer";
                         value: "Petra Lindquist";
                     }
                     Divider { }
+
                     KeyValueRow {
                         label: "Repeats";
                         value: "Weekly · Mon";
@@ -104,9 +383,35 @@ export component EventDetailPage inherits Window {
                 FormSection {
                     title: "DESCRIPTION";
 
-                    SettingRow {
-                        title: "About this meeting";
-                        subtitle: "Walkthrough of the v0.4 design tokens, with time for open Q&A. Bring your component snapshots if you have notes on the new spacing scale.";
+                    Rectangle {
+                        horizontal-stretch: 1;
+                        VerticalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-xs;
+                            Text {
+                                text: "About this meeting";
+                                color: Theme.on-surface;
+                                font-size: Theme.font-size-body;
+                                font-weight: 700;
+                            }
+                            Text {
+                                text: root.desc-expanded ? "Walkthrough of the v0.4 design tokens, with time for open Q&A. Bring your component snapshots if you have notes on the new spacing scale.\n\nWe'll also cover migration plans for the Tone enum and the new motion tokens. Slides will be shared after." : "Walkthrough of the v0.4 design tokens, with time for open Q&A. Bring your component snapshots if you have notes on the new spacing scale.";
+                                color: Theme.muted;
+                                font-size: Theme.font-size-caption;
+                                wrap: word-wrap;
+                            }
+                            Text {
+                                text: root.desc-expanded ? "Show less" : "Show more";
+                                color: Theme.accent-info;
+                                font-size: Theme.font-size-caption;
+                                font-weight: 700;
+                            }
+                        }
+                        TouchArea {
+                            clicked => {
+                                root.desc-expanded = !root.desc-expanded;
+                            }
+                        }
                     }
                 }
 
@@ -114,40 +419,59 @@ export component EventDetailPage inherits Window {
                 FormSection {
                     title: "ATTENDEES";
 
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/profile.svg");
-                        tone: Tone.info;
-                        title: "Petra Lindquist";
-                        subtitle: "Organizer";
-                        Chip { label: "ACCEPTED"; selected: false; }
+                    AttendeeRow {
+                        name: "Petra Lindquist";
+                        role: "Organizer";
+                        status: root.a1-status;
+                        organizer: true;
+                        clicked => {
+                            root.cycle-attendee(1);
+                            root.attendee-pressed(1);
+                        }
                     }
                     Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/profile.svg");
-                        title: "Greg Raymond";
-                        subtitle: "Engineering";
-                        Chip { label: "ACCEPTED"; }
+
+                    AttendeeRow {
+                        name: "Greg Raymond";
+                        role: "Engineering";
+                        status: root.a2-status;
+                        clicked => {
+                            root.cycle-attendee(2);
+                            root.attendee-pressed(2);
+                        }
                     }
                     Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/profile.svg");
-                        title: "Ada Lovelace";
-                        subtitle: "Design";
-                        Chip { label: "TENTATIVE"; }
+
+                    AttendeeRow {
+                        name: "Ada Lovelace";
+                        role: "Design";
+                        status: root.a3-status;
+                        clicked => {
+                            root.cycle-attendee(3);
+                            root.attendee-pressed(3);
+                        }
                     }
                     Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/profile.svg");
-                        title: "Hedy Lamarr";
-                        subtitle: "Product";
-                        Chip { label: "PENDING"; }
+
+                    AttendeeRow {
+                        name: "Hedy Lamarr";
+                        role: "Product";
+                        status: root.a4-status;
+                        clicked => {
+                            root.cycle-attendee(4);
+                            root.attendee-pressed(4);
+                        }
                     }
                     Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/profile.svg");
-                        title: "Grace Hopper";
-                        subtitle: "QA";
-                        Chip { label: "ACCEPTED"; }
+
+                    AttendeeRow {
+                        name: "Grace Hopper";
+                        role: "QA";
+                        status: root.a5-status;
+                        clicked => {
+                            root.cycle-attendee(5);
+                            root.attendee-pressed(5);
+                        }
                     }
                 }
 
@@ -159,12 +483,120 @@ export component EventDetailPage inherits Window {
                     alignment: stretch;
 
                     MobileButton {
-                        text: "Join meeting";
-                        clicked => { root.join-pressed(); }
+                        text: root.in-call ? "Leave meeting" : "Join meeting";
+                        tone: root.in-call ? Tone.danger : Tone.default;
+                        clicked => {
+                            root.in-call = !root.in-call;
+                            root.set-status(root.in-call ? "Joined meeting" : "Left meeting", root.in-call, !root.in-call);
+                            root.join-pressed();
+                        }
                     }
                     TextButton {
-                        text: "Decline";
-                        clicked => { root.decline-pressed(); }
+                        text: root.my-rsvp == 2 ? "Re-accept invite" : "Decline event";
+                        clicked => {
+                            root.my-rsvp = root.my-rsvp == 2 ? 0 : 2;
+                            root.set-status(root.my-rsvp == 2 ? "Declined" : "Accepted", root.my-rsvp != 2, root.my-rsvp == 2);
+                            root.decline-pressed();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ===================== Bottom sheet =====================
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+                root.confirm-delete = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: Theme.surface-2;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.muted;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: "Event actions";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 700;
+                    }
+                }
+                SheetRow {
+                    label: "Copy meeting link";
+                    clicked => {
+                        root.set-status("Link copied to clipboard", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Forward invite";
+                    clicked => {
+                        root.set-status("Invite forwarded", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Cycle reminder (" + root.reminder-label() + ")";
+                    clicked => {
+                        root.reminder-mode = mod(root.reminder-mode + 1, 4);
+                        root.set-status(root.reminder-label(), root.reminder-mode != 0, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: root.notif-on ? "Silence notifications" : "Enable notifications";
+                    clicked => {
+                        root.notif-on = !root.notif-on;
+                        root.set-status(root.notif-on ? "Notifications on" : "Notifications off", root.notif-on, !root.notif-on);
+                        root.sheet-open = false;
+                    }
+                }
+                Divider { }
+
+                SheetRow {
+                    label: root.confirm-delete ? "Confirm: delete event" : "Delete event";
+                    destructive: true;
+                    clicked => {
+                        if (root.confirm-delete) {
+                            root.set-status("Event deleted", false, true);
+                            root.sheet-open = false;
+                            root.confirm-delete = false;
+                        } else {
+                            root.confirm-delete = true;
+                        }
+                    }
+                }
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.sheet-open = false;
+                        root.confirm-delete = false;
                     }
                 }
             }

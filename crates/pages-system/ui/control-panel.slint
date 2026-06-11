@@ -1,21 +1,15 @@
 // ControlPanelPage  —  BrutalistSkin demo
 // =====================================================================
-//
-// A brutalist device control panel: hard ink-on-paper slabs, a single
-// hot-yellow accent, thick hairlines, JetBrains Mono throughout. No
-// gradients, no soft shadows — every surface is an opaque rectangle with
-// a 1-px black edge. Shows a status hero, toggle slabs, and a metered
-// list. Reads BrutalistSkin tokens for type / colour / surfaces.
 
 import { Theme } from "@mobile-theme/theme.slint";
 import { BrutalistSkin } from "@mobile-theme/skins.slint";
 import { ScrollView } from "std-widgets.slint";
 
-// Hard-edged toggle slab: label + a draggable-looking square knob.
 component ToggleSlab inherits Rectangle {
     in property <string> label;
     in property <string> sub;
     in property <bool> on;
+    callback clicked();
 
     background: BrutalistSkin.glass-fill;
     border-width: 1px;
@@ -41,7 +35,6 @@ component ToggleSlab inherits Rectangle {
                 font-size: Theme.font-size-caption;
             }
         }
-        // Square track with a hard square knob slammed to one side.
         Rectangle {
             width: 64px;
             height: 32px;
@@ -60,17 +53,31 @@ component ToggleSlab inherits Rectangle {
                     }
                 }
             }
+            animate background { duration: Theme.motion-fast; }
+        }
+    }
+    TouchArea {
+        clicked => {
+            root.clicked();
         }
     }
 }
 
-// A labelled meter — value bar drawn as a hard fill against a hairline box.
 component MeterRow inherits Rectangle {
     in property <string> label;
-    in property <string> value;
-    in property <float> fraction;
+    in property <int> percent;
+    in property <bool> selected: false;
+    in property <bool> alert: false;
+    callback clicked();
 
     min-height: 52px;
+    background: root.selected ? #ffd40022 : transparent;
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
     HorizontalLayout {
         padding-left: Theme.spacing-md;
         padding-right: Theme.spacing-md;
@@ -79,8 +86,8 @@ component MeterRow inherits Rectangle {
             alignment: center;
             width: 96px;
             Text {
-                text: root.label;
-                color: BrutalistSkin.text-secondary;
+                text: (root.selected ? "▸ " : "") + root.label + (root.alert ? "!" : "");
+                color: root.alert ? #ff6b6b : BrutalistSkin.text-secondary;
                 font-size: Theme.font-size-caption;
                 font-weight: 700;
             }
@@ -97,8 +104,9 @@ component MeterRow inherits Rectangle {
                     x: 0;
                     y: 0;
                     height: parent.height;
-                    width: parent.width * root.fraction;
-                    background: #ffd400;
+                    width: parent.width * root.percent / 100;
+                    background: root.alert ? #ff6b6b : #ffd400;
+                    animate width { duration: Theme.motion-fast; }
                 }
             }
         }
@@ -106,11 +114,42 @@ component MeterRow inherits Rectangle {
             alignment: center;
             width: 56px;
             Text {
-                text: root.value;
+                text: root.percent + "%";
                 color: BrutalistSkin.text-primary;
                 font-size: Theme.font-size-caption;
                 font-weight: 700;
                 horizontal-alignment: right;
+            }
+        }
+    }
+}
+
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    background: ta.has-hover ? BrutalistSkin.glass-fill : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.destructive ? #ff6b6b : BrutalistSkin.text-primary;
+                font-size: Theme.font-size-body;
+                font-weight: 700;
             }
         }
     }
@@ -122,8 +161,78 @@ export component ControlPanelPage inherits Window {
     default-font-family: BrutalistSkin.font-family;
     background: BrutalistSkin.page-background;
 
+    in-out property <bool> airgap: true;
+    in-out property <bool> telemetry: false;
+    in-out property <bool> mute: true;
+    in-out property <bool> running: true;
+    in-out property <int> cpu: 41;
+    in-out property <int> mem: 78;
+    in-out property <int> disk: 23;
+    in-out property <int> net: 9;
+    in-out property <int> selected-meter: -1;
+    in-out property <bool> emergency-armed: false;
+    in-out property <bool> shutdown: false;
+    in-out property <int> uptime-min: 18223;
+    in-out property <bool> sheet-open: false;
+    in-out property <string> status-msg: "";
+    in-out property <int> status-tone: 0; // 0 default 1 success 2 danger
+
+    callback back-pressed();
+
+    function system-line() -> string {
+        if (root.shutdown) {
+            return "OFFLINE";
+        }
+        if (root.mem >= 90 || root.cpu >= 90) {
+            return "CRITICAL";
+        }
+        if (root.airgap || root.mute) {
+            return "DEGRADED";
+        }
+        return "NOMINAL";
+    }
+    function system-color() -> color {
+        if (root.shutdown) {
+            return #ff6b6b;
+        }
+        if (root.mem >= 90 || root.cpu >= 90) {
+            return #ff6b6b;
+        }
+        return #ffd400;
+    }
+    function meter-detail() -> string {
+        return root.selected-meter == 0 ? "PROC: slint-android · TOP CONSUMER" : (root.selected-meter == 1 ? "ALLOC: 3.2GB / 4.1GB · GC LATENCY 12ms" : (root.selected-meter == 2 ? "FREE: 89GB / 128GB · WRITES 12/s" : "DOWN 0.6 MB/s · UP 0.1 MB/s · RTT 24ms"));
+    }
+    function pad6(n: int) -> string {
+        return n < 10 ? "00000" + n : (n < 100 ? "0000" + n : (n < 1000 ? "000" + n : (n < 10000 ? "00" + n : (n < 100000 ? "0" + n : "" + n))));
+    }
+    function set-status(m: string, tone: int) {
+        root.status-msg = m;
+        root.status-tone = tone;
+    }
+
+    // Live tick.
+    tick := Timer {
+        interval: 1500ms;
+        running: root.running && !root.shutdown;
+        triggered => {
+            root.uptime-min = root.uptime-min + 1;
+            // CPU drifts.
+            root.cpu = max(5, min(99, root.cpu + mod(root.uptime-min, 7) - 3));
+            // Memory creeps with telemetry/mute combos.
+            root.mem = max(20, min(99, root.mem + (root.telemetry ? 1 : 0) - (root.airgap ? 0 : 1)));
+            // Disk drift slow.
+            if (mod(root.uptime-min, 5) == 0) {
+                root.disk = max(0, min(99, root.disk + (root.telemetry ? 1 : -1)));
+            }
+            // Network depends on airgap.
+            root.net = root.airgap ? 0 : max(2, min(99, root.net + mod(root.uptime-min, 11) - 5));
+        }
+    }
+
     if BrutalistSkin.has-background-image: Image {
-        x: 0; y: 0;
+        x: 0;
+        y: 0;
         width: root.width;
         height: root.height;
         source: BrutalistSkin.page-background-image;
@@ -133,7 +242,6 @@ export component ControlPanelPage inherits Window {
     VerticalLayout {
         spacing: 0;
 
-        // ---- Ink masthead bar ----
         Rectangle {
             background: BrutalistSkin.bar-background;
             height: 88px;
@@ -151,12 +259,48 @@ export component ControlPanelPage inherits Window {
                         font-weight: 700;
                         letter-spacing: 1px;
                     }
+                    Rectangle {
+                        horizontal-stretch: 0;
+                        height: 28px;
+                        border-width: 1px;
+                        border-color: BrutalistSkin.hairline;
+                        HorizontalLayout {
+                            padding-left: 8px;
+                            padding-right: 8px;
+                            VerticalLayout {
+                                alignment: center;
+                                Text {
+                                    text: "[ ESC ]";
+                                    color: #f4f1e8;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 700;
+                                }
+                            }
+                        }
+                        TouchArea {
+                            clicked => {
+                                root.set-status("ESC", 0);
+                                root.back-pressed();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Live status banner.
+        if !root.status-msg.is-empty: Rectangle {
+            height: 24px;
+            background: root.status-tone == 1 ? #0d3a0d : (root.status-tone == 2 ? #3a0d0d : #1a1a1a);
+            HorizontalLayout {
+                alignment: center;
+                VerticalLayout {
+                    alignment: center;
                     Text {
-                        text: "[ ESC ]";
-                        color: #f4f1e8;
+                        text: "> " + root.status-msg;
+                        color: root.status-tone == 1 ? #80ff80 : (root.status-tone == 2 ? #ff6b6b : #ffd400);
                         font-size: Theme.font-size-caption;
                         font-weight: 700;
-                        vertical-alignment: center;
                     }
                 }
             }
@@ -168,36 +312,92 @@ export component ControlPanelPage inherits Window {
                 spacing: 0;
                 padding-bottom: Theme.spacing-xl;
 
-                // ---- Hero status slab ----
                 Rectangle {
                     background: #0a0a0a;
-                    height: 168px;
+                    min-height: 200px;
                     VerticalLayout {
                         padding: Theme.spacing-lg;
                         spacing: Theme.spacing-xs;
                         Text {
-                            text: "STATUS";
+                            text: "STATUS · UPTIME " + root.pad6(root.uptime-min) + " MIN";
                             color: #888078;
                             font-size: Theme.font-size-caption;
                             font-weight: 700;
                             letter-spacing: 3px;
                         }
                         Text {
-                            text: "ALL SYSTEMS";
+                            text: root.shutdown ? "SHUTDOWN" : "ALL SYSTEMS";
                             color: #f4f1e8;
                             font-size: 40px;
                             font-weight: 700;
                         }
                         Text {
-                            text: "NOMINAL";
-                            color: #ffd400;
+                            text: root.system-line();
+                            color: root.system-color();
                             font-size: 40px;
                             font-weight: 700;
+                        }
+                        HorizontalLayout {
+                            spacing: Theme.spacing-sm;
+                            padding-top: Theme.spacing-sm;
+                            Rectangle {
+                                horizontal-stretch: 0;
+                                width: 100px;
+                                height: 32px;
+                                background: root.running ? #ffd400 : #1a1a1a;
+                                border-width: 1px;
+                                border-color: BrutalistSkin.hairline;
+                                Text {
+                                    text: root.running ? "[ PAUSE ]" : "[ RESUME ]";
+                                    color: root.running ? #0a0a0a : #ffd400;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 800;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                                TouchArea {
+                                    clicked => {
+                                        root.running = !root.running;
+                                        root.set-status(root.running ? "TELEMETRY RESUMED" : "TELEMETRY PAUSED", 0);
+                                    }
+                                }
+                            }
+                            Rectangle {
+                                horizontal-stretch: 0;
+                                width: 110px;
+                                height: 32px;
+                                background: #1a1a1a;
+                                border-width: 1px;
+                                border-color: BrutalistSkin.hairline;
+                                Text {
+                                    text: "[ RESTART ]";
+                                    color: #ffd400;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 800;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                                TouchArea {
+                                    clicked => {
+                                        root.cpu = 41;
+                                        root.mem = 78;
+                                        root.disk = 23;
+                                        root.net = 9;
+                                        root.uptime-min = 0;
+                                        root.shutdown = false;
+                                        root.running = true;
+                                        root.set-status("SYSTEM RESTARTED", 1);
+                                    }
+                                }
+                            }
                         }
                     }
                 }
 
-                // ---- Section: TOGGLES ----
                 Rectangle {
                     height: 40px;
                     HorizontalLayout {
@@ -216,19 +416,42 @@ export component ControlPanelPage inherits Window {
                     padding-left: Theme.spacing-md;
                     padding-right: Theme.spacing-md;
                     spacing: Theme.spacing-sm;
-                    ToggleSlab { label: "AIRGAP MODE"; sub: "isolate radios"; on: true; }
-                    ToggleSlab { label: "TELEMETRY"; sub: "phone home"; on: false; }
-                    ToggleSlab { label: "HARD MUTE"; sub: "kill all output"; on: true; }
+                    ToggleSlab {
+                        label: "AIRGAP MODE";
+                        sub: root.airgap ? "RADIOS ISOLATED" : "RADIOS ACTIVE";
+                        on: root.airgap;
+                        clicked => {
+                            root.airgap = !root.airgap;
+                            root.set-status(root.airgap ? "AIRGAP ON" : "AIRGAP OFF", root.airgap ? 0 : 2);
+                        }
+                    }
+                    ToggleSlab {
+                        label: "TELEMETRY";
+                        sub: root.telemetry ? "PHONING HOME" : "QUIET";
+                        on: root.telemetry;
+                        clicked => {
+                            root.telemetry = !root.telemetry;
+                            root.set-status(root.telemetry ? "TELEMETRY ON" : "TELEMETRY OFF", root.telemetry ? 2 : 1);
+                        }
+                    }
+                    ToggleSlab {
+                        label: "HARD MUTE";
+                        sub: root.mute ? "OUTPUT KILLED" : "OUTPUT LIVE";
+                        on: root.mute;
+                        clicked => {
+                            root.mute = !root.mute;
+                            root.set-status(root.mute ? "MUTE ON" : "MUTE OFF", 0);
+                        }
+                    }
                 }
 
-                // ---- Section: METERS ----
                 Rectangle {
                     height: 48px;
                     HorizontalLayout {
                         padding-left: Theme.spacing-md;
                         alignment: start;
                         Text {
-                            text: "// METERS";
+                            text: "// METERS · TAP TO INSPECT";
                             color: BrutalistSkin.text-muted;
                             font-size: Theme.font-size-caption;
                             font-weight: 700;
@@ -243,10 +466,241 @@ export component ControlPanelPage inherits Window {
                     VerticalLayout {
                         padding-top: Theme.spacing-sm;
                         padding-bottom: Theme.spacing-sm;
-                        MeterRow { label: "CPU"; value: "41%"; fraction: 0.41; }
-                        MeterRow { label: "MEMORY"; value: "78%"; fraction: 0.78; }
-                        MeterRow { label: "DISK"; value: "23%"; fraction: 0.23; }
-                        MeterRow { label: "NET"; value: "9%"; fraction: 0.09; }
+                        MeterRow {
+                            label: "CPU";
+                            percent: root.cpu;
+                            selected: root.selected-meter == 0;
+                            alert: root.cpu >= 85;
+                            clicked => {
+                                root.selected-meter = root.selected-meter == 0 ? -1 : 0;
+                                root.set-status(root.selected-meter == 0 ? "INSPECT CPU" : "CLOSED", 0);
+                            }
+                        }
+                        MeterRow {
+                            label: "MEMORY";
+                            percent: root.mem;
+                            selected: root.selected-meter == 1;
+                            alert: root.mem >= 90;
+                            clicked => {
+                                root.selected-meter = root.selected-meter == 1 ? -1 : 1;
+                                root.set-status(root.selected-meter == 1 ? "INSPECT MEM" : "CLOSED", 0);
+                            }
+                        }
+                        MeterRow {
+                            label: "DISK";
+                            percent: root.disk;
+                            selected: root.selected-meter == 2;
+                            alert: root.disk >= 90;
+                            clicked => {
+                                root.selected-meter = root.selected-meter == 2 ? -1 : 2;
+                                root.set-status(root.selected-meter == 2 ? "INSPECT DISK" : "CLOSED", 0);
+                            }
+                        }
+                        MeterRow {
+                            label: "NET";
+                            percent: root.net;
+                            selected: root.selected-meter == 3;
+                            alert: false;
+                            clicked => {
+                                root.selected-meter = root.selected-meter == 3 ? -1 : 3;
+                                root.set-status(root.selected-meter == 3 ? "INSPECT NET" : "CLOSED", 0);
+                            }
+                        }
+                    }
+                }
+
+                if root.selected-meter >= 0: Rectangle {
+                    background: #0a0a0a;
+                    min-height: 48px;
+                    VerticalLayout {
+                        padding: Theme.spacing-md;
+                        Text {
+                            text: "> " + root.meter-detail();
+                            color: #ffd400;
+                            font-size: Theme.font-size-caption;
+                            font-weight: 700;
+                        }
+                    }
+                }
+
+                Rectangle {
+                    height: 40px;
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-md;
+                        alignment: start;
+                        Text {
+                            text: "// EMERGENCY";
+                            color: BrutalistSkin.text-muted;
+                            font-size: Theme.font-size-caption;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    spacing: Theme.spacing-sm;
+                    Rectangle {
+                        min-height: 56px;
+                        background: root.emergency-armed ? #ff6b6b : #1a1a1a;
+                        border-width: 1px;
+                        border-color: BrutalistSkin.hairline;
+                        HorizontalLayout {
+                            padding: Theme.spacing-md;
+                            alignment: stretch;
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                alignment: center;
+                                Text {
+                                    text: root.shutdown ? "SHUTDOWN ENGAGED" : (root.emergency-armed ? "▶ ARMED · TAP TO SHUT DOWN" : "[ EMERGENCY SHUTDOWN ]");
+                                    color: root.emergency-armed ? #0a0a0a : #ffd400;
+                                    font-size: Theme.font-size-body;
+                                    font-weight: 800;
+                                }
+                            }
+                            Rectangle {
+                                horizontal-stretch: 0;
+                                width: 80px;
+                                height: 32px;
+                                background: #1a1a1a;
+                                border-width: 1px;
+                                border-color: BrutalistSkin.hairline;
+                                Text {
+                                    text: "MORE";
+                                    color: #ffd400;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 800;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                                TouchArea {
+                                    clicked => {
+                                        root.sheet-open = true;
+                                    }
+                                }
+                            }
+                        }
+                        TouchArea {
+                            clicked => {
+                                if (root.shutdown) {
+                                    root.shutdown = false;
+                                    root.emergency-armed = false;
+                                    root.running = true;
+                                    root.set-status("BOOTED", 1);
+                                } else if (root.emergency-armed) {
+                                    root.shutdown = true;
+                                    root.running = false;
+                                    root.set-status("SHUTDOWN COMPLETE", 2);
+                                    root.emergency-armed = false;
+                                } else {
+                                    root.emergency-armed = true;
+                                    root.set-status("EMERGENCY ARMED · TAP AGAIN", 2);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: #0a0a0a;
+            border-width: 1px;
+            border-color: BrutalistSkin.hairline;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: #ffd400;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: "// CTRL MENU";
+                        color: #ffd400;
+                        font-size: Theme.font-size-body-large;
+                        font-weight: 800;
+                    }
+                }
+                SheetRow {
+                    label: "// AIRGAP ALL · MAX SECURITY";
+                    clicked => {
+                        root.airgap = true;
+                        root.telemetry = false;
+                        root.mute = true;
+                        root.set-status("MAX SECURITY", 1);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "// NORMAL MODE · ALL OPEN";
+                    clicked => {
+                        root.airgap = false;
+                        root.telemetry = true;
+                        root.mute = false;
+                        root.set-status("NORMAL", 0);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "// CLEAR ALERTS";
+                    clicked => {
+                        root.cpu = 41;
+                        root.mem = 78;
+                        root.set-status("ALERTS CLEARED", 1);
+                        root.sheet-open = false;
+                    }
+                }
+                Rectangle {
+                    height: 1px;
+                    background: BrutalistSkin.hairline;
+                }
+                SheetRow {
+                    label: root.shutdown ? "// BOOT SYSTEM" : "// SHUTDOWN NOW";
+                    destructive: true;
+                    clicked => {
+                        if (root.shutdown) {
+                            root.shutdown = false;
+                            root.running = true;
+                            root.set-status("BOOTED", 1);
+                        } else {
+                            root.shutdown = true;
+                            root.running = false;
+                            root.set-status("SHUTDOWN", 2);
+                        }
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "// CANCEL";
+                    clicked => {
+                        root.sheet-open = false;
                     }
                 }
             }

@@ -1,11 +1,5 @@
 // LeaderboardPage
 // =====================================================================
-//
-// Top-N ranked players. Period switcher (SegmentedControl), then a Card
-// showing the current user's row, and a FormSection of SettingRows for
-// the top 10. Top-3 rows use a warning-tinted star leading tile; the
-// rest use a default profile tile. Trailing slot in each row carries
-// the rank number, which keeps the column aligned across every row.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
@@ -13,17 +7,267 @@ import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
 import { Card } from "@mobile-components/card.slint";
 import { SegmentedControl } from "@mobile-components/segmented-control.slint";
 import { FormSection } from "@mobile-components/form-section.slint";
-import { SettingRow } from "@mobile-components/setting-row.slint";
 import { Divider } from "@mobile-components/divider.slint";
 import { ScrollView } from "std-widgets.slint";
+
+component PlayerRow inherits Rectangle {
+    in property <int> rank;
+    in property <string> handle;
+    in property <string> subtitle;
+    in property <bool> top3: false;
+    in property <bool> following: false;
+    in property <bool> me: false;
+    callback row-clicked();
+    callback follow-clicked();
+
+    horizontal-stretch: 1;
+    min-height: 64px;
+    background: ta.has-hover ? Theme.surface-2 : (root.me ? Theme.accent-info.with-alpha(0.10) : transparent);
+
+    ta := TouchArea {
+        clicked => {
+            root.row-clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 36px;
+                height: 36px;
+                border-radius: 8px;
+                background: root.top3 ? Theme.accent-warning.with-alpha(0.22) : (root.me ? Theme.accent-info.with-alpha(0.22) : Theme.surface-2);
+                Image {
+                    width: 18px;
+                    height: 18px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: root.top3 ? @image-url("@mobile-components/icons/star.svg") : @image-url("@mobile-components/icons/profile.svg");
+                    colorize: root.top3 ? Theme.accent-warning : (root.me ? Theme.accent-info : Theme.muted);
+                    image-fit: contain;
+                }
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: (root.following ? "♥ " : "") + root.handle + (root.me ? " (you)" : "");
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: root.top3 || root.me ? 700 : 500;
+            }
+            Text {
+                text: root.subtitle;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+            }
+        }
+        if !root.me: VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 32px;
+                height: 32px;
+                border-radius: 16px;
+                background: root.following ? Theme.accent-danger.with-alpha(0.22) : Theme.surface-2;
+                Image {
+                    width: 16px;
+                    height: 16px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: @image-url("@mobile-components/icons/heart.svg");
+                    colorize: root.following ? Theme.accent-danger : Theme.muted;
+                    image-fit: contain;
+                }
+                TouchArea {
+                    clicked => {
+                        root.follow-clicked();
+                    }
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: "#" + root.rank;
+                color: Theme.on-surface;
+                font-family: "JetBrains Mono";
+                font-size: Theme.font-size-body-large;
+                font-weight: 700;
+                vertical-alignment: center;
+            }
+        }
+    }
+}
+
+component Chip2 inherits Rectangle {
+    in property <string> label;
+    in property <bool> active: false;
+    callback clicked();
+
+    horizontal-stretch: 0;
+    height: 28px;
+    border-radius: 14px;
+    background: root.active ? Theme.primary : Theme.surface-2;
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: center;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.active ? Theme.on-primary : Theme.on-surface;
+                font-size: Theme.font-size-caption;
+                font-weight: 700;
+            }
+        }
+    }
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.destructive ? Theme.accent-danger : Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+        }
+    }
+}
 
 export component LeaderboardPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
 
     in-out property <int> period-index: 1;
+    in-out property <int> region-filter: 0; // 0 World 1 Europe 2 Americas
+    in-out property <int> own-points: 984;
+    in-out property <int> session-delta: 0;
+    in-out property <bool> f1: false;
+    in-out property <bool> f2: false;
+    in-out property <bool> f3: false;
+    in-out property <bool> f4: false;
+    in-out property <bool> f5: false;
+    in-out property <bool> f6: false;
+    in-out property <bool> f7: false;
+    in-out property <bool> f8: false;
+    in-out property <bool> f9: false;
+    in-out property <bool> f10: false;
+    in-out property <bool> sheet-open: false;
+    in-out property <bool> confirm-reset: false;
+    in-out property <string> status-msg: "";
+    in-out property <bool> status-success: false;
+    in-out property <bool> status-danger: false;
+
     callback back-pressed();
-    callback row-pressed(string);
+    callback row-pressed(int);
+    callback play-pressed();
+
+    function own-rank() -> int {
+        return root.own-points >= 2481 ? 1 : (root.own-points >= 2210 ? 2 : (root.own-points >= 2047 ? 3 : (root.own-points >= 1894 ? 4 : (root.own-points >= 1712 ? 5 : (root.own-points >= 1604 ? 6 : (root.own-points >= 1521 ? 7 : (root.own-points >= 1447 ? 8 : (root.own-points >= 1389 ? 9 : (root.own-points >= 1304 ? 10 : 42)))))))));
+    }
+    function period-mult-pct() -> int {
+        return root.period-index == 0 ? 10 : (root.period-index == 1 ? 50 : 100);
+    }
+    function scaled(p: int) -> int {
+        return floor(p * root.period-mult-pct() / 100);
+    }
+    function fmt-pts(p: int) -> string {
+        return root.scaled(p) >= 1000 ? floor(root.scaled(p) / 1000) + "," + (mod(root.scaled(p), 1000) < 100 ? "0" + (mod(root.scaled(p), 1000) < 10 ? "0" + mod(root.scaled(p), 1000) : "" + mod(root.scaled(p), 1000)) : "" + mod(root.scaled(p), 1000)) + " pts" : root.scaled(p) + " pts";
+    }
+    function region-label() -> string {
+        return root.region-filter == 0 ? "World" : (root.region-filter == 1 ? "Europe" : "Americas");
+    }
+    function row-visible(region: string) -> bool {
+        return root.region-filter == 0 ? true : (root.region-filter == 1 ? region == "EU" : region == "NA");
+    }
+    function following-count() -> int {
+        return (root.f1 ? 1 : 0) + (root.f2 ? 1 : 0) + (root.f3 ? 1 : 0) + (root.f4 ? 1 : 0) + (root.f5 ? 1 : 0) + (root.f6 ? 1 : 0) + (root.f7 ? 1 : 0) + (root.f8 ? 1 : 0) + (root.f9 ? 1 : 0) + (root.f10 ? 1 : 0);
+    }
+    function set-status(m: string, ok: bool, bad: bool) {
+        root.status-msg = m;
+        root.status-success = ok;
+        root.status-danger = bad;
+    }
+    function follow(i: int) {
+        if (i == 1) {
+            root.f1 = !root.f1;
+            root.set-status(root.f1 ? "Following @blackcat" : "Unfollowed", root.f1, false);
+        }
+        if (i == 2) {
+            root.f2 = !root.f2;
+            root.set-status(root.f2 ? "Following @nightowl" : "Unfollowed", root.f2, false);
+        }
+        if (i == 3) {
+            root.f3 = !root.f3;
+            root.set-status(root.f3 ? "Following @oslo_runner" : "Unfollowed", root.f3, false);
+        }
+        if (i == 4) {
+            root.f4 = !root.f4;
+            root.set-status(root.f4 ? "Following @violet_storm" : "Unfollowed", root.f4, false);
+        }
+        if (i == 5) {
+            root.f5 = !root.f5;
+            root.set-status(root.f5 ? "Following @sparrow.84" : "Unfollowed", root.f5, false);
+        }
+        if (i == 6) {
+            root.f6 = !root.f6;
+            root.set-status(root.f6 ? "Following @axolotl_99" : "Unfollowed", root.f6, false);
+        }
+        if (i == 7) {
+            root.f7 = !root.f7;
+            root.set-status(root.f7 ? "Following @quicksilver" : "Unfollowed", root.f7, false);
+        }
+        if (i == 8) {
+            root.f8 = !root.f8;
+            root.set-status(root.f8 ? "Following @petra.l" : "Unfollowed", root.f8, false);
+        }
+        if (i == 9) {
+            root.f9 = !root.f9;
+            root.set-status(root.f9 ? "Following @hedy.l" : "Unfollowed", root.f9, false);
+        }
+        if (i == 10) {
+            root.f10 = !root.f10;
+            root.set-status(root.f10 ? "Following @grace.h" : "Unfollowed", root.f10, false);
+        }
+    }
+    function play-match() {
+        root.own-points = root.own-points + 75;
+        root.session-delta = root.session-delta + 75;
+        root.set-status("Win +75 · now #" + root.own-rank(), true, false);
+        root.play-pressed();
+    }
 
     background: Theme.background;
 
@@ -34,7 +278,31 @@ export component LeaderboardPage inherits Window {
             title: "Leaderboard";
             title-style: HeadingStyle.grotesk-bold;
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
-            leading-pressed => { root.back-pressed(); }
+            trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
+            leading-pressed => {
+                root.back-pressed();
+            }
+            trailing-pressed => {
+                root.sheet-open = true;
+            }
+        }
+
+        // Status banner.
+        if !root.status-msg.is-empty: Rectangle {
+            height: 28px;
+            background: root.status-success ? Theme.accent-success.with-alpha(0.16) : (root.status-danger ? Theme.accent-danger.with-alpha(0.16) : Theme.surface-2);
+            HorizontalLayout {
+                alignment: center;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.status-msg;
+                        color: root.status-success ? Theme.accent-success : (root.status-danger ? Theme.accent-danger : Theme.on-surface);
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                    }
+                }
+            }
         }
 
         ScrollView {
@@ -53,6 +321,44 @@ export component LeaderboardPage inherits Window {
                     SegmentedControl {
                         options: ["Today", "Week", "All-time"];
                         selected-index <=> root.period-index;
+                        changed(i) => {
+                            root.set-status("Showing " + (i == 0 ? "today" : (i == 1 ? "this week" : "all-time")), true, false);
+                        }
+                    }
+                }
+
+                // ----- Region chips ------------------------------------
+                HorizontalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    spacing: Theme.spacing-sm;
+                    Chip2 {
+                        label: "World";
+                        active: root.region-filter == 0;
+                        clicked => {
+                            root.region-filter = 0;
+                        }
+                    }
+                    Chip2 {
+                        label: "Europe";
+                        active: root.region-filter == 1;
+                        clicked => {
+                            root.region-filter = 1;
+                        }
+                    }
+                    Chip2 {
+                        label: "Americas";
+                        active: root.region-filter == 2;
+                        clicked => {
+                            root.region-filter = 2;
+                        }
+                    }
+                    Chip2 {
+                        label: "Following (" + root.following-count() + ")";
+                        active: false;
+                        clicked => {
+                            root.set-status("Following " + root.following-count() + " players", true, false);
+                        }
                     }
                 }
 
@@ -68,7 +374,7 @@ export component LeaderboardPage inherits Window {
                             VerticalLayout {
                                 alignment: center;
                                 Text {
-                                    text: "#42";
+                                    text: "#" + root.own-rank();
                                     color: Theme.primary;
                                     font-family: "JetBrains Mono";
                                     font-size: Theme.font-size-headline;
@@ -87,15 +393,41 @@ export component LeaderboardPage inherits Window {
                                     font-size: 18px;
                                 }
                                 Text {
-                                    text: "984 pts · Belgium";
+                                    text: root.own-points + " pts · Belgium";
                                     color: Theme.muted;
                                     font-size: Theme.font-size-caption;
                                 }
                                 Text {
-                                    text: "+12 this week";
+                                    text: root.session-delta > 0 ? "+" + root.session-delta + " this session" : "+12 this week";
                                     color: Theme.accent-success;
                                     font-size: Theme.font-size-caption;
                                     font-weight: 600;
+                                }
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: 96px;
+                                    height: 40px;
+                                    border-radius: 20px;
+                                    background: Theme.accent-success;
+                                    HorizontalLayout {
+                                        alignment: center;
+                                        VerticalLayout {
+                                            alignment: center;
+                                            Text {
+                                                text: "Play +75";
+                                                color: Theme.on-primary;
+                                                font-size: Theme.font-size-caption;
+                                                font-weight: 800;
+                                            }
+                                        }
+                                    }
+                                    TouchArea {
+                                        clicked => {
+                                            root.play-match();
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -104,159 +436,268 @@ export component LeaderboardPage inherits Window {
 
                 // ----- Top 10 ------------------------------------------
                 FormSection {
-                    title: "TOP 10";
+                    title: "TOP 10 · " + root.region-label();
 
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/star.svg");
-                        tone: Tone.warning;
-                        title: "@blackcat";
-                        subtitle: "Norway · 2,481 pts";
-                        clicked => { root.row-pressed("1"); }
-                        Text {
-                            text: "#1";
-                            color: Theme.on-surface;
-                            font-family: "JetBrains Mono";
-                            font-size: Theme.font-size-body-large;
-                            font-weight: 700;
-                            vertical-alignment: center;
+                    if root.row-visible("EU"): PlayerRow {
+                        rank: 1;
+                        handle: "@blackcat";
+                        subtitle: "Norway · " + root.fmt-pts(2481);
+                        top3: true;
+                        following: root.f1;
+                        row-clicked => {
+                            root.row-pressed(1);
+                        }
+                        follow-clicked => {
+                            root.follow(1);
                         }
                     }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/star.svg");
-                        tone: Tone.warning;
-                        title: "@nightowl";
-                        subtitle: "Belgium · 2,210 pts";
-                        clicked => { root.row-pressed("2"); }
-                        Text {
-                            text: "#2";
-                            color: Theme.on-surface;
-                            font-family: "JetBrains Mono";
-                            font-size: Theme.font-size-body-large;
-                            font-weight: 700;
-                            vertical-alignment: center;
+                    if root.row-visible("EU"): Divider { }
+
+                    if root.row-visible("EU"): PlayerRow {
+                        rank: 2;
+                        handle: "@nightowl";
+                        subtitle: "Belgium · " + root.fmt-pts(2210);
+                        top3: true;
+                        following: root.f2;
+                        row-clicked => {
+                            root.row-pressed(2);
+                        }
+                        follow-clicked => {
+                            root.follow(2);
                         }
                     }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/star.svg");
-                        tone: Tone.warning;
-                        title: "@oslo_runner";
-                        subtitle: "Norway · 2,047 pts";
-                        clicked => { root.row-pressed("3"); }
-                        Text {
-                            text: "#3";
-                            color: Theme.on-surface;
-                            font-family: "JetBrains Mono";
-                            font-size: Theme.font-size-body-large;
-                            font-weight: 700;
-                            vertical-alignment: center;
+                    if root.row-visible("EU"): Divider { }
+
+                    if root.row-visible("EU"): PlayerRow {
+                        rank: 3;
+                        handle: "@oslo_runner";
+                        subtitle: "Norway · " + root.fmt-pts(2047);
+                        top3: true;
+                        following: root.f3;
+                        row-clicked => {
+                            root.row-pressed(3);
+                        }
+                        follow-clicked => {
+                            root.follow(3);
                         }
                     }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/profile.svg");
-                        title: "@violet_storm";
-                        subtitle: "Sweden · 1,894 pts";
-                        clicked => { root.row-pressed("4"); }
-                        Text {
-                            text: "#4";
-                            color: Theme.on-surface;
-                            font-family: "JetBrains Mono";
-                            font-size: Theme.font-size-body-large;
-                            font-weight: 700;
-                            vertical-alignment: center;
+                    if root.row-visible("EU"): Divider { }
+
+                    if root.row-visible("EU"): PlayerRow {
+                        rank: 4;
+                        handle: "@violet_storm";
+                        subtitle: "Sweden · " + root.fmt-pts(1894);
+                        following: root.f4;
+                        row-clicked => {
+                            root.row-pressed(4);
+                        }
+                        follow-clicked => {
+                            root.follow(4);
                         }
                     }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/profile.svg");
-                        title: "@sparrow.84";
-                        subtitle: "Germany · 1,712 pts";
-                        clicked => { root.row-pressed("5"); }
-                        Text {
-                            text: "#5";
-                            color: Theme.on-surface;
-                            font-family: "JetBrains Mono";
-                            font-size: Theme.font-size-body-large;
-                            font-weight: 700;
-                            vertical-alignment: center;
+                    if root.row-visible("EU"): Divider { }
+
+                    if root.row-visible("EU"): PlayerRow {
+                        rank: 5;
+                        handle: "@sparrow.84";
+                        subtitle: "Germany · " + root.fmt-pts(1712);
+                        following: root.f5;
+                        row-clicked => {
+                            root.row-pressed(5);
+                        }
+                        follow-clicked => {
+                            root.follow(5);
                         }
                     }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/profile.svg");
-                        title: "@axolotl_99";
-                        subtitle: "Mexico · 1,604 pts";
-                        clicked => { root.row-pressed("6"); }
-                        Text {
-                            text: "#6";
-                            color: Theme.on-surface;
-                            font-family: "JetBrains Mono";
-                            font-size: Theme.font-size-body-large;
-                            font-weight: 700;
-                            vertical-alignment: center;
+                    if root.row-visible("EU"): Divider { }
+
+                    if root.row-visible("NA"): PlayerRow {
+                        rank: 6;
+                        handle: "@axolotl_99";
+                        subtitle: "Mexico · " + root.fmt-pts(1604);
+                        following: root.f6;
+                        row-clicked => {
+                            root.row-pressed(6);
+                        }
+                        follow-clicked => {
+                            root.follow(6);
                         }
                     }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/profile.svg");
-                        title: "@quicksilver";
-                        subtitle: "France · 1,521 pts";
-                        clicked => { root.row-pressed("7"); }
-                        Text {
-                            text: "#7";
-                            color: Theme.on-surface;
-                            font-family: "JetBrains Mono";
-                            font-size: Theme.font-size-body-large;
-                            font-weight: 700;
-                            vertical-alignment: center;
+                    if root.row-visible("NA"): Divider { }
+
+                    if root.row-visible("EU"): PlayerRow {
+                        rank: 7;
+                        handle: "@quicksilver";
+                        subtitle: "France · " + root.fmt-pts(1521);
+                        following: root.f7;
+                        row-clicked => {
+                            root.row-pressed(7);
+                        }
+                        follow-clicked => {
+                            root.follow(7);
                         }
                     }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/profile.svg");
-                        title: "@petra.l";
-                        subtitle: "Sweden · 1,447 pts";
-                        clicked => { root.row-pressed("8"); }
-                        Text {
-                            text: "#8";
-                            color: Theme.on-surface;
-                            font-family: "JetBrains Mono";
-                            font-size: Theme.font-size-body-large;
-                            font-weight: 700;
-                            vertical-alignment: center;
+                    if root.row-visible("EU"): Divider { }
+
+                    if root.row-visible("EU"): PlayerRow {
+                        rank: 8;
+                        handle: "@petra.l";
+                        subtitle: "Sweden · " + root.fmt-pts(1447);
+                        following: root.f8;
+                        row-clicked => {
+                            root.row-pressed(8);
+                        }
+                        follow-clicked => {
+                            root.follow(8);
                         }
                     }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/profile.svg");
-                        title: "@hedy.l";
-                        subtitle: "Austria · 1,389 pts";
-                        clicked => { root.row-pressed("9"); }
-                        Text {
-                            text: "#9";
-                            color: Theme.on-surface;
-                            font-family: "JetBrains Mono";
-                            font-size: Theme.font-size-body-large;
-                            font-weight: 700;
-                            vertical-alignment: center;
+                    if root.row-visible("EU"): Divider { }
+
+                    if root.row-visible("EU"): PlayerRow {
+                        rank: 9;
+                        handle: "@hedy.l";
+                        subtitle: "Austria · " + root.fmt-pts(1389);
+                        following: root.f9;
+                        row-clicked => {
+                            root.row-pressed(9);
+                        }
+                        follow-clicked => {
+                            root.follow(9);
                         }
                     }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/profile.svg");
-                        title: "@grace.h";
-                        subtitle: "USA · 1,304 pts";
-                        clicked => { root.row-pressed("10"); }
-                        Text {
-                            text: "#10";
-                            color: Theme.on-surface;
-                            font-family: "JetBrains Mono";
-                            font-size: Theme.font-size-body-large;
-                            font-weight: 700;
-                            vertical-alignment: center;
+                    if root.row-visible("EU"): Divider { }
+
+                    if root.row-visible("NA"): PlayerRow {
+                        rank: 10;
+                        handle: "@grace.h";
+                        subtitle: "USA · " + root.fmt-pts(1304);
+                        following: root.f10;
+                        row-clicked => {
+                            root.row-pressed(10);
                         }
+                        follow-clicked => {
+                            root.follow(10);
+                        }
+                    }
+                }
+
+                // ----- Your position in standings ----------------------
+                if root.own-rank() > 10: FormSection {
+                    title: "YOUR POSITION";
+                    PlayerRow {
+                        rank: root.own-rank();
+                        handle: "@you";
+                        subtitle: "Belgium · " + root.own-points + " pts";
+                        me: true;
+                        row-clicked => {
+                            root.play-match();
+                        }
+                        follow-clicked => { }
+                    }
+                }
+            }
+        }
+    }
+
+    // ===================== Bottom sheet =====================
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+                root.confirm-reset = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: Theme.surface-2;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.muted;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: "Leaderboard actions";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 700;
+                    }
+                }
+                SheetRow {
+                    label: "Play 5 matches (+375)";
+                    clicked => {
+                        root.own-points = root.own-points + 375;
+                        root.session-delta = root.session-delta + 375;
+                        root.set-status("5 wins · now #" + root.own-rank(), true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Unfollow all (" + root.following-count() + ")";
+                    clicked => {
+                        root.f1 = false;
+                        root.f2 = false;
+                        root.f3 = false;
+                        root.f4 = false;
+                        root.f5 = false;
+                        root.f6 = false;
+                        root.f7 = false;
+                        root.f8 = false;
+                        root.f9 = false;
+                        root.f10 = false;
+                        root.set-status("Unfollowed all", false, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Cycle region (now " + root.region-label() + ")";
+                    clicked => {
+                        root.region-filter = mod(root.region-filter + 1, 3);
+                        root.set-status("Region: " + root.region-label(), true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                Divider { }
+
+                SheetRow {
+                    label: root.confirm-reset ? "Confirm: reset season" : "Reset season";
+                    destructive: true;
+                    clicked => {
+                        if (root.confirm-reset) {
+                            root.own-points = 984;
+                            root.session-delta = 0;
+                            root.set-status("Season reset", false, true);
+                            root.sheet-open = false;
+                            root.confirm-reset = false;
+                        } else {
+                            root.confirm-reset = true;
+                        }
+                    }
+                }
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.sheet-open = false;
+                        root.confirm-reset = false;
                     }
                 }
             }

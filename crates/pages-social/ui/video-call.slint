@@ -1,44 +1,118 @@
 // VideoCallPage
 // =====================================================================
-//
-// Active video-call screen. No standard AppBar — a tiny transparent
-// top strip carries the call timer and a close icon. Main body is a
-// large faux remote-video Rectangle filling most of the viewport, with
-// a small picture-in-picture self-video tile floated in the top-right.
-// Bottom controls bar holds five round IconButton-style actions.
 
 import { Theme } from "@mobile-theme/theme.slint";
+import { Divider } from "@mobile-components/divider.slint";
 
 component CallControl inherits Rectangle {
     in property <image> icon;
     in property <bool> danger: false;
+    in property <bool> active: false;
+    in property <string> label;
     in property <string> a11y-label;
     callback clicked();
 
     accessible-role: button;
     accessible-label: root.a11y-label;
-    accessible-action-default => { root.clicked(); }
-
-    width: 56px;
-    height: 56px;
-    border-radius: self.width / 2;
-    background: root.danger
-        ? (touch.pressed ? Theme.accent-danger.darker(0.15) : Theme.accent-danger)
-        : (touch.pressed ? Theme.surface-pressed : Theme.surface-1);
-    animate background { duration: Theme.motion-fast; }
-
-    Image {
-        width: 22px;
-        height: 22px;
-        x: (parent.width - self.width) / 2;
-        y: (parent.height - self.height) / 2;
-        source: root.icon;
-        colorize: root.danger ? Theme.on-primary : Theme.on-surface;
-        image-fit: contain;
+    accessible-action-default => {
+        root.clicked();
     }
 
-    touch := TouchArea {
-        clicked => { root.clicked(); }
+    width: 56px;
+    height: 64px;
+
+    VerticalLayout {
+        spacing: 2px;
+        alignment: center;
+        HorizontalLayout {
+            alignment: center;
+            Rectangle {
+                width: 48px;
+                height: 48px;
+                border-radius: 24px;
+                background: root.danger ? (touch.pressed ? Theme.accent-danger.darker(0.15) : Theme.accent-danger) : (root.active ? Theme.accent-warning : (touch.pressed ? Theme.surface-pressed : Theme.surface-1));
+                animate background { duration: Theme.motion-fast; }
+
+                Image {
+                    width: 22px;
+                    height: 22px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: root.icon;
+                    colorize: root.danger || root.active ? Theme.on-primary : Theme.on-surface;
+                    image-fit: contain;
+                }
+
+                touch := TouchArea {
+                    clicked => {
+                        root.clicked();
+                    }
+                }
+            }
+        }
+        Text {
+            text: root.label;
+            color: root.danger ? Theme.accent-danger : (root.active ? Theme.accent-warning : Theme.on-background);
+            font-size: 9px;
+            font-weight: 800;
+            horizontal-alignment: center;
+        }
+    }
+}
+
+component ReactionBubble inherits Rectangle {
+    in property <string> emoji;
+    in property <bool> active: false;
+    callback clicked();
+
+    horizontal-stretch: 0;
+    width: 40px;
+    height: 40px;
+    border-radius: 20px;
+    background: root.active ? Theme.accent-info.with-alpha(0.30) : Theme.surface-1.with-alpha(0.7);
+    Text {
+        text: root.emoji;
+        font-size: 22px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: parent.width;
+        height: parent.height;
+    }
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    background: ta.has-hover ? Theme.surface-1 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.destructive ? Theme.accent-danger : Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+        }
     }
 }
 
@@ -47,7 +121,21 @@ export component VideoCallPage inherits Window {
     preferred-height: 892px;
 
     in property <string> partner-name: "Ada Lovelace";
-    in property <string> timer: "00:12:47";
+
+    in-out property <int> call-secs: 767; // 12:47
+    in-out property <bool> ended: false;
+    in-out property <bool> muted: false;
+    in-out property <bool> video-on: true;
+    in-out property <bool> sharing: false;
+    in-out property <bool> pip-swapped: false;
+    in-out property <bool> bg-blur: false;
+    in-out property <bool> participants-open: false;
+    in-out property <int> reaction: -1; // -1 none, 0 ❤, 1 👏, 2 😂, 3 👍
+    in-out property <bool> sheet-open: false;
+    in-out property <bool> confirm-hangup: false;
+    in-out property <string> status-msg: "";
+    in-out property <bool> status-success: false;
+    in-out property <bool> status-danger: false;
 
     callback hangup-pressed();
     callback toggle-mic();
@@ -55,6 +143,48 @@ export component VideoCallPage inherits Window {
     callback share-pressed();
     callback more-pressed();
     callback close-pressed();
+
+    function pad2(n: int) -> string {
+        return n < 10 ? "0" + n : "" + n;
+    }
+    function timer-text() -> string {
+        return root.pad2(floor(root.call-secs / 3600)) + ":" + root.pad2(mod(floor(root.call-secs / 60), 60)) + ":" + root.pad2(mod(root.call-secs, 60));
+    }
+    function reaction-emoji() -> string {
+        return root.reaction == 0 ? "❤" : (root.reaction == 1 ? "👏" : (root.reaction == 2 ? "😂" : "👍"));
+    }
+    function set-status(m: string, ok: bool, bad: bool) {
+        root.status-msg = m;
+        root.status-success = ok;
+        root.status-danger = bad;
+    }
+    function send-reaction(i: int) {
+        root.reaction = i;
+        root.set-status("Reaction sent · " + root.reaction-emoji(), true, false);
+    }
+    function hangup() {
+        root.ended = true;
+        root.set-status("Call ended · " + root.timer-text(), false, true);
+        root.hangup-pressed();
+    }
+
+    // Live call tick.
+    tick := Timer {
+        interval: 1s;
+        running: !root.ended;
+        triggered => {
+            root.call-secs = root.call-secs + 1;
+        }
+    }
+
+    // Reaction auto-dismiss.
+    react-tick := Timer {
+        interval: 1500ms;
+        running: root.reaction >= 0;
+        triggered => {
+            root.reaction = -1;
+        }
+    }
 
     background: Theme.background;
 
@@ -64,19 +194,87 @@ export component VideoCallPage inherits Window {
         y: 0;
         width: parent.width;
         height: parent.height;
-        background: Theme.surface-3;
+        background: root.ended ? Theme.background : (root.bg-blur ? @linear-gradient(180deg, #3a3a55 0%, #1a1a2e 100%) : Theme.surface-3);
+        animate background { duration: Theme.motion-fast; }
 
         Text {
             x: 0;
             y: 0;
             width: parent.width;
             height: parent.height;
-            text: root.partner-name;
-            color: Theme.on-surface;
+            text: root.ended ? "Call ended" : (root.pip-swapped ? "You" : root.partner-name);
+            color: root.ended ? Theme.accent-danger : Theme.on-surface;
             font-size: Theme.font-size-headline;
             font-weight: 700;
             horizontal-alignment: center;
             vertical-alignment: center;
+        }
+
+        // Camera off indicator.
+        if !root.video-on && !root.ended: Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2 - 60px;
+            width: 200px;
+            height: 36px;
+            border-radius: 18px;
+            background: #00000099;
+            Text {
+                text: "📵 Camera off";
+                color: #ffffff;
+                font-size: Theme.font-size-caption;
+                font-weight: 800;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                width: parent.width;
+                height: parent.height;
+            }
+        }
+
+        // Screen-share indicator.
+        if root.sharing: Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: parent.height - 200px;
+            width: 220px;
+            height: 36px;
+            border-radius: 18px;
+            background: Theme.accent-success;
+            Text {
+                text: "🖥 You're sharing your screen";
+                color: Theme.on-primary;
+                font-size: Theme.font-size-caption;
+                font-weight: 800;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                width: parent.width;
+                height: parent.height;
+            }
+        }
+
+        TouchArea {
+            clicked => {
+                if (!root.ended) {
+                    root.pip-swapped = !root.pip-swapped;
+                    root.set-status(root.pip-swapped ? "Swapped — you're main" : "Partner is main", true, false);
+                }
+            }
+        }
+    }
+
+    // Reaction overlay (floats over the video).
+    if root.reaction >= 0: Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: parent.height / 2 - 100px;
+        width: 80px;
+        height: 80px;
+        border-radius: 40px;
+        background: #00000099;
+        Text {
+            text: root.reaction-emoji();
+            font-size: 44px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            width: parent.width;
+            height: parent.height;
         }
     }
 
@@ -94,20 +292,73 @@ export component VideoCallPage inherits Window {
             spacing: Theme.spacing-sm;
             alignment: stretch;
 
-            Text {
-                text: root.timer;
-                color: Theme.on-background;
-                font-size: Theme.font-size-body;
-                font-weight: 600;
-                vertical-alignment: center;
+            VerticalLayout {
+                alignment: center;
+                Rectangle {
+                    horizontal-stretch: 0;
+                    height: 28px;
+                    border-radius: 14px;
+                    background: root.ended ? Theme.accent-danger : Theme.accent-success;
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-sm;
+                        padding-right: Theme.spacing-sm;
+                        spacing: 4px;
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: root.ended ? "ENDED" : (root.muted ? "MUTED" : "LIVE");
+                                color: Theme.on-primary;
+                                font-size: 9px;
+                                font-weight: 800;
+                                letter-spacing: 1px;
+                            }
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: root.timer-text();
+                                color: Theme.on-primary;
+                                font-size: Theme.font-size-caption;
+                                font-weight: 800;
+                            }
+                        }
+                    }
+                }
+            }
+            Rectangle {
                 horizontal-stretch: 1;
             }
-
+            // Participants pill.
+            Rectangle {
+                horizontal-stretch: 0;
+                height: 28px;
+                border-radius: 14px;
+                background: root.participants-open ? Theme.accent-info : Theme.surface-1.with-alpha(0.7);
+                HorizontalLayout {
+                    padding-left: Theme.spacing-sm;
+                    padding-right: Theme.spacing-sm;
+                    VerticalLayout {
+                        alignment: center;
+                        Text {
+                            text: "👥 2";
+                            color: root.participants-open ? Theme.on-primary : Theme.on-surface;
+                            font-size: Theme.font-size-caption;
+                            font-weight: 800;
+                        }
+                    }
+                }
+                TouchArea {
+                    clicked => {
+                        root.participants-open = !root.participants-open;
+                        root.set-status(root.participants-open ? "Participants shown" : "Hidden", true, false);
+                    }
+                }
+            }
             Rectangle {
                 width: 32px;
                 height: 32px;
                 border-radius: self.width / 2;
-                background: close-touch.pressed ? Theme.surface-pressed : transparent;
+                background: close-touch.pressed ? Theme.surface-pressed : Theme.surface-1.with-alpha(0.7);
                 animate background { duration: Theme.motion-fast; }
 
                 Image {
@@ -121,33 +372,215 @@ export component VideoCallPage inherits Window {
                 }
 
                 close-touch := TouchArea {
-                    clicked => { root.close-pressed(); }
+                    clicked => {
+                        root.set-status("Closing call view", false, false);
+                        root.close-pressed();
+                    }
+                }
+            }
+        }
+    }
+
+    // Status banner under top strip.
+    if !root.status-msg.is-empty: Rectangle {
+        x: Theme.spacing-md;
+        y: 56px;
+        width: parent.width - 2 * Theme.spacing-md;
+        height: 28px;
+        border-radius: 14px;
+        background: root.status-success ? Theme.accent-success.with-alpha(0.85) : (root.status-danger ? Theme.accent-danger.with-alpha(0.85) : #00000099);
+        HorizontalLayout {
+            alignment: center;
+            VerticalLayout {
+                alignment: center;
+                Text {
+                    text: root.status-msg;
+                    color: Theme.on-primary;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 800;
+                }
+            }
+        }
+    }
+
+    // ----- Participants panel (top right under header) ---------------
+    if root.participants-open: Rectangle {
+        x: parent.width - 220px - Theme.spacing-md;
+        y: 100px;
+        width: 220px;
+        height: 160px;
+        background: Theme.surface-1;
+        border-radius: Theme.radius-md;
+        drop-shadow-blur: Theme.elevation-3-blur;
+        drop-shadow-color: Theme.elevation-3-color;
+        drop-shadow-offset-y: Theme.elevation-3-y;
+        VerticalLayout {
+            padding: Theme.spacing-sm;
+            spacing: 4px;
+            Text {
+                text: "IN CALL · 2";
+                color: Theme.muted;
+                font-size: 10px;
+                font-weight: 800;
+                letter-spacing: 2px;
+            }
+            Rectangle {
+                min-height: 32px;
+                HorizontalLayout {
+                    spacing: 6px;
+                    VerticalLayout {
+                        alignment: center;
+                        Text {
+                            text: "🟢";
+                            font-size: 12px;
+                        }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        horizontal-stretch: 1;
+                        Text {
+                            text: root.partner-name;
+                            color: Theme.on-surface;
+                            font-size: Theme.font-size-body;
+                            font-weight: 700;
+                        }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        Text {
+                            text: "🎤";
+                            color: Theme.muted;
+                            font-size: 12px;
+                        }
+                    }
+                }
+            }
+            Divider { }
+
+            Rectangle {
+                min-height: 32px;
+                HorizontalLayout {
+                    spacing: 6px;
+                    VerticalLayout {
+                        alignment: center;
+                        Text {
+                            text: "🟢";
+                            font-size: 12px;
+                        }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        horizontal-stretch: 1;
+                        Text {
+                            text: "You" + (root.muted ? " (muted)" : "");
+                            color: Theme.on-surface;
+                            font-size: Theme.font-size-body;
+                            font-weight: 700;
+                        }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        Text {
+                            text: root.muted ? "🔇" : "🎤";
+                            color: root.muted ? Theme.accent-danger : Theme.muted;
+                            font-size: 12px;
+                        }
+                    }
+                }
+            }
+            // Invite button.
+            Rectangle {
+                horizontal-stretch: 1;
+                height: 28px;
+                border-radius: 14px;
+                background: Theme.accent-info;
+                HorizontalLayout {
+                    alignment: center;
+                    VerticalLayout {
+                        alignment: center;
+                        Text {
+                            text: "+ Invite someone";
+                            color: Theme.on-primary;
+                            font-size: Theme.font-size-caption;
+                            font-weight: 800;
+                        }
+                    }
+                }
+                TouchArea {
+                    clicked => {
+                        root.set-status("Invite link copied", true, false);
+                    }
                 }
             }
         }
     }
 
     // ----- PiP self video --------------------------------------------
-    Rectangle {
+    if !root.ended: Rectangle {
         x: parent.width - self.width - Theme.spacing-md;
         y: Theme.spacing-md + 48px;
         width: 120px;
         height: 160px;
-        background: Theme.surface-2;
+        background: root.bg-blur ? @linear-gradient(135deg, #4a4a8a 0%, #2a2a55 100%) : Theme.surface-2;
         border-radius: Theme.radius-md;
         clip: true;
+        border-width: 2px;
+        border-color: root.video-on ? Theme.accent-success : Theme.accent-danger;
 
         Text {
             x: 0;
             y: 0;
             width: parent.width;
             height: parent.height;
-            text: "You";
+            text: root.video-on ? (root.pip-swapped ? root.partner-name : "You") : "📵";
             color: Theme.on-surface;
-            font-size: Theme.font-size-body;
+            font-size: root.video-on ? Theme.font-size-body : 32px;
             font-weight: 600;
             horizontal-alignment: center;
             vertical-alignment: center;
+        }
+        TouchArea {
+            clicked => {
+                root.pip-swapped = !root.pip-swapped;
+                root.set-status(root.pip-swapped ? "Swapped main video" : "Restored", true, false);
+            }
+        }
+    }
+
+    // Reactions bubble row.
+    if !root.ended: HorizontalLayout {
+        x: Theme.spacing-md;
+        y: parent.height - 240px;
+        width: parent.width - 2 * Theme.spacing-md;
+        spacing: Theme.spacing-sm;
+        alignment: center;
+        ReactionBubble {
+            emoji: "❤";
+            active: root.reaction == 0;
+            clicked => {
+                root.send-reaction(0);
+            }
+        }
+        ReactionBubble {
+            emoji: "👏";
+            active: root.reaction == 1;
+            clicked => {
+                root.send-reaction(1);
+            }
+        }
+        ReactionBubble {
+            emoji: "😂";
+            active: root.reaction == 2;
+            clicked => {
+                root.send-reaction(2);
+            }
+        }
+        ReactionBubble {
+            emoji: "👍";
+            active: root.reaction == 3;
+            clicked => {
+                root.send-reaction(3);
+            }
         }
     }
 
@@ -156,8 +589,8 @@ export component VideoCallPage inherits Window {
         x: Theme.spacing-md;
         y: parent.height - self.height - Theme.spacing-lg;
         width: parent.width - 2 * Theme.spacing-md;
-        height: 80px;
-        background: Theme.surface-2.with-alpha(0.5);
+        height: 96px;
+        background: Theme.surface-2.with-alpha(0.7);
         border-radius: Theme.radius-lg;
 
         HorizontalLayout {
@@ -166,30 +599,156 @@ export component VideoCallPage inherits Window {
             alignment: center;
 
             CallControl {
-                icon: @image-url("@mobile-components/icons/pause.svg");
-                a11y-label: "Mute microphone";
-                clicked => { root.toggle-mic(); }
+                icon: root.muted ? @image-url("@mobile-components/icons/close.svg") : @image-url("@mobile-components/icons/pause.svg");
+                active: root.muted;
+                label: root.muted ? "Muted" : "Mute";
+                a11y-label: "Toggle microphone";
+                clicked => {
+                    root.muted = !root.muted;
+                    root.set-status(root.muted ? "Mic off" : "Mic on", !root.muted, root.muted);
+                    root.toggle-mic();
+                }
             }
             CallControl {
-                icon: @image-url("@mobile-components/icons/play.svg");
-                a11y-label: "Toggle video";
-                clicked => { root.toggle-video(); }
+                icon: root.video-on ? @image-url("@mobile-components/icons/play.svg") : @image-url("@mobile-components/icons/close.svg");
+                active: !root.video-on;
+                label: root.video-on ? "Camera" : "Off";
+                a11y-label: "Toggle camera";
+                clicked => {
+                    root.video-on = !root.video-on;
+                    root.set-status(root.video-on ? "Camera on" : "Camera off", root.video-on, !root.video-on);
+                    root.toggle-video();
+                }
             }
             CallControl {
                 icon: @image-url("@mobile-components/icons/send.svg");
+                active: root.sharing;
+                label: root.sharing ? "Sharing" : "Share";
                 a11y-label: "Share screen";
-                clicked => { root.share-pressed(); }
+                clicked => {
+                    root.sharing = !root.sharing;
+                    root.set-status(root.sharing ? "Sharing screen" : "Stopped sharing", root.sharing, false);
+                    root.share-pressed();
+                }
             }
             CallControl {
                 icon: @image-url("@mobile-components/icons/more-vertical.svg");
+                active: false;
+                label: "More";
                 a11y-label: "More options";
-                clicked => { root.more-pressed(); }
+                clicked => {
+                    root.sheet-open = true;
+                    root.more-pressed();
+                }
             }
             CallControl {
                 icon: @image-url("@mobile-components/icons/close.svg");
                 danger: true;
+                label: root.ended ? "Done" : "End";
                 a11y-label: "End call";
-                clicked => { root.hangup-pressed(); }
+                clicked => {
+                    if (root.ended) {
+                        root.close-pressed();
+                    } else if (root.confirm-hangup) {
+                        root.hangup();
+                        root.confirm-hangup = false;
+                    } else {
+                        root.confirm-hangup = true;
+                        root.set-status("Tap again to end", false, true);
+                    }
+                }
+            }
+        }
+    }
+
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: Theme.surface-2;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.muted;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: "Call options";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 700;
+                    }
+                }
+                SheetRow {
+                    label: root.bg-blur ? "Stop background blur" : "Blur background";
+                    clicked => {
+                        root.bg-blur = !root.bg-blur;
+                        root.set-status(root.bg-blur ? "Background blurred" : "Background clear", root.bg-blur, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Flip camera";
+                    clicked => {
+                        root.pip-swapped = !root.pip-swapped;
+                        root.set-status("Camera flipped", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Add 5 minutes to timer (test)";
+                    clicked => {
+                        root.call-secs = root.call-secs + 300;
+                        root.set-status("+5:00", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: root.participants-open ? "Hide participants" : "Show participants";
+                    clicked => {
+                        root.participants-open = !root.participants-open;
+                        root.sheet-open = false;
+                    }
+                }
+                Divider { }
+
+                SheetRow {
+                    label: "End call";
+                    destructive: true;
+                    clicked => {
+                        root.hangup();
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.sheet-open = false;
+                    }
+                }
             }
         }
     }

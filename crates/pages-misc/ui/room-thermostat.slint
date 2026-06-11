@@ -1,11 +1,5 @@
 // RoomThermostatPage
 // =====================================================================
-//
-// Single-room thermostat control. Large circular dial visual at the top
-// (a Rectangle with a thick primary border + the current temp inside),
-// a row of StatTiles summarising now / target / humidity, a mode
-// SegmentedControl inside a SettingRow, schedule KeyValueRows, and
-// device toggles via SettingRow + MobileSwitch.
 
 import { Theme } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
@@ -19,15 +13,279 @@ import { MobileSwitch } from "@mobile-components/switch.slint";
 import { Divider } from "@mobile-components/divider.slint";
 import { ScrollView } from "std-widgets.slint";
 
+component RoundBtn inherits Rectangle {
+    in property <string> glyph;
+    in property <bool> primary: false;
+    callback clicked();
+
+    width: 56px;
+    height: 56px;
+    border-radius: 28px;
+    background: root.primary ? Theme.primary : Theme.surface-2;
+    drop-shadow-blur: Theme.elevation-2-blur;
+    drop-shadow-color: Theme.elevation-2-color;
+    drop-shadow-offset-y: Theme.elevation-2-y;
+    Text {
+        text: root.glyph;
+        color: root.primary ? Theme.on-primary : Theme.on-surface;
+        font-size: 28px;
+        font-weight: 700;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: parent.width;
+        height: parent.height;
+    }
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component ScheduleSlotRow inherits Rectangle {
+    in property <string> name;
+    in property <string> time-str;
+    in property <int> setpoint;
+    in property <bool> enabled: true;
+    callback toggle-enabled();
+    callback bump();
+    callback drop();
+
+    horizontal-stretch: 1;
+    min-height: 56px;
+    opacity: root.enabled ? 1.0 : 0.55;
+
+    HorizontalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 32px;
+                height: 32px;
+                border-radius: 8px;
+                background: root.enabled ? Theme.accent-info.with-alpha(0.22) : Theme.surface-2;
+                Text {
+                    text: root.enabled ? "✓" : "·";
+                    color: root.enabled ? Theme.accent-info : Theme.muted;
+                    font-size: 14px;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+                TouchArea {
+                    clicked => {
+                        root.toggle-enabled();
+                    }
+                }
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: root.name;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 700;
+            }
+            Text {
+                text: root.time-str;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+            }
+        }
+        Rectangle {
+            width: 32px;
+            height: 32px;
+            border-radius: 16px;
+            background: Theme.surface-2;
+            Text {
+                text: "−";
+                color: Theme.on-surface;
+                font-size: 18px;
+                font-weight: 700;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                width: parent.width;
+                height: parent.height;
+            }
+            TouchArea {
+                clicked => {
+                    root.drop();
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.setpoint + "°";
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body-large;
+                font-family: "JetBrains Mono";
+                font-weight: 700;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+        Rectangle {
+            width: 32px;
+            height: 32px;
+            border-radius: 16px;
+            background: Theme.surface-2;
+            Text {
+                text: "+";
+                color: Theme.on-surface;
+                font-size: 18px;
+                font-weight: 700;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                width: parent.width;
+                height: parent.height;
+            }
+            TouchArea {
+                clicked => {
+                    root.bump();
+                }
+            }
+        }
+    }
+}
+
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.destructive ? Theme.accent-danger : Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+        }
+    }
+}
+
 export component RoomThermostatPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
 
-    in-out property <int> mode-index: 0;
+    in-out property <int> mode-index: 0; // 0 Heat 1 Cool 2 Auto 3 Off
+    in-out property <int> current-c: 21;
+    in-out property <int> target-c: 22;
+    in-out property <int> humidity: 48;
     in-out property <bool> eco-on: true;
     in-out property <bool> vacation-on: false;
     in-out property <bool> auto-away-on: true;
+    in-out property <bool> home: true;
+    in-out property <int> boost-secs: 0;
+    in-out property <int> wake-c: 21;
+    in-out property <int> day-c: 19;
+    in-out property <int> evening-c: 22;
+    in-out property <int> sleep-c: 18;
+    in-out property <bool> wake-en: true;
+    in-out property <bool> day-en: true;
+    in-out property <bool> evening-en: true;
+    in-out property <bool> sleep-en: true;
+    in-out property <bool> sheet-open: false;
+    in-out property <bool> confirm-reset: false;
+    in-out property <string> status-msg: "";
+    in-out property <bool> status-success: false;
+    in-out property <bool> status-danger: false;
+
     callback back-pressed();
+
+    function effective-target() -> int {
+        if (root.vacation-on) {
+            return 16;
+        }
+        if (root.auto-away-on && !root.home) {
+            return 17;
+        }
+        if (root.eco-on) {
+            return root.target-c - 1;
+        }
+        return root.target-c;
+    }
+    function mode-label() -> string {
+        return root.mode-index == 0 ? "Heat" : (root.mode-index == 1 ? "Cool" : (root.mode-index == 2 ? "Auto" : "Off"));
+    }
+    function action-label() -> string {
+        if (root.mode-index == 3) {
+            return "OFF";
+        }
+        if (root.boost-secs > 0) {
+            return "BOOST · " + root.boost-secs + "s";
+        }
+        if (root.current-c < root.effective-target()) {
+            return "HEATING TO " + root.effective-target() + "°";
+        }
+        if (root.current-c > root.effective-target()) {
+            return "COOLING TO " + root.effective-target() + "°";
+        }
+        return "IDLE · " + root.effective-target() + "°";
+    }
+    function set-status(m: string, ok: bool, bad: bool) {
+        root.status-msg = m;
+        root.status-success = ok;
+        root.status-danger = bad;
+    }
+    function bump-target() {
+        root.target-c = min(28, root.target-c + 1);
+        root.set-status("Target " + root.target-c + "°", true, false);
+    }
+    function drop-target() {
+        root.target-c = max(10, root.target-c - 1);
+        root.set-status("Target " + root.target-c + "°", true, false);
+    }
+    function boost() {
+        root.boost-secs = root.boost-secs + 1800; // +30 min
+        root.set-status("Boost +30m queued", true, false);
+    }
+    function toggle-home() {
+        root.home = !root.home;
+        root.set-status(root.home ? "Marked home" : "Away mode", root.home, !root.home);
+    }
+
+    tick := Timer {
+        interval: 2s;
+        running: root.mode-index != 3;
+        triggered => {
+            // Current drifts toward effective-target by 1.
+            if (root.current-c < root.effective-target()) {
+                root.current-c = root.current-c + 1;
+            } else if (root.current-c > root.effective-target()) {
+                root.current-c = root.current-c - 1;
+            }
+            // Humidity drifts.
+            root.humidity = max(35, min(60, root.humidity + (mod(root.current-c, 3) - 1)));
+            // Boost decrements.
+            if (root.boost-secs > 0) {
+                root.boost-secs = max(0, root.boost-secs - 60);
+            }
+        }
+    }
 
     background: Theme.background;
 
@@ -38,7 +296,31 @@ export component RoomThermostatPage inherits Window {
             title: "Living Room";
             title-style: HeadingStyle.plex-medium;
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
-            leading-pressed => { root.back-pressed(); }
+            trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
+            leading-pressed => {
+                root.back-pressed();
+            }
+            trailing-pressed => {
+                root.sheet-open = true;
+            }
+        }
+
+        // Status banner.
+        if !root.status-msg.is-empty: Rectangle {
+            height: 28px;
+            background: root.status-success ? Theme.accent-success.with-alpha(0.16) : (root.status-danger ? Theme.accent-danger.with-alpha(0.16) : Theme.surface-2);
+            HorizontalLayout {
+                alignment: center;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.status-msg;
+                        color: root.status-success ? Theme.accent-success : (root.status-danger ? Theme.accent-danger : Theme.on-surface);
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                    }
+                }
+            }
         }
 
         ScrollView {
@@ -50,35 +332,117 @@ export component RoomThermostatPage inherits Window {
                 spacing: Theme.spacing-lg;
                 alignment: start;
 
-                // ----- Dial -------------------------------------------
+                // ----- Dial with − / + controls ------------------------
                 HorizontalLayout {
                     alignment: center;
+                    spacing: Theme.spacing-md;
+
+                    VerticalLayout {
+                        alignment: center;
+                        RoundBtn {
+                            glyph: "−";
+                            clicked => {
+                                root.drop-target();
+                            }
+                        }
+                    }
                     Rectangle {
                         width: 240px;
                         height: 240px;
                         border-radius: 120px;
                         background: Theme.surface-2;
                         border-width: 8px;
-                        border-color: Theme.primary;
+                        border-color: root.mode-index == 3 ? Theme.muted : (root.mode-index == 1 ? Theme.accent-info : (root.mode-index == 0 ? Theme.accent-warning : Theme.primary));
 
                         VerticalLayout {
                             spacing: Theme.spacing-xs;
                             alignment: center;
 
                             Text {
-                                text: "21°";
+                                text: root.current-c + "°";
                                 color: Theme.on-surface;
                                 font-size: 56px;
                                 font-weight: 200;
                                 horizontal-alignment: center;
                             }
                             Text {
-                                text: "HEATING TO 22°";
-                                color: Theme.muted;
+                                text: root.action-label();
+                                color: root.boost-secs > 0 ? Theme.accent-warning : Theme.muted;
                                 font-size: Theme.font-size-caption;
                                 font-weight: 700;
                                 letter-spacing: 1.5px;
                                 horizontal-alignment: center;
+                            }
+                        }
+                        TouchArea {
+                            clicked => {
+                                root.toggle-home();
+                            }
+                        }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        RoundBtn {
+                            glyph: "+";
+                            primary: true;
+                            clicked => {
+                                root.bump-target();
+                            }
+                        }
+                    }
+                }
+
+                // Home / away pill row.
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: Theme.spacing-sm;
+                    Rectangle {
+                        horizontal-stretch: 0;
+                        height: 28px;
+                        border-radius: 14px;
+                        background: root.home ? Theme.accent-success.with-alpha(0.22) : Theme.surface-2;
+                        HorizontalLayout {
+                            padding-left: Theme.spacing-sm;
+                            padding-right: Theme.spacing-sm;
+                            alignment: center;
+                            VerticalLayout {
+                                alignment: center;
+                                Text {
+                                    text: root.home ? "🏠 Home" : "🚪 Away";
+                                    color: root.home ? Theme.accent-success : Theme.muted;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 800;
+                                }
+                            }
+                        }
+                        TouchArea {
+                            clicked => {
+                                root.toggle-home();
+                            }
+                        }
+                    }
+                    Rectangle {
+                        horizontal-stretch: 0;
+                        height: 28px;
+                        border-radius: 14px;
+                        background: root.boost-secs > 0 ? Theme.accent-warning : Theme.surface-2;
+                        HorizontalLayout {
+                            padding-left: Theme.spacing-sm;
+                            padding-right: Theme.spacing-sm;
+                            alignment: center;
+                            VerticalLayout {
+                                alignment: center;
+                                Text {
+                                    text: root.boost-secs > 0 ? "Boost · " + floor(root.boost-secs / 60) + "m" : "Boost 30m";
+                                    color: root.boost-secs > 0 ? Theme.on-primary : Theme.on-surface;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 800;
+                                }
+                            }
+                        }
+                        TouchArea {
+                            clicked => {
+                                root.boost();
                             }
                         }
                     }
@@ -90,14 +454,23 @@ export component RoomThermostatPage inherits Window {
                     padding-right: Theme.spacing-md;
                     spacing: Theme.spacing-md;
 
-                    StatTile { value: "21°"; label: "NOW"; }
-                    StatTile { value: "22°"; label: "TARGET"; }
-                    StatTile { value: "48%"; label: "HUMIDITY"; }
+                    StatTile {
+                        value: root.current-c + "°";
+                        label: "NOW";
+                    }
+                    StatTile {
+                        value: root.effective-target() + "°";
+                        label: "TARGET";
+                    }
+                    StatTile {
+                        value: root.humidity + "%";
+                        label: "HUMIDITY";
+                    }
                 }
 
                 // ----- Mode -------------------------------------------
                 FormSection {
-                    title: "MODE";
+                    title: "MODE · " + root.mode-label();
 
                     SettingRow {
                         title: "Mode";
@@ -105,32 +478,86 @@ export component RoomThermostatPage inherits Window {
                             width: 240px;
                             options: ["Heat", "Cool", "Auto", "Off"];
                             selected-index <=> root.mode-index;
+                            changed(i) => {
+                                root.set-status("Mode: " + root.mode-label(), true, false);
+                            }
                         }
                     }
                 }
 
-                // ----- Schedule ---------------------------------------
+                // ----- Schedule (tappable rows) -----------------------
                 FormSection {
                     title: "SCHEDULE";
 
-                    KeyValueRow {
-                        label: "Wake · 06:30";
-                        value: "21°";
+                    ScheduleSlotRow {
+                        name: "Wake";
+                        time-str: "06:30";
+                        setpoint: root.wake-c;
+                        enabled: root.wake-en;
+                        toggle-enabled => {
+                            root.wake-en = !root.wake-en;
+                            root.set-status(root.wake-en ? "Wake on" : "Wake skipped", root.wake-en, !root.wake-en);
+                        }
+                        bump => {
+                            root.wake-c = min(28, root.wake-c + 1);
+                        }
+                        drop => {
+                            root.wake-c = max(10, root.wake-c - 1);
+                        }
                     }
                     Divider { }
-                    KeyValueRow {
-                        label: "Day · 09:00";
-                        value: "19°";
+
+                    ScheduleSlotRow {
+                        name: "Day";
+                        time-str: "09:00";
+                        setpoint: root.day-c;
+                        enabled: root.day-en;
+                        toggle-enabled => {
+                            root.day-en = !root.day-en;
+                            root.set-status(root.day-en ? "Day on" : "Day skipped", root.day-en, !root.day-en);
+                        }
+                        bump => {
+                            root.day-c = min(28, root.day-c + 1);
+                        }
+                        drop => {
+                            root.day-c = max(10, root.day-c - 1);
+                        }
                     }
                     Divider { }
-                    KeyValueRow {
-                        label: "Evening · 17:30";
-                        value: "22°";
+
+                    ScheduleSlotRow {
+                        name: "Evening";
+                        time-str: "17:30";
+                        setpoint: root.evening-c;
+                        enabled: root.evening-en;
+                        toggle-enabled => {
+                            root.evening-en = !root.evening-en;
+                            root.set-status(root.evening-en ? "Evening on" : "Evening skipped", root.evening-en, !root.evening-en);
+                        }
+                        bump => {
+                            root.evening-c = min(28, root.evening-c + 1);
+                        }
+                        drop => {
+                            root.evening-c = max(10, root.evening-c - 1);
+                        }
                     }
                     Divider { }
-                    KeyValueRow {
-                        label: "Sleep · 22:30";
-                        value: "18°";
+
+                    ScheduleSlotRow {
+                        name: "Sleep";
+                        time-str: "22:30";
+                        setpoint: root.sleep-c;
+                        enabled: root.sleep-en;
+                        toggle-enabled => {
+                            root.sleep-en = !root.sleep-en;
+                            root.set-status(root.sleep-en ? "Sleep on" : "Sleep skipped", root.sleep-en, !root.sleep-en);
+                        }
+                        bump => {
+                            root.sleep-c = min(28, root.sleep-c + 1);
+                        }
+                        drop => {
+                            root.sleep-c = max(10, root.sleep-c - 1);
+                        }
                     }
                 }
 
@@ -140,20 +567,137 @@ export component RoomThermostatPage inherits Window {
 
                     SettingRow {
                         title: "Eco mode";
-                        subtitle: "Trim 1° from setpoints to save energy.";
-                        MobileSwitch { checked <=> root.eco-on; }
+                        subtitle: root.eco-on ? "Saving · target reduced 1°" : "Trim 1° from setpoints to save energy.";
+                        MobileSwitch {
+                            checked <=> root.eco-on;
+                        }
                     }
                     Divider { }
+
                     SettingRow {
                         title: "Vacation hold";
-                        subtitle: "Hold a low setpoint until you return.";
-                        MobileSwitch { checked <=> root.vacation-on; }
+                        subtitle: root.vacation-on ? "Holding at 16° until disabled" : "Hold a low setpoint until you return.";
+                        MobileSwitch {
+                            checked <=> root.vacation-on;
+                        }
                     }
                     Divider { }
+
                     SettingRow {
                         title: "Auto-away";
-                        subtitle: "Detect when nobody's home and pause.";
-                        MobileSwitch { checked <=> root.auto-away-on; }
+                        subtitle: root.auto-away-on ? "Active · drops to 17° when away" : "Detect when nobody's home and pause.";
+                        MobileSwitch {
+                            checked <=> root.auto-away-on;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ===================== Bottom sheet =====================
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+                root.confirm-reset = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: Theme.surface-2;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.muted;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: "Thermostat menu";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 700;
+                    }
+                }
+                SheetRow {
+                    label: "Boost +30 min";
+                    clicked => {
+                        root.boost();
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: root.eco-on ? "Eco off" : "Eco on";
+                    clicked => {
+                        root.eco-on = !root.eco-on;
+                        root.set-status(root.eco-on ? "Eco on" : "Eco off", root.eco-on, !root.eco-on);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: root.vacation-on ? "End vacation hold" : "Start vacation hold";
+                    clicked => {
+                        root.vacation-on = !root.vacation-on;
+                        root.set-status(root.vacation-on ? "Vacation hold on" : "Vacation off", !root.vacation-on, root.vacation-on);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: root.home ? "Mark away" : "Mark home";
+                    clicked => {
+                        root.toggle-home();
+                        root.sheet-open = false;
+                    }
+                }
+                Divider { }
+
+                SheetRow {
+                    label: root.confirm-reset ? "Confirm: reset schedule" : "Reset schedule";
+                    destructive: true;
+                    clicked => {
+                        if (root.confirm-reset) {
+                            root.wake-c = 21;
+                            root.day-c = 19;
+                            root.evening-c = 22;
+                            root.sleep-c = 18;
+                            root.wake-en = true;
+                            root.day-en = true;
+                            root.evening-en = true;
+                            root.sleep-en = true;
+                            root.target-c = 22;
+                            root.boost-secs = 0;
+                            root.set-status("Schedule reset", false, true);
+                            root.sheet-open = false;
+                            root.confirm-reset = false;
+                        } else {
+                            root.confirm-reset = true;
+                        }
+                    }
+                }
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.sheet-open = false;
+                        root.confirm-reset = false;
                     }
                 }
             }

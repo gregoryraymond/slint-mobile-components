@@ -1,11 +1,5 @@
 // NotificationCenterPage
 // =====================================================================
-//
-// A unified inbox for app, mention, mail and system notifications.
-// Filter strip at the top (SegmentedControl), then notifications grouped
-// by recency (TODAY / YESTERDAY / OLDER). Every row is a `SettingRow`,
-// so the leading-icon tiles, titles and timestamps line up at the same
-// 16 px gutters across the whole screen.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
@@ -16,11 +10,63 @@ import { TextButton } from "@mobile-components/button.slint";
 import { Divider } from "@mobile-components/divider.slint";
 import { ScrollView } from "std-widgets.slint";
 
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
+
+    min-height: 48px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.destructive ? Theme.accent-danger : Theme.on-background;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+        }
+    }
+}
+
 export component NotificationCenterPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
 
-    in-out property <int> filter-index: 0;
+    in-out property <int> filter-index: 0; // 0 all, 1 mentions, 2 mail, 3 system
+    in-out property <bool> cleared;
+    in-out property <int> pending-fresh: 0;
+    in-out property <bool> fresh-revealed: false;
+    in-out property <bool> mute-mentions;
+    in-out property <int> snooze-until: 0;
+    in-out property <int> tick: 0;
+
+    // read flags per row (1-12) plus 13 = "fresh"
+    in-out property <bool> r1: false;
+    in-out property <bool> r2: false;
+    in-out property <bool> r3: false;
+    in-out property <bool> r4: false;
+    in-out property <bool> r5: false;
+    in-out property <bool> r6: true;
+    in-out property <bool> r7: true;
+    in-out property <bool> r8: false;
+    in-out property <bool> r9: true;
+    in-out property <bool> r10: true;
+    in-out property <bool> r11: true;
+    in-out property <bool> r12: true;
+    in-out property <bool> r-fresh: false;
+
+    in-out property <bool> sheet-open;
+    in-out property <string> status-msg;
+    in-out property <int> status-tone; // 0 default 1 success 2 danger 3 warning
 
     callback back-pressed();
     callback clear-all-pressed();
@@ -28,22 +74,192 @@ export component NotificationCenterPage inherits Window {
 
     background: Theme.background;
 
+    function set-status(m: string, tone: int) {
+        root.status-msg = m;
+        root.status-tone = tone;
+    }
+    function status-color() -> color {
+        return root.status-tone == 1 ? Theme.accent-success : (root.status-tone == 2 ? Theme.accent-danger : (root.status-tone == 3 ? Theme.accent-warning : Theme.accent-info));
+    }
+
+    function show(cat: int) -> bool {
+        if (root.cleared) {
+            return false;
+        }
+        if (cat == 1 && root.mute-mentions) {
+            return false;
+        }
+        return root.filter-index == 0 || root.filter-index == cat;
+    }
+    function unread-count() -> int {
+        if (root.cleared) {
+            return 0;
+        }
+        return (root.r1 ? 0 : 1) + (root.r2 ? 0 : 1) + (root.r3 ? 0 : 1) + (root.r4 ? 0 : 1) + (root.r5 ? 0 : 1) + (root.r6 ? 0 : 1) + (root.r7 ? 0 : 1) + (root.r8 ? 0 : 1) + (root.r9 ? 0 : 1) + (root.r10 ? 0 : 1) + (root.r11 ? 0 : 1) + (root.r12 ? 0 : 1) + (root.fresh-revealed && !root.r-fresh ? 1 : 0);
+    }
+
+    function mark-all-read() {
+        root.r1 = true;
+        root.r2 = true;
+        root.r3 = true;
+        root.r4 = true;
+        root.r5 = true;
+        root.r6 = true;
+        root.r7 = true;
+        root.r8 = true;
+        root.r9 = true;
+        root.r10 = true;
+        root.r11 = true;
+        root.r12 = true;
+        root.r-fresh = true;
+    }
+
+    function reset-all() {
+        root.r1 = false;
+        root.r2 = false;
+        root.r3 = false;
+        root.r4 = false;
+        root.r5 = false;
+        root.r6 = true;
+        root.r7 = true;
+        root.r8 = false;
+        root.r9 = true;
+        root.r10 = true;
+        root.r11 = true;
+        root.r12 = true;
+        root.r-fresh = false;
+        root.cleared = false;
+        root.pending-fresh = 0;
+        root.fresh-revealed = false;
+    }
+
+    function snooze-active() -> bool {
+        return root.snooze-until > root.tick;
+    }
+
+    // Pending-notification Timer.
+    fresh := Timer {
+        interval: 6500ms;
+        running: !root.cleared && !root.snooze-active();
+        triggered => {
+            root.tick = root.tick + 1;
+            if (!root.fresh-revealed) {
+                root.pending-fresh = root.pending-fresh + 1;
+            }
+        }
+    }
+    // Snooze tick (every 5s while snoozing).
+    snooze-ticker := Timer {
+        interval: 5000ms;
+        running: root.snooze-active();
+        triggered => {
+            root.tick = root.tick + 1;
+        }
+    }
+
     VerticalLayout {
         spacing: 0;
 
         AppBar {
-            title: "Notifications";
+            title: root.unread-count() > 0 ? "Notifications · " + root.unread-count() : "Notifications";
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
-            leading-pressed => { root.back-pressed(); }
+            trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
+            leading-pressed => {
+                root.back-pressed();
+            }
+            trailing-pressed => {
+                root.sheet-open = true;
+            }
+        }
+
+        if !root.status-msg.is-empty: Rectangle {
+            height: 28px;
+            background: root.status-color().with-alpha(0.18);
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.status-msg;
+                        color: root.status-color();
+                        font-size: Theme.font-size-caption;
+                        font-weight: 600;
+                    }
+                }
+            }
+        }
+
+        if root.snooze-active(): Rectangle {
+            height: 28px;
+            background: Theme.accent-warning.with-alpha(0.18);
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                alignment: space-between;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: "Snoozed · " + max(0, root.snooze-until - root.tick) + " ticks left";
+                        color: Theme.accent-warning;
+                        font-size: Theme.font-size-caption;
+                        font-weight: 600;
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        min-width: 56px;
+                        min-height: 22px;
+                        background: Theme.accent-warning;
+                        border-radius: 11px;
+                        Text {
+                            text: "End";
+                            color: Theme.background;
+                            font-size: Theme.font-size-caption;
+                            font-weight: 700;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
+                        }
+                        TouchArea {
+                            clicked => {
+                                root.snooze-until = 0;
+                                root.set-status("Snooze ended", 0);
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         HorizontalLayout {
             padding-left: Theme.spacing-md;
             padding-right: Theme.spacing-md;
+            padding-top: Theme.spacing-xs;
+            spacing: Theme.spacing-sm;
             alignment: end;
             TextButton {
-                text: "Clear all";
-                clicked => { root.clear-all-pressed(); }
+                text: "Mark all read";
+                clicked => {
+                    root.mark-all-read();
+                    root.set-status("Marked all as read", 1);
+                }
+            }
+            TextButton {
+                text: root.cleared ? "Restore" : "Clear all";
+                clicked => {
+                    if (root.cleared) {
+                        root.reset-all();
+                        root.set-status("Restored " + root.unread-count() + " notifications", 1);
+                    } else {
+                        root.cleared = true;
+                        root.pending-fresh = 0;
+                        root.set-status("All notifications cleared", 2);
+                        root.clear-all-pressed();
+                    }
+                }
             }
         }
 
@@ -56,200 +272,444 @@ export component NotificationCenterPage inherits Window {
                 spacing: Theme.spacing-md;
                 alignment: start;
 
-                // ----- Filter strip -----------------------------------
                 HorizontalLayout {
                     padding-left: Theme.spacing-md;
                     padding-right: Theme.spacing-md;
                     SegmentedControl {
                         options: ["All", "Mentions", "Mail", "System"];
                         selected-index <=> root.filter-index;
+                        changed(i) => {
+                            root.set-status(i == 0 ? "All notifications" : (i == 1 ? "Mentions only" : (i == 2 ? "Mail only" : "System only")), 0);
+                        }
                     }
                 }
 
-                // ----- TODAY ------------------------------------------
-                FormSection {
+                if root.cleared: Rectangle {
+                    min-height: 200px;
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: Theme.spacing-sm;
+                        padding: Theme.spacing-lg;
+                        Text {
+                            text: "Inbox zero";
+                            color: Theme.on-background;
+                            font-size: Theme.font-size-title;
+                            font-weight: 700;
+                            horizontal-alignment: center;
+                        }
+                        Text {
+                            text: "Nothing to look at. Tap Restore to bring it all back.";
+                            color: Theme.muted;
+                            font-size: Theme.font-size-body;
+                            horizontal-alignment: center;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+
+                if !root.cleared && root.pending-fresh > 0: Rectangle {
+                    background: Theme.accent-info.with-alpha(0.18);
+                    border-radius: Theme.radius-md;
+                    min-height: 44px;
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-md;
+                        padding-right: Theme.spacing-md;
+                        alignment: space-between;
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: root.pending-fresh + " new since you arrived — tap to load";
+                                color: Theme.accent-info;
+                                font-size: Theme.font-size-body;
+                                font-weight: 600;
+                            }
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            Rectangle {
+                                min-width: 64px;
+                                min-height: 28px;
+                                background: Theme.accent-info;
+                                border-radius: 14px;
+                                Text {
+                                    text: "Load";
+                                    color: Theme.background;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 700;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                            }
+                        }
+                    }
+                    TouchArea {
+                        clicked => {
+                            root.fresh-revealed = true;
+                            root.r-fresh = false;
+                            root.pending-fresh = 0;
+                            root.set-status("Loaded new notifications", 1);
+                        }
+                    }
+                }
+
+                if !root.cleared && (root.show(1) || root.show(2) || root.show(3)): FormSection {
                     title: "TODAY";
 
-                    SettingRow {
+                    if root.fresh-revealed: SettingRow {
+                        icon: @image-url("@mobile-components/icons/send.svg");
+                        tone: Tone.success;
+                        title: "Atlas Coffee replied";
+                        subtitle: root.r-fresh ? "Just now" : "Just now · NEW";
+                        clicked => {
+                            root.r-fresh = !root.r-fresh;
+                            root.set-status(root.r-fresh ? "Read · Atlas Coffee" : "Marked unread", 0);
+                        }
+                        Rectangle {
+                            width: 8px;
+                            height: 8px;
+                            border-radius: 4px;
+                            background: root.r-fresh ? transparent : Theme.accent-info;
+                        }
+                    }
+                    if root.fresh-revealed: Divider { }
+                    if root.show(1): SettingRow {
                         icon: @image-url("@mobile-components/icons/profile.svg");
                         tone: Tone.info;
                         title: "Léa mentioned you";
-                        subtitle: "2h ago · in #design-system thread.";
-                        clicked => { root.notification-pressed("lea-mention"); }
-                        Image {
-                            width: 14px;
-                            height: 14px;
-                            source: @image-url("@mobile-components/icons/bell.svg");
-                            colorize: Theme.accent-info;
-                            image-fit: contain;
+                        subtitle: root.r1 ? "2h ago · read" : "2h ago · in #design-system thread.";
+                        clicked => {
+                            root.r1 = !root.r1;
+                            root.set-status(root.r1 ? "Read · Léa" : "Marked unread", 0);
+                            root.notification-pressed("lea-mention");
+                        }
+                        Rectangle {
+                            width: 8px;
+                            height: 8px;
+                            border-radius: 4px;
+                            background: root.r1 ? transparent : Theme.accent-info;
                         }
                     }
-                    Divider { }
-                    SettingRow {
+                    if root.show(1): Divider { }
+                    if root.show(2): SettingRow {
                         icon: @image-url("@mobile-components/icons/inbox.svg");
                         title: "3 new emails";
-                        subtitle: "3h ago · from Atlas Coffee, Slint, Stripe.";
-                        clicked => { root.notification-pressed("inbox"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
+                        subtitle: root.r2 ? "3h ago · read" : "3h ago · from Atlas Coffee, Slint, Stripe.";
+                        clicked => {
+                            root.r2 = !root.r2;
+                            root.set-status(root.r2 ? "Read · Inbox" : "Marked unread", 0);
+                            root.notification-pressed("inbox");
+                        }
+                        Rectangle {
+                            width: 8px;
+                            height: 8px;
+                            border-radius: 4px;
+                            background: root.r2 ? transparent : Theme.accent-info;
                         }
                     }
-                    Divider { }
-                    SettingRow {
+                    if root.show(2): Divider { }
+                    if root.show(3): SettingRow {
                         icon: @image-url("@mobile-components/icons/lock.svg");
                         tone: Tone.warning;
                         title: "New sign-in from Berlin";
-                        subtitle: "5h ago · review if this wasn't you.";
-                        clicked => { root.notification-pressed("signin"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
+                        subtitle: root.r3 ? "5h ago · acknowledged" : "5h ago · review if this wasn't you.";
+                        clicked => {
+                            root.r3 = !root.r3;
+                            root.set-status(root.r3 ? "Acknowledged sign-in" : "Marked unread", root.r3 ? 1 : 0);
+                            root.notification-pressed("signin");
+                        }
+                        Rectangle {
+                            width: 8px;
+                            height: 8px;
+                            border-radius: 4px;
+                            background: root.r3 ? transparent : Theme.accent-warning;
                         }
                     }
-                    Divider { }
-                    SettingRow {
+                    if root.show(3): Divider { }
+                    if root.show(3): SettingRow {
                         icon: @image-url("@mobile-components/icons/star.svg");
                         tone: Tone.success;
                         title: "Weekly summary ready";
-                        subtitle: "8h ago · 4 wins, 2 follow-ups.";
-                        clicked => { root.notification-pressed("summary"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
+                        subtitle: root.r4 ? "8h ago · viewed" : "8h ago · 4 wins, 2 follow-ups.";
+                        clicked => {
+                            root.r4 = !root.r4;
+                            root.set-status(root.r4 ? "Opened summary" : "Marked unread", 0);
+                            root.notification-pressed("summary");
+                        }
+                        Rectangle {
+                            width: 8px;
+                            height: 8px;
+                            border-radius: 4px;
+                            background: root.r4 ? transparent : Theme.accent-success;
                         }
                     }
-                    Divider { }
-                    SettingRow {
+                    if root.show(3): Divider { }
+                    if root.show(2): SettingRow {
                         icon: @image-url("@mobile-components/icons/send.svg");
                         title: "Invoice #2147 paid";
-                        subtitle: "11h ago · €115.33 from Atlas Coffee.";
-                        clicked => { root.notification-pressed("invoice"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
+                        subtitle: root.r5 ? "11h ago · receipted" : "11h ago · €115.33 from Atlas Coffee.";
+                        clicked => {
+                            root.r5 = !root.r5;
+                            root.set-status(root.r5 ? "Receipted" : "Marked unread", 0);
+                            root.notification-pressed("invoice");
+                        }
+                        Rectangle {
+                            width: 8px;
+                            height: 8px;
+                            border-radius: 4px;
+                            background: root.r5 ? transparent : Theme.accent-info;
                         }
                     }
                 }
 
-                // ----- YESTERDAY --------------------------------------
-                FormSection {
+                if !root.cleared && (root.show(1) || root.show(3)): FormSection {
                     title: "YESTERDAY";
 
-                    SettingRow {
+                    if root.show(3): SettingRow {
                         icon: @image-url("@mobile-components/icons/queue.svg");
                         title: "Background sync completed";
-                        subtitle: "1d ago · 42 items updated.";
-                        clicked => { root.notification-pressed("sync"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
+                        subtitle: root.r6 ? "1d ago · read" : "1d ago · 42 items updated.";
+                        clicked => {
+                            root.r6 = !root.r6;
+                            root.set-status(root.r6 ? "Read · Sync" : "Marked unread", 0);
+                            root.notification-pressed("sync");
+                        }
+                        Rectangle {
+                            width: 8px;
+                            height: 8px;
+                            border-radius: 4px;
+                            background: root.r6 ? transparent : Theme.accent-info;
                         }
                     }
-                    Divider { }
-                    SettingRow {
+                    if root.show(3): Divider { }
+                    if root.show(1): SettingRow {
                         icon: @image-url("@mobile-components/icons/heart.svg");
                         tone: Tone.danger;
                         title: "Marco liked your post";
-                        subtitle: "1d ago · \"Designing for thumbs\".";
-                        clicked => { root.notification-pressed("like"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
+                        subtitle: root.r7 ? "1d ago · read" : "1d ago · \"Designing for thumbs\".";
+                        clicked => {
+                            root.r7 = !root.r7;
+                            root.set-status(root.r7 ? "Read · Marco" : "Marked unread", 0);
+                            root.notification-pressed("like");
+                        }
+                        Rectangle {
+                            width: 8px;
+                            height: 8px;
+                            border-radius: 4px;
+                            background: root.r7 ? transparent : Theme.accent-info;
                         }
                     }
-                    Divider { }
-                    SettingRow {
+                    if root.show(1): Divider { }
+                    if root.show(3): SettingRow {
                         icon: @image-url("@mobile-components/icons/menu.svg");
                         title: "Update available · 1.4.2";
-                        subtitle: "1d ago · bug fixes and improvements.";
-                        clicked => { root.notification-pressed("update"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
+                        subtitle: root.r8 ? "1d ago · dismissed" : "1d ago · bug fixes and improvements.";
+                        clicked => {
+                            root.r8 = !root.r8;
+                            root.set-status(root.r8 ? "Dismissed update" : "Marked unread", 0);
+                            root.notification-pressed("update");
+                        }
+                        Rectangle {
+                            width: 8px;
+                            height: 8px;
+                            border-radius: 4px;
+                            background: root.r8 ? transparent : Theme.accent-info;
                         }
                     }
-                    Divider { }
-                    SettingRow {
+                    if root.show(3): Divider { }
+                    if root.show(3): SettingRow {
                         icon: @image-url("@mobile-components/icons/pin.svg");
                         title: "Pinned thread updated";
-                        subtitle: "1d ago · Q3 roadmap.";
-                        clicked => { root.notification-pressed("pinned"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
+                        subtitle: root.r9 ? "1d ago · read" : "1d ago · Q3 roadmap.";
+                        clicked => {
+                            root.r9 = !root.r9;
+                            root.set-status(root.r9 ? "Read · Pinned" : "Marked unread", 0);
+                            root.notification-pressed("pinned");
+                        }
+                        Rectangle {
+                            width: 8px;
+                            height: 8px;
+                            border-radius: 4px;
+                            background: root.r9 ? transparent : Theme.accent-info;
                         }
                     }
                 }
 
-                // ----- OLDER ------------------------------------------
-                FormSection {
+                if !root.cleared && (root.show(1) || root.show(3)): FormSection {
                     title: "OLDER";
 
-                    SettingRow {
+                    if root.show(3): SettingRow {
                         icon: @image-url("@mobile-components/icons/bell.svg");
                         title: "Reminder · Renew subscription";
-                        subtitle: "3d ago.";
-                        clicked => { root.notification-pressed("renew"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
+                        subtitle: root.r10 ? "3d ago · read" : "3d ago.";
+                        clicked => {
+                            root.r10 = !root.r10;
+                            root.set-status(root.r10 ? "Read · Renew" : "Marked unread", 0);
+                            root.notification-pressed("renew");
+                        }
+                        Rectangle {
+                            width: 8px;
+                            height: 8px;
+                            border-radius: 4px;
+                            background: root.r10 ? transparent : Theme.accent-info;
                         }
                     }
-                    Divider { }
-                    SettingRow {
+                    if root.show(3): Divider { }
+                    if root.show(1): SettingRow {
                         icon: @image-url("@mobile-components/icons/profile.svg");
                         title: "Yumi accepted your invite";
-                        subtitle: "5d ago.";
-                        clicked => { root.notification-pressed("invite"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
+                        subtitle: root.r11 ? "5d ago · read" : "5d ago.";
+                        clicked => {
+                            root.r11 = !root.r11;
+                            root.set-status(root.r11 ? "Read · Yumi" : "Marked unread", 0);
+                            root.notification-pressed("invite");
+                        }
+                        Rectangle {
+                            width: 8px;
+                            height: 8px;
+                            border-radius: 4px;
+                            background: root.r11 ? transparent : Theme.accent-info;
                         }
                     }
-                    Divider { }
-                    SettingRow {
+                    if root.show(1): Divider { }
+                    if root.show(3): SettingRow {
                         icon: @image-url("@mobile-components/icons/lock.svg");
                         title: "Password changed";
-                        subtitle: "12d ago · from this device.";
-                        clicked => { root.notification-pressed("password"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
+                        subtitle: root.r12 ? "12d ago · read" : "12d ago · from this device.";
+                        clicked => {
+                            root.r12 = !root.r12;
+                            root.set-status(root.r12 ? "Read · Password" : "Marked unread", 0);
+                            root.notification-pressed("password");
                         }
+                        Rectangle {
+                            width: 8px;
+                            height: 8px;
+                            border-radius: 4px;
+                            background: root.r12 ? transparent : Theme.accent-info;
+                        }
+                    }
+                }
+
+                if root.mute-mentions && !root.cleared: HorizontalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    Text {
+                        text: "Mentions are muted — toggle in menu";
+                        color: Theme.muted;
+                        font-size: Theme.font-size-caption;
+                        font-italic: true;
+                    }
+                }
+            }
+        }
+    }
+
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: Theme.surface-1;
+            border-top-left-radius: 16px;
+            border-top-right-radius: 16px;
+            clip: true;
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.muted;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: "Inbox options";
+                        color: Theme.on-background;
+                        font-size: Theme.font-size-title;
+                        font-weight: 700;
+                    }
+                }
+                SheetRow {
+                    label: "Snooze 5 ticks";
+                    clicked => {
+                        root.snooze-until = root.tick + 5;
+                        root.sheet-open = false;
+                        root.set-status("Snoozed for 5 ticks", 3);
+                    }
+                }
+                SheetRow {
+                    label: "Snooze 12 ticks";
+                    clicked => {
+                        root.snooze-until = root.tick + 12;
+                        root.sheet-open = false;
+                        root.set-status("Snoozed for 12 ticks", 3);
+                    }
+                }
+                SheetRow {
+                    label: root.mute-mentions ? "Unmute mentions" : "Mute mentions";
+                    clicked => {
+                        root.mute-mentions = !root.mute-mentions;
+                        root.set-status(root.mute-mentions ? "Mentions muted" : "Mentions unmuted", 0);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Mark all unread";
+                    clicked => {
+                        root.r1 = false;
+                        root.r2 = false;
+                        root.r3 = false;
+                        root.r4 = false;
+                        root.r5 = false;
+                        root.r6 = false;
+                        root.r7 = false;
+                        root.r8 = false;
+                        root.r9 = false;
+                        root.r10 = false;
+                        root.r11 = false;
+                        root.r12 = false;
+                        root.set-status("All marked unread", 0);
+                        root.sheet-open = false;
+                    }
+                }
+                Rectangle {
+                    height: 1px;
+                    background: Theme.outline;
+                }
+                SheetRow {
+                    label: root.cleared ? "Restore all" : "Clear all";
+                    destructive: !root.cleared;
+                    clicked => {
+                        if (root.cleared) {
+                            root.reset-all();
+                            root.set-status("Restored", 1);
+                        } else {
+                            root.cleared = true;
+                            root.set-status("All cleared", 2);
+                        }
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.sheet-open = false;
                     }
                 }
             }

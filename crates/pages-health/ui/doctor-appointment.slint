@@ -2,18 +2,11 @@
 // =====================================================================
 //
 // Detail view for a single upcoming appointment. Shows the doctor's
-// hero card (avatar + name + specialty + confirmation chip), the WHEN
-// block (date / time / duration / location as KeyValueRows), a CHECK-IN
-// block of advisory rows (SettingRow with chevron trailing), and a
-// REMINDERS block (SettingRow with MobileSwitch trailing). Bottom CTAs
-// reschedule or cancel.
-//
-// Alignment discipline
-// --------------------
-// Every row in the page is one of the shared row primitives —
-// `KeyValueRow` for the metadata pairs and `SettingRow` for the
-// advisory + toggle rows. The hero is a `Card` with an `Avatar`,
-// `Heading` text, and a `Chip` for the status pill.
+// hero card (avatar + name + specialty + tappable status chip), the
+// WHEN block (date / time / duration / location as KeyValueRows), a
+// CHECK-IN block of advisory rows (tap to mark done), and a REMINDERS
+// block (SettingRow with MobileSwitch trailing). Bottom CTAs flip
+// between Reschedule and Restore based on appointment state.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
@@ -41,6 +34,151 @@ export component DoctorAppointmentPage inherits Window {
     callback reschedule-pressed();
     callback cancel-pressed();
     callback row-pressed(string);
+    callback status-changed(string);
+    callback rescheduled(string, string);
+
+    // ----- Interactive state -----
+    // 0=CONFIRMED 1=PENDING 2=RESCHEDULED 3=CANCELLED
+    private property <int> status-mode: 0;
+    private property <bool> c0: false; // insurance card
+    private property <bool> c1: false; // arrive early
+    private property <bool> c2: false; // pre-visit questionnaire
+    private property <bool> reschedule-sheet-open: false;
+    private property <int> date-idx: 0; // 0..3
+    private property <int> time-idx: 1; // 0..3
+    private property <int> picker-date: 0;
+    private property <int> picker-time: 1;
+    private property <bool> cancel-confirming: false;
+    private property <string> status-msg: "Tap a check-in to mark done · status pill cycles state";
+    private property <bool> status-is-success: false;
+    private property <bool> status-is-danger: false;
+
+    // ----- Helpers -----
+    function status-label(m: int) -> string {
+        if (m == 0) { return "CONFIRMED"; }
+        if (m == 1) { return "PENDING"; }
+        if (m == 2) { return "RESCHEDULED"; }
+        return "CANCELLED";
+    }
+    function status-color(m: int) -> color {
+        if (m == 0) { return Theme.accent-success; }
+        if (m == 1) { return Theme.accent-warning; }
+        if (m == 2) { return Theme.accent-info; }
+        return Theme.accent-danger;
+    }
+    function date-display(i: int) -> string {
+        if (i == 0) { return "Mon, 18 May 2026"; }
+        if (i == 1) { return "Tue, 19 May 2026"; }
+        if (i == 2) { return "Wed, 20 May 2026"; }
+        return "Fri, 22 May 2026";
+    }
+    function time-display(i: int) -> string {
+        if (i == 0) { return "9:00 AM"; }
+        if (i == 1) { return "10:30 AM"; }
+        if (i == 2) { return "1:00 PM"; }
+        return "3:30 PM";
+    }
+    function check-done-count() -> int {
+        return (root.c0 ? 1 : 0) + (root.c1 ? 1 : 0) + (root.c2 ? 1 : 0);
+    }
+    function is-cancelled() -> bool { return root.status-mode == 3; }
+
+    // ----- Mutations -----
+    public function cycle-status() {
+        root.status-mode = mod(root.status-mode + 1, 4);
+        root.status-changed(root.status-label(root.status-mode));
+        root.status-msg = "Status · " + root.status-label(root.status-mode);
+        root.status-is-success = root.status-mode == 0;
+        root.status-is-danger = root.status-mode == 3;
+    }
+    public function toggle-checkin(i: int) {
+        if (i == 0) { root.c0 = !root.c0; }
+        if (i == 1) { root.c1 = !root.c1; }
+        if (i == 2) { root.c2 = !root.c2; }
+        root.row-pressed("checkin-" + i);
+        root.status-msg = "Check-in · " + root.check-done-count() + " of 3 done";
+        root.status-is-success = root.check-done-count() == 3;
+        root.status-is-danger = false;
+    }
+    public function open-reschedule-sheet() {
+        root.reschedule-sheet-open = true;
+        root.picker-date = root.date-idx;
+        root.picker-time = root.time-idx;
+        root.status-msg = "Pick a new date + time";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function close-reschedule-sheet() { root.reschedule-sheet-open = false; }
+    public function apply-reschedule() {
+        root.date-idx = root.picker-date;
+        root.time-idx = root.picker-time;
+        root.status-mode = 2;
+        root.reschedule-pressed();
+        root.rescheduled(root.date-display(root.date-idx),
+            root.time-display(root.time-idx));
+        root.status-msg = "Rescheduled · "
+            + root.date-display(root.date-idx)
+            + " · " + root.time-display(root.time-idx);
+        root.status-is-success = true;
+        root.status-is-danger = false;
+        root.reschedule-sheet-open = false;
+    }
+    public function pick-picker-date(i: int) {
+        root.picker-date = i;
+        root.status-msg = "Picker · " + root.date-display(i);
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function pick-picker-time(i: int) {
+        root.picker-time = i;
+        root.status-msg = "Picker · " + root.time-display(i);
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function do-cancel() {
+        if (!root.cancel-confirming) {
+            root.cancel-confirming = true;
+            root.status-msg = "Tap Cancel again to confirm";
+            root.status-is-success = false;
+            root.status-is-danger = true;
+            return;
+        }
+        root.cancel-confirming = false;
+        root.status-mode = 3;
+        root.cancel-pressed();
+        root.status-changed("CANCELLED");
+        root.status-msg = "Appointment cancelled — tap Restore to undo";
+        root.status-is-success = false;
+        root.status-is-danger = true;
+    }
+    public function restore() {
+        root.status-mode = 0;
+        root.cancel-confirming = false;
+        root.status-changed("CONFIRMED");
+        root.status-msg = "Appointment restored · CONFIRMED";
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    public function tap-share() {
+        root.share-pressed();
+        root.status-msg = "Share appointment details";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    changed reminder-24h => {
+        root.status-msg = root.reminder-24h
+            ? "24-h reminder ON"
+            : "24-h reminder OFF";
+        root.status-is-success = root.reminder-24h;
+        root.status-is-danger = !root.reminder-24h;
+    }
+    changed reminder-sms => {
+        root.status-msg = root.reminder-sms
+            ? "Day-of SMS ON"
+            : "Day-of SMS OFF";
+        root.status-is-success = root.reminder-sms;
+        root.status-is-danger = !root.reminder-sms;
+    }
 
     background: Theme.background;
 
@@ -52,7 +190,31 @@ export component DoctorAppointmentPage inherits Window {
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             trailing-icon: @image-url("@mobile-components/icons/send.svg");
             leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.share-pressed(); }
+            trailing-pressed => { root.tap-share(); }
+        }
+
+        // ----- Status banner ---------------------------------------
+        Rectangle {
+            height: 32px;
+            background: root.status-is-danger ? Theme.accent-danger
+                : root.status-is-success ? Theme.accent-success
+                : Theme.surface-2;
+            animate background { duration: Theme.motion-fast; }
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                Text {
+                    text: root.status-msg;
+                    color: (root.status-is-danger || root.status-is-success)
+                        ? Theme.on-primary
+                        : Theme.on-surface;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+            }
         }
 
         ScrollView {
@@ -64,7 +226,7 @@ export component DoctorAppointmentPage inherits Window {
                 spacing: Theme.spacing-md;
                 alignment: start;
 
-                // ----- Hero card --------------------------------------------
+                // Hero card.
                 VerticalLayout {
                     padding-left: Theme.spacing-md;
                     padding-right: Theme.spacing-md;
@@ -94,34 +256,49 @@ export component DoctorAppointmentPage inherits Window {
                                     font-size: Theme.font-size-body;
                                 }
                                 Text {
-                                    text: "Riverside Heart Clinic";
+                                    text: "Riverside Heart Clinic · tap pill to cycle";
                                     color: Theme.muted;
                                     font-size: Theme.font-size-caption;
                                 }
                             }
                             VerticalLayout {
                                 alignment: center;
-                                Chip {
-                                    label: "CONFIRMED";
-                                    selected: true;
+                                Rectangle {
+                                    width: sp.preferred-width + 20px;
+                                    height: 26px;
+                                    border-radius: 13px;
+                                    background: root.status-color(root.status-mode);
+                                    animate background { duration: Theme.motion-fast; }
+                                    sp := Text {
+                                        text: root.status-label(root.status-mode);
+                                        color: Theme.on-primary;
+                                        font-size: 10px;
+                                        font-weight: 800;
+                                        letter-spacing: 0.5px;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                        width: parent.width;
+                                        height: parent.height;
+                                    }
+                                    TouchArea { clicked => { root.cycle-status(); } }
                                 }
                             }
                         }
                     }
                 }
 
-                // ----- WHEN -------------------------------------------------
+                // WHEN.
                 FormSection {
                     title: "WHEN";
 
                     KeyValueRow {
                         label: "Date";
-                        value: "Mon, 18 May 2026";
+                        value: root.date-display(root.date-idx);
                     }
                     Divider { }
                     KeyValueRow {
                         label: "Time";
-                        value: "10:30 AM";
+                        value: root.time-display(root.time-idx);
                     }
                     Divider { }
                     KeyValueRow {
@@ -135,55 +312,65 @@ export component DoctorAppointmentPage inherits Window {
                     }
                 }
 
-                // ----- CHECK-IN ---------------------------------------------
+                // CHECK-IN — rows toggle done state.
                 FormSection {
-                    title: "CHECK-IN";
+                    title: "CHECK-IN · " + root.check-done-count() + " of 3 done";
 
                     SettingRow {
                         icon: @image-url("@mobile-components/icons/lock.svg");
-                        tone: Tone.info;
-                        title: "Bring your insurance card";
+                        tone: root.c0 ? Tone.success : Tone.info;
+                        title: root.c0 ? "✓ Insurance card ready" : "Bring your insurance card";
                         subtitle: "BlueCross #BC-44829-7";
-                        clicked => { root.row-pressed("insurance"); }
+                        clicked => { root.toggle-checkin(0); }
                         Image {
                             width: 16px;
                             height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
+                            source: root.c0
+                                ? @image-url("@mobile-components/icons/check.svg")
+                                : @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: root.c0 ? Theme.accent-success : Theme.muted;
                             image-fit: contain;
                         }
                     }
                     Divider { }
                     SettingRow {
                         icon: @image-url("@mobile-components/icons/pin.svg");
-                        title: "Arrive 15 min early";
+                        tone: root.c1 ? Tone.success : Tone.default;
+                        title: root.c1 ? "✓ Will arrive 15 min early" : "Arrive 15 min early";
                         subtitle: "Patient intake forms";
-                        clicked => { root.row-pressed("arrive"); }
+                        clicked => { root.toggle-checkin(1); }
                         Image {
                             width: 16px;
                             height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
+                            source: root.c1
+                                ? @image-url("@mobile-components/icons/check.svg")
+                                : @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: root.c1 ? Theme.accent-success : Theme.muted;
                             image-fit: contain;
                         }
                     }
                     Divider { }
                     SettingRow {
                         icon: @image-url("@mobile-components/icons/pencil.svg");
-                        title: "Pre-visit questionnaire";
+                        tone: root.c2 ? Tone.success : Tone.default;
+                        title: root.c2
+                            ? "✓ Pre-visit questionnaire done"
+                            : "Pre-visit questionnaire";
                         subtitle: "5 min · optional";
-                        clicked => { root.row-pressed("questionnaire"); }
+                        clicked => { root.toggle-checkin(2); }
                         Image {
                             width: 16px;
                             height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
+                            source: root.c2
+                                ? @image-url("@mobile-components/icons/check.svg")
+                                : @image-url("@mobile-components/icons/chevron-right.svg");
+                            colorize: root.c2 ? Theme.accent-success : Theme.muted;
                             image-fit: contain;
                         }
                     }
                 }
 
-                // ----- REMINDERS --------------------------------------------
+                // REMINDERS.
                 FormSection {
                     title: "REMINDERS";
 
@@ -202,21 +389,159 @@ export component DoctorAppointmentPage inherits Window {
                     }
                 }
 
-                // ----- Actions ----------------------------------------------
+                // Actions — flip based on cancellation state.
                 VerticalLayout {
                     padding-left: Theme.spacing-md;
                     padding-right: Theme.spacing-md;
                     spacing: Theme.spacing-sm;
                     alignment: stretch;
 
-                    MobileButton {
+                    if !root.is-cancelled(): MobileButton {
                         text: "Reschedule";
-                        clicked => { root.reschedule-pressed(); }
+                        clicked => { root.open-reschedule-sheet(); }
                     }
-                    TextButton {
-                        text: "Cancel appointment";
-                        clicked => { root.cancel-pressed(); }
+                    if !root.is-cancelled(): TextButton {
+                        text: root.cancel-confirming
+                            ? "Tap again to confirm cancel"
+                            : "Cancel appointment";
+                        clicked => { root.do-cancel(); }
                     }
+                    if root.is-cancelled(): MobileButton {
+                        text: "Restore appointment";
+                        tone: Tone.success;
+                        clicked => { root.restore(); }
+                    }
+                }
+            }
+        }
+    }
+
+    // ----- Reschedule bottom sheet -----------------------------------
+    if root.reschedule-sheet-open: Rectangle {
+        Rectangle {
+            background: #00000099;
+            TouchArea {
+                clicked => { root.close-reschedule-sheet(); }
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            height: 460px;
+            background: Theme.surface-1;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding: Theme.spacing-lg;
+                spacing: Theme.spacing-md;
+
+                Rectangle {
+                    width: 40px;
+                    height: 4px;
+                    border-radius: 2px;
+                    background: Theme.muted;
+                }
+
+                Heading {
+                    text: "Reschedule";
+                    style: HeadingStyle.grotesk-bold;
+                    font-size: Theme.font-size-title;
+                }
+                Text {
+                    text: "Pick a new date and time.";
+                    color: Theme.muted;
+                    font-size: Theme.font-size-caption;
+                }
+
+                Text {
+                    text: "DATE";
+                    color: Theme.muted;
+                    font-size: 10px;
+                    font-weight: 800;
+                    letter-spacing: 0.5px;
+                }
+                HorizontalLayout {
+                    spacing: Theme.spacing-sm;
+                    for date-i in 4 : Rectangle {
+                        horizontal-stretch: 1;
+                        height: 48px;
+                        border-radius: Theme.radius-md;
+                        background: root.picker-date == date-i
+                            ? Theme.accent-info
+                            : Theme.surface-2;
+                        animate background { duration: Theme.motion-fast; }
+                        Text {
+                            text: date-i == 0 ? "Mon\n18"
+                                : date-i == 1 ? "Tue\n19"
+                                : date-i == 2 ? "Wed\n20"
+                                : "Fri\n22";
+                            color: root.picker-date == date-i
+                                ? Theme.on-primary
+                                : Theme.on-surface;
+                            font-size: Theme.font-size-caption;
+                            font-weight: 800;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
+                        }
+                        TouchArea {
+                            clicked => { root.pick-picker-date(date-i); }
+                        }
+                    }
+                }
+
+                Text {
+                    text: "TIME";
+                    color: Theme.muted;
+                    font-size: 10px;
+                    font-weight: 800;
+                    letter-spacing: 0.5px;
+                }
+                HorizontalLayout {
+                    spacing: Theme.spacing-sm;
+                    for time-i in 4 : Rectangle {
+                        horizontal-stretch: 1;
+                        height: 48px;
+                        border-radius: Theme.radius-md;
+                        background: root.picker-time == time-i
+                            ? Theme.accent-info
+                            : Theme.surface-2;
+                        animate background { duration: Theme.motion-fast; }
+                        Text {
+                            text: root.time-display(time-i);
+                            color: root.picker-time == time-i
+                                ? Theme.on-primary
+                                : Theme.on-surface;
+                            font-size: Theme.font-size-caption;
+                            font-weight: 800;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
+                        }
+                        TouchArea {
+                            clicked => { root.pick-picker-time(time-i); }
+                        }
+                    }
+                }
+
+                Rectangle { vertical-stretch: 1; }
+
+                MobileButton {
+                    text: "Apply · " + root.date-display(root.picker-date)
+                        + " · " + root.time-display(root.picker-time);
+                    tone: Tone.success;
+                    clicked => { root.apply-reschedule(); }
+                }
+                MobileButton {
+                    text: "Cancel";
+                    primary: false;
+                    clicked => { root.close-reschedule-sheet(); }
                 }
             }
         }

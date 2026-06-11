@@ -1,11 +1,5 @@
 // NewsArticleFeedPage
 // =====================================================================
-//
-// Headlines feed — six articles below a category SegmentedControl.
-// Articles need more visual space than a SettingRow can offer, so each
-// is rendered as a Card with title, source/timestamp, teaser body, and
-// a MetaRow of small chips. The Cards stack with `spacing-md` so their
-// outer edges align at the standard 16px page inset.
 
 import { Theme } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
@@ -13,7 +7,100 @@ import { SegmentedControl } from "@mobile-components/segmented-control.slint";
 import { Card } from "@mobile-components/card.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
 import { MetaRow, MetaChip } from "@mobile-components/meta-row.slint";
+import { Divider } from "@mobile-components/divider.slint";
 import { ScrollView } from "std-widgets.slint";
+
+component ActionPip inherits Rectangle {
+    in property <string> label;
+    in property <bool> active: false;
+    in property <int> tone-i: 0;
+    callback clicked();
+
+    horizontal-stretch: 0;
+    height: 24px;
+    border-radius: 12px;
+    background: root.active ? (root.tone-i == 1 ? Theme.accent-warning.with-alpha(0.22) : (root.tone-i == 2 ? Theme.accent-danger.with-alpha(0.22) : Theme.accent-info.with-alpha(0.22))) : Theme.surface-2;
+    HorizontalLayout {
+        padding-left: Theme.spacing-sm;
+        padding-right: Theme.spacing-sm;
+        alignment: center;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.active ? (root.tone-i == 1 ? Theme.accent-warning : (root.tone-i == 2 ? Theme.accent-danger : Theme.accent-info)) : Theme.muted;
+                font-size: 10px;
+                font-weight: 800;
+            }
+        }
+    }
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component Chip2 inherits Rectangle {
+    in property <string> label;
+    in property <bool> active: false;
+    callback clicked();
+
+    horizontal-stretch: 0;
+    height: 28px;
+    border-radius: 14px;
+    background: root.active ? Theme.primary : Theme.surface-2;
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: center;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.active ? Theme.on-primary : Theme.on-surface;
+                font-size: Theme.font-size-caption;
+                font-weight: 700;
+            }
+        }
+    }
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.destructive ? Theme.accent-danger : Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+        }
+    }
+}
 
 component Article inherits Card {
     in property <string> headline;
@@ -21,9 +108,20 @@ component Article inherits Card {
     in property <string> teaser;
     in property <string> read-time;
     in property <string> category;
+    in property <int> likes: 0;
+    in property <bool> liked: false;
+    in property <bool> bookmarked: false;
+    in property <bool> visited: false;
+    in property <int> share-mode: 0;
+    callback like-clicked();
+    callback bookmark-clicked();
+    callback share-clicked();
+    callback hide-clicked();
+
+    opacity: root.visited ? 0.7 : 1.0;
 
     Heading {
-        text: root.headline;
+        text: (root.bookmarked ? "★ " : "") + root.headline + (root.visited ? " · read" : "");
         style: HeadingStyle.plex-medium;
         color: Theme.on-surface;
         font-size: 18px;
@@ -46,6 +144,41 @@ component Article inherits Card {
             { icon: @image-url("@mobile-components/icons/pin.svg"), text: root.category },
         ];
     }
+    HorizontalLayout {
+        spacing: Theme.spacing-xs;
+        ActionPip {
+            label: (root.liked ? "❤ " : "♡ ") + root.likes;
+            active: root.liked;
+            tone-i: 2;
+            clicked => {
+                root.like-clicked();
+            }
+        }
+        ActionPip {
+            label: root.bookmarked ? "★" : "☆";
+            active: root.bookmarked;
+            tone-i: 1;
+            clicked => {
+                root.bookmark-clicked();
+            }
+        }
+        ActionPip {
+            label: root.share-mode == 0 ? "Share" : (root.share-mode == 1 ? "Copied" : "Sent");
+            active: root.share-mode != 0;
+            tone-i: 3;
+            clicked => {
+                root.share-clicked();
+            }
+        }
+        ActionPip {
+            label: root.visited ? "Unread" : "Hide";
+            active: false;
+            tone-i: 0;
+            clicked => {
+                root.hide-clicked();
+            }
+        }
+    }
 }
 
 export component NewsArticleFeedPage inherits Window {
@@ -53,9 +186,86 @@ export component NewsArticleFeedPage inherits Window {
     preferred-height: 892px;
 
     in-out property <int> category-index: 0;
+    in-out property <int> sort-index: 0;
+    in-out property <int> like0: 124;
+    in-out property <int> like1: 312;
+    in-out property <int> like2: 88;
+    in-out property <int> like3: 207;
+    in-out property <int> like4: 96;
+    in-out property <int> like5: 71;
+    in-out property <bool> liked0: false;
+    in-out property <bool> liked1: true;
+    in-out property <bool> liked2: false;
+    in-out property <bool> liked3: false;
+    in-out property <bool> liked4: false;
+    in-out property <bool> liked5: false;
+    in-out property <bool> bm0: false;
+    in-out property <bool> bm1: true;
+    in-out property <bool> bm2: false;
+    in-out property <bool> bm3: false;
+    in-out property <bool> bm4: false;
+    in-out property <bool> bm5: false;
+    in-out property <bool> v0: false;
+    in-out property <bool> v1: false;
+    in-out property <bool> v2: false;
+    in-out property <bool> v3: false;
+    in-out property <bool> v4: false;
+    in-out property <bool> v5: false;
+    in-out property <int> share0: 0;
+    in-out property <int> share1: 0;
+    in-out property <int> share2: 0;
+    in-out property <int> share3: 0;
+    in-out property <int> share4: 0;
+    in-out property <int> share5: 0;
+    in-out property <bool> h0: false;
+    in-out property <bool> h1: false;
+    in-out property <bool> h2: false;
+    in-out property <bool> h3: false;
+    in-out property <bool> h4: false;
+    in-out property <bool> h5: false;
+    in-out property <int> new-articles: 0;
+    in-out property <bool> sheet-open: false;
+    in-out property <bool> confirm-clear: false;
+    in-out property <string> status-msg: "";
+    in-out property <bool> status-success: false;
+    in-out property <bool> status-danger: false;
+
     callback back-pressed();
     callback search-pressed();
     callback article-pressed(string);
+
+    function bookmark-count() -> int {
+        return (root.bm0 ? 1 : 0) + (root.bm1 ? 1 : 0) + (root.bm2 ? 1 : 0) + (root.bm3 ? 1 : 0) + (root.bm4 ? 1 : 0) + (root.bm5 ? 1 : 0);
+    }
+    function read-count() -> int {
+        return (root.v0 ? 1 : 0) + (root.v1 ? 1 : 0) + (root.v2 ? 1 : 0) + (root.v3 ? 1 : 0) + (root.v4 ? 1 : 0) + (root.v5 ? 1 : 0);
+    }
+    function unread-count() -> int {
+        return 6 - root.read-count();
+    }
+    function show0() -> bool {
+        return !root.h0 && (root.category-index == 0 || root.category-index == 4);
+    }
+    function show1() -> bool {
+        return !root.h1 && (root.category-index == 0 || root.category-index == 2);
+    }
+    function show2() -> bool {
+        return !root.h2 && (root.category-index == 0 || root.category-index == 3);
+    }
+    function show3() -> bool {
+        return !root.h3 && (root.category-index == 0 || root.category-index == 2);
+    }
+    function show4() -> bool {
+        return !root.h4 && (root.category-index == 0 || root.category-index == 1);
+    }
+    function show5() -> bool {
+        return !root.h5 && (root.category-index == 0 || root.category-index == 2);
+    }
+    function set-status(m: string, ok: bool, bad: bool) {
+        root.status-msg = m;
+        root.status-success = ok;
+        root.status-danger = bad;
+    }
 
     background: Theme.background;
 
@@ -63,11 +273,32 @@ export component NewsArticleFeedPage inherits Window {
         spacing: 0;
 
         AppBar {
-            title: "Headlines";
+            title: "Headlines · " + root.unread-count() + " unread";
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
-            trailing-icon: @image-url("@mobile-components/icons/search.svg");
-            leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.search-pressed(); }
+            trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
+            leading-pressed => {
+                root.back-pressed();
+            }
+            trailing-pressed => {
+                root.sheet-open = true;
+            }
+        }
+
+        if !root.status-msg.is-empty: Rectangle {
+            height: 28px;
+            background: root.status-success ? Theme.accent-success.with-alpha(0.16) : (root.status-danger ? Theme.accent-danger.with-alpha(0.16) : Theme.surface-2);
+            HorizontalLayout {
+                alignment: center;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.status-msg;
+                        color: root.status-success ? Theme.accent-success : (root.status-danger ? Theme.accent-danger : Theme.on-surface);
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                    }
+                }
+            }
         }
 
         ScrollView {
@@ -84,49 +315,438 @@ export component NewsArticleFeedPage inherits Window {
                 SegmentedControl {
                     options: ["Top", "Local", "Tech", "Sport", "World"];
                     selected-index <=> root.category-index;
+                    changed(i) => {
+                        root.set-status("Category changed", true, false);
+                    }
                 }
 
-                Article {
+                HorizontalLayout {
+                    spacing: Theme.spacing-sm;
+                    Chip2 {
+                        label: "Latest";
+                        active: root.sort-index == 0;
+                        clicked => {
+                            root.sort-index = 0;
+                            root.set-status("Sort: latest", true, false);
+                        }
+                    }
+                    Chip2 {
+                        label: "Popular";
+                        active: root.sort-index == 1;
+                        clicked => {
+                            root.sort-index = 1;
+                            root.set-status("Sort: popular", true, false);
+                        }
+                    }
+                    Chip2 {
+                        label: "★ " + root.bookmark-count();
+                        active: false;
+                        clicked => {
+                            root.set-status("Bookmarks · " + root.bookmark-count(), true, false);
+                        }
+                    }
+                    Rectangle {
+                        horizontal-stretch: 1;
+                    }
+                    Rectangle {
+                        horizontal-stretch: 0;
+                        height: 28px;
+                        border-radius: 14px;
+                        background: Theme.accent-success;
+                        HorizontalLayout {
+                            padding-left: Theme.spacing-sm;
+                            padding-right: Theme.spacing-sm;
+                            VerticalLayout {
+                                alignment: center;
+                                Text {
+                                    text: "↻ Refresh";
+                                    color: Theme.on-primary;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 800;
+                                }
+                            }
+                        }
+                        TouchArea {
+                            clicked => {
+                                root.new-articles = min(3, root.new-articles + 1);
+                                root.set-status("+" + root.new-articles + " breaking stories", true, false);
+                            }
+                        }
+                    }
+                }
+
+                if root.new-articles > 0: Rectangle {
+                    background: Theme.accent-danger.with-alpha(0.10);
+                    border-radius: Theme.radius-md;
+                    VerticalLayout {
+                        padding: Theme.spacing-md;
+                        Text {
+                            text: "🔴 +" + root.new-articles + " breaking · tap to load";
+                            color: Theme.accent-danger;
+                            font-size: Theme.font-size-body;
+                            font-weight: 800;
+                        }
+                    }
+                    TouchArea {
+                        clicked => {
+                            root.new-articles = 0;
+                            root.set-status("Breaking stories loaded", true, false);
+                        }
+                    }
+                }
+
+                if root.show0(): Article {
                     headline: "Quiet streets see unexpected return of commuter cyclists";
                     source-line: "BBC · 2 hours ago";
                     teaser: "New counters in three boroughs show double-digit growth — planners credit pop-up lanes that survived the winter.";
                     read-time: "5 min read";
                     category: "World";
+                    likes: root.like0;
+                    liked: root.liked0;
+                    bookmarked: root.bm0;
+                    visited: root.v0;
+                    share-mode: root.share0;
+                    clicked => {
+                        root.v0 = true;
+                        root.set-status("Opened article", true, false);
+                    }
+                    like-clicked => {
+                        root.liked0 = !root.liked0;
+                        root.like0 = root.liked0 ? root.like0 + 1 : root.like0 - 1;
+                        root.set-status(root.liked0 ? "Liked" : "Unliked", root.liked0, false);
+                    }
+                    bookmark-clicked => {
+                        root.bm0 = !root.bm0;
+                        root.set-status(root.bm0 ? "★ Saved" : "Removed save", root.bm0, false);
+                    }
+                    share-clicked => {
+                        root.share0 = mod(root.share0 + 1, 3);
+                        root.set-status("Share state cycled", true, false);
+                    }
+                    hide-clicked => {
+                        if (root.v0) {
+                            root.v0 = false;
+                            root.set-status("Marked unread", true, false);
+                        } else {
+                            root.h0 = true;
+                            root.set-status("Hidden", false, true);
+                        }
+                    }
                 }
-                Article {
+
+                if root.show1(): Article {
                     headline: "Slint releases mobile-components 0.4 — Tone enum lands";
                     source-line: "The Register · 3 hours ago";
                     teaser: "Status colours across 31 widgets now flow from a single source. Adopters report cleaner code and tidier design reviews.";
                     read-time: "4 min read";
                     category: "Tech";
+                    likes: root.like1;
+                    liked: root.liked1;
+                    bookmarked: root.bm1;
+                    visited: root.v1;
+                    share-mode: root.share1;
+                    clicked => {
+                        root.v1 = true;
+                        root.set-status("Opened article", true, false);
+                    }
+                    like-clicked => {
+                        root.liked1 = !root.liked1;
+                        root.like1 = root.liked1 ? root.like1 + 1 : root.like1 - 1;
+                        root.set-status(root.liked1 ? "Liked" : "Unliked", root.liked1, false);
+                    }
+                    bookmark-clicked => {
+                        root.bm1 = !root.bm1;
+                        root.set-status(root.bm1 ? "★ Saved" : "Removed save", root.bm1, false);
+                    }
+                    share-clicked => {
+                        root.share1 = mod(root.share1 + 1, 3);
+                        root.set-status("Share state cycled", true, false);
+                    }
+                    hide-clicked => {
+                        if (root.v1) {
+                            root.v1 = false;
+                            root.set-status("Marked unread", true, false);
+                        } else {
+                            root.h1 = true;
+                            root.set-status("Hidden", false, true);
+                        }
+                    }
                 }
-                Article {
+
+                if root.show2(): Article {
                     headline: "Brussels marathon opens 2026 registration on Monday";
                     source-line: "RTBF · 5 hours ago";
                     teaser: "Course tweaks add a kilometre through the Bois de la Cambre. Organisers expect 28 000 runners by closing day.";
                     read-time: "3 min read";
                     category: "Sport";
+                    likes: root.like2;
+                    liked: root.liked2;
+                    bookmarked: root.bm2;
+                    visited: root.v2;
+                    share-mode: root.share2;
+                    clicked => {
+                        root.v2 = true;
+                        root.set-status("Opened article", true, false);
+                    }
+                    like-clicked => {
+                        root.liked2 = !root.liked2;
+                        root.like2 = root.liked2 ? root.like2 + 1 : root.like2 - 1;
+                        root.set-status(root.liked2 ? "Liked" : "Unliked", root.liked2, false);
+                    }
+                    bookmark-clicked => {
+                        root.bm2 = !root.bm2;
+                        root.set-status(root.bm2 ? "★ Saved" : "Removed save", root.bm2, false);
+                    }
+                    share-clicked => {
+                        root.share2 = mod(root.share2 + 1, 3);
+                        root.set-status("Share state cycled", true, false);
+                    }
+                    hide-clicked => {
+                        if (root.v2) {
+                            root.v2 = false;
+                            root.set-status("Marked unread", true, false);
+                        } else {
+                            root.h2 = true;
+                            root.set-status("Hidden", false, true);
+                        }
+                    }
                 }
-                Article {
+
+                if root.show3(): Article {
                     headline: "Why Android 15's edge-to-edge default broke half the apps you love";
                     source-line: "The Verge · 8 hours ago";
                     teaser: "The system-bar overlay rule is now opt-out — many developers haven't noticed yet, and users are starting to see clipped UIs.";
                     read-time: "6 min read";
                     category: "Tech";
+                    likes: root.like3;
+                    liked: root.liked3;
+                    bookmarked: root.bm3;
+                    visited: root.v3;
+                    share-mode: root.share3;
+                    clicked => {
+                        root.v3 = true;
+                        root.set-status("Opened article", true, false);
+                    }
+                    like-clicked => {
+                        root.liked3 = !root.liked3;
+                        root.like3 = root.liked3 ? root.like3 + 1 : root.like3 - 1;
+                        root.set-status(root.liked3 ? "Liked" : "Unliked", root.liked3, false);
+                    }
+                    bookmark-clicked => {
+                        root.bm3 = !root.bm3;
+                        root.set-status(root.bm3 ? "★ Saved" : "Removed save", root.bm3, false);
+                    }
+                    share-clicked => {
+                        root.share3 = mod(root.share3 + 1, 3);
+                        root.set-status("Share state cycled", true, false);
+                    }
+                    hide-clicked => {
+                        if (root.v3) {
+                            root.v3 = false;
+                            root.set-status("Marked unread", true, false);
+                        } else {
+                            root.h3 = true;
+                            root.set-status("Hidden", false, true);
+                        }
+                    }
                 }
-                Article {
+
+                if root.show4(): Article {
                     headline: "Independent bookshops post fourth straight year of growth";
                     source-line: "The Guardian · 11 hours ago";
                     teaser: "Children's titles and translated literary fiction lead the surge. Average shop revenue up 7.4 % on 2024.";
                     read-time: "5 min read";
                     category: "Local";
+                    likes: root.like4;
+                    liked: root.liked4;
+                    bookmarked: root.bm4;
+                    visited: root.v4;
+                    share-mode: root.share4;
+                    clicked => {
+                        root.v4 = true;
+                        root.set-status("Opened article", true, false);
+                    }
+                    like-clicked => {
+                        root.liked4 = !root.liked4;
+                        root.like4 = root.liked4 ? root.like4 + 1 : root.like4 - 1;
+                        root.set-status(root.liked4 ? "Liked" : "Unliked", root.liked4, false);
+                    }
+                    bookmark-clicked => {
+                        root.bm4 = !root.bm4;
+                        root.set-status(root.bm4 ? "★ Saved" : "Removed save", root.bm4, false);
+                    }
+                    share-clicked => {
+                        root.share4 = mod(root.share4 + 1, 3);
+                        root.set-status("Share state cycled", true, false);
+                    }
+                    hide-clicked => {
+                        if (root.v4) {
+                            root.v4 = false;
+                            root.set-status("Marked unread", true, false);
+                        } else {
+                            root.h4 = true;
+                            root.set-status("Hidden", false, true);
+                        }
+                    }
                 }
-                Article {
+
+                if root.show5(): Article {
                     headline: "Open-source typeface revival: Fraunces gets a numerals refresh";
                     source-line: "Type Network · 1 day ago";
                     teaser: "Designer Phaedra Charles has shipped a long-promised tabular numerals pass, making the family viable for data-heavy UIs.";
                     read-time: "4 min read";
                     category: "Tech";
+                    likes: root.like5;
+                    liked: root.liked5;
+                    bookmarked: root.bm5;
+                    visited: root.v5;
+                    share-mode: root.share5;
+                    clicked => {
+                        root.v5 = true;
+                        root.set-status("Opened article", true, false);
+                    }
+                    like-clicked => {
+                        root.liked5 = !root.liked5;
+                        root.like5 = root.liked5 ? root.like5 + 1 : root.like5 - 1;
+                        root.set-status(root.liked5 ? "Liked" : "Unliked", root.liked5, false);
+                    }
+                    bookmark-clicked => {
+                        root.bm5 = !root.bm5;
+                        root.set-status(root.bm5 ? "★ Saved" : "Removed save", root.bm5, false);
+                    }
+                    share-clicked => {
+                        root.share5 = mod(root.share5 + 1, 3);
+                        root.set-status("Share state cycled", true, false);
+                    }
+                    hide-clicked => {
+                        if (root.v5) {
+                            root.v5 = false;
+                            root.set-status("Marked unread", true, false);
+                        } else {
+                            root.h5 = true;
+                            root.set-status("Hidden", false, true);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+                root.confirm-clear = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: Theme.surface-2;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.muted;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: "Headlines menu";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 700;
+                    }
+                }
+                SheetRow {
+                    label: "Mark all read";
+                    clicked => {
+                        root.v0 = true;
+                        root.v1 = true;
+                        root.v2 = true;
+                        root.v3 = true;
+                        root.v4 = true;
+                        root.v5 = true;
+                        root.set-status("All read", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Restore hidden";
+                    clicked => {
+                        root.h0 = false;
+                        root.h1 = false;
+                        root.h2 = false;
+                        root.h3 = false;
+                        root.h4 = false;
+                        root.h5 = false;
+                        root.set-status("Hidden restored", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Clear bookmarks";
+                    clicked => {
+                        root.bm0 = false;
+                        root.bm1 = false;
+                        root.bm2 = false;
+                        root.bm3 = false;
+                        root.bm4 = false;
+                        root.bm5 = false;
+                        root.set-status("Bookmarks cleared", false, false);
+                        root.sheet-open = false;
+                    }
+                }
+                Divider { }
+
+                SheetRow {
+                    label: root.confirm-clear ? "Confirm: reset feed" : "Reset feed";
+                    destructive: true;
+                    clicked => {
+                        if (root.confirm-clear) {
+                            root.v0 = false;
+                            root.v1 = false;
+                            root.v2 = false;
+                            root.v3 = false;
+                            root.v4 = false;
+                            root.v5 = false;
+                            root.h0 = false;
+                            root.h1 = false;
+                            root.h2 = false;
+                            root.h3 = false;
+                            root.h4 = false;
+                            root.h5 = false;
+                            root.new-articles = 0;
+                            root.set-status("Feed reset", false, true);
+                            root.sheet-open = false;
+                            root.confirm-clear = false;
+                        } else {
+                            root.confirm-clear = true;
+                        }
+                    }
+                }
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.sheet-open = false;
+                        root.confirm-clear = false;
+                    }
                 }
             }
         }

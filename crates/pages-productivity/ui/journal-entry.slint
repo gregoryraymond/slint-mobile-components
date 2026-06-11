@@ -1,8 +1,5 @@
 // JournalEntryPage
 // =====================================================================
-//
-// One day's journal entry editor. Big date heading, MetaRow chips of
-// today's context, then a stack of FormFields + FormSections.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
@@ -12,24 +9,25 @@ import { FormSection } from "@mobile-components/form-section.slint";
 import { SettingRow } from "@mobile-components/setting-row.slint";
 import { TextField } from "@mobile-components/text-field.slint";
 import { MetaRow, MetaChip } from "@mobile-components/meta-row.slint";
-import { Chip } from "@mobile-components/chip.slint";
+import { Divider } from "@mobile-components/divider.slint";
 import { ScrollView } from "std-widgets.slint";
 
-// One mood swatch — coloured pill with a single letter glyph.
 component MoodSwatch inherits Rectangle {
     in property <string> glyph;
     in property <color> fill;
     in property <bool> selected: false;
+    callback clicked();
 
-    width: 36px;
-    height: 36px;
+    width: 44px;
+    height: 44px;
     border-radius: self.width / 2;
     background: root.selected ? root.fill : Theme.surface-2;
     border-width: root.selected ? 0px : 2px;
     border-color: root.fill;
 
     Text {
-        x: 0; y: 0;
+        x: 0;
+        y: 0;
         width: parent.width;
         height: parent.height;
         text: root.glyph;
@@ -38,6 +36,110 @@ component MoodSwatch inherits Rectangle {
         font-weight: 700;
         horizontal-alignment: center;
         vertical-alignment: center;
+    }
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component TagChip inherits Rectangle {
+    in property <string> label;
+    in property <bool> selected: false;
+    callback clicked();
+
+    horizontal-stretch: 0;
+    height: 26px;
+    border-radius: 13px;
+    background: root.selected ? Theme.accent-info.with-alpha(0.22) : Theme.surface-2;
+    border-width: root.selected ? 1px : 0px;
+    border-color: Theme.accent-info;
+    HorizontalLayout {
+        padding-left: Theme.spacing-sm;
+        padding-right: Theme.spacing-sm;
+        alignment: center;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: "#" + root.label;
+                color: root.selected ? Theme.accent-info : Theme.on-surface;
+                font-size: Theme.font-size-caption;
+                font-weight: 700;
+            }
+        }
+    }
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component AttachmentChip inherits Rectangle {
+    in property <string> glyph;
+    in property <string> label;
+    in property <bool> active: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    height: 64px;
+    border-radius: Theme.radius-md;
+    background: root.active ? Theme.accent-success.with-alpha(0.22) : Theme.surface-2;
+    border-width: root.active ? 1px : 0px;
+    border-color: Theme.accent-success;
+    VerticalLayout {
+        spacing: 4px;
+        alignment: center;
+        Text {
+            text: root.glyph;
+            color: root.active ? Theme.accent-success : Theme.muted;
+            font-size: 20px;
+            horizontal-alignment: center;
+        }
+        Text {
+            text: root.label;
+            color: root.active ? Theme.accent-success : Theme.on-surface;
+            font-size: Theme.font-size-caption;
+            font-weight: 700;
+            horizontal-alignment: center;
+        }
+    }
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.destructive ? Theme.accent-danger : Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+        }
     }
 }
 
@@ -48,9 +150,57 @@ export component JournalEntryPage inherits Window {
     in-out property <string> title-text;
     in-out property <string> entry-text;
     in-out property <int> mood-index: 3;
+    in-out property <bool> tag-work: true;
+    in-out property <bool> tag-family: true;
+    in-out property <bool> tag-rest: true;
+    in-out property <bool> tag-travel: false;
+    in-out property <bool> tag-gratitude: false;
+    in-out property <bool> tag-ideas: false;
+    in-out property <int> photos: 0;
+    in-out property <bool> voice-note: false;
+    in-out property <bool> location-attached: true;
+    in-out property <bool> pinned: false;
+    in-out property <bool> locked: false;
+    in-out property <bool> saved: false;
+    in-out property <bool> sheet-open: false;
+    in-out property <bool> confirm-trash: false;
+    in-out property <string> status-msg: "";
+    in-out property <bool> status-success: false;
+    in-out property <bool> status-danger: false;
 
     callback back-pressed();
     callback save-pressed();
+
+    function char-count() -> int {
+        return root.entry-text.character-count;
+    }
+    function mood-label() -> string {
+        return root.mood-index == 0 ? "Miserable" : (root.mood-index == 1 ? "Bad" : (root.mood-index == 2 ? "Okay" : (root.mood-index == 3 ? "Good" : "Excellent")));
+    }
+    function tag-count() -> int {
+        return (root.tag-work ? 1 : 0) + (root.tag-family ? 1 : 0) + (root.tag-rest ? 1 : 0) + (root.tag-travel ? 1 : 0) + (root.tag-gratitude ? 1 : 0) + (root.tag-ideas ? 1 : 0);
+    }
+    function can-save() -> bool {
+        return root.char-count() >= 50;
+    }
+    function set-status(m: string, ok: bool, bad: bool) {
+        root.status-msg = m;
+        root.status-success = ok;
+        root.status-danger = bad;
+    }
+    function pick-mood(i: int) {
+        root.mood-index = i;
+        root.set-status("Mood: " + root.mood-label(), i >= 3, i <= 1);
+    }
+    function save-entry() {
+        if (root.can-save()) {
+            root.saved = true;
+            root.set-status("Entry saved ✓", true, false);
+            root.save-pressed();
+        } else {
+            root.set-status("Need at least 50 chars (you have " + root.char-count() + ")", false, true);
+        }
+    }
 
     background: Theme.background;
 
@@ -58,12 +208,34 @@ export component JournalEntryPage inherits Window {
         spacing: 0;
 
         AppBar {
-            title: "Journal";
+            title: root.saved ? "Saved" : (root.locked ? "🔒 Locked entry" : "Journal");
             title-style: HeadingStyle.serif-light;
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
-            trailing-icon: @image-url("@mobile-components/icons/check.svg");
-            leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.save-pressed(); }
+            trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
+            leading-pressed => {
+                root.back-pressed();
+            }
+            trailing-pressed => {
+                root.sheet-open = true;
+            }
+        }
+
+        // Status banner.
+        if !root.status-msg.is-empty: Rectangle {
+            height: 28px;
+            background: root.status-success ? Theme.accent-success.with-alpha(0.16) : (root.status-danger ? Theme.accent-danger.with-alpha(0.16) : Theme.surface-2);
+            HorizontalLayout {
+                alignment: center;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.status-msg;
+                        color: root.status-success ? Theme.accent-success : (root.status-danger ? Theme.accent-danger : Theme.on-surface);
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                    }
+                }
+            }
         }
 
         ScrollView {
@@ -80,10 +252,38 @@ export component JournalEntryPage inherits Window {
                     padding-left: Theme.spacing-md;
                     padding-right: Theme.spacing-md;
                     spacing: Theme.spacing-xs;
-                    Heading {
-                        text: "Saturday, May 17";
-                        style: HeadingStyle.serif-display;
-                        color: Theme.on-background;
+                    HorizontalLayout {
+                        spacing: Theme.spacing-sm;
+                        alignment: stretch;
+                        Heading {
+                            text: (root.pinned ? "★ " : "") + "Saturday, May 17";
+                            style: HeadingStyle.serif-display;
+                            color: Theme.on-background;
+                            horizontal-stretch: 1;
+                        }
+                        Rectangle {
+                            horizontal-stretch: 0;
+                            width: 36px;
+                            height: 36px;
+                            border-radius: 18px;
+                            background: root.pinned ? Theme.accent-warning.with-alpha(0.22) : Theme.surface-2;
+                            Text {
+                                text: "★";
+                                color: root.pinned ? Theme.accent-warning : Theme.muted;
+                                font-size: 18px;
+                                font-weight: 800;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                width: parent.width;
+                                height: parent.height;
+                            }
+                            TouchArea {
+                                clicked => {
+                                    root.pinned = !root.pinned;
+                                    root.set-status(root.pinned ? "Pinned" : "Unpinned", root.pinned, false);
+                                }
+                            }
+                        }
                     }
                     MetaRow {
                         items: [
@@ -96,39 +296,62 @@ export component JournalEntryPage inherits Window {
 
                 // ----- Mood -----------------------------------------
                 FormSection {
-                    title: "MOOD";
+                    title: "MOOD · " + root.mood-label();
 
-                    SettingRow {
-                        title: "How was today?";
-                        subtitle: "Tap a swatch to record your mood.";
-
-                        HorizontalLayout {
+                    Rectangle {
+                        min-height: 80px;
+                        VerticalLayout {
+                            padding: Theme.spacing-md;
                             spacing: Theme.spacing-sm;
-                            alignment: end;
-                            MoodSwatch {
-                                glyph: "M";
-                                fill: Theme.accent-danger;
-                                selected: root.mood-index == 0;
+                            Text {
+                                text: "How was today? Tap a swatch.";
+                                color: Theme.muted;
+                                font-size: Theme.font-size-caption;
+                                font-weight: 600;
                             }
-                            MoodSwatch {
-                                glyph: "B";
-                                fill: Theme.accent-warning;
-                                selected: root.mood-index == 1;
-                            }
-                            MoodSwatch {
-                                glyph: "O";
-                                fill: Theme.muted;
-                                selected: root.mood-index == 2;
-                            }
-                            MoodSwatch {
-                                glyph: "G";
-                                fill: Theme.accent-info;
-                                selected: root.mood-index == 3;
-                            }
-                            MoodSwatch {
-                                glyph: "E";
-                                fill: Theme.accent-success;
-                                selected: root.mood-index == 4;
+                            HorizontalLayout {
+                                spacing: Theme.spacing-sm;
+                                alignment: center;
+                                MoodSwatch {
+                                    glyph: "M";
+                                    fill: Theme.accent-danger;
+                                    selected: root.mood-index == 0;
+                                    clicked => {
+                                        root.pick-mood(0);
+                                    }
+                                }
+                                MoodSwatch {
+                                    glyph: "B";
+                                    fill: Theme.accent-warning;
+                                    selected: root.mood-index == 1;
+                                    clicked => {
+                                        root.pick-mood(1);
+                                    }
+                                }
+                                MoodSwatch {
+                                    glyph: "O";
+                                    fill: Theme.muted;
+                                    selected: root.mood-index == 2;
+                                    clicked => {
+                                        root.pick-mood(2);
+                                    }
+                                }
+                                MoodSwatch {
+                                    glyph: "G";
+                                    fill: Theme.accent-info;
+                                    selected: root.mood-index == 3;
+                                    clicked => {
+                                        root.pick-mood(3);
+                                    }
+                                }
+                                MoodSwatch {
+                                    glyph: "E";
+                                    fill: Theme.accent-success;
+                                    selected: root.mood-index == 4;
+                                    clicked => {
+                                        root.pick-mood(4);
+                                    }
+                                }
                             }
                         }
                     }
@@ -148,7 +371,7 @@ export component JournalEntryPage inherits Window {
                     }
                     FormField {
                         label: "Entry";
-                        helper: "Min 50 chars.";
+                        helper: root.can-save() ? "✓ " + root.char-count() + " chars" : root.char-count() + "/50 chars min";
                         TextField {
                             placeholder: "What happened today?";
                             text <=> root.entry-text;
@@ -156,21 +379,261 @@ export component JournalEntryPage inherits Window {
                     }
                 }
 
+                // ----- Attachments ----------------------------------
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    spacing: Theme.spacing-xs;
+                    Text {
+                        text: "ATTACHMENTS";
+                        color: Theme.muted;
+                        font-size: 11px;
+                        font-weight: 700;
+                        letter-spacing: 2px;
+                    }
+                    HorizontalLayout {
+                        spacing: Theme.spacing-sm;
+                        AttachmentChip {
+                            glyph: "📷";
+                            label: root.photos == 0 ? "Add photo" : root.photos + " photos";
+                            active: root.photos > 0;
+                            clicked => {
+                                root.photos = root.photos + 1;
+                                root.set-status("Photo added (" + root.photos + ")", true, false);
+                            }
+                        }
+                        AttachmentChip {
+                            glyph: "🎙";
+                            label: root.voice-note ? "Voice note ✓" : "Record voice";
+                            active: root.voice-note;
+                            clicked => {
+                                root.voice-note = !root.voice-note;
+                                root.set-status(root.voice-note ? "Voice note attached" : "Voice removed", root.voice-note, !root.voice-note);
+                            }
+                        }
+                        AttachmentChip {
+                            glyph: "📍";
+                            label: root.location-attached ? "Brussels ✓" : "Add location";
+                            active: root.location-attached;
+                            clicked => {
+                                root.location-attached = !root.location-attached;
+                                root.set-status(root.location-attached ? "Location attached" : "Location removed", root.location-attached, !root.location-attached);
+                            }
+                        }
+                    }
+                }
+
                 // ----- Tags -----------------------------------------
                 FormSection {
-                    title: "TAGS";
+                    title: "TAGS · " + root.tag-count() + " SELECTED";
 
-                    SettingRow {
-                        title: "Tags";
-                        subtitle: "3 selected";
-
-                        HorizontalLayout {
-                            spacing: Theme.spacing-xs;
-                            alignment: end;
-                            Chip { label: "work"; selected: true; }
-                            Chip { label: "family"; selected: true; }
-                            Chip { label: "rest"; selected: true; }
+                    Rectangle {
+                        VerticalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-sm;
+                            HorizontalLayout {
+                                spacing: Theme.spacing-xs;
+                                alignment: start;
+                                TagChip {
+                                    label: "work";
+                                    selected: root.tag-work;
+                                    clicked => {
+                                        root.tag-work = !root.tag-work;
+                                        root.set-status("#work " + (root.tag-work ? "on" : "off"), root.tag-work, false);
+                                    }
+                                }
+                                TagChip {
+                                    label: "family";
+                                    selected: root.tag-family;
+                                    clicked => {
+                                        root.tag-family = !root.tag-family;
+                                        root.set-status("#family " + (root.tag-family ? "on" : "off"), root.tag-family, false);
+                                    }
+                                }
+                                TagChip {
+                                    label: "rest";
+                                    selected: root.tag-rest;
+                                    clicked => {
+                                        root.tag-rest = !root.tag-rest;
+                                        root.set-status("#rest " + (root.tag-rest ? "on" : "off"), root.tag-rest, false);
+                                    }
+                                }
+                            }
+                            HorizontalLayout {
+                                spacing: Theme.spacing-xs;
+                                alignment: start;
+                                TagChip {
+                                    label: "travel";
+                                    selected: root.tag-travel;
+                                    clicked => {
+                                        root.tag-travel = !root.tag-travel;
+                                        root.set-status("#travel " + (root.tag-travel ? "on" : "off"), root.tag-travel, false);
+                                    }
+                                }
+                                TagChip {
+                                    label: "gratitude";
+                                    selected: root.tag-gratitude;
+                                    clicked => {
+                                        root.tag-gratitude = !root.tag-gratitude;
+                                        root.set-status("#gratitude " + (root.tag-gratitude ? "on" : "off"), root.tag-gratitude, false);
+                                    }
+                                }
+                                TagChip {
+                                    label: "ideas";
+                                    selected: root.tag-ideas;
+                                    clicked => {
+                                        root.tag-ideas = !root.tag-ideas;
+                                        root.set-status("#ideas " + (root.tag-ideas ? "on" : "off"), root.tag-ideas, false);
+                                    }
+                                }
+                            }
                         }
+                    }
+                }
+
+                // ----- Save bar -------------------------------------
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    spacing: Theme.spacing-sm;
+                    Rectangle {
+                        height: 48px;
+                        border-radius: 24px;
+                        background: root.can-save() ? (root.saved ? Theme.accent-success : Theme.primary) : Theme.surface-2;
+                        opacity: root.can-save() || root.saved ? 1.0 : 0.6;
+                        HorizontalLayout {
+                            alignment: center;
+                            VerticalLayout {
+                                alignment: center;
+                                Text {
+                                    text: root.saved ? "Saved ✓ — tap to edit again" : (root.can-save() ? "Save entry" : "Write " + (50 - root.char-count()) + " more chars to save");
+                                    color: (root.can-save() || root.saved) ? Theme.on-primary : Theme.muted;
+                                    font-size: Theme.font-size-body;
+                                    font-weight: 800;
+                                }
+                            }
+                        }
+                        TouchArea {
+                            clicked => {
+                                if (root.saved) {
+                                    root.saved = false;
+                                    root.set-status("Reopened for editing", false, false);
+                                } else {
+                                    root.save-entry();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ===================== Bottom sheet =====================
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+                root.confirm-trash = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: Theme.surface-2;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.muted;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: "Entry menu";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 700;
+                    }
+                }
+                SheetRow {
+                    label: root.pinned ? "Unpin entry" : "Pin to top";
+                    clicked => {
+                        root.pinned = !root.pinned;
+                        root.set-status(root.pinned ? "Pinned" : "Unpinned", root.pinned, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: root.locked ? "Unlock entry" : "Lock entry";
+                    clicked => {
+                        root.locked = !root.locked;
+                        root.set-status(root.locked ? "🔒 Locked" : "🔓 Unlocked", false, root.locked);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Clear all tags";
+                    clicked => {
+                        root.tag-work = false;
+                        root.tag-family = false;
+                        root.tag-rest = false;
+                        root.tag-travel = false;
+                        root.tag-gratitude = false;
+                        root.tag-ideas = false;
+                        root.set-status("Tags cleared", false, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Remove all attachments";
+                    clicked => {
+                        root.photos = 0;
+                        root.voice-note = false;
+                        root.location-attached = false;
+                        root.set-status("Attachments cleared", false, false);
+                        root.sheet-open = false;
+                    }
+                }
+                Divider { }
+
+                SheetRow {
+                    label: root.confirm-trash ? "Confirm: trash entry" : "Trash entry";
+                    destructive: true;
+                    clicked => {
+                        if (root.confirm-trash) {
+                            root.title-text = "";
+                            root.entry-text = "";
+                            root.saved = false;
+                            root.set-status("Entry trashed", false, true);
+                            root.sheet-open = false;
+                            root.confirm-trash = false;
+                        } else {
+                            root.confirm-trash = true;
+                        }
+                    }
+                }
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.sheet-open = false;
+                        root.confirm-trash = false;
                     }
                 }
             }

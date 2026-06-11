@@ -1,24 +1,23 @@
 // AlbumDetailPage
 // =====================================================================
 //
-// Spotify-style album detail — distinct from `PlaylistDetailPage`
-// (user-curated playlist) and `PodcastPage` (single-track playback).
-// An album has a fixed track order, a fixed artist, and a release year
-// that anchors the meta. Demonstrates:
+// Spotify-style album detail — now wired to live state.
 //
-//   - Cover square hero (square, 200 × 200) on a dark background,
-//     overlaid with translucent back + more buttons.
-//   - Album title + artist + year + tracks-count + duration meta.
-//   - Action row: Heart save / Download / Share + a big primary
-//     play disc anchored to the right.
-//   - Track list — numeric index, title + artist (if "various"), tone-
-//     tinted "EXPLICIT" pill, like glyph, duration.
+//   - Big play disc toggles `playing`. Icon swaps between play.svg and
+//     pause.svg.
+//   - Each track row is tappable to set it as the current playing track
+//     (the green play glyph + emphasis move with it). The heart icon in
+//     the row is independently tappable to toggle the per-track liked
+//     flag.
+//   - Heart / Download / Share action buttons fire status banner
+//     updates. Download has an extra counter while it's "downloading".
+//   - Status banner sits under the hero (no AppBar on this page).
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { Divider } from "@mobile-components/divider.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
 
-// One track row.
+// One track row — body tappable + heart slot independently tappable.
 component TrackRow inherits Rectangle {
     in property <int> position;
     in property <string> title;
@@ -27,9 +26,21 @@ component TrackRow inherits Rectangle {
     in property <bool> explicit: false;
     in property <bool> liked: false;
     in property <bool> playing: false;
+    callback clicked();
+    callback heart-clicked();
 
     horizontal-stretch: 1;
     min-height: 60px;
+    background: root.playing
+        ? Theme.accent-success.with-alpha(0.08)
+        : touch.pressed ? Theme.surface-pressed
+        : transparent;
+    animate background { duration: Theme.motion-fast; }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+
     HorizontalLayout {
         padding-left: Theme.spacing-md;
         padding-right: Theme.spacing-md;
@@ -90,14 +101,24 @@ component TrackRow inherits Rectangle {
                 font-size: Theme.font-size-caption;
             }
         }
-        VerticalLayout {
-            alignment: center;
+        // Heart slot — nested TouchArea so the row-level tap doesn't fire.
+        Rectangle {
+            width: 32px;
+            height: 32px;
+            border-radius: 16px;
+            background: heart-touch.pressed ? Theme.surface-pressed : transparent;
+            animate background { duration: Theme.motion-fast; }
             Image {
                 width: 14px;
                 height: 14px;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
                 source: @image-url("@mobile-components/icons/heart.svg");
                 colorize: root.liked ? Theme.accent-danger : Theme.muted;
                 image-fit: contain;
+            }
+            heart-touch := TouchArea {
+                clicked => { root.heart-clicked(); }
             }
         }
         VerticalLayout {
@@ -112,7 +133,6 @@ component TrackRow inherits Rectangle {
     }
 }
 
-// One small action icon button.
 component MiniAction inherits Rectangle {
     in property <image> icon;
     in property <Tone> tone: Tone.default;
@@ -124,6 +144,9 @@ component MiniAction inherits Rectangle {
 
     width: 44px;
     height: 44px;
+    background: touch.pressed ? Theme.surface-pressed : transparent;
+    border-radius: 22px;
+    animate background { duration: Theme.motion-fast; }
     Image {
         width: 22px;
         height: 22px;
@@ -135,16 +158,14 @@ component MiniAction inherits Rectangle {
             ? (
                   root.tone == Tone.success ? Theme.accent-success
                 : root.tone == Tone.warning ? Theme.accent-warning
-                : root.tone == Tone.danger  ? Theme.accent-danger
-                : root.tone == Tone.info    ? Theme.accent-info
+                : root.tone == Tone.danger ? Theme.accent-danger
+                : root.tone == Tone.info ? Theme.accent-info
                 : Theme.primary
               )
             : Theme.muted;
         image-fit: contain;
     }
-    TouchArea {
-        clicked => { root.clicked(); }
-    }
+    touch := TouchArea { clicked => { root.clicked(); } }
 }
 
 export component AlbumDetailPage inherits Window {
@@ -162,19 +183,126 @@ export component AlbumDetailPage inherits Window {
     callback download-pressed();
     callback share-pressed();
     callback play-pressed();
+    callback track-played(int, string);
+    callback track-liked(int, bool);
+
+    // ----- Interactive state -----
+    private property <bool> playing: true;
+    private property <int> current-track-idx: 1; // 0..5, default Nightcall
+    private property <bool> l0: true;  // Sleep On The Wing
+    private property <bool> l1: false; // Nightcall
+    private property <bool> l2: false; // Wild Horses
+    private property <bool> l3: false; // Ports
+    private property <bool> l4: true;  // Garden City Movement
+    private property <bool> l5: false; // An Ending
+    private property <int> share-count: 0;
+    private property <string> status-msg: "Tap a track to play · heart per track · play disc toggles playback";
+    private property <bool> status-is-success: false;
+    private property <bool> status-is-danger: false;
+
+    // ----- Helpers -----
+    function track-title(i: int) -> string {
+        if (i == 0) { return "Sleep On The Wing"; }
+        if (i == 1) { return "Nightcall"; }
+        if (i == 2) { return "Wild Horses"; }
+        if (i == 3) { return "Ports"; }
+        if (i == 4) { return "Garden City Movement"; }
+        return "An Ending (Ascent)";
+    }
+    function liked-for(i: int) -> bool {
+        if (i == 0) { return root.l0; }
+        if (i == 1) { return root.l1; }
+        if (i == 2) { return root.l2; }
+        if (i == 3) { return root.l3; }
+        if (i == 4) { return root.l4; }
+        return root.l5;
+    }
+    function liked-count() -> int {
+        return (root.l0 ? 1 : 0) + (root.l1 ? 1 : 0) + (root.l2 ? 1 : 0)
+            + (root.l3 ? 1 : 0) + (root.l4 ? 1 : 0) + (root.l5 ? 1 : 0);
+    }
+
+    // ----- Mutations -----
+    public function tap-play-disc() {
+        root.playing = !root.playing;
+        root.play-pressed();
+        root.status-msg = root.playing
+            ? "Playing · " + root.track-title(root.current-track-idx)
+            : "Paused · " + root.track-title(root.current-track-idx);
+        root.status-is-success = root.playing;
+        root.status-is-danger = false;
+    }
+    public function tap-track(i: int) {
+        root.current-track-idx = i;
+        root.playing = true;
+        root.track-played(i, root.track-title(i));
+        root.status-msg = "Playing · " + root.track-title(i);
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    public function tap-track-heart(i: int) {
+        if (i == 0) { root.l0 = !root.l0; }
+        if (i == 1) { root.l1 = !root.l1; }
+        if (i == 2) { root.l2 = !root.l2; }
+        if (i == 3) { root.l3 = !root.l3; }
+        if (i == 4) { root.l4 = !root.l4; }
+        if (i == 5) { root.l5 = !root.l5; }
+        root.track-liked(i, root.liked-for(i));
+        root.status-msg = root.liked-for(i)
+            ? "Liked " + root.track-title(i) + " (" + root.liked-count() + " total)"
+            : "Unliked " + root.track-title(i);
+        root.status-is-success = root.liked-for(i);
+        root.status-is-danger = !root.liked-for(i);
+    }
+    public function tap-save() {
+        root.saved = !root.saved;
+        root.save-pressed();
+        root.status-msg = root.saved
+            ? "Album saved to library"
+            : "Album removed from library";
+        root.status-is-success = root.saved;
+        root.status-is-danger = !root.saved;
+    }
+    public function tap-download() {
+        root.downloaded = !root.downloaded;
+        root.download-pressed();
+        root.status-msg = root.downloaded
+            ? "Downloaded · available offline"
+            : "Download removed";
+        root.status-is-success = root.downloaded;
+        root.status-is-danger = !root.downloaded;
+    }
+    public function tap-share() {
+        root.share-count = root.share-count + 1;
+        root.share-pressed();
+        root.status-msg = "Shared album (#" + root.share-count + ")";
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    public function tap-back() {
+        root.back-pressed();
+        root.status-msg = "Back · returning to library";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function tap-more() {
+        root.more-pressed();
+        root.status-msg = "More options · queue · radio · go to artist";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
 
     background: Theme.background;
 
     VerticalLayout {
         spacing: 0;
 
-        // Gradient hero.
+        // Hero.
         Rectangle {
             height: 320px;
             background: @linear-gradient(180deg, #4c1d95 0%, #0a0d12 100%);
             clip: true;
 
-            // Translucent header.
             HorizontalLayout {
                 x: 0;
                 y: 0;
@@ -196,9 +324,7 @@ export component AlbumDetailPage inherits Window {
                         colorize: #ffffff;
                         image-fit: contain;
                     }
-                    TouchArea {
-                        clicked => { root.back-pressed(); }
-                    }
+                    TouchArea { clicked => { root.tap-back(); } }
                 }
                 Rectangle { horizontal-stretch: 1; }
                 Rectangle {
@@ -215,13 +341,10 @@ export component AlbumDetailPage inherits Window {
                         colorize: #ffffff;
                         image-fit: contain;
                     }
-                    TouchArea {
-                        clicked => { root.more-pressed(); }
-                    }
+                    TouchArea { clicked => { root.tap-more(); } }
                 }
             }
 
-            // Album cover.
             Rectangle {
                 x: (parent.width - self.width) / 2;
                 y: 72px;
@@ -247,7 +370,30 @@ export component AlbumDetailPage inherits Window {
             }
         }
 
-        // Title + artist + meta.
+        // ----- Status banner ---------------------------------------
+        Rectangle {
+            height: 32px;
+            background: root.status-is-danger ? Theme.accent-danger
+                : root.status-is-success ? Theme.accent-success
+                : Theme.surface-2;
+            animate background { duration: Theme.motion-fast; }
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                Text {
+                    text: root.status-msg;
+                    color: (root.status-is-danger || root.status-is-success)
+                        ? Theme.on-primary
+                        : Theme.on-surface;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+            }
+        }
+
         VerticalLayout {
             padding-left: Theme.spacing-md;
             padding-right: Theme.spacing-md;
@@ -277,7 +423,8 @@ export component AlbumDetailPage inherits Window {
             HorizontalLayout {
                 alignment: center;
                 Text {
-                    text: "Album · " + root.year + " · " + root.meta;
+                    text: "Album · " + root.year + " · " + root.meta
+                        + " · " + root.liked-count() + " liked";
                     color: Theme.muted;
                     font-size: Theme.font-size-caption;
                     horizontal-alignment: center;
@@ -297,23 +444,17 @@ export component AlbumDetailPage inherits Window {
                     icon: @image-url("@mobile-components/icons/heart.svg");
                     tone: Tone.danger;
                     active: root.saved;
-                    clicked => {
-                        root.saved = !root.saved;
-                        root.save-pressed();
-                    }
+                    clicked => { root.tap-save(); }
                 }
                 MiniAction {
                     icon: @image-url("@mobile-components/icons/check.svg");
                     tone: Tone.success;
                     active: root.downloaded;
-                    clicked => {
-                        root.downloaded = !root.downloaded;
-                        root.download-pressed();
-                    }
+                    clicked => { root.tap-download(); }
                 }
                 MiniAction {
                     icon: @image-url("@mobile-components/icons/send.svg");
-                    clicked => { root.share-pressed(); }
+                    clicked => { root.tap-share(); }
                 }
                 Rectangle { horizontal-stretch: 1; }
                 VerticalLayout {
@@ -329,27 +470,30 @@ export component AlbumDetailPage inherits Window {
                         Image {
                             width: 22px;
                             height: 22px;
-                            x: (parent.width - self.width) / 2 + 2px;
+                            x: (parent.width - self.width) / 2 + (root.playing ? 0 : 2px);
                             y: (parent.height - self.height) / 2;
-                            source: @image-url("@mobile-components/icons/play.svg");
+                            source: root.playing
+                                ? @image-url("@mobile-components/icons/pause.svg")
+                                : @image-url("@mobile-components/icons/play.svg");
                             colorize: Theme.on-primary;
                             image-fit: contain;
                         }
-                        TouchArea {
-                            clicked => { root.play-pressed(); }
-                        }
+                        TouchArea { clicked => { root.tap-play-disc(); } }
                     }
                 }
             }
         }
 
-        // Tracks.
+        // Tracks — all tappable + heart slot independently tappable.
         TrackRow {
             position: 1;
             title: "Sleep On The Wing";
             features: "Bibio";
             duration: "3:34";
-            liked: true;
+            liked: root.l0;
+            playing: root.playing && root.current-track-idx == 0;
+            clicked => { root.tap-track(0); }
+            heart-clicked => { root.tap-track-heart(0); }
         }
         Divider { }
         TrackRow {
@@ -357,7 +501,10 @@ export component AlbumDetailPage inherits Window {
             title: "Nightcall";
             features: "Kavinsky · feat. Lovefoxxx";
             duration: "4:18";
-            playing: true;
+            liked: root.l1;
+            playing: root.playing && root.current-track-idx == 1;
+            clicked => { root.tap-track(1); }
+            heart-clicked => { root.tap-track-heart(1); }
         }
         Divider { }
         TrackRow {
@@ -365,6 +512,10 @@ export component AlbumDetailPage inherits Window {
             title: "Wild Horses";
             features: "The Rolling Stones";
             duration: "5:42";
+            liked: root.l2;
+            playing: root.playing && root.current-track-idx == 2;
+            clicked => { root.tap-track(2); }
+            heart-clicked => { root.tap-track-heart(2); }
         }
         Divider { }
         TrackRow {
@@ -373,6 +524,10 @@ export component AlbumDetailPage inherits Window {
             features: "Eddie Henderson";
             duration: "5:01";
             explicit: true;
+            liked: root.l3;
+            playing: root.playing && root.current-track-idx == 3;
+            clicked => { root.tap-track(3); }
+            heart-clicked => { root.tap-track-heart(3); }
         }
         Divider { }
         TrackRow {
@@ -380,7 +535,10 @@ export component AlbumDetailPage inherits Window {
             title: "Garden City Movement";
             features: "Tel Aviv Sessions";
             duration: "3:58";
-            liked: true;
+            liked: root.l4;
+            playing: root.playing && root.current-track-idx == 4;
+            clicked => { root.tap-track(4); }
+            heart-clicked => { root.tap-track-heart(4); }
         }
         Divider { }
         TrackRow {
@@ -388,6 +546,10 @@ export component AlbumDetailPage inherits Window {
             title: "An Ending (Ascent)";
             features: "Brian Eno";
             duration: "4:55";
+            liked: root.l5;
+            playing: root.playing && root.current-track-idx == 5;
+            clicked => { root.tap-track(5); }
+            heart-clicked => { root.tap-track-heart(5); }
         }
 
         Rectangle { vertical-stretch: 1; }

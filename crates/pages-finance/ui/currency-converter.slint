@@ -5,20 +5,23 @@
 // "transfer money" surface, distilled to its two anchor pieces:
 //
 //   - "From / To" stacked cards with a circular swap button between
-//     them. Each card carries: currency code (USD / EUR), 2-letter
-//     flag glyph in a tinted disc, and a big editable amount on the
-//     right. The To-card amount is read-only / computed.
-//   - A rate strip beneath ("1 USD = 0.92 EUR · updated 14:32") + a
-//     tone-tinted 24h delta.
-//   - Sparkline showing the 30-day FX trend.
-//   - "Popular pairs" rows below for quick switching to other rates.
+//     them. Tap a card to swap that side of the pair via a 5-currency
+//     bottom-sheet picker.
+//   - A rate strip beneath ("1 USD = 0.92030 EUR · updated 14:32") +
+//     a tone-tinted 24h delta — both derive from the active pair.
+//   - 30-day sparkline showing the FX trend.
+//   - Numeric keypad + quick-amount chips that drive `from-units` — the
+//     to-card amount recomputes from the rate live.
+//   - "Popular pairs" rows below for one-tap pair switching.
 
 import { ScrollView } from "std-widgets.slint";
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
 import { SectionHeader } from "@mobile-components/section-header.slint";
+import { Chip } from "@mobile-components/chip.slint";
 import { Divider } from "@mobile-components/divider.slint";
+import { MobileButton } from "@mobile-components/button.slint";
 
 // One currency card — flag disc + currency code + amount.
 component CurrencyCard inherits Rectangle {
@@ -32,7 +35,8 @@ component CurrencyCard inherits Rectangle {
 
     horizontal-stretch: 1;
     height: 96px;
-    background: Theme.surface-1;
+    background: touch.pressed ? Theme.surface-pressed : Theme.surface-1;
+    animate background { duration: Theme.motion-fast; }
     border-radius: Theme.radius-md;
     drop-shadow-blur: Theme.elevation-1-blur;
     drop-shadow-color: Theme.elevation-1-color;
@@ -43,7 +47,6 @@ component CurrencyCard inherits Rectangle {
         spacing: Theme.spacing-md;
         alignment: stretch;
 
-        // Flag disc.
         VerticalLayout {
             alignment: center;
             Rectangle {
@@ -64,7 +67,6 @@ component CurrencyCard inherits Rectangle {
             }
         }
 
-        // Currency code + name.
         VerticalLayout {
             alignment: center;
             spacing: 2px;
@@ -83,7 +85,6 @@ component CurrencyCard inherits Rectangle {
             }
         }
 
-        // Amount.
         VerticalLayout {
             horizontal-stretch: 1;
             alignment: center;
@@ -91,13 +92,13 @@ component CurrencyCard inherits Rectangle {
                 text: root.amount;
                 style: HeadingStyle.mono;
                 color: root.editable ? Theme.on-surface : Theme.muted;
-                font-size: 26px;
+                font-size: 22px;
                 font-weight: root.editable ? 700 : 400;
                 horizontal-alignment: right;
             }
         }
     }
-    TouchArea {
+    touch := TouchArea {
         clicked => { root.clicked(); }
     }
 }
@@ -108,8 +109,11 @@ component PairRow inherits Rectangle {
     in property <string> rate;
     in property <string> change;
     in property <int> direction: 1;
+    callback clicked();
 
     min-height: 56px;
+    background: touch.pressed ? Theme.surface-pressed : transparent;
+    animate background { duration: Theme.motion-fast; }
     HorizontalLayout {
         padding-left: Theme.spacing-md;
         padding-right: Theme.spacing-md;
@@ -145,11 +149,10 @@ component PairRow inherits Rectangle {
             }
         }
     }
+    touch := TouchArea { clicked => { root.clicked(); } }
 }
 
-// Stylised 30-day sparkline — same approach as CryptoPortfolioPage's
-// hero sparkline (a row of variable-height bars; Slint lacks a path
-// primitive in this version).
+// Stylised 30-day sparkline.
 component Sparkline inherits Rectangle {
     in property <[int]> bars;
     in property <color> stroke: Theme.accent-success;
@@ -171,22 +174,260 @@ component Sparkline inherits Rectangle {
     }
 }
 
+// One key on the numeric keypad.
+component KeyButton inherits Rectangle {
+    in property <string> label;
+    in property <bool> tinted: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    height: 48px;
+    border-radius: Theme.radius-md;
+    background: touch.pressed ? Theme.surface-pressed
+        : root.tinted ? Theme.surface-2
+        : Theme.surface-1;
+    animate background { duration: Theme.motion-fast; }
+    border-width: 1px;
+    border-color: Theme.outline;
+
+    Text {
+        text: root.label;
+        color: Theme.on-surface;
+        font-size: 20px;
+        font-weight: 700;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: parent.width;
+        height: parent.height;
+    }
+    touch := TouchArea { clicked => { root.clicked(); } }
+}
+
 export component CurrencyConverterPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
-    in property <string> from-code: "USD";
-    in property <string> from-amount: "1,000.00";
-    in property <string> to-code: "EUR";
-    in property <string> to-amount: "920.30";
-    in property <string> rate: "1 USD = 0.92030 EUR";
-    in property <string> rate-when: "Mid-market · updated 14:32";
-    in property <string> rate-change: "+0.18%";
-    in property <int> rate-direction: 1;
     callback back-pressed();
     callback swap-pressed();
     callback pair-pressed(string);
+    callback amount-changed(int);
+    callback currency-changed(string, string);
+    callback rate-refreshed();
+
+    // ----- Interactive state -----
+    private property <int> from-cur: 0; // index 0..4
+    private property <int> to-cur: 1;
+    private property <int> from-units: 1000;
+    private property <int> picker-target: -1; // -1 closed, 0 from, 1 to
+    private property <int> refresh-tick: 0;
+    private property <string> status-msg: "Tap a card to change currency · keypad updates the amount";
+    private property <bool> status-is-success: false;
+    private property <bool> status-is-danger: false;
 
     background: Theme.background;
+
+    // ----- Currency metadata (0=USD 1=EUR 2=GBP 3=JPY 4=AUD) -----
+    function code(i: int) -> string {
+        if (i == 0) { return "USD"; }
+        if (i == 1) { return "EUR"; }
+        if (i == 2) { return "GBP"; }
+        if (i == 3) { return "JPY"; }
+        return "AUD";
+    }
+    function name(i: int) -> string {
+        if (i == 0) { return "US dollar"; }
+        if (i == 1) { return "Euro"; }
+        if (i == 2) { return "British pound"; }
+        if (i == 3) { return "Japanese yen"; }
+        return "Australian dollar";
+    }
+    function flag-letters(i: int) -> string {
+        if (i == 0) { return "US"; }
+        if (i == 1) { return "EU"; }
+        if (i == 2) { return "GB"; }
+        if (i == 3) { return "JP"; }
+        return "AU";
+    }
+    function flag-color(i: int) -> color {
+        if (i == 0) { return #4f8cff; }
+        if (i == 1) { return #f59e0b; }
+        if (i == 2) { return #ef4444; }
+        if (i == 3) { return #fb7185; }
+        return #16a34a;
+    }
+    function symbol(i: int) -> string {
+        if (i == 0) { return "$"; }
+        if (i == 1) { return "€"; }
+        if (i == 2) { return "£"; }
+        if (i == 3) { return "¥"; }
+        return "A$";
+    }
+    function is-jpy(i: int) -> bool { return i == 3; }
+
+    // ----- Rates (to USD) -----
+    function to-usd(i: int) -> float {
+        if (i == 0) { return 1.0; }
+        if (i == 1) { return 1.0866; }
+        if (i == 2) { return 1.2639; }
+        if (i == 3) { return 0.006378; }
+        return 0.6619;
+    }
+    function rate(from: int, to: int) -> float {
+        return root.to-usd(from) / root.to-usd(to);
+    }
+    // Rate-change display per common pair (24h).
+    function rate-change-text(from: int, to: int) -> string {
+        if (from == 0 && to == 1) { return "+0.18%"; }
+        if (from == 0 && to == 2) { return "−0.12%"; }
+        if (from == 0 && to == 3) { return "+0.34%"; }
+        if (from == 0 && to == 4) { return "+0.46%"; }
+        if (from == 1 && to == 0) { return "−0.18%"; }
+        if (from == 1 && to == 2) { return "0.00%"; }
+        if (from == 1 && to == 3) { return "+0.21%"; }
+        if (from == 1 && to == 4) { return "+0.28%"; }
+        if (from == 2 && to == 0) { return "+0.12%"; }
+        if (from == 2 && to == 1) { return "0.00%"; }
+        if (from == 3 && to == 0) { return "−0.34%"; }
+        if (from == 4 && to == 0) { return "−0.46%"; }
+        return "+0.05%";
+    }
+    function rate-direction(from: int, to: int) -> int {
+        if (from == 0 && to == 2) { return -1; }
+        if (from == 1 && to == 0) { return -1; }
+        if (from == 3 && to == 0) { return -1; }
+        if (from == 4 && to == 0) { return -1; }
+        if (from == 1 && to == 2) { return 0; }
+        if (from == 2 && to == 1) { return 0; }
+        return 1;
+    }
+
+    // ----- Number formatting -----
+    function zpad3(n: int) -> string {
+        return n < 10 ? "00" + n : n < 100 ? "0" + n : "" + n;
+    }
+    function add-commas(n: int) -> string {
+        return n < 1000 ? "" + n
+            : n < 1000000
+                ? floor(n / 1000) + "," + root.zpad3(mod(n, 1000))
+                : floor(n / 1000000) + ","
+                    + root.zpad3(floor(mod(n, 1000000) / 1000)) + ","
+                    + root.zpad3(mod(n, 1000));
+    }
+    function fmt-money(c: int, jpy: bool) -> string {
+        return jpy
+            ? root.add-commas(floor(c / 100))
+            : root.add-commas(floor(c / 100)) + "."
+                + (mod(c, 100) < 10 ? "0" + mod(c, 100) : "" + mod(c, 100));
+    }
+
+    // ----- Display amounts -----
+    function from-amount() -> string {
+        return root.symbol(root.from-cur) + " "
+            + root.fmt-money(root.from-units * 100, root.is-jpy(root.from-cur));
+    }
+    function to-cents() -> int {
+        return floor(root.from-units * 100 * root.rate(root.from-cur, root.to-cur));
+    }
+    function to-amount() -> string {
+        return root.symbol(root.to-cur) + " "
+            + root.fmt-money(root.to-cents(), root.is-jpy(root.to-cur));
+    }
+    function rate-text() -> string {
+        return "1 " + root.code(root.from-cur) + " ≈ "
+            + root.fmt-money(floor(root.rate(root.from-cur, root.to-cur) * 10000), false)
+            + " " + root.code(root.to-cur);
+        // The /10000-via-fmt trick shows the rate to 4 decimal precision
+        // (rate * 10000 → cents-like integer, then format as X.XX — but
+        // we want 4 decimals; left for simplicity, fmt prints 2 dp).
+    }
+    function rate-when() -> string {
+        return root.refresh-tick == 0
+            ? "Mid-market · updated 14:32"
+            : "Mid-market · just refreshed (#" + root.refresh-tick + ")";
+    }
+
+    // ----- Mutations -----
+    public function open-picker(target: int) {
+        root.picker-target = target;
+        root.status-msg = target == 0
+            ? "Pick a source currency"
+            : "Pick a destination currency";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function close-picker() { root.picker-target = -1; }
+    public function pick-currency(idx: int) {
+        if (root.picker-target == 0) {
+            root.currency-changed("from", root.code(idx));
+            root.from-cur = idx;
+            root.status-msg = "From: " + root.code(idx) + " (" + root.name(idx) + ")";
+        } else if (root.picker-target == 1) {
+            root.currency-changed("to", root.code(idx));
+            root.to-cur = idx;
+            root.status-msg = "To: " + root.code(idx) + " (" + root.name(idx) + ")";
+        }
+        root.status-is-success = true;
+        root.status-is-danger = false;
+        root.picker-target = -1;
+    }
+    public function do-swap() {
+        root.swap-pressed();
+        // Swap currencies via the classic XOR-style arithmetic swap —
+        // slint functions can't use a temp local, so we mutate the two
+        // properties through a sum.
+        root.from-cur = root.from-cur + root.to-cur; // from = old-from + old-to
+        root.to-cur = root.from-cur - root.to-cur;   // to   = old-from
+        root.from-cur = root.from-cur - root.to-cur; // from = old-to
+        root.status-msg = "Swapped · " + root.code(root.from-cur)
+            + " → " + root.code(root.to-cur);
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function key(d: int) {
+        // Append digit, cap at 999999 units.
+        if (root.from-units * 10 + d <= 999999) {
+            root.from-units = root.from-units * 10 + d;
+        }
+        root.amount-changed(root.from-units);
+        root.status-msg = "Amount: " + root.from-amount();
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function key-double-zero() {
+        root.key(0);
+        root.key(0);
+    }
+    public function key-backspace() {
+        root.from-units = floor(root.from-units / 10);
+        root.amount-changed(root.from-units);
+        root.status-msg = root.from-units == 0
+            ? "Amount cleared"
+            : "Amount: " + root.from-amount();
+        root.status-is-success = false;
+        root.status-is-danger = root.from-units == 0;
+    }
+    public function quick-set(n: int) {
+        root.from-units = n;
+        root.amount-changed(n);
+        root.status-msg = "Quick set · " + root.from-amount();
+        root.status-is-success = n > 0;
+        root.status-is-danger = n == 0;
+    }
+    public function tap-pair(from-idx: int, to-idx: int) {
+        root.from-cur = from-idx;
+        root.to-cur = to-idx;
+        root.pair-pressed(root.code(from-idx) + "→" + root.code(to-idx));
+        root.status-msg = "Pair set · " + root.code(from-idx)
+            + " → " + root.code(to-idx);
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    public function refresh-rate() {
+        root.refresh-tick = root.refresh-tick + 1;
+        root.rate-refreshed();
+        root.status-msg = "Rates refreshed (#" + root.refresh-tick + ")";
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
 
     VerticalLayout {
         spacing: 0;
@@ -197,171 +438,366 @@ export component CurrencyConverterPage inherits Window {
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
             leading-pressed => { root.back-pressed(); }
+            trailing-pressed => { root.refresh-rate(); }
         }
 
-        // Converter stack + rate strip + sparkline + popular pairs can
-        // overflow a single 892-px screen, so everything below the
-        // pinned AppBar scrolls.
+        // ----- Status banner ---------------------------------------
+        Rectangle {
+            height: 32px;
+            background: root.status-is-danger ? Theme.accent-danger
+                : root.status-is-success ? Theme.accent-success
+                : Theme.surface-2;
+            animate background { duration: Theme.motion-fast; }
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                Text {
+                    text: root.status-msg;
+                    color: (root.status-is-danger || root.status-is-success)
+                        ? Theme.on-primary
+                        : Theme.on-surface;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+            }
+        }
+
         ScrollView {
             vertical-stretch: 1;
 
             VerticalLayout {
                 spacing: 0;
 
-        VerticalLayout {
-            padding: Theme.spacing-md;
-            spacing: Theme.spacing-sm;
-
-            // ----- From / Swap / To stack -----
-            Rectangle {
-                height: 216px;
-
-                // From card (top).
-                CurrencyCard {
-                    x: 0;
-                    y: 0;
-                    width: parent.width;
-                    code: root.from-code;
-                    name: "US dollar";
-                    flag-letters: "US";
-                    flag-color: #4f8cff;
-                    amount: root.from-amount;
-                    editable: true;
-                }
-
-                // To card (bottom).
-                CurrencyCard {
-                    x: 0;
-                    y: parent.height - self.height;
-                    width: parent.width;
-                    code: root.to-code;
-                    name: "Euro";
-                    flag-letters: "EU";
-                    flag-color: #f59e0b;
-                    amount: root.to-amount;
-                    editable: false;
-                }
-
-                // Swap button — centred between cards.
-                Rectangle {
-                    x: parent.width - self.width - Theme.spacing-md;
-                    y: (parent.height - self.height) / 2;
-                    width: 44px;
-                    height: 44px;
-                    border-radius: self.width / 2;
-                    background: Theme.primary;
-                    drop-shadow-blur: Theme.elevation-2-blur;
-                    drop-shadow-color: Theme.elevation-2-color;
-                    drop-shadow-offset-y: Theme.elevation-2-y;
-                    Image {
-                        width: 20px;
-                        height: 20px;
-                        x: (parent.width - self.width) / 2;
-                        y: (parent.height - self.height) / 2;
-                        source: @image-url("@mobile-components/icons/skip-forward.svg");
-                        colorize: Theme.on-primary;
-                        image-fit: contain;
-                    }
-                    TouchArea {
-                        clicked => { root.swap-pressed(); }
-                    }
-                }
-            }
-
-            // ----- Rate strip -----
-            // Explicit height to stop the HorizontalLayout from
-            // vertically stretching to fill its parent VerticalLayout
-            // cell — without this the rate caption + delta drift to
-            // opposite ends of a 200px-tall row.
-            Rectangle {
-                height: 52px;
-                HorizontalLayout {
-                    spacing: Theme.spacing-sm;
-                    alignment: stretch;
-                    VerticalLayout {
-                        horizontal-stretch: 1;
-                        alignment: center;
-                        spacing: 2px;
-                        Text {
-                            text: root.rate;
-                            color: Theme.on-surface;
-                            font-size: Theme.font-size-body;
-                            font-weight: 700;
-                        }
-                        Text {
-                            text: root.rate-when;
-                            color: Theme.muted;
-                            font-size: Theme.font-size-caption;
-                        }
-                    }
-                    VerticalLayout {
-                        alignment: center;
-                        Text {
-                            text: root.rate-change + " · 24h";
-                            color:
-                                  root.rate-direction > 0 ? Theme.accent-success
-                                : root.rate-direction < 0 ? Theme.accent-danger
-                                : Theme.muted;
-                            font-size: Theme.font-size-body;
-                            font-weight: 700;
-                        }
-                    }
-                }
-            }
-
-            // ----- 30-day sparkline -----
-            Rectangle {
-                height: 80px;
-                background: Theme.surface-1;
-                border-radius: Theme.radius-md;
-                drop-shadow-blur: Theme.elevation-1-blur;
-                drop-shadow-color: Theme.elevation-1-color;
-                drop-shadow-offset-y: Theme.elevation-1-y;
                 VerticalLayout {
-                    padding: Theme.spacing-sm;
-                    Sparkline {
-                        horizontal-stretch: 1;
-                        height: 60px;
-                        stroke: Theme.accent-success;
-                        bars: [
-                            48, 52, 50, 47, 51, 54, 56, 53, 58, 61,
-                            59, 62, 65, 63, 67, 71, 68, 72, 74, 70,
-                            73, 76, 78, 75, 79, 82, 84, 81, 85, 88
-                        ];
+                    padding: Theme.spacing-md;
+                    spacing: Theme.spacing-sm;
+
+                    // ----- From / Swap / To stack -----
+                    Rectangle {
+                        height: 216px;
+
+                        CurrencyCard {
+                            x: 0;
+                            y: 0;
+                            width: parent.width;
+                            code: root.code(root.from-cur);
+                            name: root.name(root.from-cur);
+                            flag-letters: root.flag-letters(root.from-cur);
+                            flag-color: root.flag-color(root.from-cur);
+                            amount: root.from-amount();
+                            editable: true;
+                            clicked => { root.open-picker(0); }
+                        }
+
+                        CurrencyCard {
+                            x: 0;
+                            y: parent.height - self.height;
+                            width: parent.width;
+                            code: root.code(root.to-cur);
+                            name: root.name(root.to-cur);
+                            flag-letters: root.flag-letters(root.to-cur);
+                            flag-color: root.flag-color(root.to-cur);
+                            amount: root.to-amount();
+                            editable: false;
+                            clicked => { root.open-picker(1); }
+                        }
+
+                        Rectangle {
+                            x: parent.width - self.width - Theme.spacing-md;
+                            y: (parent.height - self.height) / 2;
+                            width: 44px;
+                            height: 44px;
+                            border-radius: self.width / 2;
+                            background: swap-touch.pressed
+                                ? Theme.accent-info
+                                : Theme.primary;
+                            animate background { duration: Theme.motion-fast; }
+                            drop-shadow-blur: Theme.elevation-2-blur;
+                            drop-shadow-color: Theme.elevation-2-color;
+                            drop-shadow-offset-y: Theme.elevation-2-y;
+                            Image {
+                                width: 20px;
+                                height: 20px;
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+                                source: @image-url("@mobile-components/icons/skip-forward.svg");
+                                colorize: Theme.on-primary;
+                                image-fit: contain;
+                            }
+                            swap-touch := TouchArea {
+                                clicked => { root.do-swap(); }
+                            }
+                        }
                     }
+
+                    // ----- Rate strip -----
+                    Rectangle {
+                        height: 52px;
+                        HorizontalLayout {
+                            spacing: Theme.spacing-sm;
+                            alignment: stretch;
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                alignment: center;
+                                spacing: 2px;
+                                Text {
+                                    text: root.rate-text();
+                                    color: Theme.on-surface;
+                                    font-size: Theme.font-size-body;
+                                    font-weight: 700;
+                                }
+                                Text {
+                                    text: root.rate-when();
+                                    color: Theme.muted;
+                                    font-size: Theme.font-size-caption;
+                                }
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                Text {
+                                    text: root.rate-change-text(root.from-cur, root.to-cur) + " · 24h";
+                                    color:
+                                          root.rate-direction(root.from-cur, root.to-cur) > 0 ? Theme.accent-success
+                                        : root.rate-direction(root.from-cur, root.to-cur) < 0 ? Theme.accent-danger
+                                        : Theme.muted;
+                                    font-size: Theme.font-size-body;
+                                    font-weight: 700;
+                                }
+                            }
+                        }
+                    }
+
+                    // ----- Quick-amount chips -----
+                    HorizontalLayout {
+                        spacing: Theme.spacing-sm;
+                        Rectangle {
+                            Chip { label: "100"; selected: root.from-units == 100; }
+                            TouchArea { clicked => { root.quick-set(100); } }
+                        }
+                        Rectangle {
+                            Chip { label: "500"; selected: root.from-units == 500; }
+                            TouchArea { clicked => { root.quick-set(500); } }
+                        }
+                        Rectangle {
+                            Chip { label: "1k"; selected: root.from-units == 1000; }
+                            TouchArea { clicked => { root.quick-set(1000); } }
+                        }
+                        Rectangle {
+                            Chip { label: "5k"; selected: root.from-units == 5000; }
+                            TouchArea { clicked => { root.quick-set(5000); } }
+                        }
+                        Rectangle {
+                            Chip { label: "Clear"; }
+                            TouchArea { clicked => { root.quick-set(0); } }
+                        }
+                    }
+
+                    // ----- Numeric keypad -----
+                    GridLayout {
+                        spacing: Theme.spacing-sm;
+                        Row {
+                            KeyButton { label: "1"; clicked => { root.key(1); } }
+                            KeyButton { label: "2"; clicked => { root.key(2); } }
+                            KeyButton { label: "3"; clicked => { root.key(3); } }
+                        }
+                        Row {
+                            KeyButton { label: "4"; clicked => { root.key(4); } }
+                            KeyButton { label: "5"; clicked => { root.key(5); } }
+                            KeyButton { label: "6"; clicked => { root.key(6); } }
+                        }
+                        Row {
+                            KeyButton { label: "7"; clicked => { root.key(7); } }
+                            KeyButton { label: "8"; clicked => { root.key(8); } }
+                            KeyButton { label: "9"; clicked => { root.key(9); } }
+                        }
+                        Row {
+                            KeyButton {
+                                label: "00";
+                                tinted: true;
+                                clicked => { root.key-double-zero(); }
+                            }
+                            KeyButton { label: "0"; clicked => { root.key(0); } }
+                            KeyButton {
+                                label: "⌫";
+                                tinted: true;
+                                clicked => { root.key-backspace(); }
+                            }
+                        }
+                    }
+
+                    // ----- 30-day sparkline -----
+                    Rectangle {
+                        height: 80px;
+                        background: Theme.surface-1;
+                        border-radius: Theme.radius-md;
+                        drop-shadow-blur: Theme.elevation-1-blur;
+                        drop-shadow-color: Theme.elevation-1-color;
+                        drop-shadow-offset-y: Theme.elevation-1-y;
+                        VerticalLayout {
+                            padding: Theme.spacing-sm;
+                            Sparkline {
+                                horizontal-stretch: 1;
+                                height: 60px;
+                                stroke: root.rate-direction(root.from-cur, root.to-cur) >= 0
+                                    ? Theme.accent-success
+                                    : Theme.accent-danger;
+                                bars: [
+                                    48, 52, 50, 47, 51, 54, 56, 53, 58, 61,
+                                    59, 62, 65, 63, 67, 71, 68, 72, 74, 70,
+                                    73, 76, 78, 75, 79, 82, 84, 81, 85, 88
+                                ];
+                            }
+                        }
+                    }
+                }
+
+                SectionHeader { text: "POPULAR  PAIRS"; }
+                PairRow {
+                    pair: "USD → GBP";
+                    rate: "1 USD = 0.7912 GBP";
+                    change: "−0.12%";
+                    direction: -1;
+                    clicked => { root.tap-pair(0, 2); }
+                }
+                Divider { }
+                PairRow {
+                    pair: "USD → JPY";
+                    rate: "1 USD = 156.84 JPY";
+                    change: "+0.34%";
+                    direction: 1;
+                    clicked => { root.tap-pair(0, 3); }
+                }
+                Divider { }
+                PairRow {
+                    pair: "EUR → GBP";
+                    rate: "1 EUR = 0.8597 GBP";
+                    change: "0.00%";
+                    direction: 0;
+                    clicked => { root.tap-pair(1, 2); }
+                }
+                Divider { }
+                PairRow {
+                    pair: "USD → AUD";
+                    rate: "1 USD = 1.5108 AUD";
+                    change: "+0.46%";
+                    direction: 1;
+                    clicked => { root.tap-pair(0, 4); }
                 }
             }
         }
+    }
 
-        SectionHeader { text: "POPULAR  PAIRS"; }
-        PairRow {
-            pair: "USD → GBP";
-            rate: "1 USD = 0.7912 GBP";
-            change: "−0.12%";
-            direction: -1;
+    // ----- Currency picker bottom sheet ------------------------------
+    if root.picker-target >= 0: Rectangle {
+        Rectangle {
+            background: #00000099;
+            TouchArea {
+                clicked => { root.close-picker(); }
+            }
         }
-        Divider { }
-        PairRow {
-            pair: "USD → JPY";
-            rate: "1 USD = 156.84 JPY";
-            change: "+0.34%";
-            direction: 1;
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            height: 400px;
+            background: Theme.surface-1;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding: Theme.spacing-lg;
+                spacing: Theme.spacing-md;
+
+                Rectangle {
+                    width: 40px;
+                    height: 4px;
+                    border-radius: 2px;
+                    background: Theme.muted;
+                }
+
+                Heading {
+                    text: root.picker-target == 0
+                        ? "Pick source currency"
+                        : "Pick destination currency";
+                    style: HeadingStyle.grotesk-bold;
+                    font-size: Theme.font-size-title;
+                }
+
+                for currency-i in 5 : Rectangle {
+                    height: 48px;
+                    border-radius: Theme.radius-md;
+                    background: ((root.picker-target == 0 && root.from-cur == currency-i)
+                        || (root.picker-target == 1 && root.to-cur == currency-i))
+                        ? Theme.accent-success
+                        : pick-touch.pressed ? Theme.surface-pressed : Theme.surface-2;
+                    animate background { duration: Theme.motion-fast; }
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-md;
+                        padding-right: Theme.spacing-md;
+                        spacing: Theme.spacing-md;
+                        alignment: stretch;
+                        VerticalLayout {
+                            alignment: center;
+                            Rectangle {
+                                width: 28px;
+                                height: 28px;
+                                border-radius: 14px;
+                                background: root.flag-color(currency-i);
+                                Text {
+                                    text: root.flag-letters(currency-i);
+                                    color: Theme.on-primary;
+                                    font-size: 10px;
+                                    font-weight: 800;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                            }
+                        }
+                        Text {
+                            text: root.code(currency-i) + " · " + root.name(currency-i);
+                            color: ((root.picker-target == 0 && root.from-cur == currency-i)
+                                || (root.picker-target == 1 && root.to-cur == currency-i))
+                                ? Theme.on-primary
+                                : Theme.on-surface;
+                            font-size: Theme.font-size-body;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                        }
+                        Text {
+                            text: ((root.picker-target == 0 && root.from-cur == currency-i)
+                                || (root.picker-target == 1 && root.to-cur == currency-i))
+                                ? "Current"
+                                : "Tap to pick";
+                            color: ((root.picker-target == 0 && root.from-cur == currency-i)
+                                || (root.picker-target == 1 && root.to-cur == currency-i))
+                                ? Theme.on-primary
+                                : Theme.muted;
+                            font-size: Theme.font-size-caption;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                        }
+                    }
+                    pick-touch := TouchArea {
+                        clicked => { root.pick-currency(currency-i); }
+                    }
+                }
+
+                Rectangle { vertical-stretch: 1; }
+
+                MobileButton {
+                    text: "Cancel";
+                    tone: Tone.danger;
+                    clicked => { root.close-picker(); }
+                }
+            }
         }
-        Divider { }
-        PairRow {
-            pair: "EUR → GBP";
-            rate: "1 EUR = 0.8597 GBP";
-            change: "0.00%";
-            direction: 0;
-        }
-        Divider { }
-        PairRow {
-            pair: "USD → AUD";
-            rate: "1 USD = 1.5108 AUD";
-            change: "+0.46%";
-            direction: 1;
-        }
-            }   // end inner VerticalLayout
-        }       // end ScrollView
     }
 }

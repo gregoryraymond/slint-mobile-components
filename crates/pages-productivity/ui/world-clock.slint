@@ -1,17 +1,5 @@
 // WorldClockPage
 // =====================================================================
-//
-// Multi-timezone clock — iOS Clock / Sundial-style. Demonstrates:
-//
-//   - A "your location" hero card with big current time + date.
-//   - A list of pinned timezones, each row carrying:
-//       - day/night sun-or-moon glyph (tone-tinted)
-//       - city name + offset chip
-//       - big current time on the right + same/yesterday/tomorrow label
-//   - A 24-hour day strip beneath the hero showing approximate day/
-//     night windows across the time zones in view (each row is a
-//     stripe with a sun-arc shaded portion).
-//   - FAB to add a city.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
@@ -19,57 +7,60 @@ import { SectionHeader } from "@mobile-components/section-header.slint";
 import { Divider } from "@mobile-components/divider.slint";
 import { Fab } from "@mobile-components/button.slint";
 import { HeadingStyle } from "@mobile-components/heading.slint";
+import { ScrollView } from "std-widgets.slint";
 
-// One timezone row.
 component ClockRow inherits Rectangle {
     in property <string> city;
     in property <string> offset;
     in property <string> time;
-    in property <string> day-label;     // "Today" / "Yesterday" / "Tomorrow"
-    in property <bool> day-time: true;  // true = sun glyph, false = moon
-    in property <Tone> tone: Tone.default;
+    in property <string> day-label;
+    in property <bool> day-time: true;
+    in property <bool> pinned: false;
+    in property <bool> primary: false;
+    callback row-clicked();
+    callback pin-clicked();
+    callback remove-clicked();
 
     horizontal-stretch: 1;
-    min-height: 72px;
+    min-height: 76px;
+    background: root.primary ? Theme.accent-info.with-alpha(0.10) : (ta.has-hover ? Theme.surface-2 : transparent);
+
+    ta := TouchArea {
+        clicked => {
+            root.row-clicked();
+        }
+    }
 
     HorizontalLayout {
         padding: Theme.spacing-md;
         spacing: Theme.spacing-md;
         alignment: stretch;
 
-        // Sun / moon glyph.
         VerticalLayout {
             alignment: center;
             Rectangle {
                 width: 36px;
                 height: 36px;
                 border-radius: self.width / 2;
-                background:
-                      root.day-time ? Theme.accent-warning
-                    : Theme.surface-2;
+                background: root.day-time ? Theme.accent-warning : Theme.surface-2;
                 Image {
                     width: 18px;
                     height: 18px;
                     x: (parent.width - self.width) / 2;
                     y: (parent.height - self.height) / 2;
-                    source:
-                          root.day-time ? @image-url("@mobile-components/icons/star.svg")
-                        : @image-url("@mobile-components/icons/heart.svg");
-                    colorize:
-                          root.day-time ? Theme.on-primary
-                        : Theme.muted;
+                    source: root.day-time ? @image-url("@mobile-components/icons/star.svg") : @image-url("@mobile-components/icons/heart.svg");
+                    colorize: root.day-time ? Theme.on-primary : Theme.muted;
                     image-fit: contain;
                 }
             }
         }
 
-        // City + offset.
         VerticalLayout {
             horizontal-stretch: 1;
             alignment: center;
             spacing: Theme.spacing-xs;
             Text {
-                text: root.city;
+                text: (root.pinned ? "★ " : "") + root.city + (root.primary ? " · HERE" : "");
                 color: Theme.on-surface;
                 font-size: Theme.font-size-body-large;
                 font-weight: 600;
@@ -102,7 +93,6 @@ component ClockRow inherits Rectangle {
             }
         }
 
-        // Current time on the right.
         VerticalLayout {
             alignment: center;
             Text {
@@ -114,14 +104,58 @@ component ClockRow inherits Rectangle {
                 horizontal-alignment: right;
             }
         }
+        // Pin / Remove side buttons.
+        VerticalLayout {
+            alignment: center;
+            spacing: 4px;
+            Rectangle {
+                width: 28px;
+                height: 28px;
+                border-radius: 14px;
+                background: root.pinned ? Theme.accent-warning.with-alpha(0.22) : Theme.surface-2;
+                Text {
+                    text: "★";
+                    color: root.pinned ? Theme.accent-warning : Theme.muted;
+                    font-size: 12px;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+                TouchArea {
+                    clicked => {
+                        root.pin-clicked();
+                    }
+                }
+            }
+            Rectangle {
+                width: 28px;
+                height: 28px;
+                border-radius: 14px;
+                background: Theme.accent-danger.with-alpha(0.22);
+                Text {
+                    text: "✕";
+                    color: Theme.accent-danger;
+                    font-size: 12px;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+                TouchArea {
+                    clicked => {
+                        root.remove-clicked();
+                    }
+                }
+            }
+        }
     }
 }
 
-// A 24-hour day strip — visualises which portion of the day each city
-// is currently in (sunrise → sunset shaded warm, night shaded dark).
 component DayStrip inherits Rectangle {
     in property <string> city;
-    // 0..24 sunrise/sunset hours, 0..24 current-position-hour.
     in property <float> sunrise: 7.0;
     in property <float> sunset: 19.0;
     in property <float> now: 12.0;
@@ -151,7 +185,6 @@ component DayStrip inherits Rectangle {
                 background: @linear-gradient(90deg, #1f2937 0%, #1f2937 100%);
                 clip: true;
 
-                // Daylight stripe (sunrise → sunset).
                 Rectangle {
                     x: parent.width * (root.sunrise / 24);
                     y: 0;
@@ -160,14 +193,45 @@ component DayStrip inherits Rectangle {
                     background: @linear-gradient(90deg, #f59e0b 0%, #fde68a 50%, #f59e0b 100%);
                 }
 
-                // Current-time marker.
                 Rectangle {
                     x: parent.width * (root.now / 24) - 1px;
                     y: -3px;
                     width: 2px;
                     height: parent.height + 6px;
                     background: Theme.accent-info;
+                    animate x { duration: Theme.motion-fast; }
                 }
+            }
+        }
+    }
+}
+
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.destructive ? Theme.accent-danger : Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
             }
         }
     }
@@ -176,11 +240,136 @@ component DayStrip inherits Rectangle {
 export component WorldClockPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
-    in property <string> here-city: "San Francisco";
-    in property <string> here-time: "14:32";
-    in property <string> here-date: "Wednesday, May 14";
+
+    in-out property <int> here-idx: 0; // 0 SF, 1 Lisbon, 2 London, 3 Tokyo, 4 Sydney, 5 NYC
+    in-out property <int> here-mins: 872; // 14:32 in SF baseline minutes
+    in-out property <bool> use-24: true;
+    in-out property <bool> show-seconds: false;
+    in-out property <int> seconds: 0;
+    in-out property <bool> running: true;
+    in-out property <bool> pin0: false;
+    in-out property <bool> pin1: false;
+    in-out property <bool> pin2: false;
+    in-out property <bool> pin3: false;
+    in-out property <bool> pin4: false;
+    in-out property <bool> removed0: false;
+    in-out property <bool> removed1: false;
+    in-out property <bool> removed2: false;
+    in-out property <bool> removed3: false;
+    in-out property <bool> removed4: false;
+    in-out property <int> new-cities: 0;
+    in-out property <bool> sheet-open: false;
+    in-out property <bool> confirm-reset: false;
+    in-out property <string> status-msg: "";
+    in-out property <bool> status-success: false;
+    in-out property <bool> status-danger: false;
+
     callback back-pressed();
     callback add-city-pressed();
+
+    function city-name(i: int) -> string {
+        return i == 0 ? "San Francisco" : (i == 1 ? "Lisbon" : (i == 2 ? "London" : (i == 3 ? "Tokyo" : (i == 4 ? "Sydney" : "New York"))));
+    }
+    function city-offset-min(i: int) -> int {
+        // Minutes offset relative to San Francisco baseline (GMT-7 PDT).
+        return i == 0 ? 0 : (i == 1 ? 480 : (i == 2 ? 420 : (i == 3 ? 960 : (i == 4 ? 1020 : 180))));
+    }
+    function city-gmt(i: int) -> string {
+        return i == 0 ? "GMT−7" : (i == 1 ? "GMT+1" : (i == 2 ? "GMT+0" : (i == 3 ? "GMT+9" : (i == 4 ? "GMT+10" : "GMT−4"))));
+    }
+    function city-mins(i: int) -> int {
+        return mod(root.here-mins + root.city-offset-min(i), 1440);
+    }
+    function city-day-delta(i: int) -> int {
+        // 0 today, 1 tomorrow.
+        return floor((root.here-mins + root.city-offset-min(i)) / 1440);
+    }
+    function day-label-of(i: int) -> string {
+        return root.city-day-delta(i) == 1 ? "Tomorrow" : "Today";
+    }
+    function day-time-of(i: int) -> bool {
+        return root.city-mins(i) >= 360 && root.city-mins(i) < 1140; // 06:00..19:00
+    }
+    function pad2(n: int) -> string {
+        return n < 10 ? "0" + n : "" + n;
+    }
+    function fmt-time(m: int) -> string {
+        if (root.use-24) {
+            return root.pad2(floor(m / 60)) + ":" + root.pad2(mod(m, 60)) + (root.show-seconds ? ":" + root.pad2(root.seconds) : "");
+        }
+        // 12-hour with AM/PM.
+        return ((mod(floor(m / 60) + 11, 12) + 1) + ":" + root.pad2(mod(m, 60)) + (floor(m / 60) < 12 ? " AM" : " PM"));
+    }
+    function here-time() -> string {
+        return root.fmt-time(root.city-mins(root.here-idx));
+    }
+    function here-date() -> string {
+        return root.city-day-delta(root.here-idx) == 1 ? "Thursday, May 15" : "Wednesday, May 14";
+    }
+    function set-status(m: string, ok: bool, bad: bool) {
+        root.status-msg = m;
+        root.status-success = ok;
+        root.status-danger = bad;
+    }
+    function set-here(i: int) {
+        root.here-idx = i;
+        root.set-status("HERE → " + root.city-name(i), true, false);
+    }
+    function toggle-pin(i: int) {
+        if (i == 0) {
+            root.pin0 = !root.pin0;
+            root.set-status(root.pin0 ? "Pinned " + root.city-name(1) : "Unpinned", root.pin0, false);
+        }
+        if (i == 1) {
+            root.pin1 = !root.pin1;
+            root.set-status(root.pin1 ? "Pinned " + root.city-name(2) : "Unpinned", root.pin1, false);
+        }
+        if (i == 2) {
+            root.pin2 = !root.pin2;
+            root.set-status(root.pin2 ? "Pinned " + root.city-name(3) : "Unpinned", root.pin2, false);
+        }
+        if (i == 3) {
+            root.pin3 = !root.pin3;
+            root.set-status(root.pin3 ? "Pinned " + root.city-name(4) : "Unpinned", root.pin3, false);
+        }
+        if (i == 4) {
+            root.pin4 = !root.pin4;
+            root.set-status(root.pin4 ? "Pinned " + root.city-name(5) : "Unpinned", root.pin4, false);
+        }
+    }
+    function toggle-removed(i: int) {
+        if (i == 0) {
+            root.removed0 = !root.removed0;
+            root.set-status(root.removed0 ? "Removed " + root.city-name(1) : "Restored", !root.removed0, root.removed0);
+        }
+        if (i == 1) {
+            root.removed1 = !root.removed1;
+            root.set-status(root.removed1 ? "Removed " + root.city-name(2) : "Restored", !root.removed1, root.removed1);
+        }
+        if (i == 2) {
+            root.removed2 = !root.removed2;
+            root.set-status(root.removed2 ? "Removed " + root.city-name(3) : "Restored", !root.removed2, root.removed2);
+        }
+        if (i == 3) {
+            root.removed3 = !root.removed3;
+            root.set-status(root.removed3 ? "Removed " + root.city-name(4) : "Restored", !root.removed3, root.removed3);
+        }
+        if (i == 4) {
+            root.removed4 = !root.removed4;
+            root.set-status(root.removed4 ? "Removed " + root.city-name(5) : "Restored", !root.removed4, root.removed4);
+        }
+    }
+
+    tick := Timer {
+        interval: 1s;
+        running: root.running;
+        triggered => {
+            root.seconds = mod(root.seconds + 1, 60);
+            if (root.seconds == 0) {
+                root.here-mins = mod(root.here-mins + 1, 2880);
+            }
+        }
+    }
 
     background: Theme.background;
 
@@ -192,109 +381,460 @@ export component WorldClockPage inherits Window {
             title-style: HeadingStyle.plex-medium;
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
-            leading-pressed => { root.back-pressed(); }
+            leading-pressed => {
+                root.back-pressed();
+            }
+            trailing-pressed => {
+                root.sheet-open = true;
+            }
         }
 
-        // ----- Here hero -----
-        VerticalLayout {
-            padding: Theme.spacing-lg;
-            padding-bottom: Theme.spacing-md;
-            spacing: 2px;
-            alignment: center;
+        if !root.status-msg.is-empty: Rectangle {
+            height: 28px;
+            background: root.status-success ? Theme.accent-success.with-alpha(0.16) : (root.status-danger ? Theme.accent-danger.with-alpha(0.16) : Theme.surface-2);
             HorizontalLayout {
                 alignment: center;
-                Text {
-                    text: "HERE · " + root.here-city;
-                    color: Theme.muted;
-                    font-size: 10px;
-                    font-weight: 800;
-                    letter-spacing: 0.5px;
-                }
-            }
-            HorizontalLayout {
-                alignment: center;
-                Text {
-                    text: root.here-time;
-                    color: Theme.on-background;
-                    font-family: "Fraunces 9pt";
-                    font-size: 80px;
-                    font-weight: 400;
-                }
-            }
-            HorizontalLayout {
-                alignment: center;
-                Text {
-                    text: root.here-date;
-                    color: Theme.muted;
-                    font-size: Theme.font-size-body;
-                    font-weight: 600;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.status-msg;
+                        color: root.status-success ? Theme.accent-success : (root.status-danger ? Theme.accent-danger : Theme.on-surface);
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                    }
                 }
             }
         }
 
-        // ----- Day-strip cluster -----
-        VerticalLayout {
-            padding-left: Theme.spacing-md;
-            padding-right: Theme.spacing-md;
-            spacing: Theme.spacing-xs;
-            DayStrip { city: "SFO"; sunrise: 6.3; sunset: 20.2; now: 14.5; }
-            DayStrip { city: "LIS"; sunrise: 6.7; sunset: 20.6; now: 22.5; }
-            DayStrip { city: "TYO"; sunrise: 4.6; sunset: 18.7; now: 6.5; }
-            DayStrip { city: "SYD"; sunrise: 6.5; sunset: 17.1; now: 7.5; }
-        }
+        ScrollView {
+            vertical-stretch: 1;
+            VerticalLayout {
+                spacing: 0;
 
-        SectionHeader { text: "FAVOURITES"; }
+                // Here hero.
+                VerticalLayout {
+                    padding: Theme.spacing-lg;
+                    padding-bottom: Theme.spacing-md;
+                    spacing: 2px;
+                    alignment: center;
+                    HorizontalLayout {
+                        alignment: center;
+                        Text {
+                            text: "HERE · " + root.city-name(root.here-idx);
+                            color: Theme.muted;
+                            font-size: 10px;
+                            font-weight: 800;
+                            letter-spacing: 0.5px;
+                        }
+                    }
+                    HorizontalLayout {
+                        alignment: center;
+                        Text {
+                            text: root.here-time();
+                            color: Theme.on-background;
+                            font-family: "Fraunces 9pt";
+                            font-size: 80px;
+                            font-weight: 400;
+                        }
+                    }
+                    HorizontalLayout {
+                        alignment: center;
+                        Text {
+                            text: root.here-date();
+                            color: Theme.muted;
+                            font-size: Theme.font-size-body;
+                            font-weight: 600;
+                        }
+                    }
+                    HorizontalLayout {
+                        alignment: center;
+                        spacing: Theme.spacing-sm;
+                        padding-top: Theme.spacing-xs;
+                        Rectangle {
+                            horizontal-stretch: 0;
+                            height: 28px;
+                            border-radius: 14px;
+                            background: Theme.surface-2;
+                            HorizontalLayout {
+                                padding-left: Theme.spacing-sm;
+                                padding-right: Theme.spacing-sm;
+                                VerticalLayout {
+                                    alignment: center;
+                                    Text {
+                                        text: root.use-24 ? "24H" : "12H";
+                                        color: Theme.on-surface;
+                                        font-size: Theme.font-size-caption;
+                                        font-weight: 800;
+                                    }
+                                }
+                            }
+                            TouchArea {
+                                clicked => {
+                                    root.use-24 = !root.use-24;
+                                    root.set-status("Format: " + (root.use-24 ? "24-hour" : "12-hour"), true, false);
+                                }
+                            }
+                        }
+                        Rectangle {
+                            horizontal-stretch: 0;
+                            height: 28px;
+                            border-radius: 14px;
+                            background: root.show-seconds ? Theme.accent-info.with-alpha(0.22) : Theme.surface-2;
+                            HorizontalLayout {
+                                padding-left: Theme.spacing-sm;
+                                padding-right: Theme.spacing-sm;
+                                VerticalLayout {
+                                    alignment: center;
+                                    Text {
+                                        text: root.show-seconds ? "Seconds on" : "Seconds off";
+                                        color: root.show-seconds ? Theme.accent-info : Theme.on-surface;
+                                        font-size: Theme.font-size-caption;
+                                        font-weight: 800;
+                                    }
+                                }
+                            }
+                            TouchArea {
+                                clicked => {
+                                    root.show-seconds = !root.show-seconds;
+                                    root.set-status(root.show-seconds ? "Seconds on" : "Seconds off", root.show-seconds, false);
+                                }
+                            }
+                        }
+                        Rectangle {
+                            horizontal-stretch: 0;
+                            height: 28px;
+                            border-radius: 14px;
+                            background: root.running ? Theme.accent-success.with-alpha(0.22) : Theme.surface-2;
+                            HorizontalLayout {
+                                padding-left: Theme.spacing-sm;
+                                padding-right: Theme.spacing-sm;
+                                VerticalLayout {
+                                    alignment: center;
+                                    Text {
+                                        text: root.running ? "Live" : "Frozen";
+                                        color: root.running ? Theme.accent-success : Theme.muted;
+                                        font-size: Theme.font-size-caption;
+                                        font-weight: 800;
+                                    }
+                                }
+                            }
+                            TouchArea {
+                                clicked => {
+                                    root.running = !root.running;
+                                    root.set-status(root.running ? "Live" : "Frozen", root.running, !root.running);
+                                }
+                            }
+                        }
+                    }
+                }
 
-        ClockRow {
-            city: "Lisbon";
-            offset: "GMT+1";
-            time: "22:32";
-            day-label: "Today";
-            day-time: false;
-            tone: Tone.info;
-        }
-        Divider { }
-        ClockRow {
-            city: "London";
-            offset: "GMT+0";
-            time: "21:32";
-            day-label: "Today";
-            day-time: false;
-        }
-        Divider { }
-        ClockRow {
-            city: "Tokyo";
-            offset: "GMT+9";
-            time: "06:32";
-            day-label: "Tomorrow";
-            day-time: true;
-            tone: Tone.warning;
-        }
-        Divider { }
-        ClockRow {
-            city: "Sydney";
-            offset: "GMT+10";
-            time: "07:32";
-            day-label: "Tomorrow";
-            day-time: true;
-            tone: Tone.warning;
-        }
-        Divider { }
-        ClockRow {
-            city: "New York";
-            offset: "GMT−4";
-            time: "17:32";
-            day-label: "Today";
-            day-time: true;
-        }
+                // Day-strip cluster.
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-bottom: Theme.spacing-md;
+                    spacing: Theme.spacing-xs;
+                    DayStrip {
+                        city: "SFO";
+                        sunrise: 6.3;
+                        sunset: 20.2;
+                        now: root.city-mins(0) / 60.0;
+                    }
+                    DayStrip {
+                        city: "LIS";
+                        sunrise: 6.7;
+                        sunset: 20.6;
+                        now: root.city-mins(1) / 60.0;
+                    }
+                    DayStrip {
+                        city: "TYO";
+                        sunrise: 4.6;
+                        sunset: 18.7;
+                        now: root.city-mins(3) / 60.0;
+                    }
+                    DayStrip {
+                        city: "SYD";
+                        sunrise: 6.5;
+                        sunset: 17.1;
+                        now: root.city-mins(4) / 60.0;
+                    }
+                }
 
-        Rectangle { vertical-stretch: 1; }
+                SectionHeader {
+                    text: "FAVOURITES";
+                }
+
+                if !root.removed0: ClockRow {
+                    city: root.city-name(1);
+                    offset: root.city-gmt(1);
+                    time: root.fmt-time(root.city-mins(1));
+                    day-label: root.day-label-of(1);
+                    day-time: root.day-time-of(1);
+                    pinned: root.pin0;
+                    primary: root.here-idx == 1;
+                    row-clicked => {
+                        root.set-here(1);
+                    }
+                    pin-clicked => {
+                        root.toggle-pin(0);
+                    }
+                    remove-clicked => {
+                        root.toggle-removed(0);
+                    }
+                }
+                if !root.removed0: Divider { }
+
+                if !root.removed1: ClockRow {
+                    city: root.city-name(2);
+                    offset: root.city-gmt(2);
+                    time: root.fmt-time(root.city-mins(2));
+                    day-label: root.day-label-of(2);
+                    day-time: root.day-time-of(2);
+                    pinned: root.pin1;
+                    primary: root.here-idx == 2;
+                    row-clicked => {
+                        root.set-here(2);
+                    }
+                    pin-clicked => {
+                        root.toggle-pin(1);
+                    }
+                    remove-clicked => {
+                        root.toggle-removed(1);
+                    }
+                }
+                if !root.removed1: Divider { }
+
+                if !root.removed2: ClockRow {
+                    city: root.city-name(3);
+                    offset: root.city-gmt(3);
+                    time: root.fmt-time(root.city-mins(3));
+                    day-label: root.day-label-of(3);
+                    day-time: root.day-time-of(3);
+                    pinned: root.pin2;
+                    primary: root.here-idx == 3;
+                    row-clicked => {
+                        root.set-here(3);
+                    }
+                    pin-clicked => {
+                        root.toggle-pin(2);
+                    }
+                    remove-clicked => {
+                        root.toggle-removed(2);
+                    }
+                }
+                if !root.removed2: Divider { }
+
+                if !root.removed3: ClockRow {
+                    city: root.city-name(4);
+                    offset: root.city-gmt(4);
+                    time: root.fmt-time(root.city-mins(4));
+                    day-label: root.day-label-of(4);
+                    day-time: root.day-time-of(4);
+                    pinned: root.pin3;
+                    primary: root.here-idx == 4;
+                    row-clicked => {
+                        root.set-here(4);
+                    }
+                    pin-clicked => {
+                        root.toggle-pin(3);
+                    }
+                    remove-clicked => {
+                        root.toggle-removed(3);
+                    }
+                }
+                if !root.removed3: Divider { }
+
+                if !root.removed4: ClockRow {
+                    city: root.city-name(5);
+                    offset: root.city-gmt(5);
+                    time: root.fmt-time(root.city-mins(5));
+                    day-label: root.day-label-of(5);
+                    day-time: root.day-time-of(5);
+                    pinned: root.pin4;
+                    primary: root.here-idx == 5;
+                    row-clicked => {
+                        root.set-here(5);
+                    }
+                    pin-clicked => {
+                        root.toggle-pin(4);
+                    }
+                    remove-clicked => {
+                        root.toggle-removed(4);
+                    }
+                }
+
+                if root.new-cities > 0: SectionHeader {
+                    text: "NEW CITIES · +" + root.new-cities;
+                }
+                for c[i] in [
+                    { name: "Bangalore", off: 870, gmt: "GMT+5:30" },
+                    { name: "Berlin", off: 540, gmt: "GMT+2" },
+                ]: VerticalLayout {
+                    spacing: 0;
+                    if i + 1 <= root.new-cities: Rectangle {
+                        min-height: 64px;
+                        HorizontalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-md;
+                            VerticalLayout {
+                                alignment: center;
+                                horizontal-stretch: 1;
+                                Text {
+                                    text: c.name;
+                                    color: Theme.on-surface;
+                                    font-size: Theme.font-size-body;
+                                    font-weight: 700;
+                                }
+                                Text {
+                                    text: c.gmt + " · added this session";
+                                    color: Theme.muted;
+                                    font-size: Theme.font-size-caption;
+                                }
+                            }
+                            Text {
+                                text: root.fmt-time(mod(root.here-mins + c.off, 1440));
+                                color: Theme.on-surface;
+                                font-family: "Fraunces 9pt";
+                                font-size: Theme.font-size-headline;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                    if i + 1 <= root.new-cities && i + 1 < root.new-cities: Divider { }
+                }
+
+                Rectangle {
+                    height: 80px;
+                }
+            }
+        }
     }
 
     Fab {
         x: root.width - self.width - Theme.spacing-md;
         y: root.height - self.height - Theme.spacing-md;
         accessible-label: "Add city";
-        clicked => { root.add-city-pressed(); }
+        clicked => {
+            root.new-cities = min(2, root.new-cities + 1);
+            root.set-status("Added city · +" + root.new-cities, true, false);
+            root.add-city-pressed();
+        }
+    }
+
+    // ===================== Bottom sheet =====================
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+                root.confirm-reset = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: Theme.surface-2;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.muted;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: "World clock menu";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 700;
+                    }
+                }
+                SheetRow {
+                    label: "Toggle format (" + (root.use-24 ? "24H" : "12H") + ")";
+                    clicked => {
+                        root.use-24 = !root.use-24;
+                        root.set-status("Format: " + (root.use-24 ? "24-hour" : "12-hour"), true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: root.show-seconds ? "Hide seconds" : "Show seconds";
+                    clicked => {
+                        root.show-seconds = !root.show-seconds;
+                        root.set-status(root.show-seconds ? "Seconds on" : "Seconds off", root.show-seconds, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: root.running ? "Freeze clock" : "Resume live";
+                    clicked => {
+                        root.running = !root.running;
+                        root.set-status(root.running ? "Live" : "Frozen", root.running, !root.running);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Restore removed cities";
+                    clicked => {
+                        root.removed0 = false;
+                        root.removed1 = false;
+                        root.removed2 = false;
+                        root.removed3 = false;
+                        root.removed4 = false;
+                        root.set-status("All cities restored", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                Divider { }
+
+                SheetRow {
+                    label: root.confirm-reset ? "Confirm: reset list" : "Reset list";
+                    destructive: true;
+                    clicked => {
+                        if (root.confirm-reset) {
+                            root.removed0 = false;
+                            root.removed1 = false;
+                            root.removed2 = false;
+                            root.removed3 = false;
+                            root.removed4 = false;
+                            root.pin0 = false;
+                            root.pin1 = false;
+                            root.pin2 = false;
+                            root.pin3 = false;
+                            root.pin4 = false;
+                            root.new-cities = 0;
+                            root.here-idx = 0;
+                            root.set-status("List reset", false, true);
+                            root.sheet-open = false;
+                            root.confirm-reset = false;
+                        } else {
+                            root.confirm-reset = true;
+                        }
+                    }
+                }
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.sheet-open = false;
+                        root.confirm-reset = false;
+                    }
+                }
+            }
+        }
     }
 }

@@ -1,28 +1,426 @@
 // CommunityForumPage
 // =====================================================================
-//
-// Forum / message-board listing. Two grouped sections (PINNED, RECENT)
-// of topics rendered as SettingRows so the icon tile, title, metadata
-// subtitle, and reply-count Chip line up at the same edges as every
-// other settings-style page in the catalogue.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { SegmentedControl } from "@mobile-components/segmented-control.slint";
 import { FormSection } from "@mobile-components/form-section.slint";
-import { SettingRow } from "@mobile-components/setting-row.slint";
-import { Chip } from "@mobile-components/chip.slint";
 import { Divider } from "@mobile-components/divider.slint";
 import { ScrollView } from "std-widgets.slint";
+
+component TopicRow inherits Rectangle {
+    in property <string> title;
+    in property <string> meta;
+    in property <int> tone-i: 0;
+    in property <int> votes: 0;
+    in property <int> replies: 0;
+    in property <bool> voted: false;
+    in property <bool> bookmarked: false;
+    in property <bool> unread: true;
+    in property <bool> pinned: false;
+    callback row-clicked();
+    callback vote-clicked();
+    callback bookmark-clicked();
+    callback toggle-read-clicked();
+
+    horizontal-stretch: 1;
+    min-height: 76px;
+    background: ta.has-hover ? Theme.surface-2 : (root.pinned ? Theme.accent-warning.with-alpha(0.10) : transparent);
+
+    ta := TouchArea {
+        clicked => {
+            root.row-clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            // Vote column.
+            Rectangle {
+                width: 40px;
+                height: 22px;
+                border-radius: 11px;
+                background: root.voted ? Theme.accent-info : Theme.surface-2;
+                HorizontalLayout {
+                    alignment: center;
+                    VerticalLayout {
+                        alignment: center;
+                        Text {
+                            text: "▲";
+                            color: root.voted ? Theme.on-primary : Theme.muted;
+                            font-size: 10px;
+                            font-weight: 800;
+                        }
+                    }
+                }
+                TouchArea {
+                    clicked => {
+                        root.vote-clicked();
+                    }
+                }
+            }
+            Text {
+                text: "" + root.votes;
+                color: root.voted ? Theme.accent-info : Theme.muted;
+                font-size: 11px;
+                font-weight: 800;
+                horizontal-alignment: center;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 36px;
+                height: 36px;
+                border-radius: 8px;
+                background: root.tone-i == 1 ? Theme.accent-info.with-alpha(0.22) : (root.tone-i == 2 ? Theme.accent-success.with-alpha(0.22) : (root.tone-i == 3 ? Theme.accent-warning.with-alpha(0.22) : (root.tone-i == 4 ? Theme.accent-danger.with-alpha(0.22) : Theme.surface-2)));
+                Image {
+                    width: 18px;
+                    height: 18px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: root.pinned ? @image-url("@mobile-components/icons/pin.svg") : @image-url("@mobile-components/icons/inbox.svg");
+                    colorize: root.tone-i == 1 ? Theme.accent-info : (root.tone-i == 2 ? Theme.accent-success : (root.tone-i == 3 ? Theme.accent-warning : (root.tone-i == 4 ? Theme.accent-danger : Theme.muted)));
+                    image-fit: contain;
+                }
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            HorizontalLayout {
+                spacing: 6px;
+                alignment: start;
+                if root.unread: Rectangle {
+                    width: 8px;
+                    height: 8px;
+                    border-radius: 4px;
+                    background: Theme.accent-info;
+                    y: 6px;
+                }
+                Text {
+                    text: (root.bookmarked ? "★ " : "") + root.title;
+                    color: Theme.on-surface;
+                    font-size: Theme.font-size-body;
+                    font-weight: root.unread ? 800 : 600;
+                    overflow: elide;
+                }
+            }
+            Text {
+                text: root.meta;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+                overflow: elide;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            Rectangle {
+                horizontal-stretch: 0;
+                width: 36px;
+                height: 22px;
+                border-radius: 11px;
+                background: Theme.surface-2;
+                Text {
+                    text: "" + root.replies;
+                    color: Theme.muted;
+                    font-size: 10px;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+            }
+            Text {
+                text: "replies";
+                color: Theme.muted;
+                font-size: 9px;
+                font-weight: 600;
+                horizontal-alignment: center;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 4px;
+            Rectangle {
+                width: 28px;
+                height: 28px;
+                border-radius: 14px;
+                background: root.bookmarked ? Theme.accent-warning.with-alpha(0.22) : Theme.surface-2;
+                Text {
+                    text: "★";
+                    color: root.bookmarked ? Theme.accent-warning : Theme.muted;
+                    font-size: 12px;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+                TouchArea {
+                    clicked => {
+                        root.bookmark-clicked();
+                    }
+                }
+            }
+            Rectangle {
+                width: 28px;
+                height: 28px;
+                border-radius: 14px;
+                background: root.unread ? Theme.accent-info.with-alpha(0.22) : Theme.surface-2;
+                Text {
+                    text: root.unread ? "✓" : "○";
+                    color: root.unread ? Theme.accent-info : Theme.muted;
+                    font-size: 12px;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+                TouchArea {
+                    clicked => {
+                        root.toggle-read-clicked();
+                    }
+                }
+            }
+        }
+    }
+}
+
+component Chip2 inherits Rectangle {
+    in property <string> label;
+    in property <bool> active: false;
+    callback clicked();
+
+    horizontal-stretch: 0;
+    height: 28px;
+    border-radius: 14px;
+    background: root.active ? Theme.primary : Theme.surface-2;
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: center;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.active ? Theme.on-primary : Theme.on-surface;
+                font-size: Theme.font-size-caption;
+                font-weight: 700;
+            }
+        }
+    }
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.destructive ? Theme.accent-danger : Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+        }
+    }
+}
 
 export component CommunityForumPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
 
     in-out property <int> filter-index: 0;
+    in-out property <int> online-users: 142;
+    in-out property <bool> u0: false;
+    in-out property <bool> u1: false;
+    in-out property <bool> u2: true;
+    in-out property <bool> u3: true;
+    in-out property <bool> u4: true;
+    in-out property <bool> u5: false;
+    in-out property <bool> u6: true;
+    in-out property <bool> u7: false;
+    in-out property <bool> b0: true;
+    in-out property <bool> b1: false;
+    in-out property <bool> b2: false;
+    in-out property <bool> b3: true;
+    in-out property <bool> b4: false;
+    in-out property <bool> b5: false;
+    in-out property <bool> b6: false;
+    in-out property <bool> b7: false;
+    in-out property <int> v0: 88;
+    in-out property <int> v1: 32;
+    in-out property <int> v2: 19;
+    in-out property <int> v3: 26;
+    in-out property <int> v4: 12;
+    in-out property <int> v5: 41;
+    in-out property <int> v6: 6;
+    in-out property <int> v7: 14;
+    in-out property <bool> voted0: false;
+    in-out property <bool> voted1: false;
+    in-out property <bool> voted2: false;
+    in-out property <bool> voted3: false;
+    in-out property <bool> voted4: false;
+    in-out property <bool> voted5: false;
+    in-out property <bool> voted6: false;
+    in-out property <bool> voted7: false;
+    in-out property <int> new-topics: 0;
+    in-out property <bool> sheet-open: false;
+    in-out property <bool> confirm-clear: false;
+    in-out property <string> status-msg: "";
+    in-out property <bool> status-success: false;
+    in-out property <bool> status-danger: false;
+
     callback back-pressed();
     callback new-topic-pressed();
-    callback topic-pressed(string);
+    callback topic-pressed(int);
+
+    function unread-count() -> int {
+        return (root.u0 ? 1 : 0) + (root.u1 ? 1 : 0) + (root.u2 ? 1 : 0) + (root.u3 ? 1 : 0) + (root.u4 ? 1 : 0) + (root.u5 ? 1 : 0) + (root.u6 ? 1 : 0) + (root.u7 ? 1 : 0);
+    }
+    function bookmark-count() -> int {
+        return (root.b0 ? 1 : 0) + (root.b1 ? 1 : 0) + (root.b2 ? 1 : 0) + (root.b3 ? 1 : 0) + (root.b4 ? 1 : 0) + (root.b5 ? 1 : 0) + (root.b6 ? 1 : 0) + (root.b7 ? 1 : 0);
+    }
+    function row-visible(idx: int) -> bool {
+        if (root.filter-index == 1) {
+            return idx == 0 ? root.u0 : (idx == 1 ? root.u1 : (idx == 2 ? root.u2 : (idx == 3 ? root.u3 : (idx == 4 ? root.u4 : (idx == 5 ? root.u5 : (idx == 6 ? root.u6 : root.u7))))));
+        }
+        if (root.filter-index == 2) {
+            return idx == 0 ? root.b0 : (idx == 1 ? root.b1 : (idx == 2 ? root.b2 : (idx == 3 ? root.b3 : (idx == 4 ? root.b4 : (idx == 5 ? root.b5 : (idx == 6 ? root.b6 : root.b7))))));
+        }
+        return true;
+    }
+    function set-status(m: string, ok: bool, bad: bool) {
+        root.status-msg = m;
+        root.status-success = ok;
+        root.status-danger = bad;
+    }
+    function vote(i: int) {
+        if (i == 0) {
+            root.voted0 = !root.voted0;
+            root.v0 = root.voted0 ? root.v0 + 1 : root.v0 - 1;
+        }
+        if (i == 1) {
+            root.voted1 = !root.voted1;
+            root.v1 = root.voted1 ? root.v1 + 1 : root.v1 - 1;
+        }
+        if (i == 2) {
+            root.voted2 = !root.voted2;
+            root.v2 = root.voted2 ? root.v2 + 1 : root.v2 - 1;
+        }
+        if (i == 3) {
+            root.voted3 = !root.voted3;
+            root.v3 = root.voted3 ? root.v3 + 1 : root.v3 - 1;
+        }
+        if (i == 4) {
+            root.voted4 = !root.voted4;
+            root.v4 = root.voted4 ? root.v4 + 1 : root.v4 - 1;
+        }
+        if (i == 5) {
+            root.voted5 = !root.voted5;
+            root.v5 = root.voted5 ? root.v5 + 1 : root.v5 - 1;
+        }
+        if (i == 6) {
+            root.voted6 = !root.voted6;
+            root.v6 = root.voted6 ? root.v6 + 1 : root.v6 - 1;
+        }
+        if (i == 7) {
+            root.voted7 = !root.voted7;
+            root.v7 = root.voted7 ? root.v7 + 1 : root.v7 - 1;
+        }
+    }
+    function bookmark(i: int) {
+        if (i == 0) {
+            root.b0 = !root.b0;
+        }
+        if (i == 1) {
+            root.b1 = !root.b1;
+        }
+        if (i == 2) {
+            root.b2 = !root.b2;
+        }
+        if (i == 3) {
+            root.b3 = !root.b3;
+        }
+        if (i == 4) {
+            root.b4 = !root.b4;
+        }
+        if (i == 5) {
+            root.b5 = !root.b5;
+        }
+        if (i == 6) {
+            root.b6 = !root.b6;
+        }
+        if (i == 7) {
+            root.b7 = !root.b7;
+        }
+    }
+    function toggle-read(i: int) {
+        if (i == 0) {
+            root.u0 = !root.u0;
+        }
+        if (i == 1) {
+            root.u1 = !root.u1;
+        }
+        if (i == 2) {
+            root.u2 = !root.u2;
+        }
+        if (i == 3) {
+            root.u3 = !root.u3;
+        }
+        if (i == 4) {
+            root.u4 = !root.u4;
+        }
+        if (i == 5) {
+            root.u5 = !root.u5;
+        }
+        if (i == 6) {
+            root.u6 = !root.u6;
+        }
+        if (i == 7) {
+            root.u7 = !root.u7;
+        }
+    }
+
+    // Live online-users tick.
+    tick := Timer {
+        interval: 4s;
+        running: true;
+        triggered => {
+            root.online-users = max(120, min(180, root.online-users + mod(root.v0, 3) - 1));
+        }
+    }
 
     background: Theme.background;
 
@@ -30,123 +428,499 @@ export component CommunityForumPage inherits Window {
         spacing: 0;
 
         AppBar {
-            title: "Forum";
+            title: "Forum · " + root.online-users + " online";
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
-            trailing-icon: @image-url("@mobile-components/icons/plus.svg");
-            leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.new-topic-pressed(); }
+            trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
+            leading-pressed => {
+                root.back-pressed();
+            }
+            trailing-pressed => {
+                root.sheet-open = true;
+            }
+        }
+
+        if !root.status-msg.is-empty: Rectangle {
+            height: 28px;
+            background: root.status-success ? Theme.accent-success.with-alpha(0.16) : (root.status-danger ? Theme.accent-danger.with-alpha(0.16) : Theme.surface-2);
+            HorizontalLayout {
+                alignment: center;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.status-msg;
+                        color: root.status-success ? Theme.accent-success : (root.status-danger ? Theme.accent-danger : Theme.on-surface);
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                    }
+                }
+            }
+        }
+
+        // Filter chips + new topic.
+        HorizontalLayout {
+            padding-left: Theme.spacing-md;
+            padding-right: Theme.spacing-md;
+            padding-top: Theme.spacing-sm;
+            padding-bottom: Theme.spacing-sm;
+            spacing: Theme.spacing-sm;
+            Chip2 {
+                label: "All · " + (8 + root.new-topics);
+                active: root.filter-index == 0;
+                clicked => {
+                    root.filter-index = 0;
+                }
+            }
+            Chip2 {
+                label: "Unread · " + root.unread-count();
+                active: root.filter-index == 1;
+                clicked => {
+                    root.filter-index = 1;
+                }
+            }
+            Chip2 {
+                label: "★ Bookmarks · " + root.bookmark-count();
+                active: root.filter-index == 2;
+                clicked => {
+                    root.filter-index = 2;
+                }
+            }
+            Rectangle {
+                horizontal-stretch: 1;
+            }
+            Rectangle {
+                horizontal-stretch: 0;
+                width: 36px;
+                height: 28px;
+                border-radius: 14px;
+                background: Theme.accent-success;
+                Text {
+                    text: "+";
+                    color: Theme.on-primary;
+                    font-size: 16px;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+                TouchArea {
+                    clicked => {
+                        root.new-topics = root.new-topics + 1;
+                        root.set-status("Topic posted (+" + root.new-topics + ")", true, false);
+                        root.new-topic-pressed();
+                    }
+                }
+            }
         }
 
         ScrollView {
             vertical-stretch: 1;
 
             VerticalLayout {
-                padding-top: Theme.spacing-md;
                 padding-bottom: Theme.spacing-xl;
                 spacing: Theme.spacing-md;
                 alignment: start;
 
-                // ----- Filter -----------------------------------------------
-                VerticalLayout {
-                    padding-left: Theme.spacing-md;
-                    padding-right: Theme.spacing-md;
-                    SegmentedControl {
-                        options: ["All", "Unread", "Bookmarks"];
-                        selected-index <=> root.filter-index;
-                    }
-                }
-
-                // ----- PINNED -----------------------------------------------
                 FormSection {
                     title: "PINNED";
 
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/pin.svg");
-                        tone: Tone.warning;
+                    if root.row-visible(0): TopicRow {
                         title: "Welcome — read me first";
-                        subtitle: "by Mods · 247 replies · 3.2K views";
-                        clicked => { root.topic-pressed("welcome"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
+                        meta: "by Mods · 247 replies · 3.2K views";
+                        tone-i: 3;
+                        votes: root.v0;
+                        replies: 247;
+                        voted: root.voted0;
+                        bookmarked: root.b0;
+                        unread: root.u0;
+                        pinned: true;
+                        row-clicked => {
+                            root.set-status("Opened Welcome", true, false);
+                            root.topic-pressed(0);
+                        }
+                        vote-clicked => {
+                            root.vote(0);
+                            root.set-status(root.voted0 ? "Upvoted" : "Vote removed", root.voted0, false);
+                        }
+                        bookmark-clicked => {
+                            root.bookmark(0);
+                            root.set-status(root.b0 ? "Bookmarked" : "Unbookmarked", root.b0, false);
+                        }
+                        toggle-read-clicked => {
+                            root.toggle-read(0);
+                            root.set-status(root.u0 ? "Marked unread" : "Marked read", !root.u0, false);
                         }
                     }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/pin.svg");
-                        tone: Tone.warning;
+                    if root.row-visible(0) && root.row-visible(1): Divider { }
+
+                    if root.row-visible(1): TopicRow {
                         title: "Community guidelines & code of conduct";
-                        subtitle: "by Mods · 88 replies · 1.4K views";
-                        clicked => { root.topic-pressed("guidelines"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
+                        meta: "by Mods · 88 replies · 1.4K views";
+                        tone-i: 3;
+                        votes: root.v1;
+                        replies: 88;
+                        voted: root.voted1;
+                        bookmarked: root.b1;
+                        unread: root.u1;
+                        pinned: true;
+                        row-clicked => {
+                            root.set-status("Opened Guidelines", true, false);
+                            root.topic-pressed(1);
+                        }
+                        vote-clicked => {
+                            root.vote(1);
+                            root.set-status(root.voted1 ? "Upvoted" : "Vote removed", root.voted1, false);
+                        }
+                        bookmark-clicked => {
+                            root.bookmark(1);
+                            root.set-status(root.b1 ? "Bookmarked" : "Unbookmarked", root.b1, false);
+                        }
+                        toggle-read-clicked => {
+                            root.toggle-read(1);
+                            root.set-status(root.u1 ? "Marked unread" : "Marked read", !root.u1, false);
                         }
                     }
                 }
 
-                // ----- RECENT -----------------------------------------------
                 FormSection {
                     title: "RECENT";
 
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/inbox.svg");
-                        tone: Tone.info;
+                    if root.row-visible(2): TopicRow {
                         title: "Best snapshot threshold for OLED panels?";
-                        subtitle: "@petra · 12m ago · 8 replies";
-                        clicked => { root.topic-pressed("snapshot"); }
-                        Chip { label: "8"; }
+                        meta: "@petra · 12m ago · 8 replies";
+                        tone-i: 1;
+                        votes: root.v2;
+                        replies: 8;
+                        voted: root.voted2;
+                        bookmarked: root.b2;
+                        unread: root.u2;
+                        row-clicked => {
+                            root.set-status("Opened OLED thread", true, false);
+                            root.topic-pressed(2);
+                        }
+                        vote-clicked => {
+                            root.vote(2);
+                            root.set-status(root.voted2 ? "Upvoted" : "Vote removed", root.voted2, false);
+                        }
+                        bookmark-clicked => {
+                            root.bookmark(2);
+                            root.set-status(root.b2 ? "Bookmarked" : "Unbookmarked", root.b2, false);
+                        }
+                        toggle-read-clicked => {
+                            root.toggle-read(2);
+                            root.set-status(root.u2 ? "Marked unread" : "Marked read", !root.u2, false);
+                        }
                     }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/inbox.svg");
-                        tone: Tone.success;
+                    if root.row-visible(2): Divider { }
+
+                    if root.row-visible(3): TopicRow {
                         title: "Tone enum vs. per-component variants";
-                        subtitle: "@ada · 1h ago · 14 replies";
-                        clicked => { root.topic-pressed("tone"); }
-                        Chip { label: "14"; }
+                        meta: "@ada · 1h ago · 14 replies";
+                        tone-i: 2;
+                        votes: root.v3;
+                        replies: 14;
+                        voted: root.voted3;
+                        bookmarked: root.b3;
+                        unread: root.u3;
+                        row-clicked => {
+                            root.set-status("Opened Tone enum thread", true, false);
+                            root.topic-pressed(3);
+                        }
+                        vote-clicked => {
+                            root.vote(3);
+                            root.set-status(root.voted3 ? "Upvoted" : "Vote removed", root.voted3, false);
+                        }
+                        bookmark-clicked => {
+                            root.bookmark(3);
+                            root.set-status(root.b3 ? "Bookmarked" : "Unbookmarked", root.b3, false);
+                        }
+                        toggle-read-clicked => {
+                            root.toggle-read(3);
+                            root.set-status(root.u3 ? "Marked unread" : "Marked read", !root.u3, false);
+                        }
                     }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/inbox.svg");
-                        tone: Tone.warning;
+                    if root.row-visible(3): Divider { }
+
+                    if root.row-visible(4): TopicRow {
                         title: "Cargo apk2 vs xbuild on M1 / M3";
-                        subtitle: "@bao · 3h ago · 6 replies";
-                        clicked => { root.topic-pressed("apk"); }
-                        Chip { label: "6"; }
+                        meta: "@bao · 3h ago · 6 replies";
+                        tone-i: 3;
+                        votes: root.v4;
+                        replies: 6;
+                        voted: root.voted4;
+                        bookmarked: root.b4;
+                        unread: root.u4;
+                        row-clicked => {
+                            root.set-status("Opened cargo apk thread", true, false);
+                            root.topic-pressed(4);
+                        }
+                        vote-clicked => {
+                            root.vote(4);
+                            root.set-status(root.voted4 ? "Upvoted" : "Vote removed", root.voted4, false);
+                        }
+                        bookmark-clicked => {
+                            root.bookmark(4);
+                            root.set-status(root.b4 ? "Bookmarked" : "Unbookmarked", root.b4, false);
+                        }
+                        toggle-read-clicked => {
+                            root.toggle-read(4);
+                            root.set-status(root.u4 ? "Marked unread" : "Marked read", !root.u4, false);
+                        }
                     }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/inbox.svg");
-                        tone: Tone.danger;
+                    if root.row-visible(4): Divider { }
+
+                    if root.row-visible(5): TopicRow {
                         title: "Drawer perforation clipping on portrait";
-                        subtitle: "@cyril · 5h ago · 22 replies";
-                        clicked => { root.topic-pressed("drawer"); }
-                        Chip { label: "22"; }
+                        meta: "@cyril · 5h ago · 22 replies";
+                        tone-i: 4;
+                        votes: root.v5;
+                        replies: 22;
+                        voted: root.voted5;
+                        bookmarked: root.b5;
+                        unread: root.u5;
+                        row-clicked => {
+                            root.set-status("Opened drawer bug thread", true, false);
+                            root.topic-pressed(5);
+                        }
+                        vote-clicked => {
+                            root.vote(5);
+                            root.set-status(root.voted5 ? "Upvoted" : "Vote removed", root.voted5, false);
+                        }
+                        bookmark-clicked => {
+                            root.bookmark(5);
+                            root.set-status(root.b5 ? "Bookmarked" : "Unbookmarked", root.b5, false);
+                        }
+                        toggle-read-clicked => {
+                            root.toggle-read(5);
+                            root.set-status(root.u5 ? "Marked unread" : "Marked read", !root.u5, false);
+                        }
                     }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/inbox.svg");
-                        tone: Tone.default;
+                    if root.row-visible(5): Divider { }
+
+                    if root.row-visible(6): TopicRow {
                         title: "Best practices for FormField on tablets";
-                        subtitle: "@anika · 8h ago · 3 replies";
-                        clicked => { root.topic-pressed("formfield"); }
-                        Chip { label: "3"; }
+                        meta: "@anika · 8h ago · 3 replies";
+                        tone-i: 0;
+                        votes: root.v6;
+                        replies: 3;
+                        voted: root.voted6;
+                        bookmarked: root.b6;
+                        unread: root.u6;
+                        row-clicked => {
+                            root.set-status("Opened tablets thread", true, false);
+                            root.topic-pressed(6);
+                        }
+                        vote-clicked => {
+                            root.vote(6);
+                            root.set-status(root.voted6 ? "Upvoted" : "Vote removed", root.voted6, false);
+                        }
+                        bookmark-clicked => {
+                            root.bookmark(6);
+                            root.set-status(root.b6 ? "Bookmarked" : "Unbookmarked", root.b6, false);
+                        }
+                        toggle-read-clicked => {
+                            root.toggle-read(6);
+                            root.set-status(root.u6 ? "Marked unread" : "Marked read", !root.u6, false);
+                        }
                     }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/inbox.svg");
-                        tone: Tone.info;
+                    if root.row-visible(6): Divider { }
+
+                    if root.row-visible(7): TopicRow {
                         title: "Shipping the catalogue as a Maven library?";
-                        subtitle: "@chen · 1d ago · 11 replies";
-                        clicked => { root.topic-pressed("maven"); }
-                        Chip { label: "11"; }
+                        meta: "@chen · 1d ago · 11 replies";
+                        tone-i: 1;
+                        votes: root.v7;
+                        replies: 11;
+                        voted: root.voted7;
+                        bookmarked: root.b7;
+                        unread: root.u7;
+                        row-clicked => {
+                            root.set-status("Opened Maven thread", true, false);
+                            root.topic-pressed(7);
+                        }
+                        vote-clicked => {
+                            root.vote(7);
+                            root.set-status(root.voted7 ? "Upvoted" : "Vote removed", root.voted7, false);
+                        }
+                        bookmark-clicked => {
+                            root.bookmark(7);
+                            root.set-status(root.b7 ? "Bookmarked" : "Unbookmarked", root.b7, false);
+                        }
+                        toggle-read-clicked => {
+                            root.toggle-read(7);
+                            root.set-status(root.u7 ? "Marked unread" : "Marked read", !root.u7, false);
+                        }
+                    }
+                }
+
+                if root.new-topics > 0: FormSection {
+                    title: "YOUR THREADS · +" + root.new-topics;
+                    for nt[i] in [{ idx: 1 }, { idx: 2 }, { idx: 3 }]: VerticalLayout {
+                        spacing: 0;
+                        if nt.idx <= root.new-topics: TopicRow {
+                            title: "Untitled thread " + nt.idx;
+                            meta: "@you · just now · 0 replies";
+                            tone-i: 2;
+                            votes: 1;
+                            replies: 0;
+                            voted: true;
+                            bookmarked: false;
+                            unread: true;
+                            pinned: false;
+                            row-clicked => {
+                                root.set-status("Opened your thread", true, false);
+                            }
+                            vote-clicked => { }
+                            bookmark-clicked => { }
+                            toggle-read-clicked => { }
+                        }
+                        if nt.idx <= root.new-topics && nt.idx < root.new-topics: Divider { }
+                    }
+                }
+            }
+        }
+    }
+
+    // ===================== Bottom sheet =====================
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+                root.confirm-clear = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: Theme.surface-2;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.muted;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: "Forum menu";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 700;
+                    }
+                }
+                SheetRow {
+                    label: "Mark all read";
+                    clicked => {
+                        root.u0 = false;
+                        root.u1 = false;
+                        root.u2 = false;
+                        root.u3 = false;
+                        root.u4 = false;
+                        root.u5 = false;
+                        root.u6 = false;
+                        root.u7 = false;
+                        root.set-status("All marked read", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Bookmark all";
+                    clicked => {
+                        root.b0 = true;
+                        root.b1 = true;
+                        root.b2 = true;
+                        root.b3 = true;
+                        root.b4 = true;
+                        root.b5 = true;
+                        root.b6 = true;
+                        root.b7 = true;
+                        root.set-status("All bookmarked", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Clear bookmarks";
+                    clicked => {
+                        root.b0 = false;
+                        root.b1 = false;
+                        root.b2 = false;
+                        root.b3 = false;
+                        root.b4 = false;
+                        root.b5 = false;
+                        root.b6 = false;
+                        root.b7 = false;
+                        root.set-status("Bookmarks cleared", false, false);
+                        root.sheet-open = false;
+                    }
+                }
+                Divider { }
+
+                SheetRow {
+                    label: root.confirm-clear ? "Confirm: clear votes" : "Clear my votes";
+                    destructive: true;
+                    clicked => {
+                        if (root.confirm-clear) {
+                            if (root.voted0) {
+                                root.v0 = root.v0 - 1;
+                            }
+                            if (root.voted1) {
+                                root.v1 = root.v1 - 1;
+                            }
+                            if (root.voted2) {
+                                root.v2 = root.v2 - 1;
+                            }
+                            if (root.voted3) {
+                                root.v3 = root.v3 - 1;
+                            }
+                            if (root.voted4) {
+                                root.v4 = root.v4 - 1;
+                            }
+                            if (root.voted5) {
+                                root.v5 = root.v5 - 1;
+                            }
+                            if (root.voted6) {
+                                root.v6 = root.v6 - 1;
+                            }
+                            if (root.voted7) {
+                                root.v7 = root.v7 - 1;
+                            }
+                            root.voted0 = false;
+                            root.voted1 = false;
+                            root.voted2 = false;
+                            root.voted3 = false;
+                            root.voted4 = false;
+                            root.voted5 = false;
+                            root.voted6 = false;
+                            root.voted7 = false;
+                            root.set-status("Votes cleared", false, true);
+                            root.sheet-open = false;
+                            root.confirm-clear = false;
+                        } else {
+                            root.confirm-clear = true;
+                        }
+                    }
+                }
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.sheet-open = false;
+                        root.confirm-clear = false;
                     }
                 }
             }

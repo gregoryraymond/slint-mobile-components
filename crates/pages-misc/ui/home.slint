@@ -6,27 +6,195 @@ import { BottomNav } from "@mobile-components/bottom-nav.slint";
 import { IconButton } from "@mobile-components/icon-button.slint";
 import { Card } from "@mobile-components/card.slint";
 import { Fab } from "@mobile-components/button.slint";
+import { Divider } from "@mobile-components/divider.slint";
 import { ScrollView } from "std-widgets.slint";
 
-// Example feed-style page: top app bar + scrollable cards + FAB +
-// bottom navigation. Use as-is, or as a layout reference when composing
-// your own pages.
-//
-// Visual treatment: opt-in to `LatticeSkin`. The dot-grid background
-// SVG, geometric sans typeface, and translucent AppBar / BottomNav
-// fills all come from the skin — see crates/theme/ui/skins.slint.
+component Chip2 inherits Rectangle {
+    in property <string> label;
+    in property <bool> active: false;
+    callback clicked();
+
+    horizontal-stretch: 0;
+    height: 28px;
+    border-radius: 14px;
+    background: root.active ? LatticeSkin.text-primary : LatticeSkin.bar-background;
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: center;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.active ? LatticeSkin.page-background : LatticeSkin.text-primary;
+                font-size: Theme.font-size-caption;
+                font-weight: 700;
+            }
+        }
+    }
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component InboxRow inherits Rectangle {
+    in property <string> who;
+    in property <string> body;
+    in property <string> when;
+    in property <bool> unread: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 56px;
+    background: ta.has-hover ? LatticeSkin.bar-background : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 8px;
+                height: 8px;
+                border-radius: 4px;
+                background: root.unread ? Theme.accent-info : transparent;
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: root.who;
+                color: LatticeSkin.text-primary;
+                font-size: Theme.font-size-body;
+                font-weight: root.unread ? 700 : 500;
+                overflow: elide;
+            }
+            Text {
+                text: root.body;
+                color: LatticeSkin.text-secondary;
+                font-size: Theme.font-size-caption;
+                overflow: elide;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.when;
+                color: LatticeSkin.text-secondary;
+                font-size: Theme.font-size-caption;
+            }
+        }
+    }
+}
+
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    background: ta.has-hover ? LatticeSkin.bar-background : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.destructive ? Theme.accent-danger : LatticeSkin.text-primary;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+        }
+    }
+}
+
 export component HomePage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
     default-font-family: LatticeSkin.font-family;
 
     in-out property <int> nav-index: 0;
+    in-out property <int> notes-captured: 0;
+    in-out property <int> backlog-count: 12;
+    in-out property <bool> brief-expanded: false;
+    in-out property <int> search-filter: 0; // 0 all 1 docs 2 people 3 tasks 4 places
+    in-out property <bool> in0-unread: true;
+    in-out property <bool> in1-unread: true;
+    in-out property <bool> in2-unread: false;
+    in-out property <bool> in3-unread: true;
+    in-out property <bool> in4-unread: false;
+    in-out property <bool> sheet-open: false;
+    in-out property <bool> fab-menu-open: false;
+    in-out property <bool> confirm-clear: false;
+    in-out property <bool> dark-mode: true;
+    in-out property <bool> dnd: false;
+    in-out property <string> status-msg: "";
+    in-out property <bool> status-success: false;
+    in-out property <bool> status-danger: false;
+
     callback fab-pressed();
     callback nav-changed(int);
 
+    function tab-title() -> string {
+        return root.nav-index == 0 ? "Today" : (root.nav-index == 1 ? "Search" : (root.nav-index == 2 ? "Inbox" : "Profile"));
+    }
+    function unread-total() -> int {
+        return (root.in0-unread ? 1 : 0) + (root.in1-unread ? 1 : 0) + (root.in2-unread ? 1 : 0) + (root.in3-unread ? 1 : 0) + (root.in4-unread ? 1 : 0);
+    }
+    function search-label() -> string {
+        return root.search-filter == 0 ? "All" : (root.search-filter == 1 ? "Docs" : (root.search-filter == 2 ? "People" : (root.search-filter == 3 ? "Tasks" : "Places")));
+    }
+    function set-status(m: string, ok: bool, bad: bool) {
+        root.status-msg = m;
+        root.status-success = ok;
+        root.status-danger = bad;
+    }
+    function mark-read(i: int) {
+        if (i == 0) {
+            root.in0-unread = !root.in0-unread;
+            root.set-status(root.in0-unread ? "Marked unread" : "Marked read", !root.in0-unread, false);
+        }
+        if (i == 1) {
+            root.in1-unread = !root.in1-unread;
+            root.set-status(root.in1-unread ? "Marked unread" : "Marked read", !root.in1-unread, false);
+        }
+        if (i == 2) {
+            root.in2-unread = !root.in2-unread;
+            root.set-status(root.in2-unread ? "Marked unread" : "Marked read", !root.in2-unread, false);
+        }
+        if (i == 3) {
+            root.in3-unread = !root.in3-unread;
+            root.set-status(root.in3-unread ? "Marked unread" : "Marked read", !root.in3-unread, false);
+        }
+        if (i == 4) {
+            root.in4-unread = !root.in4-unread;
+            root.set-status(root.in4-unread ? "Marked unread" : "Marked read", !root.in4-unread, false);
+        }
+    }
+
     background: LatticeSkin.page-background;
 
-    // ---- z-bottom: dot-grid background ----
     if LatticeSkin.has-background-image: Image {
         x: 0;
         y: 0;
@@ -36,16 +204,36 @@ export component HomePage inherits Window {
         image-fit: cover;
     }
 
-    // ---- z-top: page content ----
     VerticalLayout {
         spacing: 0;
 
         AppBar {
-            title: "Today";
+            title: root.tab-title();
             title-style: HeadingStyle.plex-medium;
             trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
             bar-background: LatticeSkin.bar-background;
             text-color: LatticeSkin.text-primary;
+            trailing-pressed => {
+                root.sheet-open = true;
+            }
+        }
+
+        // Status banner.
+        if !root.status-msg.is-empty: Rectangle {
+            height: 28px;
+            background: root.status-success ? Theme.accent-success.with-alpha(0.16) : (root.status-danger ? Theme.accent-danger.with-alpha(0.16) : LatticeSkin.bar-background);
+            HorizontalLayout {
+                alignment: center;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.status-msg;
+                        color: root.status-success ? Theme.accent-success : (root.status-danger ? Theme.accent-danger : LatticeSkin.text-primary);
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                    }
+                }
+            }
         }
 
         scroll := ScrollView {
@@ -55,27 +243,396 @@ export component HomePage inherits Window {
                 padding: Theme.spacing-md;
                 spacing: Theme.spacing-md;
 
-                Card {
-                    title: "Welcome back";
-                    subtitle: "Pick up where you left off, or start something new.";
+                // ===== Tab 0: Today =====
+                if root.nav-index == 0: VerticalLayout {
+                    spacing: Theme.spacing-md;
+                    Card {
+                        title: "Welcome back";
+                        subtitle: root.notes-captured > 0 ? "Captured " + root.notes-captured + " notes this session." : "Pick up where you left off, or start something new.";
+                    }
+
+                    Rectangle {
+                        Card {
+                            title: root.brief-expanded ? "Today's brief — expanded" : "Today's brief";
+                            subtitle: root.brief-expanded ? "1) v0.4 design tokens went live · 2) Build green on Android arm64 · 3) Petra opened a critical PR. Tap to collapse." : "Three updates from the projects you follow.";
+                            tappable: true;
+                        }
+                        TouchArea {
+                            clicked => {
+                                root.brief-expanded = !root.brief-expanded;
+                                root.set-status(root.brief-expanded ? "Brief expanded" : "Brief collapsed", true, false);
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        Card {
+                            title: "Quick capture";
+                            subtitle: "Tap to add a thought — synced across devices (" + root.notes-captured + " this session).";
+                            tappable: true;
+                        }
+                        TouchArea {
+                            clicked => {
+                                root.notes-captured = root.notes-captured + 1;
+                                root.set-status("Note captured (" + root.notes-captured + ")", true, false);
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        Card {
+                            title: root.backlog-count == 0 ? "Backlog clear ✓" : "Backlog";
+                            subtitle: root.backlog-count == 0 ? "Inbox zero — well done." : root.backlog-count + " items waiting. Tap to triage one.";
+                            tappable: true;
+                        }
+                        TouchArea {
+                            clicked => {
+                                if (root.backlog-count > 0) {
+                                    root.backlog-count = root.backlog-count - 1;
+                                    root.set-status("Triaged · " + root.backlog-count + " left", root.backlog-count == 0, false);
+                                }
+                            }
+                        }
+                    }
                 }
 
-                Card {
-                    title: "Today's brief";
-                    subtitle: "Three updates from the projects you follow.";
-                    tappable: true;
+                // ===== Tab 1: Search =====
+                if root.nav-index == 1: VerticalLayout {
+                    spacing: Theme.spacing-md;
+                    Rectangle {
+                        background: LatticeSkin.bar-background;
+                        border-radius: 12px;
+                        height: 44px;
+                        HorizontalLayout {
+                            padding: Theme.spacing-sm;
+                            spacing: Theme.spacing-sm;
+                            VerticalLayout {
+                                alignment: center;
+                                Text {
+                                    text: "🔍";
+                                    font-size: 14px;
+                                    color: LatticeSkin.text-secondary;
+                                }
+                            }
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                alignment: center;
+                                Text {
+                                    text: "Searching in " + root.search-label();
+                                    color: LatticeSkin.text-secondary;
+                                    font-size: Theme.font-size-body;
+                                }
+                            }
+                        }
+                    }
+                    HorizontalLayout {
+                        spacing: Theme.spacing-sm;
+                        Chip2 {
+                            label: "All";
+                            active: root.search-filter == 0;
+                            clicked => {
+                                root.search-filter = 0;
+                            }
+                        }
+                        Chip2 {
+                            label: "Docs";
+                            active: root.search-filter == 1;
+                            clicked => {
+                                root.search-filter = 1;
+                            }
+                        }
+                        Chip2 {
+                            label: "People";
+                            active: root.search-filter == 2;
+                            clicked => {
+                                root.search-filter = 2;
+                            }
+                        }
+                        Chip2 {
+                            label: "Tasks";
+                            active: root.search-filter == 3;
+                            clicked => {
+                                root.search-filter = 3;
+                            }
+                        }
+                        Chip2 {
+                            label: "Places";
+                            active: root.search-filter == 4;
+                            clicked => {
+                                root.search-filter = 4;
+                            }
+                        }
+                    }
+                    Card {
+                        title: "Recent searches";
+                        subtitle: "v0.4 release notes · Slint Conf · K/D ratio · Brussels mussels";
+                    }
+                    Card {
+                        title: "Suggested " + root.search-label();
+                        subtitle: "Tap a chip above to scope the search; results refresh.";
+                    }
                 }
 
-                Card {
-                    title: "Quick capture";
-                    subtitle: "Jot down a thought — it'll sync across your devices.";
-                    tappable: true;
+                // ===== Tab 2: Inbox =====
+                if root.nav-index == 2: VerticalLayout {
+                    spacing: Theme.spacing-md;
+                    Rectangle {
+                        background: LatticeSkin.bar-background;
+                        border-radius: 12px;
+                        HorizontalLayout {
+                            padding: Theme.spacing-md;
+                            VerticalLayout {
+                                alignment: center;
+                                horizontal-stretch: 1;
+                                Text {
+                                    text: root.unread-total() + " unread";
+                                    color: LatticeSkin.text-primary;
+                                    font-size: Theme.font-size-body;
+                                    font-weight: 700;
+                                }
+                            }
+                            Rectangle {
+                                horizontal-stretch: 0;
+                                height: 28px;
+                                border-radius: 14px;
+                                background: LatticeSkin.page-background;
+                                HorizontalLayout {
+                                    padding-left: Theme.spacing-md;
+                                    padding-right: Theme.spacing-md;
+                                    alignment: center;
+                                    VerticalLayout {
+                                        alignment: center;
+                                        Text {
+                                            text: "Mark all read";
+                                            color: LatticeSkin.text-primary;
+                                            font-size: Theme.font-size-caption;
+                                            font-weight: 700;
+                                        }
+                                    }
+                                }
+                                TouchArea {
+                                    clicked => {
+                                        root.in0-unread = false;
+                                        root.in1-unread = false;
+                                        root.in2-unread = false;
+                                        root.in3-unread = false;
+                                        root.in4-unread = false;
+                                        root.set-status("All marked read", true, false);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        background: LatticeSkin.bar-background;
+                        border-radius: 12px;
+                        clip: true;
+                        VerticalLayout {
+                            spacing: 0;
+                            InboxRow {
+                                who: "Petra Lindquist";
+                                body: "Review needed — PR #248 v0.4 tokens";
+                                when: "3m";
+                                unread: root.in0-unread;
+                                clicked => {
+                                    root.mark-read(0);
+                                }
+                            }
+                            Divider { }
+
+                            InboxRow {
+                                who: "Linear";
+                                body: "ENG-218 moved to Done by Greg";
+                                when: "1h";
+                                unread: root.in1-unread;
+                                clicked => {
+                                    root.mark-read(1);
+                                }
+                            }
+                            Divider { }
+
+                            InboxRow {
+                                who: "GitHub";
+                                body: "Deploy succeeded · v0.4.2";
+                                when: "2h";
+                                unread: root.in2-unread;
+                                clicked => {
+                                    root.mark-read(2);
+                                }
+                            }
+                            Divider { }
+
+                            InboxRow {
+                                who: "Stripe";
+                                body: "$240 received · payout pending";
+                                when: "3h";
+                                unread: root.in3-unread;
+                                clicked => {
+                                    root.mark-read(3);
+                                }
+                            }
+                            Divider { }
+
+                            InboxRow {
+                                who: "Slack #design";
+                                body: "Ada Lovelace mentioned you";
+                                when: "yesterday";
+                                unread: root.in4-unread;
+                                clicked => {
+                                    root.mark-read(4);
+                                }
+                            }
+                        }
+                    }
                 }
 
-                Card {
-                    title: "Backlog";
-                    subtitle: "12 items waiting. Tap to triage.";
-                    tappable: true;
+                // ===== Tab 3: Profile =====
+                if root.nav-index == 3: VerticalLayout {
+                    spacing: Theme.spacing-md;
+                    Rectangle {
+                        background: LatticeSkin.bar-background;
+                        border-radius: 16px;
+                        VerticalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-sm;
+                            HorizontalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: 72px;
+                                    height: 72px;
+                                    border-radius: 36px;
+                                    background: Theme.accent-info;
+                                    Text {
+                                        text: "GR";
+                                        color: Theme.on-primary;
+                                        font-size: 28px;
+                                        font-weight: 800;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                        width: parent.width;
+                                        height: parent.height;
+                                    }
+                                }
+                            }
+                            HorizontalLayout {
+                                alignment: center;
+                                Text {
+                                    text: "Greg Raymond";
+                                    color: LatticeSkin.text-primary;
+                                    font-size: Theme.font-size-headline;
+                                    font-weight: 700;
+                                }
+                            }
+                            HorizontalLayout {
+                                alignment: center;
+                                Text {
+                                    text: "graymond2007@gmail.com";
+                                    color: LatticeSkin.text-secondary;
+                                    font-size: Theme.font-size-caption;
+                                }
+                            }
+                        }
+                    }
+                    HorizontalLayout {
+                        spacing: Theme.spacing-md;
+                        Rectangle {
+                            background: LatticeSkin.bar-background;
+                            border-radius: 12px;
+                            horizontal-stretch: 1;
+                            VerticalLayout {
+                                padding: Theme.spacing-md;
+                                Text {
+                                    text: "" + root.notes-captured;
+                                    color: LatticeSkin.text-primary;
+                                    font-size: Theme.font-size-headline;
+                                    font-weight: 700;
+                                }
+                                Text {
+                                    text: "NOTES";
+                                    color: LatticeSkin.text-secondary;
+                                    font-size: 11px;
+                                    font-weight: 700;
+                                    letter-spacing: 2px;
+                                }
+                            }
+                        }
+                        Rectangle {
+                            background: LatticeSkin.bar-background;
+                            border-radius: 12px;
+                            horizontal-stretch: 1;
+                            VerticalLayout {
+                                padding: Theme.spacing-md;
+                                Text {
+                                    text: "" + root.backlog-count;
+                                    color: LatticeSkin.text-primary;
+                                    font-size: Theme.font-size-headline;
+                                    font-weight: 700;
+                                }
+                                Text {
+                                    text: "BACKLOG";
+                                    color: LatticeSkin.text-secondary;
+                                    font-size: 11px;
+                                    font-weight: 700;
+                                    letter-spacing: 2px;
+                                }
+                            }
+                        }
+                        Rectangle {
+                            background: LatticeSkin.bar-background;
+                            border-radius: 12px;
+                            horizontal-stretch: 1;
+                            VerticalLayout {
+                                padding: Theme.spacing-md;
+                                Text {
+                                    text: "" + root.unread-total();
+                                    color: LatticeSkin.text-primary;
+                                    font-size: Theme.font-size-headline;
+                                    font-weight: 700;
+                                }
+                                Text {
+                                    text: "UNREAD";
+                                    color: LatticeSkin.text-secondary;
+                                    font-size: 11px;
+                                    font-weight: 700;
+                                    letter-spacing: 2px;
+                                }
+                            }
+                        }
+                    }
+                    Rectangle {
+                        background: LatticeSkin.bar-background;
+                        border-radius: 12px;
+                        clip: true;
+                        VerticalLayout {
+                            spacing: 0;
+                            SheetRow {
+                                label: root.dark-mode ? "Theme: Dark" : "Theme: Light";
+                                clicked => {
+                                    root.dark-mode = !root.dark-mode;
+                                    root.set-status(root.dark-mode ? "Switched to Dark" : "Switched to Light", true, false);
+                                }
+                            }
+                            Divider { }
+
+                            SheetRow {
+                                label: root.dnd ? "DND: On" : "DND: Off";
+                                clicked => {
+                                    root.dnd = !root.dnd;
+                                    root.set-status(root.dnd ? "Do not disturb on" : "DND off", !root.dnd, root.dnd);
+                                }
+                            }
+                            Divider { }
+
+                            SheetRow {
+                                label: "Sign out";
+                                destructive: true;
+                                clicked => {
+                                    root.set-status("Signed out", false, true);
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -88,33 +645,190 @@ export component HomePage inherits Window {
                 label: "Home";
                 icon: @image-url("@mobile-components/icons/home.svg");
                 active: root.nav-index == 0;
-                clicked => { root.nav-index = 0; root.nav-changed(0); }
+                clicked => {
+                    root.nav-index = 0;
+                    root.nav-changed(0);
+                }
             }
             IconButton {
                 label: "Search";
                 icon: @image-url("@mobile-components/icons/search.svg");
                 active: root.nav-index == 1;
-                clicked => { root.nav-index = 1; root.nav-changed(1); }
+                clicked => {
+                    root.nav-index = 1;
+                    root.nav-changed(1);
+                }
             }
             IconButton {
-                label: "Inbox";
+                label: root.unread-total() > 0 ? "Inbox (" + root.unread-total() + ")" : "Inbox";
                 icon: @image-url("@mobile-components/icons/inbox.svg");
                 active: root.nav-index == 2;
-                clicked => { root.nav-index = 2; root.nav-changed(2); }
+                clicked => {
+                    root.nav-index = 2;
+                    root.nav-changed(2);
+                }
             }
             IconButton {
                 label: "Profile";
                 icon: @image-url("@mobile-components/icons/profile.svg");
                 active: root.nav-index == 3;
-                clicked => { root.nav-index = 3; root.nav-changed(3); }
+                clicked => {
+                    root.nav-index = 3;
+                    root.nav-changed(3);
+                }
             }
         }
     }
 
-    // FAB anchored to the bottom-right, just above the bottom nav.
+    // FAB.
     Fab {
         x: parent.width - self.width - Theme.spacing-md;
         y: parent.height - 72px - self.height - Theme.spacing-md;
-        clicked => { root.fab-pressed(); }
+        clicked => {
+            root.fab-menu-open = !root.fab-menu-open;
+            root.fab-pressed();
+        }
+    }
+
+    // FAB radial menu (simple stacked pills).
+    if root.fab-menu-open: Rectangle {
+        x: parent.width - 200px - Theme.spacing-md;
+        y: parent.height - 72px - 230px;
+        width: 200px;
+        height: 160px;
+        background: LatticeSkin.bar-background;
+        border-radius: 16px;
+        drop-shadow-blur: Theme.elevation-3-blur;
+        drop-shadow-color: Theme.elevation-3-color;
+        drop-shadow-offset-y: Theme.elevation-3-y;
+        VerticalLayout {
+            spacing: Theme.spacing-xs;
+            padding: Theme.spacing-sm;
+            SheetRow {
+                label: "📝 New note";
+                clicked => {
+                    root.notes-captured = root.notes-captured + 1;
+                    root.set-status("Note captured", true, false);
+                    root.fab-menu-open = false;
+                }
+            }
+            SheetRow {
+                label: "✓ Triage backlog";
+                clicked => {
+                    if (root.backlog-count > 0) {
+                        root.backlog-count = root.backlog-count - 1;
+                        root.set-status("Triaged 1 item", true, false);
+                    }
+                    root.fab-menu-open = false;
+                }
+            }
+            SheetRow {
+                label: "✉ New message";
+                clicked => {
+                    root.set-status("Compose…", true, false);
+                    root.fab-menu-open = false;
+                }
+            }
+        }
+    }
+
+    // ===================== Bottom sheet =====================
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+                root.confirm-clear = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: LatticeSkin.bar-background;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: LatticeSkin.text-secondary;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: root.tab-title() + " options";
+                        color: LatticeSkin.text-primary;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 700;
+                    }
+                }
+                SheetRow {
+                    label: root.dnd ? "Turn DND off" : "Turn DND on";
+                    clicked => {
+                        root.dnd = !root.dnd;
+                        root.set-status(root.dnd ? "Do not disturb" : "DND off", !root.dnd, root.dnd);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Refresh data";
+                    clicked => {
+                        root.set-status("Refreshed", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: root.dark-mode ? "Switch to light theme" : "Switch to dark theme";
+                    clicked => {
+                        root.dark-mode = !root.dark-mode;
+                        root.set-status(root.dark-mode ? "Dark" : "Light", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                Divider { }
+
+                SheetRow {
+                    label: root.confirm-clear ? "Confirm: reset session" : "Reset session";
+                    destructive: true;
+                    clicked => {
+                        if (root.confirm-clear) {
+                            root.notes-captured = 0;
+                            root.backlog-count = 12;
+                            root.in0-unread = true;
+                            root.in1-unread = true;
+                            root.in2-unread = false;
+                            root.in3-unread = true;
+                            root.in4-unread = false;
+                            root.brief-expanded = false;
+                            root.set-status("Session reset", false, true);
+                            root.sheet-open = false;
+                            root.confirm-clear = false;
+                        } else {
+                            root.confirm-clear = true;
+                        }
+                    }
+                }
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.sheet-open = false;
+                        root.confirm-clear = false;
+                    }
+                }
+            }
+        }
     }
 }

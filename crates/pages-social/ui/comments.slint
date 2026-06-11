@@ -1,42 +1,212 @@
 // CommentsPage
 // =====================================================================
-//
-// Comment thread under a single post. Parent-post snippet sits in a
-// small Card at the top, then a SegmentedControl filter, then a
-// FormSection-wrapped list of comments rendered as SettingRows so the
-// avatar tile, username/timestamp, comment body, and like count line
-// up at the same gutters as every other settings-style page. A sticky
-// composer is anchored to the bottom.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { Card } from "@mobile-components/card.slint";
 import { SegmentedControl } from "@mobile-components/segmented-control.slint";
 import { FormSection } from "@mobile-components/form-section.slint";
-import { SettingRow } from "@mobile-components/setting-row.slint";
 import { TextField } from "@mobile-components/text-field.slint";
 import { TextButton } from "@mobile-components/button.slint";
 import { BottomBar } from "@mobile-components/bottom-bar.slint";
 import { Divider } from "@mobile-components/divider.slint";
 import { ScrollView } from "std-widgets.slint";
 
-component LikeTrailing inherits HorizontalLayout {
-    in property <string> count;
-    spacing: Theme.spacing-xs;
-    alignment: center;
+component CommentRow inherits Rectangle {
+    in property <string> who-time;
+    in property <string> body;
+    in property <int> tone-i: 0;
+    in property <int> likes;
+    in property <bool> liked: false;
+    in property <bool> pinned: false;
+    in property <bool> reply-open: false;
+    in property <bool> hidden: false;
+    callback row-clicked();
+    callback like-clicked();
+    callback reply-clicked();
+    callback pin-clicked();
 
-    Image {
-        width: 14px;
-        height: 14px;
-        source: @image-url("@mobile-components/icons/heart.svg");
-        colorize: Theme.muted;
-        image-fit: contain;
+    horizontal-stretch: 1;
+    min-height: 80px;
+    opacity: root.hidden ? 0.45 : 1.0;
+    background: root.pinned ? Theme.accent-warning.with-alpha(0.10) : (ta.has-hover ? Theme.surface-2 : transparent);
+
+    ta := TouchArea {
+        clicked => {
+            root.row-clicked();
+        }
     }
-    Text {
-        text: root.count;
-        color: Theme.muted;
-        font-size: Theme.font-size-caption;
-        vertical-alignment: center;
+
+    HorizontalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+        VerticalLayout {
+            alignment: start;
+            padding-top: 4px;
+            Rectangle {
+                width: 36px;
+                height: 36px;
+                border-radius: 18px;
+                background: root.tone-i == 1 ? Theme.accent-info.with-alpha(0.22) : (root.tone-i == 2 ? Theme.accent-success.with-alpha(0.22) : (root.tone-i == 3 ? Theme.accent-warning.with-alpha(0.22) : (root.tone-i == 4 ? Theme.accent-danger.with-alpha(0.22) : Theme.surface-2)));
+                Image {
+                    width: 18px;
+                    height: 18px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: @image-url("@mobile-components/icons/profile.svg");
+                    colorize: root.tone-i == 1 ? Theme.accent-info : (root.tone-i == 2 ? Theme.accent-success : (root.tone-i == 3 ? Theme.accent-warning : (root.tone-i == 4 ? Theme.accent-danger : Theme.muted)));
+                    image-fit: contain;
+                }
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 4px;
+            Text {
+                text: (root.pinned ? "📌 " : "") + root.who-time + (root.hidden ? " · hidden" : "");
+                color: Theme.on-surface;
+                font-size: Theme.font-size-caption;
+                font-weight: 800;
+            }
+            Text {
+                text: root.body;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                wrap: word-wrap;
+            }
+            HorizontalLayout {
+                spacing: Theme.spacing-sm;
+                alignment: start;
+                Rectangle {
+                    horizontal-stretch: 0;
+                    height: 22px;
+                    border-radius: 11px;
+                    background: root.liked ? Theme.accent-danger.with-alpha(0.22) : Theme.surface-2;
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-sm;
+                        padding-right: Theme.spacing-sm;
+                        spacing: 4px;
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: root.liked ? "❤" : "♡";
+                                color: root.liked ? Theme.accent-danger : Theme.muted;
+                                font-size: 10px;
+                                font-weight: 800;
+                            }
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: "" + root.likes;
+                                color: root.liked ? Theme.accent-danger : Theme.muted;
+                                font-size: 10px;
+                                font-weight: 800;
+                            }
+                        }
+                    }
+                    TouchArea {
+                        clicked => {
+                            root.like-clicked();
+                        }
+                    }
+                }
+                Rectangle {
+                    horizontal-stretch: 0;
+                    height: 22px;
+                    border-radius: 11px;
+                    background: root.reply-open ? Theme.accent-info.with-alpha(0.22) : Theme.surface-2;
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-sm;
+                        padding-right: Theme.spacing-sm;
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: root.reply-open ? "Cancel" : "Reply";
+                                color: root.reply-open ? Theme.accent-info : Theme.muted;
+                                font-size: 10px;
+                                font-weight: 800;
+                            }
+                        }
+                    }
+                    TouchArea {
+                        clicked => {
+                            root.reply-clicked();
+                        }
+                    }
+                }
+                Rectangle {
+                    horizontal-stretch: 0;
+                    height: 22px;
+                    border-radius: 11px;
+                    background: root.pinned ? Theme.accent-warning.with-alpha(0.22) : Theme.surface-2;
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-sm;
+                        padding-right: Theme.spacing-sm;
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: root.pinned ? "📌 Pinned" : "Pin";
+                                color: root.pinned ? Theme.accent-warning : Theme.muted;
+                                font-size: 10px;
+                                font-weight: 800;
+                            }
+                        }
+                    }
+                    TouchArea {
+                        clicked => {
+                            root.pin-clicked();
+                        }
+                    }
+                }
+            }
+            if root.reply-open: Rectangle {
+                background: Theme.surface-2;
+                border-radius: Theme.radius-md;
+                VerticalLayout {
+                    padding: Theme.spacing-sm;
+                    Text {
+                        text: "Replying to " + root.who-time + " · type below ↓";
+                        color: Theme.accent-info;
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                    }
+                }
+            }
+        }
+    }
+}
+
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.destructive ? Theme.accent-danger : Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+        }
     }
 }
 
@@ -46,9 +216,104 @@ export component CommentsPage inherits Window {
 
     in-out property <int> filter-index: 0;
     in-out property <string> draft;
+    in-out property <bool> liked0: false;
+    in-out property <bool> liked1: false;
+    in-out property <bool> liked2: false;
+    in-out property <bool> liked3: false;
+    in-out property <bool> liked4: false;
+    in-out property <bool> liked5: false;
+    in-out property <int> count0: 24;
+    in-out property <int> count1: 12;
+    in-out property <int> count2: 8;
+    in-out property <int> count3: 5;
+    in-out property <int> count4: 3;
+    in-out property <int> count5: 2;
+    in-out property <int> pinned-idx: -1;
+    in-out property <int> reply-idx: -1;
+    in-out property <bool> hidden0: false;
+    in-out property <bool> hidden1: false;
+    in-out property <bool> hidden2: false;
+    in-out property <bool> hidden3: false;
+    in-out property <bool> hidden4: false;
+    in-out property <bool> hidden5: false;
+    in-out property <int> new-comments: 0;
+    in-out property <bool> subscribed: false;
+    in-out property <bool> sheet-open: false;
+    in-out property <bool> confirm-clear: false;
+    in-out property <string> status-msg: "";
+    in-out property <bool> status-success: false;
+    in-out property <bool> status-danger: false;
+
     callback back-pressed();
     callback original-pressed();
     callback send-pressed(string);
+
+    function total-comments() -> int {
+        return 47 + root.new-comments;
+    }
+    function filter-label() -> string {
+        return root.filter-index == 0 ? "Top" : (root.filter-index == 1 ? "New" : "Oldest");
+    }
+    function set-status(m: string, ok: bool, bad: bool) {
+        root.status-msg = m;
+        root.status-success = ok;
+        root.status-danger = bad;
+    }
+    function toggle-like(i: int) {
+        if (i == 0) {
+            root.liked0 = !root.liked0;
+            root.count0 = root.liked0 ? root.count0 + 1 : root.count0 - 1;
+        }
+        if (i == 1) {
+            root.liked1 = !root.liked1;
+            root.count1 = root.liked1 ? root.count1 + 1 : root.count1 - 1;
+        }
+        if (i == 2) {
+            root.liked2 = !root.liked2;
+            root.count2 = root.liked2 ? root.count2 + 1 : root.count2 - 1;
+        }
+        if (i == 3) {
+            root.liked3 = !root.liked3;
+            root.count3 = root.liked3 ? root.count3 + 1 : root.count3 - 1;
+        }
+        if (i == 4) {
+            root.liked4 = !root.liked4;
+            root.count4 = root.liked4 ? root.count4 + 1 : root.count4 - 1;
+        }
+        if (i == 5) {
+            root.liked5 = !root.liked5;
+            root.count5 = root.liked5 ? root.count5 + 1 : root.count5 - 1;
+        }
+    }
+    function toggle-hidden(i: int) {
+        if (i == 0) {
+            root.hidden0 = !root.hidden0;
+        }
+        if (i == 1) {
+            root.hidden1 = !root.hidden1;
+        }
+        if (i == 2) {
+            root.hidden2 = !root.hidden2;
+        }
+        if (i == 3) {
+            root.hidden3 = !root.hidden3;
+        }
+        if (i == 4) {
+            root.hidden4 = !root.hidden4;
+        }
+        if (i == 5) {
+            root.hidden5 = !root.hidden5;
+        }
+    }
+    function send-comment() {
+        if (!root.draft.is-empty && root.new-comments < 3) {
+            root.new-comments = root.new-comments + 1;
+            root.draft = "";
+            root.set-status(root.reply-idx >= 0 ? "Reply posted" : "Comment posted", true, false);
+            root.reply-idx = -1;
+            root.send-pressed(root.draft);
+        }
+    }
 
     background: Theme.background;
 
@@ -56,9 +321,32 @@ export component CommentsPage inherits Window {
         spacing: 0;
 
         AppBar {
-            title: "Comments · 47";
+            title: "Comments · " + root.total-comments();
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
-            leading-pressed => { root.back-pressed(); }
+            trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
+            leading-pressed => {
+                root.back-pressed();
+            }
+            trailing-pressed => {
+                root.sheet-open = true;
+            }
+        }
+
+        if !root.status-msg.is-empty: Rectangle {
+            height: 28px;
+            background: root.status-success ? Theme.accent-success.with-alpha(0.16) : (root.status-danger ? Theme.accent-danger.with-alpha(0.16) : Theme.surface-2);
+            HorizontalLayout {
+                alignment: center;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.status-msg;
+                        color: root.status-success ? Theme.accent-success : (root.status-danger ? Theme.accent-danger : Theme.on-surface);
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                    }
+                }
+            }
         }
 
         ScrollView {
@@ -70,7 +358,6 @@ export component CommentsPage inherits Window {
                 spacing: Theme.spacing-md;
                 alignment: start;
 
-                // ----- Parent post snippet ----------------------------------
                 VerticalLayout {
                     padding-left: Theme.spacing-md;
                     padding-right: Theme.spacing-md;
@@ -79,75 +366,221 @@ export component CommentsPage inherits Window {
                         subtitle: "Shipped the Tone enum refactor today — every status colour now flows from one source.";
                         TextButton {
                             text: "View original";
-                            clicked => { root.original-pressed(); }
+                            clicked => {
+                                root.set-status("Opening original post…", true, false);
+                                root.original-pressed();
+                            }
                         }
                     }
                 }
 
-                // ----- Filter -----------------------------------------------
                 VerticalLayout {
                     padding-left: Theme.spacing-md;
                     padding-right: Theme.spacing-md;
+                    spacing: Theme.spacing-xs;
+                    Text {
+                        text: "SORT · " + root.filter-label();
+                        color: Theme.muted;
+                        font-size: 11px;
+                        font-weight: 700;
+                        letter-spacing: 2px;
+                    }
                     SegmentedControl {
                         options: ["Top", "New", "Oldest"];
                         selected-index <=> root.filter-index;
+                        changed(i) => {
+                            root.set-status("Sort: " + root.filter-label(), true, false);
+                        }
                     }
                 }
 
-                // ----- Comments ---------------------------------------------
                 FormSection {
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/profile.svg");
-                        tone: Tone.info;
-                        title: "@ada · 2h";
-                        subtitle: "Finally — the Snackbar action button picking up tone is the bit I kept tripping over. Beautiful.";
-                        LikeTrailing { count: "24"; }
+                    CommentRow {
+                        who-time: "@ada · 2h";
+                        body: "Finally — the Snackbar action button picking up tone is the bit I kept tripping over. Beautiful.";
+                        tone-i: 1;
+                        likes: root.count0;
+                        liked: root.liked0;
+                        pinned: root.pinned-idx == 0;
+                        reply-open: root.reply-idx == 0;
+                        hidden: root.hidden0;
+                        row-clicked => {
+                            root.set-status("Opened @ada", true, false);
+                        }
+                        like-clicked => {
+                            root.toggle-like(0);
+                            root.set-status(root.liked0 ? "Liked ❤" : "Unliked", root.liked0, false);
+                        }
+                        reply-clicked => {
+                            root.reply-idx = root.reply-idx == 0 ? -1 : 0;
+                            root.set-status(root.reply-idx == 0 ? "Replying to @ada" : "Reply cancelled", true, false);
+                        }
+                        pin-clicked => {
+                            root.pinned-idx = root.pinned-idx == 0 ? -1 : 0;
+                            root.set-status(root.pinned-idx == 0 ? "Pinned @ada" : "Unpinned", root.pinned-idx == 0, false);
+                        }
                     }
                     Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/profile.svg");
-                        tone: Tone.success;
-                        title: "@anika · 4h";
-                        subtitle: "Does this mean the Banner action label respects tone now too? That was the one off-by-one I kept seeing on Wallet.";
-                        LikeTrailing { count: "12"; }
+
+                    CommentRow {
+                        who-time: "@anika · 4h";
+                        body: "Does this mean the Banner action label respects tone now too? That was the one off-by-one I kept seeing on Wallet.";
+                        tone-i: 2;
+                        likes: root.count1;
+                        liked: root.liked1;
+                        pinned: root.pinned-idx == 1;
+                        reply-open: root.reply-idx == 1;
+                        hidden: root.hidden1;
+                        row-clicked => {
+                            root.set-status("Opened @anika", true, false);
+                        }
+                        like-clicked => {
+                            root.toggle-like(1);
+                            root.set-status(root.liked1 ? "Liked ❤" : "Unliked", root.liked1, false);
+                        }
+                        reply-clicked => {
+                            root.reply-idx = root.reply-idx == 1 ? -1 : 1;
+                            root.set-status(root.reply-idx == 1 ? "Replying to @anika" : "Reply cancelled", true, false);
+                        }
+                        pin-clicked => {
+                            root.pinned-idx = root.pinned-idx == 1 ? -1 : 1;
+                            root.set-status(root.pinned-idx == 1 ? "Pinned @anika" : "Unpinned", root.pinned-idx == 1, false);
+                        }
                     }
                     Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/profile.svg");
-                        tone: Tone.warning;
-                        title: "@bao · 6h";
-                        subtitle: "Yes, please follow up with a migration note in DESIGN.md so the next contributor doesn't re-grep for the old patterns.";
-                        LikeTrailing { count: "8"; }
+
+                    CommentRow {
+                        who-time: "@bao · 6h";
+                        body: "Yes, please follow up with a migration note in DESIGN.md so the next contributor doesn't re-grep for the old patterns.";
+                        tone-i: 3;
+                        likes: root.count2;
+                        liked: root.liked2;
+                        pinned: root.pinned-idx == 2;
+                        reply-open: root.reply-idx == 2;
+                        hidden: root.hidden2;
+                        row-clicked => {
+                            root.set-status("Opened @bao", true, false);
+                        }
+                        like-clicked => {
+                            root.toggle-like(2);
+                            root.set-status(root.liked2 ? "Liked ❤" : "Unliked", root.liked2, false);
+                        }
+                        reply-clicked => {
+                            root.reply-idx = root.reply-idx == 2 ? -1 : 2;
+                            root.set-status(root.reply-idx == 2 ? "Replying to @bao" : "Reply cancelled", true, false);
+                        }
+                        pin-clicked => {
+                            root.pinned-idx = root.pinned-idx == 2 ? -1 : 2;
+                            root.set-status(root.pinned-idx == 2 ? "Pinned @bao" : "Unpinned", root.pinned-idx == 2, false);
+                        }
                     }
                     Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/profile.svg");
-                        tone: Tone.danger;
-                        title: "@cyril · 9h";
-                        subtitle: "Question: how do you reconcile this with the older accent-pressed tokens? Don't they need a matching tone-aware variant?";
-                        LikeTrailing { count: "5"; }
+
+                    CommentRow {
+                        who-time: "@cyril · 9h";
+                        body: "Question: how do you reconcile this with the older accent-pressed tokens? Don't they need a matching tone-aware variant?";
+                        tone-i: 4;
+                        likes: root.count3;
+                        liked: root.liked3;
+                        pinned: root.pinned-idx == 3;
+                        reply-open: root.reply-idx == 3;
+                        hidden: root.hidden3;
+                        row-clicked => {
+                            root.set-status("Opened @cyril", true, false);
+                        }
+                        like-clicked => {
+                            root.toggle-like(3);
+                            root.set-status(root.liked3 ? "Liked ❤" : "Unliked", root.liked3, false);
+                        }
+                        reply-clicked => {
+                            root.reply-idx = root.reply-idx == 3 ? -1 : 3;
+                            root.set-status(root.reply-idx == 3 ? "Replying to @cyril" : "Reply cancelled", true, false);
+                        }
+                        pin-clicked => {
+                            root.pinned-idx = root.pinned-idx == 3 ? -1 : 3;
+                            root.set-status(root.pinned-idx == 3 ? "Pinned @cyril" : "Unpinned", root.pinned-idx == 3, false);
+                        }
                     }
                     Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/profile.svg");
-                        tone: Tone.default;
-                        title: "@chen · 12h";
-                        subtitle: "The MetaRow upgrade is also lovely — chips finally line up on a single baseline across recipe / event / contact pages.";
-                        LikeTrailing { count: "3"; }
+
+                    CommentRow {
+                        who-time: "@chen · 12h";
+                        body: "The MetaRow upgrade is also lovely — chips finally line up on a single baseline across recipe / event / contact pages.";
+                        tone-i: 0;
+                        likes: root.count4;
+                        liked: root.liked4;
+                        pinned: root.pinned-idx == 4;
+                        reply-open: root.reply-idx == 4;
+                        hidden: root.hidden4;
+                        row-clicked => {
+                            root.set-status("Opened @chen", true, false);
+                        }
+                        like-clicked => {
+                            root.toggle-like(4);
+                            root.set-status(root.liked4 ? "Liked ❤" : "Unliked", root.liked4, false);
+                        }
+                        reply-clicked => {
+                            root.reply-idx = root.reply-idx == 4 ? -1 : 4;
+                            root.set-status(root.reply-idx == 4 ? "Replying to @chen" : "Reply cancelled", true, false);
+                        }
+                        pin-clicked => {
+                            root.pinned-idx = root.pinned-idx == 4 ? -1 : 4;
+                            root.set-status(root.pinned-idx == 4 ? "Pinned @chen" : "Unpinned", root.pinned-idx == 4, false);
+                        }
                     }
                     Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/profile.svg");
-                        tone: Tone.info;
-                        title: "@cosmin · 1d";
-                        subtitle: "Bookmarking this thread for the next design system review at work.";
-                        LikeTrailing { count: "2"; }
+
+                    CommentRow {
+                        who-time: "@cosmin · 1d";
+                        body: "Bookmarking this thread for the next design system review at work.";
+                        tone-i: 1;
+                        likes: root.count5;
+                        liked: root.liked5;
+                        pinned: root.pinned-idx == 5;
+                        reply-open: root.reply-idx == 5;
+                        hidden: root.hidden5;
+                        row-clicked => {
+                            root.set-status("Opened @cosmin", true, false);
+                        }
+                        like-clicked => {
+                            root.toggle-like(5);
+                            root.set-status(root.liked5 ? "Liked ❤" : "Unliked", root.liked5, false);
+                        }
+                        reply-clicked => {
+                            root.reply-idx = root.reply-idx == 5 ? -1 : 5;
+                            root.set-status(root.reply-idx == 5 ? "Replying to @cosmin" : "Reply cancelled", true, false);
+                        }
+                        pin-clicked => {
+                            root.pinned-idx = root.pinned-idx == 5 ? -1 : 5;
+                            root.set-status(root.pinned-idx == 5 ? "Pinned @cosmin" : "Unpinned", root.pinned-idx == 5, false);
+                        }
+                    }
+                }
+
+                if root.new-comments > 0: FormSection {
+                    title: "YOUR COMMENTS · +" + root.new-comments;
+                    for t[i] in [{ idx: 1 }, { idx: 2 }, { idx: 3 }]: VerticalLayout {
+                        spacing: 0;
+                        if t.idx <= root.new-comments: CommentRow {
+                            who-time: "@you · just now";
+                            body: "(your comment #" + t.idx + ")";
+                            tone-i: 2;
+                            likes: 0;
+                            liked: false;
+                            pinned: false;
+                            reply-open: false;
+                            hidden: false;
+                            row-clicked => { }
+                            like-clicked => { }
+                            reply-clicked => { }
+                            pin-clicked => { }
+                        }
+                        if t.idx <= root.new-comments && t.idx < root.new-comments: Divider { }
                     }
                 }
             }
         }
 
-        // ----- Sticky composer ------------------------------------------
         BottomBar {
             HorizontalLayout {
                 padding: Theme.spacing-sm;
@@ -158,7 +591,7 @@ export component CommentsPage inherits Window {
                     alignment: center;
                     horizontal-stretch: 1;
                     TextField {
-                        placeholder: "Add a comment…";
+                        placeholder: root.reply-idx >= 0 ? "Reply…" : "Add a comment…";
                         text <=> root.draft;
                     }
                 }
@@ -167,10 +600,12 @@ export component CommentsPage inherits Window {
                     width: 48px;
                     height: 48px;
                     border-radius: self.width / 2;
-                    background: send-touch.pressed ? Theme.primary-pressed : Theme.primary;
+                    background: send-touch.pressed ? Theme.primary-pressed : (root.draft.is-empty ? Theme.surface-2 : Theme.primary);
                     accessible-role: button;
                     accessible-label: "Send";
-                    accessible-action-default => { root.send-pressed(root.draft); }
+                    accessible-action-default => {
+                        root.send-comment();
+                    }
                     animate background { duration: Theme.motion-fast; }
 
                     Image {
@@ -179,12 +614,141 @@ export component CommentsPage inherits Window {
                         x: (parent.width - self.width) / 2;
                         y: (parent.height - self.height) / 2;
                         source: @image-url("@mobile-components/icons/send.svg");
-                        colorize: Theme.on-primary;
+                        colorize: root.draft.is-empty ? Theme.muted : Theme.on-primary;
                         image-fit: contain;
                     }
 
                     send-touch := TouchArea {
-                        clicked => { root.send-pressed(root.draft); }
+                        clicked => {
+                            root.send-comment();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ===================== Bottom sheet =====================
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+                root.confirm-clear = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: Theme.surface-2;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.muted;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: "Comments menu";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 700;
+                    }
+                }
+                SheetRow {
+                    label: root.subscribed ? "Unsubscribe from replies" : "Subscribe to replies";
+                    clicked => {
+                        root.subscribed = !root.subscribed;
+                        root.set-status(root.subscribed ? "Subscribed" : "Unsubscribed", root.subscribed, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Like all visible";
+                    clicked => {
+                        if (!root.liked0) {
+                            root.liked0 = true;
+                            root.count0 = root.count0 + 1;
+                        }
+                        if (!root.liked1) {
+                            root.liked1 = true;
+                            root.count1 = root.count1 + 1;
+                        }
+                        if (!root.liked2) {
+                            root.liked2 = true;
+                            root.count2 = root.count2 + 1;
+                        }
+                        if (!root.liked3) {
+                            root.liked3 = true;
+                            root.count3 = root.count3 + 1;
+                        }
+                        if (!root.liked4) {
+                            root.liked4 = true;
+                            root.count4 = root.count4 + 1;
+                        }
+                        if (!root.liked5) {
+                            root.liked5 = true;
+                            root.count5 = root.count5 + 1;
+                        }
+                        root.set-status("Liked all", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Unhide everything";
+                    clicked => {
+                        root.hidden0 = false;
+                        root.hidden1 = false;
+                        root.hidden2 = false;
+                        root.hidden3 = false;
+                        root.hidden4 = false;
+                        root.hidden5 = false;
+                        root.set-status("All restored", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                Divider { }
+
+                SheetRow {
+                    label: root.confirm-clear ? "Confirm: hide all" : "Hide all comments";
+                    destructive: true;
+                    clicked => {
+                        if (root.confirm-clear) {
+                            root.hidden0 = true;
+                            root.hidden1 = true;
+                            root.hidden2 = true;
+                            root.hidden3 = true;
+                            root.hidden4 = true;
+                            root.hidden5 = true;
+                            root.set-status("All hidden", false, true);
+                            root.sheet-open = false;
+                            root.confirm-clear = false;
+                        } else {
+                            root.confirm-clear = true;
+                        }
+                    }
+                }
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.sheet-open = false;
+                        root.confirm-clear = false;
                     }
                 }
             }

@@ -100,9 +100,155 @@ export component AppStoreListingPage inherits Window {
     callback back-pressed();
     callback share-pressed();
     callback get-pressed();
+    callback installed();
+    callback opened();
+    callback removed();
+    callback wishlisted(bool);
+    callback rated(int);
     callback screenshot-pressed(int);
 
+    // ---- Internal state ----
+    // 0 = idle (GET), 1 = installing (progress bar), 2 = installed (OPEN)
+    private property <int> install-state: 0;
+    private property <int> install-progress: 0;
+    private property <bool> is-wishlisted: false;
+    // 0 = not rated; 1-5 = stars chosen by the visitor.
+    private property <int> user-rating: 0;
+    // -1 = no lightbox; 0..3 = which screenshot is enlarged.
+    private property <int> selected-screenshot: -1;
+    private property <bool> show-share: false;
+    private property <bool> description-expanded: false;
+    private property <bool> changelog-expanded: false;
+    private property <string> status-msg: "";
+    private property <bool> status-is-success: false;
+    private property <bool> status-is-danger: false;
+
+    // ---- Reviews data ----
+    private property <[string]> review-authors: [
+        "Sarah K.", "Maria L.", "Tom R.", "Alex M.", "Jenny P.", "Chris D.",
+    ];
+    private property <[int]> review-stars: [5, 4, 5, 3, 5, 4];
+    private property <[string]> review-bodies: [
+        "Tap-and-pay at the counter is a game changer. I used to fumble with my wallet every morning; now I just tap.",
+        "Order-ahead works great, but loyalty stamps sometimes take a few hours to show up. Otherwise solid.",
+        "Love the offline mode. Walked into a basement bakery with no signal and could still see my favourites.",
+        "Live order tracking is buggy on Android 12. App is fine otherwise.",
+        "The new pop-up partners list is fantastic. Discovered three bakeries I had no idea were nearby.",
+        "Crashes if I try to redeem points while on aeroplane mode. Worked around it by toggling wifi off then on.",
+    ];
+
+    // ---- Changelog data ----
+    private property <string> current-version: "3.14";
+    private property <string> current-date: "3 days ago";
+    private property <string> current-notes:
+        "Tap-and-pay at the counter (US/UK first), three new pop-ups, faster live order tracking, misc. bug fixes.";
+    private property <[string]> history-versions: ["3.13", "3.12", "3.11", "3.10"];
+    private property <[string]> history-dates: [
+        "2 weeks ago",
+        "5 weeks ago",
+        "8 weeks ago",
+        "11 weeks ago",
+    ];
+    private property <[string]> history-notes: [
+        "Loyalty stamps now sync immediately. Bottom-sheet redeems for under-100-point items.",
+        "Dark-mode pass for the order screen. Order receipts are now exportable as PDF.",
+        "Apple Pay added to checkout. Store credit splits across multiple purchases.",
+        "Initial public release. Order ahead from the four Tartine SF locations.",
+    ];
+
+    // ---- Share targets ----
+    private property <[string]> share-targets: [
+        "Messages", "Mail", "Slack", "Copy link",
+    ];
+
     background: Theme.background;
+
+    // ---- Install progress timer ----
+    Timer {
+        interval: 60ms;
+        running: root.install-state == 1 && root.install-progress < 100;
+        triggered => {
+            root.install-progress = min(100, root.install-progress + 4);
+            if (root.install-progress >= 100) {
+                root.install-state = 2;
+                root.status-msg = "Installed -- tap OPEN to launch";
+                root.status-is-success = true;
+                root.status-is-danger = false;
+                root.installed();
+            }
+        }
+    }
+
+    // ---- Handlers ----
+    function press-get() {
+        root.get-pressed();
+        if (root.install-state == 0) {
+            root.install-state = 1;
+            root.install-progress = 0;
+            root.status-msg = "Installing Tartine...";
+            root.status-is-success = false;
+            root.status-is-danger = false;
+        } else if (root.install-state == 2) {
+            root.status-msg = "Opening Tartine...";
+            root.status-is-success = true;
+            root.status-is-danger = false;
+            root.opened();
+        }
+    }
+    function press-remove() {
+        root.install-state = 0;
+        root.install-progress = 0;
+        root.user-rating = 0;
+        root.status-msg = "Removed Tartine";
+        root.status-is-success = false;
+        root.status-is-danger = true;
+        root.removed();
+    }
+    function toggle-wishlist() {
+        root.is-wishlisted = !root.is-wishlisted;
+        root.status-msg = root.is-wishlisted
+            ? "Added to wishlist"
+            : "Removed from wishlist";
+        root.status-is-success = root.is-wishlisted;
+        root.status-is-danger = false;
+        root.wishlisted(root.is-wishlisted);
+    }
+    function tap-star(n: int) {
+        root.user-rating = n;
+        root.status-msg = n + " stars submitted";
+        root.status-is-success = true;
+        root.status-is-danger = false;
+        root.rated(n);
+    }
+    function tap-screenshot(i: int) {
+        root.selected-screenshot = i;
+        root.status-msg = "Viewing screenshot " + (i + 1);
+        root.status-is-success = false;
+        root.status-is-danger = false;
+        root.screenshot-pressed(i);
+    }
+    function close-lightbox() {
+        root.selected-screenshot = -1;
+        root.status-msg = "Lightbox closed";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    function toggle-share() {
+        root.show-share = !root.show-share;
+        root.share-pressed();
+    }
+    function pick-share(name: string) {
+        root.show-share = false;
+        root.status-msg = "Shared via " + name;
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    function toggle-description() {
+        root.description-expanded = !root.description-expanded;
+    }
+    function toggle-changelog() {
+        root.changelog-expanded = !root.changelog-expanded;
+    }
 
     VerticalLayout {
         spacing: 0;
@@ -113,206 +259,718 @@ export component AppStoreListingPage inherits Window {
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             trailing-icon: @image-url("@mobile-components/icons/send.svg");
             leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.share-pressed(); }
+            trailing-pressed => { root.toggle-share(); }
         }
 
-        VerticalLayout {
-            padding: Theme.spacing-md;
-            spacing: Theme.spacing-md;
-            alignment: start;
-
-            // App header.
+        // ----- Status banner -----
+        if root.status-msg != "": Rectangle {
+            background: root.status-is-danger ? Theme.accent-danger
+                : root.status-is-success ? Theme.accent-success
+                : Theme.surface-2;
+            height: 32px;
+            animate background { duration: Theme.motion-fast; }
             HorizontalLayout {
-                spacing: Theme.spacing-md;
-                alignment: stretch;
-                VerticalLayout {
-                    alignment: center;
-                    Rectangle {
-                        width: 80px;
-                        height: 80px;
-                        border-radius: Theme.radius-lg;
-                        background: @linear-gradient(135deg, #d4751a 0%, #7a2e0a 100%);
-                        Text {
-                            text: "T";
-                            color: Theme.on-primary;
-                            font-size: 36px;
-                            font-weight: 800;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
-                            width: parent.width;
-                            height: parent.height;
-                        }
-                    }
-                }
-                VerticalLayout {
-                    horizontal-stretch: 1;
-                    alignment: center;
-                    spacing: 2px;
-                    Heading {
-                        text: root.app-name;
-                        style: HeadingStyle.bold-impact;
-                        font-size: 24px;
-                    }
-                    Text {
-                        text: "Order ahead · pickup · loyalty";
-                        color: Theme.muted;
-                        font-size: Theme.font-size-caption;
-                    }
-                    HorizontalLayout {
-                        spacing: 2px;
-                        padding-top: 2px;
-                        for index in 5 : Image {
-                            width: 12px;
-                            height: 12px;
-                            source: @image-url("@mobile-components/icons/star.svg");
-                            colorize:
-                                  index < 4 ? Theme.accent-warning
-                                : Theme.surface-variant;
-                            image-fit: contain;
-                            vertical-alignment: center;
-                        }
-                        Text {
-                            text: " " + root.rating + " · " + root.review-count + " ratings";
-                            color: Theme.muted;
-                            font-size: Theme.font-size-caption;
-                            font-weight: 700;
-                            vertical-alignment: center;
-                        }
-                    }
-                }
-                VerticalLayout {
-                    alignment: center;
-                    Rectangle {
-                        width: 80px;
-                        height: 36px;
-                        border-radius: 18px;
-                        background: get-touch.pressed ? Theme.accent-info.darker(0.15) : Theme.accent-info;
-                        animate background { duration: Theme.motion-fast; }
-                        Text {
-                            text: "GET";
-                            color: Theme.on-primary;
-                            font-size: Theme.font-size-caption;
-                            font-weight: 800;
-                            letter-spacing: 1px;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
-                            width: parent.width;
-                            height: parent.height;
-                        }
-                        get-touch := TouchArea {
-                            clicked => { root.get-pressed(); }
-                        }
-                    }
-                }
-            }
-
-            // Stat strip.
-            Rectangle {
-                background: Theme.surface-1;
-                border-radius: Theme.radius-md;
-                drop-shadow-blur: Theme.elevation-1-blur;
-                drop-shadow-color: Theme.elevation-1-color;
-                drop-shadow-offset-y: Theme.elevation-1-y;
-                HorizontalLayout {
-                    padding: Theme.spacing-sm;
-                    alignment: stretch;
-                    StatTile {
-                        label: "RATING";
-                        value: "4.7";
-                        caption: "12K reviews";
-                        tone: Tone.warning;
-                    }
-                    Rectangle { width: 1px; background: Theme.outline; }
-                    StatTile {
-                        label: "SIZE";
-                        value: "42 MB";
-                        caption: "iPhone & iPad";
-                    }
-                    Rectangle { width: 1px; background: Theme.outline; }
-                    StatTile {
-                        label: "AGE";
-                        value: "4+";
-                        caption: "Made for all";
-                    }
-                    Rectangle { width: 1px; background: Theme.outline; }
-                    StatTile {
-                        label: "CHART";
-                        value: "#3";
-                        caption: "Food & Drink";
-                        tone: Tone.info;
-                    }
-                }
-            }
-        }
-
-        // Screenshot strip.
-        SectionHeader { text: "PREVIEW"; }
-        ScrollView {
-            height: 400px;
-            horizontal-stretch: 1;
-            viewport-width: 4 * 200px + 5 * Theme.spacing-sm;
-            viewport-height: 380px;
-            HorizontalLayout {
-                spacing: Theme.spacing-sm;
                 padding-left: Theme.spacing-md;
                 padding-right: Theme.spacing-md;
-                padding-top: Theme.spacing-xs;
-                ScreenshotFrame {
-                    tint: @linear-gradient(180deg, #d4751a 0%, #7a2e0a 100%);
-                    overlay: "Order ahead\nfrom your local bakery";
-                }
-                ScreenshotFrame {
-                    tint: @linear-gradient(180deg, #4f8cff 0%, #1f4eaa 100%);
-                    overlay: "Track your\norder live";
-                }
-                ScreenshotFrame {
-                    tint: @linear-gradient(180deg, #16a34a 0%, #14532d 100%);
-                    overlay: "Loyalty points\nfor every visit";
-                }
-                ScreenshotFrame {
-                    tint: @linear-gradient(180deg, #9333ea 0%, #4c1d95 100%);
-                    overlay: "Save your\nfavourites";
+                Text {
+                    text: root.status-msg;
+                    color: (root.status-is-danger || root.status-is-success)
+                        ? Theme.on-primary
+                        : Theme.on-surface;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
                 }
             }
         }
 
-        // Description card.
+        // ----- Main scrollable content -----
+        ScrollView {
+            vertical-stretch: 1;
+
+            VerticalLayout {
+                spacing: 0;
+
+                VerticalLayout {
+                    padding: Theme.spacing-md;
+                    spacing: Theme.spacing-md;
+                    alignment: start;
+
+                    // App header — icon, name, GET/OPEN/INSTALLING button.
+                    HorizontalLayout {
+                        spacing: Theme.spacing-md;
+                        alignment: stretch;
+                        VerticalLayout {
+                            alignment: center;
+                            Rectangle {
+                                width: 80px;
+                                height: 80px;
+                                border-radius: Theme.radius-lg;
+                                background: @linear-gradient(135deg, #d4751a 0%, #7a2e0a 100%);
+                                Text {
+                                    text: "T";
+                                    color: Theme.on-primary;
+                                    font-size: 36px;
+                                    font-weight: 800;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                            }
+                        }
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            alignment: center;
+                            spacing: 2px;
+                            HorizontalLayout {
+                                spacing: Theme.spacing-sm;
+                                Heading {
+                                    text: root.app-name;
+                                    style: HeadingStyle.bold-impact;
+                                    font-size: 24px;
+                                    horizontal-stretch: 1;
+                                }
+                                // Wishlist heart toggle.
+                                Rectangle {
+                                    width: 36px;
+                                    height: 36px;
+                                    border-radius: 18px;
+                                    background: heart-touch.pressed
+                                        ? Theme.surface-pressed
+                                        : transparent;
+                                    border-width: 1px;
+                                    border-color: Theme.outline;
+                                    animate background { duration: Theme.motion-fast; }
+                                    Image {
+                                        width: 18px;
+                                        height: 18px;
+                                        x: (parent.width - self.width) / 2;
+                                        y: (parent.height - self.height) / 2;
+                                        source: @image-url("@mobile-components/icons/heart.svg");
+                                        colorize: root.is-wishlisted
+                                            ? Theme.accent-danger
+                                            : Theme.muted;
+                                        image-fit: contain;
+                                    }
+                                    heart-touch := TouchArea {
+                                        clicked => { root.toggle-wishlist(); }
+                                    }
+                                }
+                            }
+                            Text {
+                                text: root.developer + " · Order ahead";
+                                color: Theme.muted;
+                                font-size: Theme.font-size-caption;
+                            }
+                            HorizontalLayout {
+                                spacing: 2px;
+                                padding-top: 2px;
+                                for index in 5: Image {
+                                    width: 12px;
+                                    height: 12px;
+                                    source: @image-url("@mobile-components/icons/star.svg");
+                                    colorize: index < 4 ? Theme.accent-warning : Theme.surface-variant;
+                                    image-fit: contain;
+                                    vertical-alignment: center;
+                                }
+                                Text {
+                                    text: " " + root.rating + " · " + root.review-count + " ratings";
+                                    color: Theme.muted;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 700;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            spacing: 4px;
+                            Rectangle {
+                                width: 96px;
+                                height: 36px;
+                                border-radius: 18px;
+                                background: get-touch.pressed
+                                    ? Theme.accent-info.darker(0.15)
+                                    : (root.install-state == 2
+                                        ? Theme.accent-success
+                                        : Theme.accent-info);
+                                animate background { duration: Theme.motion-fast; }
+                                Text {
+                                    text: root.install-state == 0
+                                        ? "GET"
+                                        : root.install-state == 1
+                                            ? root.install-progress + "%"
+                                            : "OPEN";
+                                    color: Theme.on-primary;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 800;
+                                    letter-spacing: 1px;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                                get-touch := TouchArea {
+                                    clicked => { root.press-get(); }
+                                }
+                            }
+                            // Remove appears only post-install.
+                            if root.install-state == 2: Rectangle {
+                                width: 96px;
+                                height: 28px;
+                                border-radius: 14px;
+                                background: remove-touch.pressed
+                                    ? Theme.surface-pressed
+                                    : transparent;
+                                border-width: 1px;
+                                border-color: Theme.accent-danger;
+                                animate background { duration: Theme.motion-fast; }
+                                Text {
+                                    text: "REMOVE";
+                                    color: Theme.accent-danger;
+                                    font-size: 10px;
+                                    font-weight: 800;
+                                    letter-spacing: 1px;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    x: 0;
+                                    y: 0;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                                remove-touch := TouchArea {
+                                    clicked => { root.press-remove(); }
+                                }
+                            }
+                        }
+                    }
+
+                    // Install progress bar while state == 1.
+                    if root.install-state == 1: Rectangle {
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.surface-variant;
+                        Rectangle {
+                            x: 0;
+                            y: 0;
+                            width: parent.width * root.install-progress / 100;
+                            height: parent.height;
+                            border-radius: 2px;
+                            background: Theme.accent-info;
+                            animate width { duration: Theme.motion-fast; }
+                        }
+                    }
+
+                    // Stat strip.
+                    Rectangle {
+                        background: Theme.surface-1;
+                        border-radius: Theme.radius-md;
+                        drop-shadow-blur: Theme.elevation-1-blur;
+                        drop-shadow-color: Theme.elevation-1-color;
+                        drop-shadow-offset-y: Theme.elevation-1-y;
+                        HorizontalLayout {
+                            padding: Theme.spacing-sm;
+                            alignment: stretch;
+                            StatTile {
+                                label: "RATING";
+                                value: "4.7";
+                                caption: "12K reviews";
+                                tone: Tone.warning;
+                            }
+                            Rectangle {
+                                width: 1px;
+                                background: Theme.outline;
+                            }
+                            StatTile {
+                                label: "SIZE";
+                                value: "42 MB";
+                                caption: "iPhone & iPad";
+                            }
+                            Rectangle {
+                                width: 1px;
+                                background: Theme.outline;
+                            }
+                            StatTile {
+                                label: "AGE";
+                                value: "4+";
+                                caption: "Made for all";
+                            }
+                            Rectangle {
+                                width: 1px;
+                                background: Theme.outline;
+                            }
+                            StatTile {
+                                label: "CHART";
+                                value: "#3";
+                                caption: "Food & Drink";
+                                tone: Tone.info;
+                            }
+                        }
+                    }
+                }
+
+                // ----- Screenshot strip (tap to enlarge) -----
+                SectionHeader { text: "PREVIEW · TAP TO ENLARGE"; }
+                ScrollView {
+                    height: 400px;
+                    horizontal-stretch: 1;
+                    viewport-width: 4 * 200px + 5 * Theme.spacing-sm;
+                    viewport-height: 380px;
+                    HorizontalLayout {
+                        spacing: Theme.spacing-sm;
+                        padding-left: Theme.spacing-md;
+                        padding-right: Theme.spacing-md;
+                        padding-top: Theme.spacing-xs;
+                        Rectangle {
+                            ScreenshotFrame {
+                                tint: @linear-gradient(180deg, #d4751a 0%, #7a2e0a 100%);
+                                overlay: "Order ahead\nfrom your local bakery";
+                            }
+                            TouchArea {
+                                clicked => { root.tap-screenshot(0); }
+                            }
+                        }
+                        Rectangle {
+                            ScreenshotFrame {
+                                tint: @linear-gradient(180deg, #4f8cff 0%, #1f4eaa 100%);
+                                overlay: "Track your\norder live";
+                            }
+                            TouchArea {
+                                clicked => { root.tap-screenshot(1); }
+                            }
+                        }
+                        Rectangle {
+                            ScreenshotFrame {
+                                tint: @linear-gradient(180deg, #16a34a 0%, #14532d 100%);
+                                overlay: "Loyalty points\nfor every visit";
+                            }
+                            TouchArea {
+                                clicked => { root.tap-screenshot(2); }
+                            }
+                        }
+                        Rectangle {
+                            ScreenshotFrame {
+                                tint: @linear-gradient(180deg, #9333ea 0%, #4c1d95 100%);
+                                overlay: "Save your\nfavourites";
+                            }
+                            TouchArea {
+                                clicked => { root.tap-screenshot(3); }
+                            }
+                        }
+                    }
+                }
+
+                // ----- Description card (read more) -----
+                VerticalLayout {
+                    padding: Theme.spacing-md;
+                    spacing: Theme.spacing-sm;
+                    Text {
+                        text: "About this app";
+                        color: Theme.on-background;
+                        font-size: Theme.font-size-body-large;
+                        font-weight: 800;
+                    }
+                    Text {
+                        text: root.description-expanded
+                            ? "Order ahead from Tartine Manufactory, Tartine Bakery, and select pop-ups. Earn a loyalty stamp on every coffee, redeem for pastries and t-shirts, and pay with whatever method you've got loaded -- Apple Pay, card, or store credit.\n\nNew in this version: tap-and-pay at the counter, three new pop-up partners, and a snappier order-tracking screen.\n\nDesigned by the team at Tartine in Mission, San Francisco. Built by independent developers who love bread, coffee, and well-designed apps in equal measure. The whole codebase is a single-binary Slint + Rust app -- no JavaScript anywhere on the device."
+                            : "Order ahead from Tartine Manufactory, Tartine Bakery, and select pop-ups. Earn a loyalty stamp on every coffee, redeem for pastries and t-shirts, and pay with whatever method you've got loaded...";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-body;
+                        wrap: word-wrap;
+                    }
+                    HorizontalLayout {
+                        alignment: start;
+                        Rectangle {
+                            width: 100px;
+                            height: 28px;
+                            border-radius: 14px;
+                            background: more-touch.pressed
+                                ? Theme.surface-pressed
+                                : Theme.surface-2;
+                            animate background { duration: Theme.motion-fast; }
+                            Text {
+                                text: root.description-expanded ? "Read less" : "Read more";
+                                color: Theme.primary;
+                                font-size: Theme.font-size-caption;
+                                font-weight: 700;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                x: 0;
+                                y: 0;
+                                width: parent.width;
+                                height: parent.height;
+                            }
+                            more-touch := TouchArea {
+                                clicked => { root.toggle-description(); }
+                            }
+                        }
+                    }
+                }
+
+                // ----- What's new + expandable version history -----
+                SectionHeader { text: "WHAT'S NEW · v" + root.current-version; }
+                VerticalLayout {
+                    padding: Theme.spacing-md;
+                    spacing: Theme.spacing-xs;
+                    Text {
+                        text: "Released " + root.current-date + " · 4.7 MB update";
+                        color: Theme.muted;
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                    }
+                    Text {
+                        text: root.current-notes;
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-body;
+                        wrap: word-wrap;
+                    }
+                    HorizontalLayout {
+                        alignment: start;
+                        Rectangle {
+                            width: 140px;
+                            height: 28px;
+                            border-radius: 14px;
+                            background: chlog-touch.pressed
+                                ? Theme.surface-pressed
+                                : Theme.surface-2;
+                            animate background { duration: Theme.motion-fast; }
+                            Text {
+                                text: root.changelog-expanded
+                                    ? "Hide history"
+                                    : "Show version history";
+                                color: Theme.primary;
+                                font-size: Theme.font-size-caption;
+                                font-weight: 700;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                x: 0;
+                                y: 0;
+                                width: parent.width;
+                                height: parent.height;
+                            }
+                            chlog-touch := TouchArea {
+                                clicked => { root.toggle-changelog(); }
+                            }
+                        }
+                    }
+
+                    // Expanded changelog list — every prior version
+                    // is shown with date + notes.
+                    if root.changelog-expanded: VerticalLayout {
+                        padding-top: Theme.spacing-sm;
+                        spacing: Theme.spacing-md;
+                        for v[i] in root.history-versions: Rectangle {
+                            background: Theme.surface-1;
+                            border-radius: Theme.radius-md;
+                            border-width: 1px;
+                            border-color: Theme.outline;
+                            VerticalLayout {
+                                padding: Theme.spacing-md;
+                                spacing: Theme.spacing-xs;
+                                HorizontalLayout {
+                                    Text {
+                                        text: "v" + v;
+                                        color: Theme.on-surface;
+                                        font-family: "JetBrains Mono";
+                                        font-size: Theme.font-size-body;
+                                        font-weight: 800;
+                                        horizontal-stretch: 1;
+                                    }
+                                    Text {
+                                        text: root.history-dates[i];
+                                        color: Theme.muted;
+                                        font-size: Theme.font-size-caption;
+                                    }
+                                }
+                                Text {
+                                    text: root.history-notes[i];
+                                    color: Theme.muted;
+                                    font-size: Theme.font-size-caption;
+                                    wrap: word-wrap;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ----- Rate this app -----
+                SectionHeader { text: "RATE THIS APP"; }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-bottom: Theme.spacing-md;
+                    spacing: Theme.spacing-sm;
+                    HorizontalLayout {
+                        alignment: center;
+                        spacing: Theme.spacing-md;
+                        for n in 5: Rectangle {
+                            width: 44px;
+                            height: 44px;
+                            border-radius: 22px;
+                            background: star-touch.pressed
+                                ? Theme.surface-pressed
+                                : transparent;
+                            animate background { duration: Theme.motion-fast; }
+                            Image {
+                                width: 32px;
+                                height: 32px;
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+                                source: @image-url("@mobile-components/icons/star.svg");
+                                colorize: n < root.user-rating
+                                    ? Theme.accent-warning
+                                    : Theme.muted;
+                                image-fit: contain;
+                            }
+                            star-touch := TouchArea {
+                                clicked => { root.tap-star(n + 1); }
+                            }
+                        }
+                    }
+                    if root.user-rating > 0: HorizontalLayout {
+                        alignment: center;
+                        Text {
+                            text: "Thanks! You rated " + root.user-rating + " star" + (root.user-rating == 1 ? "" : "s") + ".";
+                            color: Theme.accent-success;
+                            font-size: Theme.font-size-caption;
+                            font-weight: 700;
+                        }
+                    }
+                }
+
+                // ----- Recent reviews (real list) -----
+                SectionHeader { text: "RECENT REVIEWS"; }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-bottom: Theme.spacing-xl;
+                    spacing: Theme.spacing-sm;
+                    for author[i] in root.review-authors: Rectangle {
+                        background: Theme.surface-1;
+                        border-radius: Theme.radius-md;
+                        VerticalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-xs;
+                            HorizontalLayout {
+                                Text {
+                                    text: author;
+                                    color: Theme.on-surface;
+                                    font-size: Theme.font-size-body;
+                                    font-weight: 700;
+                                    horizontal-stretch: 1;
+                                }
+                                HorizontalLayout {
+                                    spacing: 1px;
+                                    for s in 5: Image {
+                                        width: 10px;
+                                        height: 10px;
+                                        source: @image-url("@mobile-components/icons/star.svg");
+                                        colorize: s < root.review-stars[i]
+                                            ? Theme.accent-warning
+                                            : Theme.surface-variant;
+                                        image-fit: contain;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+                            Text {
+                                text: root.review-bodies[i];
+                                color: Theme.muted;
+                                font-size: Theme.font-size-caption;
+                                wrap: word-wrap;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ----- Screenshot lightbox overlay -----
+    if root.selected-screenshot >= 0: Rectangle {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+        background: #000000dd;
+
         VerticalLayout {
-            padding: Theme.spacing-md;
-            spacing: Theme.spacing-sm;
-            Text {
-                text: "About this app";
-                color: Theme.on-background;
-                font-size: Theme.font-size-body-large;
-                font-weight: 800;
+            alignment: center;
+            padding: Theme.spacing-lg;
+            HorizontalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 320px;
+                    height: 580px;
+                    border-radius: Theme.radius-lg;
+                    background:
+                          root.selected-screenshot == 0 ? @linear-gradient(180deg, #d4751a 0%, #7a2e0a 100%)
+                        : root.selected-screenshot == 1 ? @linear-gradient(180deg, #4f8cff 0%, #1f4eaa 100%)
+                        : root.selected-screenshot == 2 ? @linear-gradient(180deg, #16a34a 0%, #14532d 100%)
+                        : @linear-gradient(180deg, #9333ea 0%, #4c1d95 100%);
+                    drop-shadow-blur: 32px;
+                    drop-shadow-color: #00000088;
+
+                    VerticalLayout {
+                        padding: Theme.spacing-lg;
+                        alignment: end;
+                        Text {
+                            text:
+                                  root.selected-screenshot == 0 ? "Order ahead\nfrom your local bakery"
+                                : root.selected-screenshot == 1 ? "Track your\norder live"
+                                : root.selected-screenshot == 2 ? "Loyalty points\nfor every visit"
+                                : "Save your\nfavourites";
+                            color: Theme.on-primary;
+                            font-size: 22px;
+                            font-weight: 800;
+                            wrap: word-wrap;
+                        }
+                        Text {
+                            text: "Screenshot " + (root.selected-screenshot + 1) + " of 4";
+                            color: #ffffff99;
+                            font-family: "JetBrains Mono";
+                            font-size: Theme.font-size-caption;
+                        }
+                    }
+                }
             }
-            Text {
-                text: "Order ahead from Tartine Manufactory, Tartine Bakery, and select pop-ups. Earn a loyalty stamp on every coffee, redeem for pastries and t-shirts, and pay with whatever method you've got loaded — Apple Pay, card, or store credit.\n\nNew in this version: tap-and-pay at the counter, three new pop-up partners, and a snappier order-tracking screen.";
-                color: Theme.on-surface;
-                font-size: Theme.font-size-body;
-                wrap: word-wrap;
+            HorizontalLayout {
+                alignment: center;
+                padding-top: Theme.spacing-md;
+                Rectangle {
+                    width: 120px;
+                    height: 44px;
+                    border-radius: 22px;
+                    background: close-touch.pressed
+                        ? Theme.surface-pressed
+                        : Theme.on-primary;
+                    animate background { duration: Theme.motion-fast; }
+                    Text {
+                        text: "Close";
+                        color: Theme.background;
+                        font-size: Theme.font-size-body;
+                        font-weight: 800;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        x: 0;
+                        y: 0;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                    close-touch := TouchArea {
+                        clicked => { root.close-lightbox(); }
+                    }
+                }
             }
         }
+    }
 
-        // What's new.
-        SectionHeader { text: "WHAT'S NEW · v3.14"; }
-        VerticalLayout {
-            padding: Theme.spacing-md;
-            spacing: Theme.spacing-xs;
-            Text {
-                text: "Released 3 days ago · 4.7 MB update";
-                color: Theme.muted;
-                font-size: Theme.font-size-caption;
-                font-weight: 700;
-            }
-            Text {
-                text: "Tap-and-pay at the counter (US/UK first), three new pop-ups, faster live order tracking, miscellaneous bug fixes.";
-                color: Theme.on-surface;
-                font-size: Theme.font-size-body;
-                wrap: word-wrap;
+    // ----- Share bottom sheet -----
+    if root.show-share: Rectangle {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+        background: #00000099;
+
+        Rectangle {
+            x: 0;
+            y: parent.height - self.height;
+            width: parent.width;
+            height: 240px;
+            background: Theme.surface-1;
+            border-radius: Theme.radius-lg;
+            drop-shadow-blur: 24px;
+            drop-shadow-color: #00000077;
+            drop-shadow-offset-y: -2px;
+
+            VerticalLayout {
+                padding: Theme.spacing-lg;
+                spacing: Theme.spacing-md;
+                Text {
+                    text: "Share Tartine";
+                    color: Theme.on-surface;
+                    font-size: Theme.font-size-body-large;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                }
+                HorizontalLayout {
+                    spacing: Theme.spacing-md;
+                    alignment: center;
+                    for target in root.share-targets: Rectangle {
+                        width: 72px;
+                        height: 88px;
+                        border-radius: Theme.radius-md;
+                        background: target-touch.pressed
+                            ? Theme.surface-pressed
+                            : Theme.surface-2;
+                        animate background { duration: Theme.motion-fast; }
+                        VerticalLayout {
+                            padding: Theme.spacing-sm;
+                            alignment: center;
+                            spacing: Theme.spacing-xs;
+                            HorizontalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: 36px;
+                                    height: 36px;
+                                    border-radius: self.width / 2;
+                                    background: Theme.accent-info;
+                                    Text {
+                                        text: target;
+                                        color: Theme.on-primary;
+                                        font-size: 10px;
+                                        font-weight: 800;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                        x: 0;
+                                        y: 0;
+                                        width: parent.width;
+                                        height: parent.height;
+                                        overflow: elide;
+                                    }
+                                }
+                            }
+                            Text {
+                                text: target;
+                                color: Theme.on-surface;
+                                font-size: 10px;
+                                font-weight: 700;
+                                horizontal-alignment: center;
+                            }
+                        }
+                        target-touch := TouchArea {
+                            clicked => { root.pick-share(target); }
+                        }
+                    }
+                }
+                Rectangle {
+                    height: 40px;
+                    border-radius: 20px;
+                    background: sheet-cancel.pressed
+                        ? Theme.surface-pressed
+                        : Theme.surface-2;
+                    animate background { duration: Theme.motion-fast; }
+                    Text {
+                        text: "Cancel";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-body;
+                        font-weight: 700;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        x: 0;
+                        y: 0;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                    sheet-cancel := TouchArea {
+                        clicked => { root.show-share = false; }
+                    }
+                }
             }
         }
-
-        Rectangle { vertical-stretch: 1; }
     }
 }

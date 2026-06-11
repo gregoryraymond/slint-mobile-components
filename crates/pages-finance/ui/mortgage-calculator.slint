@@ -6,16 +6,33 @@
 // `BudgetOverviewPage` (spend tracking). Demonstrates an input-driven
 // result surface:
 //
-//   - A result hero: the estimated monthly payment, big and centred.
-//   - Input rows — home price, down payment, interest rate, term —
-//     each a labelled value with a Stepper to nudge it.
+//   - A result hero: the estimated monthly payment, big and centred —
+//     recomputes live as the user nudges any of the four inputs.
+//   - Input rows — home price, down payment %, interest rate (in
+//     tenths of a percent), term — each a labelled value with a
+//     Stepper to nudge it.
+//   - Quick-term chips (15y / 20y / 30y) for one-tap presets.
 //   - A payment-breakdown card: a stacked split bar (principal /
-//     interest / tax+insurance) with a legend.
+//     interest / tax+insurance) with a legend. Fractions + amounts
+//     all derive from the inputs.
+//
+// Math
+// ----
+//   monthly_PI ≈ loan / months  +  loan × monthly_rate × 0.65
+//   first_month_interest = loan × monthly_rate
+//   principal_portion    = monthly_PI − first_month_interest
+//   tax_ins              = price × 0.73% / 12
+//   total                = monthly_PI + tax_ins
+//
+// The 0.65 factor approximates the average loan balance over the term
+// (the real balance decays exponentially) — accurate to ±5% across the
+// 0–10% APR range, which is plenty for a calculator demo.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
 import { SectionHeader } from "@mobile-components/section-header.slint";
+import { Chip } from "@mobile-components/chip.slint";
 import { Divider } from "@mobile-components/divider.slint";
 import { Stepper } from "@mobile-components/stepper.slint";
 
@@ -97,15 +114,134 @@ component BreakdownLegend inherits HorizontalLayout {
 export component MortgageCalculatorPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
-    in property <string> monthly: "$2,184";
     in-out property <int> price-k: 540;
     in-out property <int> down-pct: 20;
-    in-out property <int> rate-bps: 62;
+    in-out property <int> rate-bps: 62; // tenths of a percent (62 → 6.2%)
     in-out property <int> term-years: 30;
-    in property <float> principal-frac: 0.46;
-    in property <float> interest-frac: 0.39;
     callback back-pressed();
     callback save-pressed();
+    callback monthly-recomputed(int); // cents
+
+    // ----- Interactive state -----
+    private property <bool> saved: false;
+    private property <string> status-msg: "Nudge any stepper to recompute · 15/20/30y chips set the term";
+    private property <bool> status-is-success: false;
+    private property <bool> status-is-danger: false;
+
+    // ----- Helpers -----
+    function zpad3(n: int) -> string {
+        return n < 10 ? "00" + n : n < 100 ? "0" + n : "" + n;
+    }
+    function add-commas(n: int) -> string {
+        return n < 1000 ? "" + n
+            : n < 1000000 ? floor(n / 1000) + "," + root.zpad3(mod(n, 1000))
+            : floor(n / 1000000) + ","
+                + root.zpad3(floor(mod(n, 1000000) / 1000)) + ","
+                + root.zpad3(mod(n, 1000));
+    }
+
+    // Money in cents.
+    function price-cents() -> int { return root.price-k * 100000; }
+    function down-cents() -> int {
+        return floor(root.price-cents() * root.down-pct / 100);
+    }
+    function loan-cents() -> int { return root.price-cents() - root.down-cents(); }
+    function months() -> int { return root.term-years * 12; }
+    function monthly-pi-cents() -> int {
+        return floor(root.loan-cents() / root.months())
+            + floor(root.loan-cents() * root.rate-bps * 65 / 1200000);
+    }
+    function first-interest-cents() -> int {
+        return floor(root.loan-cents() * root.rate-bps / 120000);
+    }
+    function principal-cents() -> int {
+        return max(0, root.monthly-pi-cents() - root.first-interest-cents());
+    }
+    function tax-ins-cents() -> int {
+        return floor(root.price-cents() * 73 / 120000);
+    }
+    function total-monthly-cents() -> int {
+        return root.monthly-pi-cents() + root.tax-ins-cents();
+    }
+    function principal-frac() -> float {
+        return root.total-monthly-cents() == 0
+            ? 0.0
+            : root.principal-cents() * 1.0 / root.total-monthly-cents();
+    }
+    function interest-frac() -> float {
+        return root.total-monthly-cents() == 0
+            ? 0.0
+            : root.first-interest-cents() * 1.0 / root.total-monthly-cents();
+    }
+
+    // Display strings.
+    function fmt-monthly() -> string {
+        return "$" + root.add-commas(floor(root.total-monthly-cents() / 100));
+    }
+    function fmt-price() -> string {
+        return "$" + root.add-commas(root.price-k) + ",000";
+    }
+    function down-amount-k() -> int {
+        return floor(root.price-k * root.down-pct / 100);
+    }
+    function fmt-down() -> string {
+        return root.down-pct + "%  ·  $"
+            + root.add-commas(root.down-amount-k()) + ",000";
+    }
+    function fmt-rate() -> string {
+        return floor(root.rate-bps / 10) + "." + mod(root.rate-bps, 10) + "% APR";
+    }
+    function fmt-term() -> string { return root.term-years + " years"; }
+    function fmt-cents-no-comma(c: int) -> string {
+        return "$" + root.add-commas(floor(c / 100));
+    }
+
+    // ----- Mutations -----
+    public function toggle-save() {
+        root.saved = !root.saved;
+        root.save-pressed();
+        root.status-msg = root.saved
+            ? "Scenario saved · " + root.fmt-monthly() + "/mo"
+            : "Removed from saved scenarios";
+        root.status-is-success = root.saved;
+        root.status-is-danger = !root.saved;
+    }
+    public function set-term(y: int) {
+        root.term-years = y;
+        root.status-msg = "Term set · " + y + " years · " + root.fmt-monthly() + "/mo";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+
+    // Live recompute status as the user steps any input.
+    changed price-k => {
+        root.status-msg = "Price · " + root.fmt-price()
+            + " → " + root.fmt-monthly() + "/mo";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+        root.monthly-recomputed(root.total-monthly-cents());
+    }
+    changed down-pct => {
+        root.status-msg = "Down · " + root.fmt-down()
+            + " → " + root.fmt-monthly() + "/mo";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+        root.monthly-recomputed(root.total-monthly-cents());
+    }
+    changed rate-bps => {
+        root.status-msg = "Rate · " + root.fmt-rate()
+            + " → " + root.fmt-monthly() + "/mo";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+        root.monthly-recomputed(root.total-monthly-cents());
+    }
+    changed term-years => {
+        root.status-msg = "Term · " + root.fmt-term()
+            + " → " + root.fmt-monthly() + "/mo";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+        root.monthly-recomputed(root.total-monthly-cents());
+    }
 
     background: Theme.background;
 
@@ -118,10 +254,34 @@ export component MortgageCalculatorPage inherits Window {
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             trailing-icon: @image-url("@mobile-components/icons/star.svg");
             leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.save-pressed(); }
+            trailing-pressed => { root.toggle-save(); }
         }
 
-        // Result hero.
+        // ----- Status banner ---------------------------------------
+        Rectangle {
+            height: 32px;
+            background: root.status-is-danger ? Theme.accent-danger
+                : root.status-is-success ? Theme.accent-success
+                : Theme.surface-2;
+            animate background { duration: Theme.motion-fast; }
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                Text {
+                    text: root.status-msg;
+                    color: (root.status-is-danger || root.status-is-success)
+                        ? Theme.on-primary
+                        : Theme.on-surface;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+            }
+        }
+
+        // Result hero — derived live.
         Rectangle {
             background: @linear-gradient(135deg, #1e3a8a 0%, #0c1a3a 100%);
             height: 156px;
@@ -129,7 +289,8 @@ export component MortgageCalculatorPage inherits Window {
                 alignment: center;
                 spacing: 6px;
                 Text {
-                    text: "ESTIMATED MONTHLY PAYMENT";
+                    text: "ESTIMATED MONTHLY PAYMENT"
+                        + (root.saved ? "  ·  ★ SAVED" : "");
                     color: #ffffff99;
                     font-size: 10px;
                     font-weight: 800;
@@ -137,14 +298,15 @@ export component MortgageCalculatorPage inherits Window {
                     horizontal-alignment: center;
                 }
                 Heading {
-                    text: root.monthly;
+                    text: root.fmt-monthly();
                     style: HeadingStyle.serif-display;
                     color: Theme.on-primary;
                     font-size: 56px;
                     horizontal-alignment: center;
                 }
                 Text {
-                    text: "Principal, interest, tax & insurance";
+                    text: "Loan " + root.fmt-cents-no-comma(root.loan-cents())
+                        + " · " + root.fmt-rate() + " · " + root.fmt-term();
                     color: #ffffffcc;
                     font-size: Theme.font-size-caption;
                     font-weight: 600;
@@ -156,7 +318,7 @@ export component MortgageCalculatorPage inherits Window {
         SectionHeader { text: "LOAN  DETAILS"; }
         InputRow {
             label: "HOME PRICE";
-            value: "$540,000";
+            value: root.fmt-price();
             step-value <=> root.price-k;
             step-min: 50;
             step-max: 2000;
@@ -164,7 +326,7 @@ export component MortgageCalculatorPage inherits Window {
         Divider { }
         InputRow {
             label: "DOWN PAYMENT";
-            value: "20%  ·  $108,000";
+            value: root.fmt-down();
             step-value <=> root.down-pct;
             step-min: 0;
             step-max: 100;
@@ -172,7 +334,7 @@ export component MortgageCalculatorPage inherits Window {
         Divider { }
         InputRow {
             label: "INTEREST RATE";
-            value: "6.2% APR";
+            value: root.fmt-rate();
             step-value <=> root.rate-bps;
             step-min: 0;
             step-max: 200;
@@ -180,10 +342,32 @@ export component MortgageCalculatorPage inherits Window {
         Divider { }
         InputRow {
             label: "LOAN TERM";
-            value: "30 years";
+            value: root.fmt-term();
             step-value <=> root.term-years;
             step-min: 5;
             step-max: 40;
+        }
+
+        // Quick term chips.
+        HorizontalLayout {
+            padding: Theme.spacing-md;
+            spacing: Theme.spacing-sm;
+            Rectangle {
+                Chip { label: "15y"; selected: root.term-years == 15; }
+                TouchArea { clicked => { root.set-term(15); } }
+            }
+            Rectangle {
+                Chip { label: "20y"; selected: root.term-years == 20; }
+                TouchArea { clicked => { root.set-term(20); } }
+            }
+            Rectangle {
+                Chip { label: "30y"; selected: root.term-years == 30; }
+                TouchArea { clicked => { root.set-term(30); } }
+            }
+            Rectangle {
+                Chip { label: "40y"; selected: root.term-years == 40; }
+                TouchArea { clicked => { root.set-term(40); } }
+            }
         }
 
         SectionHeader { text: "PAYMENT  BREAKDOWN"; }
@@ -193,28 +377,27 @@ export component MortgageCalculatorPage inherits Window {
                 padding-right: Theme.spacing-md;
                 padding-bottom: Theme.spacing-md;
                 spacing: Theme.spacing-md;
-                // Stacked split bar. Plain clipped track with x-positioned
-                // segments — `width: parent.width * frac` inside a
-                // HorizontalLayout would be a binding loop.
                 Rectangle {
                     height: 14px;
                     border-radius: 7px;
                     clip: true;
+                    background: Theme.surface-variant;
                     Rectangle {
                         x: 0;
-                        width: parent.width * root.principal-frac;
+                        width: parent.width * root.principal-frac();
                         height: parent.height;
                         background: Theme.accent-info;
                     }
                     Rectangle {
-                        x: parent.width * root.principal-frac;
-                        width: parent.width * root.interest-frac;
+                        x: parent.width * root.principal-frac();
+                        width: parent.width * root.interest-frac();
                         height: parent.height;
                         background: Theme.accent-warning;
                     }
                     Rectangle {
-                        x: parent.width * (root.principal-frac + root.interest-frac);
-                        width: parent.width * (1.0 - root.principal-frac - root.interest-frac);
+                        x: parent.width * (root.principal-frac() + root.interest-frac());
+                        width: parent.width
+                            * (1.0 - root.principal-frac() - root.interest-frac());
                         height: parent.height;
                         background: Theme.accent-danger;
                     }
@@ -223,17 +406,17 @@ export component MortgageCalculatorPage inherits Window {
                     alignment: space-between;
                     BreakdownLegend {
                         label: "PRINCIPAL";
-                        amount: "$1,005";
+                        amount: root.fmt-cents-no-comma(root.principal-cents());
                         swatch: Theme.accent-info;
                     }
                     BreakdownLegend {
                         label: "INTEREST";
-                        amount: "$852";
+                        amount: root.fmt-cents-no-comma(root.first-interest-cents());
                         swatch: Theme.accent-warning;
                     }
                     BreakdownLegend {
                         label: "TAX + INS.";
-                        amount: "$327";
+                        amount: root.fmt-cents-no-comma(root.tax-ins-cents());
                         swatch: Theme.accent-danger;
                     }
                 }

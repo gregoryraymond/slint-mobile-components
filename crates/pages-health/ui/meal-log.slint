@@ -4,23 +4,24 @@
 // Daily calorie + macros tracker — the MyFitnessPal / MacroFactor /
 // Lose It! single-day surface. Demonstrates:
 //
-//   - Big-number "Calories left" hero on the left, three small macro
-//     progress bars (protein / carbs / fat) on the right. The ratio
-//     is a hard requirement for these apps: one giant number, three
-//     supporting bars.
+//   - Big-number "Calories left" hero on the left (tap to hide for
+//     privacy), three small macro progress bars (protein / carbs / fat)
+//     on the right — all derived from the live state of each meal item.
+//   - Day navigation: AppBar leading/trailing icons step the day label.
 //   - Grouped meal entries — BREAKFAST / LUNCH / DINNER / SNACKS —
-//     each as a card with: meal heading + sum kcal + list of items
-//     beneath, each item showing portion + kcal on the right.
-//   - Sticky bottom Fab for "Quick add" — pinned to bottom-right.
+//     each as a card with: meal heading + sum kcal + tappable item
+//     rows beneath (tap to skip / un-skip; skipped items drop from
+//     the totals).
+//   - Sticky bottom Fab opens a Quick-add bottom sheet with four
+//     preset foods that prepend an EXTRAS card.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { Divider } from "@mobile-components/divider.slint";
-import { Fab } from "@mobile-components/button.slint";
+import { Fab, MobileButton } from "@mobile-components/button.slint";
 import { ScrollView } from "std-widgets.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
 
-// One macro bar — label + numeric + linear progress.
 component MacroBar inherits Rectangle {
     in property <string> label;
     in property <string> value;
@@ -53,13 +54,13 @@ component MacroBar inherits Rectangle {
             Rectangle {
                 x: 0;
                 y: 0;
-                width: parent.width * root.progress;
+                width: parent.width * min(root.progress, 1.0);
                 height: parent.height;
                 background:
                       root.tone == Tone.success ? Theme.accent-success
                     : root.tone == Tone.warning ? Theme.accent-warning
-                    : root.tone == Tone.danger  ? Theme.accent-danger
-                    : root.tone == Tone.info    ? Theme.accent-info
+                    : root.tone == Tone.danger ? Theme.accent-danger
+                    : root.tone == Tone.info ? Theme.accent-info
                     : Theme.primary;
                 border-radius: 2px;
             }
@@ -67,7 +68,6 @@ component MacroBar inherits Rectangle {
     }
 }
 
-// One meal-section card.
 component MealCard inherits Rectangle {
     in property <string> meal-name;
     in property <string> sum-kcal;
@@ -82,7 +82,6 @@ component MealCard inherits Rectangle {
 
     VerticalLayout {
         spacing: 0;
-        // Header row.
         HorizontalLayout {
             padding: Theme.spacing-md;
             spacing: Theme.spacing-md;
@@ -118,13 +117,25 @@ component MealCard inherits Rectangle {
     }
 }
 
-// One meal item row.
+// Tappable meal item — tap to toggle skipped/active.
 component MealItem inherits Rectangle {
     in property <string> name;
     in property <string> portion;
     in property <string> kcal;
+    in property <bool> skipped: false;
+    in property <bool> fresh: false;
+    callback clicked();
 
     min-height: 44px;
+    background: root.fresh
+        ? Theme.accent-success.with-alpha(0.12)
+        : touch.pressed
+            ? Theme.surface-pressed
+            : transparent;
+    animate background { duration: Theme.motion-fast; }
+    opacity: root.skipped ? 0.4 : 1.0;
+    animate opacity { duration: Theme.motion-fast; }
+
     HorizontalLayout {
         padding-left: Theme.spacing-md;
         padding-right: Theme.spacing-md;
@@ -136,11 +147,49 @@ component MealItem inherits Rectangle {
             horizontal-stretch: 1;
             alignment: center;
             spacing: 2px;
-            Text {
-                text: root.name;
-                color: Theme.on-surface;
-                font-size: Theme.font-size-body;
-                overflow: elide;
+            HorizontalLayout {
+                spacing: Theme.spacing-xs;
+                Text {
+                    text: root.name;
+                    color: Theme.on-surface;
+                    font-size: Theme.font-size-body;
+                    overflow: elide;
+                    vertical-alignment: center;
+                }
+                if root.skipped: Rectangle {
+                    width: sk.preferred-width + 12px;
+                    height: 18px;
+                    border-radius: 4px;
+                    background: Theme.muted;
+                    sk := Text {
+                        text: "SKIPPED";
+                        color: Theme.on-primary;
+                        font-size: 9px;
+                        font-weight: 800;
+                        letter-spacing: 0.5px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                }
+                if root.fresh: Rectangle {
+                    width: nw.preferred-width + 12px;
+                    height: 18px;
+                    border-radius: 4px;
+                    background: Theme.accent-success;
+                    nw := Text {
+                        text: "NEW";
+                        color: Theme.on-primary;
+                        font-size: 9px;
+                        font-weight: 800;
+                        letter-spacing: 0.5px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                }
             }
             Text {
                 text: root.portion;
@@ -159,18 +208,300 @@ component MealItem inherits Rectangle {
             }
         }
     }
+    touch := TouchArea { clicked => { root.clicked(); } }
 }
 
 export component MealLogPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
-    in property <string> when: "Today, May 14";
-    in property <string> kcal-remaining: "624";
-    in property <string> kcal-goal: "of 2,100";
     callback back-pressed();
     callback prev-day-pressed();
     callback next-day-pressed();
     callback add-pressed();
+    callback item-toggled(string, bool);
+    callback extra-added(string, int);
+
+    // ----- Interactive state -----
+    private property <int> day-idx: 0; // -2..+2
+    private property <bool> b0: true; // Oatmeal
+    private property <bool> b1: true; // Coffee
+    private property <bool> b2: true; // Yogurt
+    private property <bool> l0: true; // Chicken-rice
+    private property <bool> l1: true; // Latte
+    private property <bool> d0: true; // Salmon
+    private property <bool> s0: true; // Apple
+    private property <bool> s1: true; // Chocolate
+    private property <int> ex-count: 0;
+    private property <int> ex1-kind: 0;
+    private property <int> ex2-kind: 0;
+    private property <int> ex3-kind: 0;
+    private property <bool> add-sheet-open: false;
+    private property <bool> privacy-hidden: false;
+    private property <string> status-msg: "Tap an item to skip · use the Fab to quick-add · big number toggles privacy";
+    private property <bool> status-is-success: false;
+    private property <bool> status-is-danger: false;
+
+    // ----- Per-item metadata -----
+    function item-kcal(i: int) -> int {
+        if (i == 0) { return 245; }
+        if (i == 1) { return 2; }
+        if (i == 2) { return 165; }
+        if (i == 3) { return 542; }
+        if (i == 4) { return 70; }
+        if (i == 5) { return 352; }
+        if (i == 6) { return 72; }
+        return 28;
+    }
+    function item-protein(i: int) -> int {
+        if (i == 0) { return 6; }
+        if (i == 1) { return 0; }
+        if (i == 2) { return 18; }
+        if (i == 3) { return 38; }
+        if (i == 4) { return 4; }
+        if (i == 5) { return 30; }
+        if (i == 6) { return 0; }
+        return 0;
+    }
+    function item-carbs(i: int) -> int {
+        if (i == 0) { return 42; }
+        if (i == 1) { return 0; }
+        if (i == 2) { return 9; }
+        if (i == 3) { return 65; }
+        if (i == 4) { return 7; }
+        if (i == 5) { return 35; }
+        if (i == 6) { return 19; }
+        return 3;
+    }
+    function item-fat(i: int) -> int {
+        if (i == 0) { return 5; }
+        if (i == 1) { return 0; }
+        if (i == 2) { return 4; }
+        if (i == 3) { return 12; }
+        if (i == 4) { return 3; }
+        if (i == 5) { return 13; }
+        if (i == 6) { return 0; }
+        return 2;
+    }
+    function item-name(i: int) -> string {
+        if (i == 0) { return "Oatmeal with berries"; }
+        if (i == 1) { return "Black coffee"; }
+        if (i == 2) { return "Greek yogurt"; }
+        if (i == 3) { return "Chicken-rice bowl"; }
+        if (i == 4) { return "Iced latte"; }
+        if (i == 5) { return "Salmon + quinoa salad"; }
+        if (i == 6) { return "Apple"; }
+        return "Dark chocolate";
+    }
+    function item-active(i: int) -> bool {
+        if (i == 0) { return root.b0; }
+        if (i == 1) { return root.b1; }
+        if (i == 2) { return root.b2; }
+        if (i == 3) { return root.l0; }
+        if (i == 4) { return root.l1; }
+        if (i == 5) { return root.d0; }
+        if (i == 6) { return root.s0; }
+        return root.s1;
+    }
+    function item-contrib(i: int) -> int {
+        return root.item-active(i) ? root.item-kcal(i) : 0;
+    }
+    // ----- Extras (added via FAB sheet) -----
+    function extra-name(k: int) -> string {
+        if (k == 0) { return "Banana"; }
+        if (k == 1) { return "Almonds (1 oz)"; }
+        if (k == 2) { return "Berry smoothie"; }
+        return "Avocado toast";
+    }
+    function extra-kcal(k: int) -> int {
+        if (k == 0) { return 105; }
+        if (k == 1) { return 165; }
+        if (k == 2) { return 240; }
+        return 180;
+    }
+    function extra-p(k: int) -> int {
+        if (k == 0) { return 1; }
+        if (k == 1) { return 6; }
+        if (k == 2) { return 5; }
+        return 6;
+    }
+    function extra-c(k: int) -> int {
+        if (k == 0) { return 27; }
+        if (k == 1) { return 6; }
+        if (k == 2) { return 50; }
+        return 25;
+    }
+    function extra-f(k: int) -> int {
+        if (k == 0) { return 0; }
+        if (k == 1) { return 14; }
+        if (k == 2) { return 2; }
+        return 7;
+    }
+    // ----- Totals -----
+    function consumed-kcal() -> int {
+        return root.item-contrib(0) + root.item-contrib(1) + root.item-contrib(2)
+            + root.item-contrib(3) + root.item-contrib(4) + root.item-contrib(5)
+            + root.item-contrib(6) + root.item-contrib(7)
+            + (root.ex-count >= 1 ? root.extra-kcal(root.ex1-kind) : 0)
+            + (root.ex-count >= 2 ? root.extra-kcal(root.ex2-kind) : 0)
+            + (root.ex-count >= 3 ? root.extra-kcal(root.ex3-kind) : 0);
+    }
+    function consumed-protein() -> int {
+        return (root.b0 ? root.item-protein(0) : 0)
+            + (root.b1 ? root.item-protein(1) : 0)
+            + (root.b2 ? root.item-protein(2) : 0)
+            + (root.l0 ? root.item-protein(3) : 0)
+            + (root.l1 ? root.item-protein(4) : 0)
+            + (root.d0 ? root.item-protein(5) : 0)
+            + (root.s0 ? root.item-protein(6) : 0)
+            + (root.s1 ? root.item-protein(7) : 0)
+            + (root.ex-count >= 1 ? root.extra-p(root.ex1-kind) : 0)
+            + (root.ex-count >= 2 ? root.extra-p(root.ex2-kind) : 0)
+            + (root.ex-count >= 3 ? root.extra-p(root.ex3-kind) : 0);
+    }
+    function consumed-carbs() -> int {
+        return (root.b0 ? root.item-carbs(0) : 0)
+            + (root.b1 ? root.item-carbs(1) : 0)
+            + (root.b2 ? root.item-carbs(2) : 0)
+            + (root.l0 ? root.item-carbs(3) : 0)
+            + (root.l1 ? root.item-carbs(4) : 0)
+            + (root.d0 ? root.item-carbs(5) : 0)
+            + (root.s0 ? root.item-carbs(6) : 0)
+            + (root.s1 ? root.item-carbs(7) : 0)
+            + (root.ex-count >= 1 ? root.extra-c(root.ex1-kind) : 0)
+            + (root.ex-count >= 2 ? root.extra-c(root.ex2-kind) : 0)
+            + (root.ex-count >= 3 ? root.extra-c(root.ex3-kind) : 0);
+    }
+    function consumed-fat() -> int {
+        return (root.b0 ? root.item-fat(0) : 0)
+            + (root.b1 ? root.item-fat(1) : 0)
+            + (root.b2 ? root.item-fat(2) : 0)
+            + (root.l0 ? root.item-fat(3) : 0)
+            + (root.l1 ? root.item-fat(4) : 0)
+            + (root.d0 ? root.item-fat(5) : 0)
+            + (root.s0 ? root.item-fat(6) : 0)
+            + (root.s1 ? root.item-fat(7) : 0)
+            + (root.ex-count >= 1 ? root.extra-f(root.ex1-kind) : 0)
+            + (root.ex-count >= 2 ? root.extra-f(root.ex2-kind) : 0)
+            + (root.ex-count >= 3 ? root.extra-f(root.ex3-kind) : 0);
+    }
+    function kcal-left() -> int { return 2100 - root.consumed-kcal(); }
+
+    function breakfast-sum() -> int {
+        return root.item-contrib(0) + root.item-contrib(1) + root.item-contrib(2);
+    }
+    function lunch-sum() -> int {
+        return root.item-contrib(3) + root.item-contrib(4);
+    }
+    function dinner-sum() -> int { return root.item-contrib(5); }
+    function snacks-sum() -> int {
+        return root.item-contrib(6) + root.item-contrib(7);
+    }
+    function extras-sum() -> int {
+        return (root.ex-count >= 1 ? root.extra-kcal(root.ex1-kind) : 0)
+            + (root.ex-count >= 2 ? root.extra-kcal(root.ex2-kind) : 0)
+            + (root.ex-count >= 3 ? root.extra-kcal(root.ex3-kind) : 0);
+    }
+    function breakfast-count() -> int {
+        return (root.b0 ? 1 : 0) + (root.b1 ? 1 : 0) + (root.b2 ? 1 : 0);
+    }
+    function lunch-count() -> int {
+        return (root.l0 ? 1 : 0) + (root.l1 ? 1 : 0);
+    }
+    function dinner-count() -> int { return root.d0 ? 1 : 0; }
+    function snacks-count() -> int {
+        return (root.s0 ? 1 : 0) + (root.s1 ? 1 : 0);
+    }
+
+    function day-display(i: int) -> string {
+        if (i == -2) { return "2 days ago, May 12"; }
+        if (i == -1) { return "Yesterday, May 13"; }
+        if (i == 0) { return "Today, May 14"; }
+        if (i == 1) { return "Tomorrow, May 15"; }
+        return "Fri, May 16";
+    }
+    function add-commas(n: int) -> string {
+        return n < 1000 ? "" + n
+            : floor(n / 1000) + "," + (mod(n, 1000) < 10 ? "00" + mod(n, 1000)
+                : mod(n, 1000) < 100 ? "0" + mod(n, 1000)
+                : "" + mod(n, 1000));
+    }
+    function kcal-left-display() -> string {
+        return root.privacy-hidden
+            ? "•••"
+            : (root.kcal-left() < 0
+                ? "−" + root.add-commas(0 - root.kcal-left())
+                : root.add-commas(root.kcal-left()));
+    }
+
+    // ----- Mutations -----
+    public function toggle-item(i: int) {
+        if (i == 0) { root.b0 = !root.b0; }
+        if (i == 1) { root.b1 = !root.b1; }
+        if (i == 2) { root.b2 = !root.b2; }
+        if (i == 3) { root.l0 = !root.l0; }
+        if (i == 4) { root.l1 = !root.l1; }
+        if (i == 5) { root.d0 = !root.d0; }
+        if (i == 6) { root.s0 = !root.s0; }
+        if (i == 7) { root.s1 = !root.s1; }
+        root.item-toggled(root.item-name(i), root.item-active(i));
+        root.status-msg = root.item-active(i)
+            ? "Logged " + root.item-name(i) + " · " + root.kcal-left() + " kcal left"
+            : "Skipped " + root.item-name(i) + " · " + root.kcal-left() + " kcal left";
+        root.status-is-success = root.item-active(i);
+        root.status-is-danger = !root.item-active(i);
+    }
+    public function tap-prev-day() {
+        if (root.day-idx > -2) {
+            root.day-idx = root.day-idx - 1;
+        }
+        root.prev-day-pressed();
+        root.status-msg = "Day · " + root.day-display(root.day-idx);
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function tap-next-day() {
+        if (root.day-idx < 2) {
+            root.day-idx = root.day-idx + 1;
+        }
+        root.next-day-pressed();
+        root.status-msg = "Day · " + root.day-display(root.day-idx);
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function open-add-sheet() {
+        root.add-sheet-open = true;
+        root.add-pressed();
+        root.status-msg = "Pick a food to quick-add";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function close-add-sheet() { root.add-sheet-open = false; }
+    public function pick-extra(k: int) {
+        if (root.ex-count >= 3) {
+            root.status-msg = "Extras limit reached (3)";
+            root.status-is-success = false;
+            root.status-is-danger = true;
+            return;
+        }
+        root.ex-count = root.ex-count + 1;
+        if (root.ex-count == 1) { root.ex1-kind = k; }
+        if (root.ex-count == 2) { root.ex2-kind = k; }
+        if (root.ex-count == 3) { root.ex3-kind = k; }
+        root.extra-added(root.extra-name(k), root.extra-kcal(k));
+        root.status-msg = "Added " + root.extra-name(k)
+            + " · " + root.extra-kcal(k) + " kcal";
+        root.status-is-success = true;
+        root.status-is-danger = false;
+        root.add-sheet-open = false;
+    }
+    public function toggle-privacy() {
+        root.privacy-hidden = !root.privacy-hidden;
+        root.status-msg = root.privacy-hidden
+            ? "Calories hidden · tap to reveal"
+            : "Calories revealed";
+        root.status-is-success = !root.privacy-hidden;
+        root.status-is-danger = false;
+    }
 
     background: Theme.background;
 
@@ -178,15 +509,39 @@ export component MealLogPage inherits Window {
         spacing: 0;
 
         AppBar {
-            title: root.when;
+            title: root.day-display(root.day-idx);
             title-style: HeadingStyle.serif-light;
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             trailing-icon: @image-url("@mobile-components/icons/chevron-right.svg");
-            leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.next-day-pressed(); }
+            leading-pressed => { root.tap-prev-day(); }
+            trailing-pressed => { root.tap-next-day(); }
         }
 
-        // ----- Hero row: big calories + macro bars -----
+        // ----- Status banner ---------------------------------------
+        Rectangle {
+            height: 32px;
+            background: root.status-is-danger ? Theme.accent-danger
+                : root.status-is-success ? Theme.accent-success
+                : Theme.surface-2;
+            animate background { duration: Theme.motion-fast; }
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                Text {
+                    text: root.status-msg;
+                    color: (root.status-is-danger || root.status-is-success)
+                        ? Theme.on-primary
+                        : Theme.on-surface;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+            }
+        }
+
+        // ----- Hero row -----
         Rectangle {
             background: Theme.surface-1;
             drop-shadow-blur: Theme.elevation-1-blur;
@@ -196,26 +551,40 @@ export component MealLogPage inherits Window {
                 padding: Theme.spacing-md;
                 spacing: Theme.spacing-md;
                 alignment: stretch;
-                VerticalLayout {
-                    alignment: center;
-                    spacing: 2px;
-                    Text {
-                        text: "CALORIES LEFT";
-                        color: Theme.muted;
-                        font-size: 10px;
-                        font-weight: 700;
-                        letter-spacing: 0.5px;
+                Rectangle {
+                    background: hero-touch.pressed ? Theme.surface-pressed : transparent;
+                    animate background { duration: Theme.motion-fast; }
+                    border-radius: Theme.radius-sm;
+                    VerticalLayout {
+                        alignment: center;
+                        padding-left: Theme.spacing-xs;
+                        padding-right: Theme.spacing-xs;
+                        spacing: 2px;
+                        Text {
+                            text: root.privacy-hidden
+                                ? "CALORIES · HIDDEN"
+                                : "CALORIES LEFT · TAP TO HIDE";
+                            color: Theme.muted;
+                            font-size: 10px;
+                            font-weight: 700;
+                            letter-spacing: 0.5px;
+                        }
+                        Text {
+                            text: root.kcal-left-display();
+                            color: root.kcal-left() < 0
+                                ? Theme.accent-danger
+                                : Theme.on-surface;
+                            font-size: 48px;
+                            font-weight: 300;
+                        }
+                        Text {
+                            text: "of 2,100";
+                            color: Theme.muted;
+                            font-size: Theme.font-size-caption;
+                        }
                     }
-                    Text {
-                        text: root.kcal-remaining;
-                        color: Theme.on-surface;
-                        font-size: 48px;
-                        font-weight: 300;
-                    }
-                    Text {
-                        text: root.kcal-goal;
-                        color: Theme.muted;
-                        font-size: Theme.font-size-caption;
+                    hero-touch := TouchArea {
+                        clicked => { root.toggle-privacy(); }
                     }
                 }
                 VerticalLayout {
@@ -224,20 +593,20 @@ export component MealLogPage inherits Window {
                     spacing: Theme.spacing-sm;
                     MacroBar {
                         label: "PROTEIN";
-                        value: "92 / 130 g";
-                        progress: 0.71;
+                        value: root.consumed-protein() + " / 130 g";
+                        progress: root.consumed-protein() / 130.0;
                         tone: Tone.success;
                     }
                     MacroBar {
                         label: "CARBS";
-                        value: "184 / 240 g";
-                        progress: 0.77;
+                        value: root.consumed-carbs() + " / 240 g";
+                        progress: root.consumed-carbs() / 240.0;
                         tone: Tone.info;
                     }
                     MacroBar {
                         label: "FAT";
-                        value: "48 / 65 g";
-                        progress: 0.74;
+                        value: root.consumed-fat() + " / 65 g";
+                        progress: root.consumed-fat() / 65.0;
                         tone: Tone.warning;
                     }
                 }
@@ -248,87 +617,220 @@ export component MealLogPage inherits Window {
             vertical-stretch: 1;
             horizontal-stretch: 1;
             viewport-width: 412px;
-            viewport-height: 1200px;
+            viewport-height: 1400px;
             VerticalLayout {
                 padding: Theme.spacing-md;
                 spacing: Theme.spacing-md;
 
                 MealCard {
                     meal-name: "Breakfast";
-                    sum-kcal: "412";
-                    item-count: 3;
+                    sum-kcal: "" + root.breakfast-sum();
+                    item-count: root.breakfast-count();
                     MealItem {
                         name: "Oatmeal with berries";
                         portion: "1 bowl · 250 g";
                         kcal: "245";
+                        skipped: !root.b0;
+                        clicked => { root.toggle-item(0); }
                     }
                     Divider { }
                     MealItem {
                         name: "Black coffee";
                         portion: "1 cup · 240 ml";
                         kcal: "2";
+                        skipped: !root.b1;
+                        clicked => { root.toggle-item(1); }
                     }
                     Divider { }
                     MealItem {
                         name: "Greek yogurt";
                         portion: "1 small tub · 150 g";
                         kcal: "165";
+                        skipped: !root.b2;
+                        clicked => { root.toggle-item(2); }
                     }
                 }
 
                 MealCard {
                     meal-name: "Lunch";
-                    sum-kcal: "612";
-                    item-count: 2;
+                    sum-kcal: "" + root.lunch-sum();
+                    item-count: root.lunch-count();
                     MealItem {
                         name: "Chicken-rice bowl";
                         portion: "1 large · 500 g";
                         kcal: "542";
+                        skipped: !root.l0;
+                        clicked => { root.toggle-item(3); }
                     }
                     Divider { }
                     MealItem {
                         name: "Iced latte";
                         portion: "1 cup · 350 ml";
                         kcal: "70";
+                        skipped: !root.l1;
+                        clicked => { root.toggle-item(4); }
                     }
                 }
 
                 MealCard {
                     meal-name: "Dinner";
-                    sum-kcal: "352";
-                    item-count: 1;
+                    sum-kcal: "" + root.dinner-sum();
+                    item-count: root.dinner-count();
                     MealItem {
                         name: "Salmon + quinoa salad";
                         portion: "1 plate · 380 g";
                         kcal: "352";
+                        skipped: !root.d0;
+                        clicked => { root.toggle-item(5); }
                     }
                 }
 
                 MealCard {
                     meal-name: "Snacks";
-                    sum-kcal: "100";
-                    item-count: 2;
+                    sum-kcal: "" + root.snacks-sum();
+                    item-count: root.snacks-count();
                     MealItem {
                         name: "Apple";
                         portion: "1 medium · 180 g";
                         kcal: "72";
+                        skipped: !root.s0;
+                        clicked => { root.toggle-item(6); }
                     }
                     Divider { }
                     MealItem {
                         name: "Square of dark chocolate";
                         portion: "1 piece · 10 g";
                         kcal: "28";
+                        skipped: !root.s1;
+                        clicked => { root.toggle-item(7); }
+                    }
+                }
+
+                if root.ex-count > 0: MealCard {
+                    meal-name: "Extras";
+                    sum-kcal: "" + root.extras-sum();
+                    item-count: root.ex-count;
+                    if root.ex-count >= 1: MealItem {
+                        name: root.extra-name(root.ex1-kind);
+                        portion: "Just added";
+                        kcal: "" + root.extra-kcal(root.ex1-kind);
+                        fresh: true;
+                        clicked => { }
+                    }
+                    if root.ex-count >= 2: Divider { }
+                    if root.ex-count >= 2: MealItem {
+                        name: root.extra-name(root.ex2-kind);
+                        portion: "Just added";
+                        kcal: "" + root.extra-kcal(root.ex2-kind);
+                        fresh: true;
+                        clicked => { }
+                    }
+                    if root.ex-count >= 3: Divider { }
+                    if root.ex-count >= 3: MealItem {
+                        name: root.extra-name(root.ex3-kind);
+                        portion: "Just added";
+                        kcal: "" + root.extra-kcal(root.ex3-kind);
+                        fresh: true;
+                        clicked => { }
                     }
                 }
             }
         }
     }
 
-    // FAB anchored bottom-right above any safe area.
+    // FAB anchored bottom-right.
     Fab {
         x: root.width - self.width - Theme.spacing-md;
         y: root.height - self.height - Theme.spacing-md;
         accessible-label: "Quick add food";
-        clicked => { root.add-pressed(); }
+        clicked => { root.open-add-sheet(); }
+    }
+
+    // ----- Quick-add bottom sheet -----------------------------------
+    if root.add-sheet-open: Rectangle {
+        Rectangle {
+            background: #00000099;
+            TouchArea {
+                clicked => { root.close-add-sheet(); }
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            height: 420px;
+            background: Theme.surface-1;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding: Theme.spacing-lg;
+                spacing: Theme.spacing-md;
+
+                Rectangle {
+                    width: 40px;
+                    height: 4px;
+                    border-radius: 2px;
+                    background: Theme.muted;
+                }
+
+                Heading {
+                    text: "Quick add";
+                    style: HeadingStyle.grotesk-bold;
+                    font-size: Theme.font-size-title;
+                }
+                Text {
+                    text: "Tap a food — it's added to your Extras section.";
+                    color: Theme.muted;
+                    font-size: Theme.font-size-caption;
+                }
+
+                for kind-i in 4 : Rectangle {
+                    height: 56px;
+                    border-radius: Theme.radius-md;
+                    background: pick-touch.pressed
+                        ? Theme.surface-pressed
+                        : Theme.surface-2;
+                    animate background { duration: Theme.motion-fast; }
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-md;
+                        padding-right: Theme.spacing-md;
+                        spacing: Theme.spacing-sm;
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            alignment: center;
+                            Text {
+                                text: root.extra-name(kind-i);
+                                color: Theme.on-surface;
+                                font-size: Theme.font-size-body;
+                                font-weight: 700;
+                            }
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: root.extra-kcal(kind-i) + " kcal";
+                                color: Theme.muted;
+                                font-size: Theme.font-size-caption;
+                                font-weight: 700;
+                            }
+                        }
+                    }
+                    pick-touch := TouchArea {
+                        clicked => { root.pick-extra(kind-i); }
+                    }
+                }
+
+                Rectangle { vertical-stretch: 1; }
+
+                MobileButton {
+                    text: "Cancel";
+                    tone: Tone.danger;
+                    clicked => { root.close-add-sheet(); }
+                }
+            }
+        }
     }
 }

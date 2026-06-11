@@ -1,10 +1,5 @@
 // LiveSportsScorePage
 // =====================================================================
-//
-// Live football match — dark hero block with the two teams + score
-// either side of a "vs" divider. Below: a SegmentedControl for the
-// match-detail tabs, a FormSection of SettingRows for the goals, and a
-// FormSection of KeyValueRows for the key match stats.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
@@ -12,16 +7,18 @@ import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
 import { Chip } from "@mobile-components/chip.slint";
 import { SegmentedControl } from "@mobile-components/segmented-control.slint";
 import { FormSection } from "@mobile-components/form-section.slint";
-import { SettingRow } from "@mobile-components/setting-row.slint";
 import { KeyValueRow } from "@mobile-components/key-value-row.slint";
 import { Divider } from "@mobile-components/divider.slint";
 import { ScrollView } from "std-widgets.slint";
 
-// Single team block in the hero — square initial avatar, name, score.
 component TeamBlock inherits Rectangle {
     in property <string> initial;
     in property <string> name;
-    in property <string> score;
+    in property <int> score;
+    in property <bool> followed: false;
+    in property <int> cheers: 0;
+    callback follow-clicked();
+    callback cheer-clicked();
 
     horizontal-stretch: 1;
 
@@ -35,24 +32,29 @@ component TeamBlock inherits Rectangle {
                 width: 56px;
                 height: 56px;
                 border-radius: Theme.radius-md;
-                background: Theme.surface-2;
+                background: root.followed ? Theme.accent-info : Theme.surface-3;
 
                 Text {
                     width: parent.width;
                     height: parent.height;
                     text: root.initial;
-                    color: Theme.on-surface;
+                    color: root.followed ? Theme.on-primary : Theme.on-surface;
                     font-size: Theme.font-size-title;
-                    font-weight: 700;
+                    font-weight: 800;
                     horizontal-alignment: center;
                     vertical-alignment: center;
+                }
+                TouchArea {
+                    clicked => {
+                        root.follow-clicked();
+                    }
                 }
             }
         }
         HorizontalLayout {
             alignment: center;
             Text {
-                text: root.name;
+                text: (root.followed ? "♥ " : "") + root.name;
                 color: Theme.on-surface;
                 font-size: Theme.font-size-body;
                 font-weight: 600;
@@ -62,10 +64,191 @@ component TeamBlock inherits Rectangle {
         HorizontalLayout {
             alignment: center;
             Heading {
-                text: root.score;
+                text: "" + root.score;
                 style: HeadingStyle.bold-impact;
                 color: Theme.on-surface;
                 horizontal-alignment: center;
+            }
+        }
+        // Cheer button.
+        HorizontalLayout {
+            alignment: center;
+            Rectangle {
+                horizontal-stretch: 0;
+                height: 28px;
+                border-radius: 14px;
+                background: root.cheers > 0 ? Theme.accent-danger.with-alpha(0.22) : Theme.surface-3;
+                HorizontalLayout {
+                    padding-left: Theme.spacing-sm;
+                    padding-right: Theme.spacing-sm;
+                    spacing: 4px;
+                    alignment: center;
+                    VerticalLayout {
+                        alignment: center;
+                        Text {
+                            text: "📣 " + root.cheers;
+                            color: root.cheers > 0 ? Theme.accent-danger : Theme.on-surface;
+                            font-size: Theme.font-size-caption;
+                            font-weight: 700;
+                        }
+                    }
+                }
+                TouchArea {
+                    clicked => {
+                        root.cheer-clicked();
+                    }
+                }
+            }
+        }
+    }
+}
+
+component GoalRow inherits Rectangle {
+    in property <string> minute;
+    in property <string> scorer;
+    in property <string> team;
+    in property <string> score-then;
+    in property <string> assist;
+    in property <bool> liked: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 64px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 32px;
+                height: 32px;
+                border-radius: 8px;
+                background: Theme.accent-warning.with-alpha(0.22);
+                Text {
+                    text: root.minute;
+                    color: Theme.accent-warning;
+                    font-size: 11px;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: root.scorer;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 700;
+            }
+            Text {
+                text: root.team + " · " + root.score-then + (root.assist == "" ? "" : " · " + root.assist);
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Image {
+                width: 18px;
+                height: 18px;
+                source: @image-url("@mobile-components/icons/heart.svg");
+                colorize: root.liked ? Theme.accent-danger : Theme.muted;
+                image-fit: contain;
+            }
+        }
+    }
+}
+
+component VoteBar inherits Rectangle {
+    in property <string> label;
+    in property <int> percent;
+    in property <bool> chosen: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    height: 40px;
+    border-radius: 8px;
+    background: Theme.surface-2;
+    clip: true;
+
+    Rectangle {
+        x: 0;
+        width: parent.width * root.percent / 100;
+        height: parent.height;
+        background: root.chosen ? Theme.accent-info : Theme.surface-3;
+    }
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: stretch;
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            Text {
+                text: root.label + (root.chosen ? " ✓" : "");
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 700;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.percent + "%";
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 700;
+            }
+        }
+    }
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.destructive ? Theme.accent-danger : Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
             }
         }
     }
@@ -76,7 +259,53 @@ export component LiveSportsScorePage inherits Window {
     preferred-height: 892px;
 
     in-out property <int> tab-index: 0;
+    in-out property <int> minute: 67;
+    in-out property <bool> live-on: true;
+    in-out property <int> b-score: 2;
+    in-out property <int> n-score: 2;
+    in-out property <bool> b-followed: true;
+    in-out property <bool> n-followed: false;
+    in-out property <int> b-cheers: 124;
+    in-out property <int> n-cheers: 88;
+    in-out property <int> possession-b: 62;
+    in-out property <bool> goal1-liked: true;
+    in-out property <bool> goal2-liked: false;
+    in-out property <bool> goal3-liked: false;
+    in-out property <bool> goal4-liked: true;
+    in-out property <int> prediction: -1; // -1 none, 0 B, 1 N, 2 draw
+    in-out property <bool> notify-goals: true;
+    in-out property <bool> notify-cards: false;
+    in-out property <bool> notify-final: true;
+    in-out property <bool> sheet-open: false;
+    in-out property <bool> confirm-stop: false;
+    in-out property <string> status-msg: "";
+    in-out property <bool> status-success: false;
+    in-out property <bool> status-danger: false;
+
     callback back-pressed();
+
+    function fmt-min() -> string {
+        return root.minute + "' · UEFA Group A";
+    }
+    function set-status(m: string, ok: bool, bad: bool) {
+        root.status-msg = m;
+        root.status-success = ok;
+        root.status-danger = bad;
+    }
+    function set-prediction(p: int) {
+        root.prediction = p;
+        root.set-status("Prediction: " + (p == 0 ? "Belgium wins" : (p == 1 ? "Norway wins" : "Draw")), true, false);
+    }
+
+    tick := Timer {
+        interval: 4s;
+        running: root.live-on && root.minute < 90;
+        triggered => {
+            root.minute = root.minute + 1;
+            // Possession drifts +/- 1.
+            root.possession-b = max(40, min(70, root.possession-b + mod(root.minute, 3) - 1));
+        }
+    }
 
     background: Theme.background;
 
@@ -84,8 +313,34 @@ export component LiveSportsScorePage inherits Window {
         spacing: 0;
 
         AppBar {
+            title: "Match";
+            title-style: HeadingStyle.grotesk-bold;
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
-            leading-pressed => { root.back-pressed(); }
+            trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
+            leading-pressed => {
+                root.back-pressed();
+            }
+            trailing-pressed => {
+                root.sheet-open = true;
+            }
+        }
+
+        // Status banner.
+        if !root.status-msg.is-empty: Rectangle {
+            height: 28px;
+            background: root.status-success ? Theme.accent-success.with-alpha(0.16) : (root.status-danger ? Theme.accent-danger.with-alpha(0.16) : Theme.surface-2);
+            HorizontalLayout {
+                alignment: center;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.status-msg;
+                        color: root.status-success ? Theme.accent-success : (root.status-danger ? Theme.accent-danger : Theme.on-surface);
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                    }
+                }
+            }
         }
 
         ScrollView {
@@ -107,13 +362,47 @@ export component LiveSportsScorePage inherits Window {
                         spacing: Theme.spacing-md;
                         alignment: start;
 
-                        // LIVE pill
+                        // LIVE pill row.
                         HorizontalLayout {
                             alignment: center;
                             spacing: Theme.spacing-sm;
-                            Chip { label: "LIVE"; selected: true; }
+                            Rectangle {
+                                horizontal-stretch: 0;
+                                height: 24px;
+                                border-radius: 12px;
+                                background: root.live-on ? Theme.accent-danger : Theme.surface-3;
+                                HorizontalLayout {
+                                    padding-left: Theme.spacing-sm;
+                                    padding-right: Theme.spacing-sm;
+                                    spacing: 6px;
+                                    alignment: center;
+                                    if root.live-on: Rectangle {
+                                        y: (parent.height - self.height) / 2;
+                                        width: 8px;
+                                        height: 8px;
+                                        border-radius: 4px;
+                                        background: #ffffff;
+                                    }
+                                    VerticalLayout {
+                                        alignment: center;
+                                        Text {
+                                            text: root.live-on ? "LIVE" : "PAUSED";
+                                            color: root.live-on ? Theme.on-primary : Theme.on-surface;
+                                            font-size: 11px;
+                                            font-weight: 800;
+                                            letter-spacing: 1px;
+                                        }
+                                    }
+                                }
+                                TouchArea {
+                                    clicked => {
+                                        root.live-on = !root.live-on;
+                                        root.set-status(root.live-on ? "Resumed live" : "Paused live ticker", root.live-on, !root.live-on);
+                                    }
+                                }
+                            }
                             Text {
-                                text: "67' · UEFA Group A";
+                                text: root.fmt-min();
                                 color: Theme.muted;
                                 font-size: Theme.font-size-caption;
                                 font-weight: 600;
@@ -121,7 +410,7 @@ export component LiveSportsScorePage inherits Window {
                             }
                         }
 
-                        // Teams + score
+                        // Teams + score.
                         HorizontalLayout {
                             padding-left: Theme.spacing-md;
                             padding-right: Theme.spacing-md;
@@ -131,7 +420,17 @@ export component LiveSportsScorePage inherits Window {
                             TeamBlock {
                                 initial: "B";
                                 name: "Belgium";
-                                score: "2";
+                                score: root.b-score;
+                                followed: root.b-followed;
+                                cheers: root.b-cheers;
+                                follow-clicked => {
+                                    root.b-followed = !root.b-followed;
+                                    root.set-status(root.b-followed ? "Following Belgium" : "Unfollowed", root.b-followed, false);
+                                }
+                                cheer-clicked => {
+                                    root.b-cheers = root.b-cheers + 1;
+                                    root.set-status("📣 Belgium cheer +1", true, false);
+                                }
                             }
                             VerticalLayout {
                                 alignment: center;
@@ -146,7 +445,17 @@ export component LiveSportsScorePage inherits Window {
                             TeamBlock {
                                 initial: "N";
                                 name: "Norway";
-                                score: "1";
+                                score: root.n-score;
+                                followed: root.n-followed;
+                                cheers: root.n-cheers;
+                                follow-clicked => {
+                                    root.n-followed = !root.n-followed;
+                                    root.set-status(root.n-followed ? "Following Norway" : "Unfollowed", root.n-followed, false);
+                                }
+                                cheer-clicked => {
+                                    root.n-cheers = root.n-cheers + 1;
+                                    root.set-status("📣 Norway cheer +1", true, false);
+                                }
                             }
                         }
                     }
@@ -157,61 +466,442 @@ export component LiveSportsScorePage inherits Window {
                     padding-left: Theme.spacing-md;
                     padding-right: Theme.spacing-md;
                     SegmentedControl {
-                        options: ["Summary", "Stats", "Lineups", "Commentary"];
+                        options: ["Summary", "Stats", "Lineups", "Predict"];
                         selected-index <=> root.tab-index;
+                        changed(i) => {
+                            root.set-status(i == 0 ? "Summary" : (i == 1 ? "Stats" : (i == 2 ? "Lineups" : "Predict")), true, false);
+                        }
                     }
                 }
 
-                // ----- Goals -------------------------------------------
-                FormSection {
-                    title: "GOALS";
+                // ===== Summary tab =====
+                if root.tab-index == 0: VerticalLayout {
+                    spacing: Theme.spacing-md;
+                    FormSection {
+                        title: "GOALS";
 
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/star.svg");
-                        tone: Tone.warning;
-                        title: "12' · A. Lukaku";
-                        subtitle: "Belgium · 1-0 (assist: De Bruyne)";
-                    }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/star.svg");
-                        tone: Tone.warning;
-                        title: "27' · K. De Bruyne";
-                        subtitle: "Belgium · 2-0 (assist: Hazard)";
-                    }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/star.svg");
-                        tone: Tone.warning;
-                        title: "54' · E. Haaland";
-                        subtitle: "Norway · 2-1 (penalty)";
-                    }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/star.svg");
-                        tone: Tone.warning;
-                        title: "67' · M. Ødegaard";
-                        subtitle: "Norway · 2-2 (assist: Sørloth)";
+                        GoalRow {
+                            minute: "12'";
+                            scorer: "A. Lukaku";
+                            team: "Belgium";
+                            score-then: "1-0";
+                            assist: "assist: De Bruyne";
+                            liked: root.goal1-liked;
+                            clicked => {
+                                root.goal1-liked = !root.goal1-liked;
+                                root.set-status(root.goal1-liked ? "❤ Liked" : "Unliked", root.goal1-liked, false);
+                            }
+                        }
+                        Divider { }
+
+                        GoalRow {
+                            minute: "27'";
+                            scorer: "K. De Bruyne";
+                            team: "Belgium";
+                            score-then: "2-0";
+                            assist: "assist: Hazard";
+                            liked: root.goal2-liked;
+                            clicked => {
+                                root.goal2-liked = !root.goal2-liked;
+                                root.set-status(root.goal2-liked ? "❤ Liked" : "Unliked", root.goal2-liked, false);
+                            }
+                        }
+                        Divider { }
+
+                        GoalRow {
+                            minute: "54'";
+                            scorer: "E. Haaland";
+                            team: "Norway";
+                            score-then: "2-1";
+                            assist: "penalty";
+                            liked: root.goal3-liked;
+                            clicked => {
+                                root.goal3-liked = !root.goal3-liked;
+                                root.set-status(root.goal3-liked ? "❤ Liked" : "Unliked", root.goal3-liked, false);
+                            }
+                        }
+                        Divider { }
+
+                        GoalRow {
+                            minute: "67'";
+                            scorer: "M. Ødegaard";
+                            team: "Norway";
+                            score-then: "2-2";
+                            assist: "assist: Sørloth";
+                            liked: root.goal4-liked;
+                            clicked => {
+                                root.goal4-liked = !root.goal4-liked;
+                                root.set-status(root.goal4-liked ? "❤ Liked" : "Unliked", root.goal4-liked, false);
+                            }
+                        }
                     }
                 }
 
-                // ----- Key moments -------------------------------------
-                FormSection {
-                    title: "KEY MOMENTS";
+                // ===== Stats tab =====
+                if root.tab-index == 1: VerticalLayout {
+                    spacing: Theme.spacing-md;
+                    FormSection {
+                        title: "MATCH STATS";
 
-                    KeyValueRow {
-                        label: "Possession";
-                        value: "62% / 38%";
+                        KeyValueRow {
+                            label: "Possession";
+                            value: root.possession-b + "% / " + (100 - root.possession-b) + "%";
+                        }
+                        Divider { }
+
+                        KeyValueRow {
+                            label: "Shots on target";
+                            value: "8 / 4";
+                        }
+                        Divider { }
+
+                        KeyValueRow {
+                            label: "Corners";
+                            value: "6 / 3";
+                        }
+                        Divider { }
+
+                        KeyValueRow {
+                            label: "Yellow cards";
+                            value: "2 / 3";
+                        }
+                        Divider { }
+
+                        KeyValueRow {
+                            label: "Cheers";
+                            value: root.b-cheers + " / " + root.n-cheers;
+                        }
                     }
-                    Divider { }
-                    KeyValueRow {
-                        label: "Shots on target";
-                        value: "8 / 4";
+                }
+
+                // ===== Lineups tab =====
+                if root.tab-index == 2: VerticalLayout {
+                    spacing: Theme.spacing-md;
+                    FormSection {
+                        title: "BELGIUM (4-3-3)";
+
+                        KeyValueRow {
+                            label: "GK";
+                            value: "Courtois";
+                        }
+                        Divider { }
+
+                        KeyValueRow {
+                            label: "DEF";
+                            value: "Meunier · Vertonghen · Alderweireld · T. Hazard";
+                        }
+                        Divider { }
+
+                        KeyValueRow {
+                            label: "MID";
+                            value: "De Bruyne · Witsel · Tielemans";
+                        }
+                        Divider { }
+
+                        KeyValueRow {
+                            label: "FWD";
+                            value: "E. Hazard · Lukaku · Mertens";
+                        }
                     }
-                    Divider { }
-                    KeyValueRow {
-                        label: "Corners";
-                        value: "6 / 3";
+                    FormSection {
+                        title: "NORWAY (4-2-3-1)";
+
+                        KeyValueRow {
+                            label: "GK";
+                            value: "Nyland";
+                        }
+                        Divider { }
+
+                        KeyValueRow {
+                            label: "DEF";
+                            value: "Pedersen · Ajer · Strandberg · Aursnes";
+                        }
+                        Divider { }
+
+                        KeyValueRow {
+                            label: "MID";
+                            value: "Berge · Ødegaard · Berg · Elyounoussi";
+                        }
+                        Divider { }
+
+                        KeyValueRow {
+                            label: "FWD";
+                            value: "Sørloth · Haaland";
+                        }
+                    }
+                }
+
+                // ===== Predict tab =====
+                if root.tab-index == 3: VerticalLayout {
+                    spacing: Theme.spacing-md;
+                    VerticalLayout {
+                        padding-left: Theme.spacing-md;
+                        padding-right: Theme.spacing-md;
+                        spacing: Theme.spacing-sm;
+                        Text {
+                            text: "WHO WINS?";
+                            color: Theme.muted;
+                            font-size: 11px;
+                            font-weight: 700;
+                            letter-spacing: 2px;
+                        }
+                        VoteBar {
+                            label: "Belgium";
+                            percent: 41;
+                            chosen: root.prediction == 0;
+                            clicked => {
+                                root.set-prediction(0);
+                            }
+                        }
+                        VoteBar {
+                            label: "Norway";
+                            percent: 29;
+                            chosen: root.prediction == 1;
+                            clicked => {
+                                root.set-prediction(1);
+                            }
+                        }
+                        VoteBar {
+                            label: "Draw";
+                            percent: 30;
+                            chosen: root.prediction == 2;
+                            clicked => {
+                                root.set-prediction(2);
+                            }
+                        }
+                    }
+                    FormSection {
+                        title: "ALERTS";
+
+                        Rectangle {
+                            min-height: 48px;
+                            HorizontalLayout {
+                                padding: Theme.spacing-md;
+                                Text {
+                                    text: "Goals";
+                                    color: Theme.on-surface;
+                                    font-size: Theme.font-size-body;
+                                    font-weight: 600;
+                                    vertical-alignment: center;
+                                    horizontal-stretch: 1;
+                                }
+                                Rectangle {
+                                    horizontal-stretch: 0;
+                                    height: 22px;
+                                    border-radius: 11px;
+                                    background: root.notify-goals ? Theme.accent-success.with-alpha(0.22) : Theme.surface-2;
+                                    HorizontalLayout {
+                                        padding-left: Theme.spacing-sm;
+                                        padding-right: Theme.spacing-sm;
+                                        alignment: center;
+                                        VerticalLayout {
+                                            alignment: center;
+                                            Text {
+                                                text: root.notify-goals ? "ON" : "OFF";
+                                                color: root.notify-goals ? Theme.accent-success : Theme.muted;
+                                                font-size: 10px;
+                                                font-weight: 800;
+                                            }
+                                        }
+                                    }
+                                    TouchArea {
+                                        clicked => {
+                                            root.notify-goals = !root.notify-goals;
+                                            root.set-status("Goals " + (root.notify-goals ? "on" : "off"), root.notify-goals, false);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Divider { }
+
+                        Rectangle {
+                            min-height: 48px;
+                            HorizontalLayout {
+                                padding: Theme.spacing-md;
+                                Text {
+                                    text: "Cards";
+                                    color: Theme.on-surface;
+                                    font-size: Theme.font-size-body;
+                                    font-weight: 600;
+                                    vertical-alignment: center;
+                                    horizontal-stretch: 1;
+                                }
+                                Rectangle {
+                                    horizontal-stretch: 0;
+                                    height: 22px;
+                                    border-radius: 11px;
+                                    background: root.notify-cards ? Theme.accent-success.with-alpha(0.22) : Theme.surface-2;
+                                    HorizontalLayout {
+                                        padding-left: Theme.spacing-sm;
+                                        padding-right: Theme.spacing-sm;
+                                        alignment: center;
+                                        VerticalLayout {
+                                            alignment: center;
+                                            Text {
+                                                text: root.notify-cards ? "ON" : "OFF";
+                                                color: root.notify-cards ? Theme.accent-success : Theme.muted;
+                                                font-size: 10px;
+                                                font-weight: 800;
+                                            }
+                                        }
+                                    }
+                                    TouchArea {
+                                        clicked => {
+                                            root.notify-cards = !root.notify-cards;
+                                            root.set-status("Cards " + (root.notify-cards ? "on" : "off"), root.notify-cards, false);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Divider { }
+
+                        Rectangle {
+                            min-height: 48px;
+                            HorizontalLayout {
+                                padding: Theme.spacing-md;
+                                Text {
+                                    text: "Full-time";
+                                    color: Theme.on-surface;
+                                    font-size: Theme.font-size-body;
+                                    font-weight: 600;
+                                    vertical-alignment: center;
+                                    horizontal-stretch: 1;
+                                }
+                                Rectangle {
+                                    horizontal-stretch: 0;
+                                    height: 22px;
+                                    border-radius: 11px;
+                                    background: root.notify-final ? Theme.accent-success.with-alpha(0.22) : Theme.surface-2;
+                                    HorizontalLayout {
+                                        padding-left: Theme.spacing-sm;
+                                        padding-right: Theme.spacing-sm;
+                                        alignment: center;
+                                        VerticalLayout {
+                                            alignment: center;
+                                            Text {
+                                                text: root.notify-final ? "ON" : "OFF";
+                                                color: root.notify-final ? Theme.accent-success : Theme.muted;
+                                                font-size: 10px;
+                                                font-weight: 800;
+                                            }
+                                        }
+                                    }
+                                    TouchArea {
+                                        clicked => {
+                                            root.notify-final = !root.notify-final;
+                                            root.set-status("Full-time " + (root.notify-final ? "on" : "off"), root.notify-final, false);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ===================== Bottom sheet =====================
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+                root.confirm-stop = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: Theme.surface-2;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.muted;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: "Match actions";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 700;
+                    }
+                }
+                SheetRow {
+                    label: "Belgium scores (+1)";
+                    clicked => {
+                        root.b-score = root.b-score + 1;
+                        root.set-status("⚽ Belgium goal! " + root.b-score + "-" + root.n-score, true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Norway scores (+1)";
+                    clicked => {
+                        root.n-score = root.n-score + 1;
+                        root.set-status("⚽ Norway goal! " + root.b-score + "-" + root.n-score, true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: root.live-on ? "Pause live ticker" : "Resume live ticker";
+                    clicked => {
+                        root.live-on = !root.live-on;
+                        root.set-status(root.live-on ? "Resumed" : "Paused", root.live-on, !root.live-on);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Share match link";
+                    clicked => {
+                        root.set-status("Link copied", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                Divider { }
+
+                SheetRow {
+                    label: root.confirm-stop ? "Confirm: stop following" : "Stop following match";
+                    destructive: true;
+                    clicked => {
+                        if (root.confirm-stop) {
+                            root.b-followed = false;
+                            root.n-followed = false;
+                            root.notify-goals = false;
+                            root.notify-cards = false;
+                            root.notify-final = false;
+                            root.set-status("Stopped following", false, true);
+                            root.sheet-open = false;
+                            root.confirm-stop = false;
+                        } else {
+                            root.confirm-stop = true;
+                        }
+                    }
+                }
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.sheet-open = false;
+                        root.confirm-stop = false;
                     }
                 }
             }

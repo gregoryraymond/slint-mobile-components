@@ -7,10 +7,12 @@
 //
 //   - Average-rating hero on the left + 5-bar distribution histogram on
 //     the right (each bar tone-tinted so high-scores read green and
-//     1-star bars read danger).
-//   - Verified-buyers / photos-only / sentiment chip strip.
+//     1-star bars read danger). Bars are tappable — each one drives the
+//     star filter.
+//   - Verified-buyers / photos-only / sentiment chip strip (tappable).
 //   - Per-review card: author avatar + 5-star rating + author + tone-
 //     tinted "VERIFIED PURCHASE" pill + body + helpful counter row.
+//     Helpful pill toggles + count, Report opens a reason sheet.
 
 import { ScrollView } from "std-widgets.slint";
 import { Theme, Tone } from "@mobile-theme/theme.slint";
@@ -40,19 +42,28 @@ component StarRow inherits Rectangle {
     }
 }
 
-// One row in the distribution histogram (label + horizontal bar + count).
+// One row in the distribution histogram (label + horizontal bar +
+// count). Tappable — tap fires `clicked()` so the host can drive a
+// star filter on the cards below.
 component DistroRow inherits Rectangle {
     in property <int> stars;
     in property <float> share;
     in property <int> count;
     in property <Tone> tone;
+    in property <bool> active: false;
+    callback clicked();
 
     horizontal-stretch: 1;
     height: 24px;
+    border-radius: 4px;
+    background: root.active ? Theme.surface-2 : (touch.pressed ? Theme.surface-pressed : transparent);
+    animate background { duration: Theme.motion-fast; }
 
     HorizontalLayout {
         spacing: Theme.spacing-sm;
         alignment: stretch;
+        padding-left: 4px;
+        padding-right: 4px;
         VerticalLayout {
             alignment: center;
             width: 32px;
@@ -109,18 +120,27 @@ component DistroRow inherits Rectangle {
             }
         }
     }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
 }
 
-// One review card.
+// One review card. Helpful pill toggles in-place; Report fires a
+// callback so the page can open a reasons sheet.
 component ReviewCard inherits Rectangle {
     in property <string> initials;
     in property <string> author;
     in property <int> stars;
     in property <string> when;
     in property <bool> verified: true;
+    in property <bool> has-photo: false;
     in property <string> title;
     in property <string> body;
     in property <int> helpful;
+    in property <bool> helpful-marked: false;
+    callback helpful-clicked();
+    callback report-clicked();
 
     horizontal-stretch: 1;
     background: Theme.surface-1;
@@ -174,6 +194,23 @@ component ReviewCard inherits Rectangle {
                             height: parent.height;
                         }
                     }
+                    if root.has-photo: Rectangle {
+                        width: ph-text.preferred-width + 12px;
+                        height: 18px;
+                        border-radius: 4px;
+                        background: Theme.accent-info;
+                        ph-text := Text {
+                            text: "PHOTO";
+                            color: Theme.on-primary;
+                            font-size: 9px;
+                            font-weight: 800;
+                            letter-spacing: 0.5px;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
+                        }
+                    }
                 }
                 HorizontalLayout {
                     spacing: Theme.spacing-xs;
@@ -201,7 +238,7 @@ component ReviewCard inherits Rectangle {
             wrap: word-wrap;
         }
 
-        // Helpful counter row.
+        // Helpful / report row — both pills are tappable.
         HorizontalLayout {
             spacing: Theme.spacing-sm;
             padding-top: 2px;
@@ -209,12 +246,14 @@ component ReviewCard inherits Rectangle {
                 width: helpful-text.preferred-width + 24px;
                 height: 28px;
                 border-radius: 14px;
-                background: Theme.surface-2;
+                background: root.helpful-marked ? Theme.accent-success : Theme.surface-2;
                 border-width: 1px;
-                border-color: Theme.outline;
+                border-color: root.helpful-marked ? Theme.accent-success : Theme.outline;
+                animate background { duration: Theme.motion-fast; }
+                animate border-color { duration: Theme.motion-fast; }
                 helpful-text := Text {
-                    text: "Helpful · " + root.helpful;
-                    color: Theme.muted;
+                    text: (root.helpful-marked ? "Helpful ✓ · " : "Helpful · ") + root.helpful;
+                    color: root.helpful-marked ? Theme.on-primary : Theme.muted;
                     font-size: Theme.font-size-caption;
                     font-weight: 700;
                     horizontal-alignment: center;
@@ -222,13 +261,29 @@ component ReviewCard inherits Rectangle {
                     width: parent.width;
                     height: parent.height;
                 }
+                TouchArea {
+                    clicked => { root.helpful-clicked(); }
+                }
             }
-            Text {
-                text: "Report";
-                color: Theme.muted;
-                font-size: Theme.font-size-caption;
-                font-weight: 600;
-                vertical-alignment: center;
+            Rectangle {
+                width: report-text.preferred-width + 20px;
+                height: 28px;
+                border-radius: 14px;
+                background: report-touch.pressed ? Theme.surface-2 : transparent;
+                animate background { duration: Theme.motion-fast; }
+                report-text := Text {
+                    text: "Report";
+                    color: Theme.muted;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 600;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+                report-touch := TouchArea {
+                    clicked => { root.report-clicked(); }
+                }
             }
         }
     }
@@ -241,8 +296,94 @@ export component ReviewSummaryPage inherits Window {
     in property <string> rating: "4.6";
     in property <int> rating-int: 4;
     in property <string> review-count: "238 reviews · 412 buyers";
+
+    // ----- Interactive state -----
+    // filter-mode: 0=All  1=Verified  2=Photos
+    //              3=5★ 4=4★ 5=3★ 6=2★ 7=1★
+    private property <int> filter-mode: 0;
+    private property <bool> h0-marked: false;
+    private property <bool> h1-marked: false;
+    private property <bool> h2-marked: false;
+    private property <int> report-target: -1; // -1 = no sheet
+    private property <bool> write-confirming: false;
+    private property <string> status-msg: "Tap a chip, a histogram bar, or 'Helpful' on any review";
+    private property <bool> status-is-success: false;
+    private property <bool> status-is-danger: false;
+
     callback back-pressed();
     callback write-review-pressed();
+    callback helpful-toggled(int, bool); // review index, new state
+    callback review-reported(int, string); // review index, reason
+
+    // ----- Filter helpers -----
+    function r0-visible() -> bool { // Anika — 5★ verified, has photo
+        return root.filter-mode == 0 || root.filter-mode == 1
+            || root.filter-mode == 2 || root.filter-mode == 3;
+    }
+    function r1-visible() -> bool { // Devika — 4★ verified
+        return root.filter-mode == 0 || root.filter-mode == 1 || root.filter-mode == 4;
+    }
+    function r2-visible() -> bool { // Marco — 2★ unverified
+        return root.filter-mode == 0 || root.filter-mode == 6;
+    }
+    function any-visible() -> bool {
+        return root.r0-visible() || root.r1-visible() || root.r2-visible();
+    }
+    function filter-name(i: int) -> string {
+        if (i == 0) { return "All reviews"; }
+        if (i == 1) { return "Verified only"; }
+        if (i == 2) { return "With photo"; }
+        if (i == 3) { return "5-star reviews"; }
+        if (i == 4) { return "4-star reviews"; }
+        if (i == 5) { return "3-star reviews"; }
+        if (i == 6) { return "2-star reviews"; }
+        return "1-star reviews";
+    }
+
+    // ----- Mutating actions -----
+    public function set-filter(m: int) {
+        root.filter-mode = m;
+        root.status-msg = "Showing: " + root.filter-name(m);
+        root.status-is-success = false;
+        root.status-is-danger = false;
+        root.write-confirming = false;
+    }
+    public function set-star-filter(stars: int) {
+        // map 5,4,3,2,1 → 3,4,5,6,7
+        root.set-filter(8 - stars);
+    }
+    public function toggle-helpful(i: int) {
+        if (i == 0) { root.h0-marked = !root.h0-marked; root.helpful-toggled(0, root.h0-marked); }
+        if (i == 1) { root.h1-marked = !root.h1-marked; root.helpful-toggled(1, root.h1-marked); }
+        if (i == 2) { root.h2-marked = !root.h2-marked; root.helpful-toggled(2, root.h2-marked); }
+        root.status-msg = (i == 0 && root.h0-marked) || (i == 1 && root.h1-marked) || (i == 2 && root.h2-marked)
+            ? "Marked review as helpful"
+            : "Unmarked review";
+        root.status-is-success = (i == 0 && root.h0-marked) || (i == 1 && root.h1-marked) || (i == 2 && root.h2-marked);
+        root.status-is-danger = !root.status-is-success;
+        root.write-confirming = false;
+    }
+    public function open-report(i: int) {
+        root.report-target = i;
+        root.status-msg = "Report this review — pick a reason";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function submit-report(reason: string) {
+        if (root.report-target >= 0) {
+            root.review-reported(root.report-target, reason);
+            root.status-msg = "Reported as: " + reason + " — thanks";
+            root.status-is-success = true;
+            root.status-is-danger = false;
+            root.report-target = -1;
+        }
+    }
+    public function close-report() {
+        root.report-target = -1;
+        root.status-msg = "Report cancelled";
+        root.status-is-success = false;
+        root.status-is-danger = true;
+    }
 
     background: Theme.background;
 
@@ -255,136 +396,235 @@ export component ReviewSummaryPage inherits Window {
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             trailing-icon: @image-url("@mobile-components/icons/pencil.svg");
             leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.write-review-pressed(); }
+            trailing-pressed => {
+                root.write-review-pressed();
+                root.status-msg = "Compose: open the review composer";
+                root.status-is-success = false;
+                root.status-is-danger = false;
+            }
         }
 
-        // Hero card + filters + 3 review cards overflow a single 892-px
-        // screen, so the middle region scrolls between the pinned AppBar
-        // and the sticky write-a-review CTA below.
+        // ----- Status banner -----
+        Rectangle {
+            background: root.status-is-danger ? Theme.accent-danger
+                : root.status-is-success ? Theme.accent-success
+                : Theme.surface-2;
+            height: 32px;
+            animate background { duration: Theme.motion-fast; }
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                Text {
+                    text: root.status-msg;
+                    color: (root.status-is-danger || root.status-is-success)
+                        ? Theme.on-primary
+                        : Theme.on-surface;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+            }
+        }
+
         ScrollView {
             vertical-stretch: 1;
 
             VerticalLayout {
                 spacing: 0;
 
-        VerticalLayout {
-            padding: Theme.spacing-md;
-            spacing: Theme.spacing-md;
-            alignment: start;
-
-            // Hero: product + rating + distribution.
-            Heading {
-                text: root.product;
-                style: HeadingStyle.serif-light;
-            }
-            Rectangle {
-                background: Theme.surface-1;
-                border-radius: Theme.radius-md;
-                drop-shadow-blur: Theme.elevation-1-blur;
-                drop-shadow-color: Theme.elevation-1-color;
-                drop-shadow-offset-y: Theme.elevation-1-y;
-                height: 160px;
-                HorizontalLayout {
+                VerticalLayout {
                     padding: Theme.spacing-md;
                     spacing: Theme.spacing-md;
-                    alignment: stretch;
+                    alignment: start;
 
-                    // Big number + stars.
-                    VerticalLayout {
-                        alignment: center;
-                        spacing: Theme.spacing-xs;
+                    Heading {
+                        text: root.product;
+                        style: HeadingStyle.serif-light;
+                    }
+
+                    // Hero: product + rating + distribution.
+                    Rectangle {
+                        background: Theme.surface-1;
+                        border-radius: Theme.radius-md;
+                        drop-shadow-blur: Theme.elevation-1-blur;
+                        drop-shadow-color: Theme.elevation-1-color;
+                        drop-shadow-offset-y: Theme.elevation-1-y;
+                        height: 160px;
                         HorizontalLayout {
-                            alignment: center;
-                            Text {
-                                text: root.rating;
-                                color: Theme.on-surface;
-                                font-family: "Fraunces 9pt";
-                                font-size: 64px;
-                                font-weight: 300;
-                                letter-spacing: -2px;
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-md;
+                            alignment: stretch;
+
+                            // Big number + stars.
+                            VerticalLayout {
+                                alignment: center;
+                                spacing: Theme.spacing-xs;
+                                HorizontalLayout {
+                                    alignment: center;
+                                    Text {
+                                        text: root.rating;
+                                        color: Theme.on-surface;
+                                        font-family: "Fraunces 9pt";
+                                        font-size: 64px;
+                                        font-weight: 300;
+                                        letter-spacing: -2px;
+                                    }
+                                }
+                                HorizontalLayout {
+                                    alignment: center;
+                                    StarRow { filled: root.rating-int; size: 14px; }
+                                }
+                                HorizontalLayout {
+                                    alignment: center;
+                                    Text {
+                                        text: root.review-count;
+                                        color: Theme.muted;
+                                        font-size: 10px;
+                                        font-weight: 700;
+                                        letter-spacing: 0.3px;
+                                    }
+                                }
                             }
-                        }
-                        HorizontalLayout {
-                            alignment: center;
-                            StarRow { filled: root.rating-int; size: 14px; }
-                        }
-                        HorizontalLayout {
-                            alignment: center;
-                            Text {
-                                text: root.review-count;
-                                color: Theme.muted;
-                                font-size: 10px;
-                                font-weight: 700;
-                                letter-spacing: 0.3px;
+
+                            // Tappable distribution bars on the right.
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                alignment: center;
+                                spacing: Theme.spacing-xs;
+                                DistroRow {
+                                    stars: 5; share: 0.68; count: 162; tone: Tone.success;
+                                    active: root.filter-mode == 3;
+                                    clicked => { root.set-star-filter(5); }
+                                }
+                                DistroRow {
+                                    stars: 4; share: 0.21; count: 50; tone: Tone.success;
+                                    active: root.filter-mode == 4;
+                                    clicked => { root.set-star-filter(4); }
+                                }
+                                DistroRow {
+                                    stars: 3; share: 0.06; count: 14; tone: Tone.warning;
+                                    active: root.filter-mode == 5;
+                                    clicked => { root.set-star-filter(3); }
+                                }
+                                DistroRow {
+                                    stars: 2; share: 0.03; count: 8; tone: Tone.danger;
+                                    active: root.filter-mode == 6;
+                                    clicked => { root.set-star-filter(2); }
+                                }
+                                DistroRow {
+                                    stars: 1; share: 0.02; count: 4; tone: Tone.danger;
+                                    active: root.filter-mode == 7;
+                                    clicked => { root.set-star-filter(1); }
+                                }
                             }
                         }
                     }
 
-                    // Distribution bars on the right.
-                    VerticalLayout {
-                        horizontal-stretch: 1;
-                        alignment: center;
-                        spacing: Theme.spacing-xs;
-                        DistroRow { stars: 5; share: 0.68; count: 162; tone: Tone.success; }
-                        DistroRow { stars: 4; share: 0.21; count: 50; tone: Tone.success; }
-                        DistroRow { stars: 3; share: 0.06; count: 14; tone: Tone.warning; }
-                        DistroRow { stars: 2; share: 0.03; count: 8; tone: Tone.danger; }
-                        DistroRow { stars: 1; share: 0.02; count: 4; tone: Tone.danger; }
+                    // Filter chips — each wrapped in a TouchArea overlay.
+                    HorizontalLayout {
+                        spacing: Theme.spacing-sm;
+                        Rectangle {
+                            Chip { label: "All"; selected: root.filter-mode == 0; }
+                            TouchArea { clicked => { root.set-filter(0); } }
+                        }
+                        Rectangle {
+                            Chip { label: "Verified · 218"; selected: root.filter-mode == 1; }
+                            TouchArea { clicked => { root.set-filter(1); } }
+                        }
+                        Rectangle {
+                            Chip { label: "Photos · 64"; selected: root.filter-mode == 2; }
+                            TouchArea { clicked => { root.set-filter(2); } }
+                        }
+                        Rectangle {
+                            Chip { label: "5★ · 162"; selected: root.filter-mode == 3; }
+                            TouchArea { clicked => { root.set-filter(3); } }
+                        }
+                        Rectangle {
+                            Chip { label: "1★ · 4"; selected: root.filter-mode == 7; }
+                            TouchArea { clicked => { root.set-filter(7); } }
+                        }
+                    }
+                }
+
+                SectionHeader { text: "HIGHLIGHTED REVIEWS"; }
+                VerticalLayout {
+                    padding: Theme.spacing-md;
+                    spacing: Theme.spacing-md;
+
+                    if root.r0-visible(): ReviewCard {
+                        initials: "AR";
+                        author: "Anika Ravi";
+                        stars: 5;
+                        when: "2 days ago";
+                        verified: true;
+                        has-photo: true;
+                        title: "Lives in my daypack now";
+                        body: "Lighter than I expected — packs into its own pocket and disappears in a daypack. DWR holds up in light rain; wouldn't trust it in a downpour. Sizing runs slim; I'd size up if you plan to layer.";
+                        helpful: 24 + (root.h0-marked ? 1 : 0);
+                        helpful-marked: root.h0-marked;
+                        helpful-clicked => { root.toggle-helpful(0); }
+                        report-clicked => { root.open-report(0); }
+                    }
+                    if root.r1-visible(): ReviewCard {
+                        initials: "DV";
+                        author: "Devika Sharma";
+                        stars: 4;
+                        when: "1 week ago";
+                        verified: true;
+                        title: "Great wind, mediocre rain";
+                        body: "Cuts wind like a champ on the bike commute. Treated finish soaks through after 10 minutes of real rain — for that, look at the Torrentshell.";
+                        helpful: 8 + (root.h1-marked ? 1 : 0);
+                        helpful-marked: root.h1-marked;
+                        helpful-clicked => { root.toggle-helpful(1); }
+                        report-clicked => { root.open-report(1); }
+                    }
+                    if root.r2-visible(): ReviewCard {
+                        initials: "MK";
+                        author: "Marco Kovač";
+                        stars: 2;
+                        when: "2 weeks ago";
+                        verified: false;
+                        title: "Cuff hooks fall off";
+                        body: "Returned after a month — the wrist cuff hooks had detached and the seam tape was peeling. Yours might be fine but mine wasn't QC'd well.";
+                        helpful: 3 + (root.h2-marked ? 1 : 0);
+                        helpful-marked: root.h2-marked;
+                        helpful-clicked => { root.toggle-helpful(2); }
+                        report-clicked => { root.open-report(2); }
+                    }
+
+                    // Empty state when filter excludes every card.
+                    if !root.any-visible(): Rectangle {
+                        background: Theme.surface-1;
+                        border-radius: Theme.radius-md;
+                        border-width: 1px;
+                        border-color: Theme.outline;
+                        min-height: 140px;
+                        VerticalLayout {
+                            padding: Theme.spacing-lg;
+                            spacing: Theme.spacing-xs;
+                            alignment: center;
+                            Text {
+                                text: "No reviews match \"" + root.filter-name(root.filter-mode) + "\"";
+                                color: Theme.muted;
+                                font-size: Theme.font-size-body;
+                                font-weight: 700;
+                                horizontal-alignment: center;
+                            }
+                            Text {
+                                text: "Tap All to see every highlighted review.";
+                                color: Theme.muted;
+                                font-size: Theme.font-size-caption;
+                                horizontal-alignment: center;
+                            }
+                        }
                     }
                 }
             }
-
-            // Filters.
-            HorizontalLayout {
-                spacing: Theme.spacing-sm;
-                Chip { label: "All"; selected: true; }
-                Chip { label: "Verified · 218"; }
-                Chip { label: "Photos · 64"; }
-                Chip { label: "5★ · 162"; }
-                Chip { label: "1★ · 4"; }
-            }
         }
 
-        SectionHeader { text: "HIGHLIGHTED REVIEWS"; }
-        VerticalLayout {
-            padding: Theme.spacing-md;
-            spacing: Theme.spacing-md;
-
-            ReviewCard {
-                initials: "AR";
-                author: "Anika Ravi";
-                stars: 5;
-                when: "2 days ago";
-                verified: true;
-                title: "Lives in my daypack now";
-                body: "Lighter than I expected — packs into its own pocket and disappears in a daypack. DWR holds up in light rain; wouldn't trust it in a downpour. Sizing runs slim; I'd size up if you plan to layer.";
-                helpful: 24;
-            }
-            ReviewCard {
-                initials: "DV";
-                author: "Devika Sharma";
-                stars: 4;
-                when: "1 week ago";
-                verified: true;
-                title: "Great wind, mediocre rain";
-                body: "Cuts wind like a champ on the bike commute. Treated finish soaks through after 10 minutes of real rain — for that, look at the Torrentshell.";
-                helpful: 8;
-            }
-            ReviewCard {
-                initials: "MK";
-                author: "Marco Kovač";
-                stars: 2;
-                when: "2 weeks ago";
-                verified: false;
-                title: "Cuff hooks fall off";
-                body: "Returned after a month — the wrist cuff hooks had detached and the seam tape was peeling. Yours might be fine but mine wasn't QC'd well.";
-                helpful: 3;
-            }
-        }
-            }   // end inner VerticalLayout
-        }       // end ScrollView
-
-        // Sticky write-a-review CTA.
+        // Sticky write-a-review CTA with two-tap confirm.
         Rectangle {
             background: Theme.surface-1;
             drop-shadow-blur: Theme.elevation-2-blur;
@@ -394,9 +634,99 @@ export component ReviewSummaryPage inherits Window {
             HorizontalLayout {
                 padding: Theme.spacing-md;
                 MobileButton {
-                    text: "Write a review";
-                    tone: Tone.info;
-                    clicked => { root.write-review-pressed(); }
+                    text: root.write-confirming ? "Tap again to start your review" : "Write a review";
+                    tone: root.write-confirming ? Tone.success : Tone.info;
+                    clicked => {
+                        if (root.write-confirming) {
+                            root.write-review-pressed();
+                            root.status-msg = "Opening review composer…";
+                            root.status-is-success = true;
+                            root.status-is-danger = false;
+                            root.write-confirming = false;
+                        } else {
+                            root.write-confirming = true;
+                            root.status-msg = "Confirm: tap again to begin writing";
+                            root.status-is-success = false;
+                            root.status-is-danger = false;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ----- Report-reasons bottom sheet -----
+    if root.report-target >= 0: Rectangle {
+        // Backdrop — tap to dismiss.
+        Rectangle {
+            background: #00000099;
+            TouchArea {
+                clicked => { root.close-report(); }
+            }
+        }
+        // Sheet anchored at the bottom.
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            height: 320px;
+            background: Theme.surface-1;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            // Swallow clicks inside the sheet.
+            TouchArea { }
+
+            VerticalLayout {
+                padding: Theme.spacing-lg;
+                spacing: Theme.spacing-md;
+
+                Rectangle {
+                    width: 40px;
+                    height: 4px;
+                    border-radius: 2px;
+                    background: Theme.muted;
+                }
+
+                Heading {
+                    text: "Why report this review?";
+                    style: HeadingStyle.grotesk-bold;
+                    font-size: Theme.font-size-title;
+                }
+
+                // Reason rows — each acts as a button.
+                for reason[idx] in [
+                    "Spam or promotional",
+                    "Off-topic or irrelevant",
+                    "Inappropriate language",
+                    "Suspected fake review",
+                ] : Rectangle {
+                    height: 40px;
+                    border-radius: Theme.radius-md;
+                    background: reason-touch.pressed ? Theme.surface-pressed : Theme.surface-2;
+                    animate background { duration: Theme.motion-fast; }
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-md;
+                        padding-right: Theme.spacing-md;
+                        Text {
+                            text: reason;
+                            color: Theme.on-surface;
+                            font-size: Theme.font-size-body;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                        }
+                    }
+                    reason-touch := TouchArea {
+                        clicked => { root.submit-report(reason); }
+                    }
+                }
+
+                Rectangle { vertical-stretch: 1; }
+
+                MobileButton {
+                    text: "Cancel";
+                    tone: Tone.danger;
+                    clicked => { root.close-report(); }
                 }
             }
         }

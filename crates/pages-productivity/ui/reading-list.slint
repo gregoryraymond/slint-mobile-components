@@ -1,25 +1,189 @@
 // ReadingListPage
 // =====================================================================
-//
-// Saved-articles list — Pocket / Instapaper / Reader-style "stuff
-// you've saved for later" surface. Distinct from `EReaderPage` (single
-// article reading) and `NewsArticleFeedPage` (browse new content).
-// Demonstrates:
-//
-//   - Filter chip strip: All / Unread / Favourites / Archive / Tags.
-//   - Per-article card: cover gradient thumbnail + headline + source +
-//     read-time + a small status row (FAV star / Archived / unread
-//     dot). Cards alternate between landscape (thumb-left) and
-//     portrait-hero (thumb-on-top) layouts to keep the rhythm.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { SectionHeader } from "@mobile-components/section-header.slint";
-import { Chip } from "@mobile-components/chip.slint";
 import { Divider } from "@mobile-components/divider.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
+import { ScrollView } from "std-widgets.slint";
 
-// Hero card — full-width thumb above the meta block.
+component Chip2 inherits Rectangle {
+    in property <string> label;
+    in property <bool> active: false;
+    callback clicked();
+
+    horizontal-stretch: 0;
+    height: 28px;
+    border-radius: 14px;
+    background: root.active ? Theme.primary : Theme.surface-2;
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: center;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.active ? Theme.on-primary : Theme.on-surface;
+                font-size: Theme.font-size-caption;
+                font-weight: 700;
+            }
+        }
+    }
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component ArticleRow inherits Rectangle {
+    in property <string> headline;
+    in property <string> source;
+    in property <string> read-time;
+    in property <brush> thumb;
+    in property <bool> favourite: false;
+    in property <bool> archived: false;
+    in property <bool> unread: false;
+    callback row-clicked();
+    callback fav-clicked();
+    callback archive-clicked();
+
+    horizontal-stretch: 1;
+    min-height: 116px;
+    opacity: root.archived ? 0.6 : 1.0;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.row-clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 96px;
+                height: 80px;
+                border-radius: Theme.radius-sm;
+                background: root.thumb;
+                clip: true;
+                if root.favourite: Rectangle {
+                    x: parent.width - 20px;
+                    y: 4px;
+                    width: 16px;
+                    height: 16px;
+                    border-radius: 8px;
+                    background: #00000088;
+                    Image {
+                        width: 10px;
+                        height: 10px;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        source: @image-url("@mobile-components/icons/star.svg");
+                        colorize: Theme.accent-warning;
+                        image-fit: contain;
+                    }
+                }
+            }
+        }
+
+        VerticalLayout {
+            horizontal-stretch: 1;
+            spacing: Theme.spacing-xs;
+            HorizontalLayout {
+                spacing: Theme.spacing-xs;
+                if root.unread: Rectangle {
+                    width: 8px;
+                    height: 8px;
+                    border-radius: 4px;
+                    background: Theme.accent-info;
+                    y: 6px;
+                }
+                Text {
+                    text: root.source;
+                    color: root.archived ? Theme.muted : Theme.accent-info;
+                    font-size: 10px;
+                    font-weight: 800;
+                    letter-spacing: 0.5px;
+                    vertical-alignment: center;
+                }
+            }
+            Text {
+                text: root.headline;
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+                wrap: word-wrap;
+            }
+            Text {
+                text: root.read-time + (root.archived ? " · archived" : (root.unread ? "" : " · read ✓"));
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+            }
+            HorizontalLayout {
+                spacing: Theme.spacing-sm;
+                Rectangle {
+                    horizontal-stretch: 0;
+                    height: 24px;
+                    border-radius: 12px;
+                    background: root.favourite ? Theme.accent-warning.with-alpha(0.22) : Theme.surface-2;
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-sm;
+                        padding-right: Theme.spacing-sm;
+                        alignment: center;
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: root.favourite ? "★ Favourite" : "☆ Favourite";
+                                color: root.favourite ? Theme.accent-warning : Theme.muted;
+                                font-size: 10px;
+                                font-weight: 800;
+                            }
+                        }
+                    }
+                    TouchArea {
+                        clicked => {
+                            root.fav-clicked();
+                        }
+                    }
+                }
+                Rectangle {
+                    horizontal-stretch: 0;
+                    height: 24px;
+                    border-radius: 12px;
+                    background: root.archived ? Theme.accent-success.with-alpha(0.22) : Theme.surface-2;
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-sm;
+                        padding-right: Theme.spacing-sm;
+                        alignment: center;
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: root.archived ? "↺ Restore" : "📥 Archive";
+                                color: root.archived ? Theme.accent-success : Theme.muted;
+                                font-size: 10px;
+                                font-weight: 800;
+                            }
+                        }
+                    }
+                    TouchArea {
+                        clicked => {
+                            root.archive-clicked();
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 component HeroArticle inherits Rectangle {
     in property <string> headline;
     in property <string> source;
@@ -28,6 +192,8 @@ component HeroArticle inherits Rectangle {
     in property <brush> thumb;
     in property <bool> favourite: false;
     in property <bool> unread: true;
+    callback row-clicked();
+    callback fav-clicked();
 
     horizontal-stretch: 1;
     background: Theme.surface-1;
@@ -43,7 +209,7 @@ component HeroArticle inherits Rectangle {
             height: 140px;
             background: root.thumb;
             clip: true;
-            if root.favourite: Rectangle {
+            Rectangle {
                 x: parent.width - self.width - 12px;
                 y: 12px;
                 width: 36px;
@@ -56,8 +222,13 @@ component HeroArticle inherits Rectangle {
                     x: (parent.width - self.width) / 2;
                     y: (parent.height - self.height) / 2;
                     source: @image-url("@mobile-components/icons/star.svg");
-                    colorize: Theme.accent-warning;
+                    colorize: root.favourite ? Theme.accent-warning : #ffffffaa;
                     image-fit: contain;
+                }
+                TouchArea {
+                    clicked => {
+                        root.fav-clicked();
+                    }
                 }
             }
         }
@@ -111,89 +282,39 @@ component HeroArticle inherits Rectangle {
             }
         }
     }
+    TouchArea {
+        clicked => {
+            root.row-clicked();
+        }
+    }
 }
 
-// Compact row — thumb-left, meta-right.
-component ArticleRow inherits Rectangle {
-    in property <string> headline;
-    in property <string> source;
-    in property <string> read-time;
-    in property <brush> thumb;
-    in property <bool> favourite: false;
-    in property <bool> archived: false;
-    in property <bool> unread: false;
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
 
     horizontal-stretch: 1;
-    min-height: 104px;
-    opacity: root.archived ? 0.55 : 1.0;
+    min-height: 48px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
 
     HorizontalLayout {
-        padding: Theme.spacing-md;
-        spacing: Theme.spacing-md;
-        alignment: stretch;
-
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: start;
         VerticalLayout {
             alignment: center;
-            Rectangle {
-                width: 96px;
-                height: 80px;
-                border-radius: Theme.radius-sm;
-                background: root.thumb;
-                clip: true;
-                if root.favourite: Rectangle {
-                    x: parent.width - 20px;
-                    y: 4px;
-                    width: 16px;
-                    height: 16px;
-                    border-radius: 8px;
-                    background: #00000088;
-                    Image {
-                        width: 10px;
-                        height: 10px;
-                        x: (parent.width - self.width) / 2;
-                        y: (parent.height - self.height) / 2;
-                        source: @image-url("@mobile-components/icons/star.svg");
-                        colorize: Theme.accent-warning;
-                        image-fit: contain;
-                    }
-                }
-            }
-        }
-
-        VerticalLayout {
-            horizontal-stretch: 1;
-            spacing: Theme.spacing-xs;
-            HorizontalLayout {
-                spacing: Theme.spacing-xs;
-                if root.unread: Rectangle {
-                    width: 8px;
-                    height: 8px;
-                    border-radius: 4px;
-                    background: Theme.accent-info;
-                    y: 6px;
-                }
-                Text {
-                    text: root.source;
-                    color:
-                          root.archived ? Theme.muted
-                        : Theme.accent-info;
-                    font-size: 10px;
-                    font-weight: 800;
-                    letter-spacing: 0.5px;
-                    vertical-alignment: center;
-                }
-            }
             Text {
-                text: root.headline;
-                color: Theme.on-surface;
+                text: root.label;
+                color: root.destructive ? Theme.accent-danger : Theme.on-surface;
                 font-size: Theme.font-size-body;
                 font-weight: 600;
-                wrap: word-wrap;
-            }
-            Text {
-                text: root.read-time + (root.archived ? " · archived" : "");
-                color: Theme.muted;
-                font-size: Theme.font-size-caption;
             }
         }
     }
@@ -202,9 +323,179 @@ component ArticleRow inherits Rectangle {
 export component ReadingListPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
+
+    in-out property <int> filter: 0; // 0 All, 1 Unread, 2 Favourites, 3 Archive
+    in-out property <bool> hero-unread: true;
+    in-out property <bool> hero-fav: true;
+    in-out property <bool> hero-arch: false;
+    // 5 article rows (0..4 are "to read", last two arrive archived).
+    in-out property <bool> u0: true;
+    in-out property <bool> u1: true;
+    in-out property <bool> u2: true;
+    in-out property <bool> u3: false;
+    in-out property <bool> u4: false;
+    in-out property <bool> f0: false;
+    in-out property <bool> f1: false;
+    in-out property <bool> f2: true;
+    in-out property <bool> f3: false;
+    in-out property <bool> f4: true;
+    in-out property <bool> a0: false;
+    in-out property <bool> a1: false;
+    in-out property <bool> a2: false;
+    in-out property <bool> a3: true;
+    in-out property <bool> a4: true;
+    in-out property <int> new-articles: 0;
+    in-out property <bool> sheet-open: false;
+    in-out property <bool> confirm-clear: false;
+    in-out property <string> status-msg: "";
+    in-out property <bool> status-success: false;
+    in-out property <bool> status-danger: false;
+
     callback back-pressed();
     callback compose-pressed();
-    callback article-pressed(string);
+    callback article-pressed(int);
+
+    function unread-count() -> int {
+        return (root.hero-unread && !root.hero-arch ? 1 : 0) + (root.u0 && !root.a0 ? 1 : 0) + (root.u1 && !root.a1 ? 1 : 0) + (root.u2 && !root.a2 ? 1 : 0) + (root.u3 && !root.a3 ? 1 : 0) + (root.u4 && !root.a4 ? 1 : 0);
+    }
+    function fav-count() -> int {
+        return (root.hero-fav ? 1 : 0) + (root.f0 ? 1 : 0) + (root.f1 ? 1 : 0) + (root.f2 ? 1 : 0) + (root.f3 ? 1 : 0) + (root.f4 ? 1 : 0);
+    }
+    function archive-count() -> int {
+        return (root.hero-arch ? 1 : 0) + (root.a0 ? 1 : 0) + (root.a1 ? 1 : 0) + (root.a2 ? 1 : 0) + (root.a3 ? 1 : 0) + (root.a4 ? 1 : 0);
+    }
+    function all-count() -> int {
+        return 6 + root.new-articles;
+    }
+    function set-status(m: string, ok: bool, bad: bool) {
+        root.status-msg = m;
+        root.status-success = ok;
+        root.status-danger = bad;
+    }
+    function row-visible(idx: int) -> bool {
+        if (root.filter == 0) {
+            return true;
+        }
+        if (root.filter == 1) {
+            if (idx == -1) {
+                return root.hero-unread && !root.hero-arch;
+            }
+            if (idx == 0) {
+                return root.u0 && !root.a0;
+            }
+            if (idx == 1) {
+                return root.u1 && !root.a1;
+            }
+            if (idx == 2) {
+                return root.u2 && !root.a2;
+            }
+            if (idx == 3) {
+                return root.u3 && !root.a3;
+            }
+            if (idx == 4) {
+                return root.u4 && !root.a4;
+            }
+        }
+        if (root.filter == 2) {
+            if (idx == -1) {
+                return root.hero-fav;
+            }
+            if (idx == 0) {
+                return root.f0;
+            }
+            if (idx == 1) {
+                return root.f1;
+            }
+            if (idx == 2) {
+                return root.f2;
+            }
+            if (idx == 3) {
+                return root.f3;
+            }
+            if (idx == 4) {
+                return root.f4;
+            }
+        }
+        if (idx == -1) {
+            return root.hero-arch;
+        }
+        if (idx == 0) {
+            return root.a0;
+        }
+        if (idx == 1) {
+            return root.a1;
+        }
+        if (idx == 2) {
+            return root.a2;
+        }
+        if (idx == 3) {
+            return root.a3;
+        }
+        if (idx == 4) {
+            return root.a4;
+        }
+        return false;
+    }
+    function mark-read(idx: int) {
+        if (idx == -1) {
+            root.hero-unread = false;
+        }
+        if (idx == 0) {
+            root.u0 = !root.u0;
+        }
+        if (idx == 1) {
+            root.u1 = !root.u1;
+        }
+        if (idx == 2) {
+            root.u2 = !root.u2;
+        }
+        if (idx == 3) {
+            root.u3 = !root.u3;
+        }
+        if (idx == 4) {
+            root.u4 = !root.u4;
+        }
+    }
+    function toggle-fav(idx: int) {
+        if (idx == -1) {
+            root.hero-fav = !root.hero-fav;
+        }
+        if (idx == 0) {
+            root.f0 = !root.f0;
+        }
+        if (idx == 1) {
+            root.f1 = !root.f1;
+        }
+        if (idx == 2) {
+            root.f2 = !root.f2;
+        }
+        if (idx == 3) {
+            root.f3 = !root.f3;
+        }
+        if (idx == 4) {
+            root.f4 = !root.f4;
+        }
+    }
+    function toggle-arch(idx: int) {
+        if (idx == -1) {
+            root.hero-arch = !root.hero-arch;
+        }
+        if (idx == 0) {
+            root.a0 = !root.a0;
+        }
+        if (idx == 1) {
+            root.a1 = !root.a1;
+        }
+        if (idx == 2) {
+            root.a2 = !root.a2;
+        }
+        if (idx == 3) {
+            root.a3 = !root.a3;
+        }
+        if (idx == 4) {
+            root.a4 = !root.a4;
+        }
+    }
 
     background: Theme.background;
 
@@ -212,86 +503,388 @@ export component ReadingListPage inherits Window {
         spacing: 0;
 
         AppBar {
-            title: "Reading list";
+            title: "Reading list · " + root.unread-count() + " unread";
             title-style: HeadingStyle.serif-light;
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
-            trailing-icon: @image-url("@mobile-components/icons/plus.svg");
-            leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.compose-pressed(); }
-        }
-
-        // Filter chip strip.
-        HorizontalLayout {
-            padding: Theme.spacing-md;
-            spacing: Theme.spacing-sm;
-            Chip { label: "All · 42"; selected: true; }
-            Chip { label: "Unread · 8"; }
-            Chip { label: "Favourites · 12"; }
-            Chip { label: "Archive · 22"; }
-        }
-
-        // Hero card.
-        VerticalLayout {
-            padding-left: Theme.spacing-md;
-            padding-right: Theme.spacing-md;
-            padding-bottom: Theme.spacing-md;
-            HeroArticle {
-                source: "STRATECHERY";
-                read-time: "12 min · saved yesterday";
-                headline: "Why pure-Rust GUIs are eating the mobile stack";
-                excerpt: "A look at how the declarative-UI wave reshaped the mobile toolkit market — and why the next chapter happens in Rust.";
-                thumb: @linear-gradient(135deg, #16a34a 0%, #14532d 100%);
-                favourite: true;
-                unread: true;
+            trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
+            leading-pressed => {
+                root.back-pressed();
+            }
+            trailing-pressed => {
+                root.sheet-open = true;
             }
         }
 
-        SectionHeader { text: "TO READ"; }
-
-        ArticleRow {
-            source: "RUST WEEKLY";
-            headline: "Cargo-apk gains live-reload on Apple Silicon";
-            read-time: "6 min · saved 2 days ago";
-            thumb: @linear-gradient(135deg, #f59e0b 0%, #b45309 100%);
-            unread: true;
-        }
-        Divider { }
-        ArticleRow {
-            source: "WIRED";
-            headline: "Anthropic ships Claude 5: API + Code updates land Tuesday";
-            read-time: "8 min · saved 3 days ago";
-            thumb: @linear-gradient(135deg, #6b7280 0%, #1f2937 100%);
-            unread: true;
-        }
-        Divider { }
-        ArticleRow {
-            source: "FRONTEND TIMES";
-            headline: "Tailwind drops v5 — JIT mode becomes default";
-            read-time: "5 min · saved Sunday";
-            thumb: @linear-gradient(135deg, #06b6d4 0%, #0e7490 100%);
-            favourite: true;
-            unread: true;
+        // Status banner.
+        if !root.status-msg.is-empty: Rectangle {
+            height: 28px;
+            background: root.status-success ? Theme.accent-success.with-alpha(0.16) : (root.status-danger ? Theme.accent-danger.with-alpha(0.16) : Theme.surface-2);
+            HorizontalLayout {
+                alignment: center;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.status-msg;
+                        color: root.status-success ? Theme.accent-success : (root.status-danger ? Theme.accent-danger : Theme.on-surface);
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                    }
+                }
+            }
         }
 
-        SectionHeader { text: "ARCHIVED"; }
-
-        ArticleRow {
-            source: "OPINION · LE BERNARD";
-            headline: "The case against WebViews: a security retrospective";
-            read-time: "14 min";
-            thumb: @linear-gradient(135deg, #dc2626 0%, #7f1d1d 100%);
-            archived: true;
+        // Filter chip strip + Add button.
+        HorizontalLayout {
+            padding: Theme.spacing-md;
+            spacing: Theme.spacing-sm;
+            Chip2 {
+                label: "All · " + root.all-count();
+                active: root.filter == 0;
+                clicked => {
+                    root.filter = 0;
+                }
+            }
+            Chip2 {
+                label: "Unread · " + root.unread-count();
+                active: root.filter == 1;
+                clicked => {
+                    root.filter = 1;
+                }
+            }
+            Chip2 {
+                label: "Favs · " + root.fav-count();
+                active: root.filter == 2;
+                clicked => {
+                    root.filter = 2;
+                }
+            }
+            Chip2 {
+                label: "Archive · " + root.archive-count();
+                active: root.filter == 3;
+                clicked => {
+                    root.filter = 3;
+                }
+            }
+            Rectangle {
+                horizontal-stretch: 1;
+            }
+            Rectangle {
+                horizontal-stretch: 0;
+                width: 32px;
+                height: 28px;
+                border-radius: 14px;
+                background: Theme.accent-success;
+                Text {
+                    text: "+";
+                    color: Theme.on-primary;
+                    font-size: 16px;
+                    font-weight: 800;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+                TouchArea {
+                    clicked => {
+                        root.new-articles = root.new-articles + 1;
+                        root.set-status("Saved a new article (+" + root.new-articles + ")", true, false);
+                        root.compose-pressed();
+                    }
+                }
+            }
         }
-        Divider { }
-        ArticleRow {
-            source: "SLINT NEWSLETTER";
-            headline: "Slint 2.0 announced — full Android Q1 release";
-            read-time: "9 min";
-            thumb: @linear-gradient(135deg, #1e3a8a 0%, #4f8cff 100%);
-            favourite: true;
-            archived: true;
-        }
 
-        Rectangle { vertical-stretch: 1; }
+        ScrollView {
+            vertical-stretch: 1;
+            VerticalLayout {
+                spacing: 0;
+
+                if root.row-visible(-1): VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-bottom: Theme.spacing-md;
+                    HeroArticle {
+                        source: "STRATECHERY";
+                        read-time: "12 min · saved yesterday";
+                        headline: "Why pure-Rust GUIs are eating the mobile stack";
+                        excerpt: "A look at how the declarative-UI wave reshaped the mobile toolkit market — and why the next chapter happens in Rust.";
+                        thumb: @linear-gradient(135deg, #16a34a 0%, #14532d 100%);
+                        favourite: root.hero-fav;
+                        unread: root.hero-unread && !root.hero-arch;
+                        row-clicked => {
+                            root.mark-read(-1);
+                            root.set-status("Opened article", true, false);
+                            root.article-pressed(-1);
+                        }
+                        fav-clicked => {
+                            root.toggle-fav(-1);
+                            root.set-status(root.hero-fav ? "★ Favourite" : "Removed favourite", root.hero-fav, false);
+                        }
+                    }
+                }
+
+                if root.filter != 3 && (root.row-visible(0) || root.row-visible(1) || root.row-visible(2)): SectionHeader {
+                    text: "TO READ";
+                }
+
+                if root.row-visible(0): ArticleRow {
+                    source: "RUST WEEKLY";
+                    headline: "Cargo-apk gains live-reload on Apple Silicon";
+                    read-time: "6 min · saved 2 days ago";
+                    thumb: @linear-gradient(135deg, #f59e0b 0%, #b45309 100%);
+                    unread: root.u0;
+                    favourite: root.f0;
+                    archived: root.a0;
+                    row-clicked => {
+                        root.mark-read(0);
+                        root.set-status(root.u0 ? "Marked unread" : "Marked read", !root.u0, false);
+                        root.article-pressed(0);
+                    }
+                    fav-clicked => {
+                        root.toggle-fav(0);
+                        root.set-status(root.f0 ? "Favourited" : "Unfavourited", root.f0, false);
+                    }
+                    archive-clicked => {
+                        root.toggle-arch(0);
+                        root.set-status(root.a0 ? "Archived" : "Restored", !root.a0, root.a0);
+                    }
+                }
+                if root.row-visible(0): Divider { }
+
+                if root.row-visible(1): ArticleRow {
+                    source: "WIRED";
+                    headline: "Anthropic ships Claude 5: API + Code updates land Tuesday";
+                    read-time: "8 min · saved 3 days ago";
+                    thumb: @linear-gradient(135deg, #6b7280 0%, #1f2937 100%);
+                    unread: root.u1;
+                    favourite: root.f1;
+                    archived: root.a1;
+                    row-clicked => {
+                        root.mark-read(1);
+                        root.set-status(root.u1 ? "Marked unread" : "Marked read", !root.u1, false);
+                        root.article-pressed(1);
+                    }
+                    fav-clicked => {
+                        root.toggle-fav(1);
+                        root.set-status(root.f1 ? "Favourited" : "Unfavourited", root.f1, false);
+                    }
+                    archive-clicked => {
+                        root.toggle-arch(1);
+                        root.set-status(root.a1 ? "Archived" : "Restored", !root.a1, root.a1);
+                    }
+                }
+                if root.row-visible(1): Divider { }
+
+                if root.row-visible(2): ArticleRow {
+                    source: "FRONTEND TIMES";
+                    headline: "Tailwind drops v5 — JIT mode becomes default";
+                    read-time: "5 min · saved Sunday";
+                    thumb: @linear-gradient(135deg, #06b6d4 0%, #0e7490 100%);
+                    unread: root.u2;
+                    favourite: root.f2;
+                    archived: root.a2;
+                    row-clicked => {
+                        root.mark-read(2);
+                        root.set-status(root.u2 ? "Marked unread" : "Marked read", !root.u2, false);
+                        root.article-pressed(2);
+                    }
+                    fav-clicked => {
+                        root.toggle-fav(2);
+                        root.set-status(root.f2 ? "Favourited" : "Unfavourited", root.f2, false);
+                    }
+                    archive-clicked => {
+                        root.toggle-arch(2);
+                        root.set-status(root.a2 ? "Archived" : "Restored", !root.a2, root.a2);
+                    }
+                }
+
+                if root.filter != 1 && (root.row-visible(3) || root.row-visible(4)): SectionHeader {
+                    text: "ARCHIVED";
+                }
+
+                if root.row-visible(3): ArticleRow {
+                    source: "OPINION · LE BERNARD";
+                    headline: "The case against WebViews: a security retrospective";
+                    read-time: "14 min";
+                    thumb: @linear-gradient(135deg, #dc2626 0%, #7f1d1d 100%);
+                    unread: root.u3;
+                    favourite: root.f3;
+                    archived: root.a3;
+                    row-clicked => {
+                        root.mark-read(3);
+                        root.set-status(root.u3 ? "Marked unread" : "Marked read", !root.u3, false);
+                        root.article-pressed(3);
+                    }
+                    fav-clicked => {
+                        root.toggle-fav(3);
+                        root.set-status(root.f3 ? "Favourited" : "Unfavourited", root.f3, false);
+                    }
+                    archive-clicked => {
+                        root.toggle-arch(3);
+                        root.set-status(root.a3 ? "Archived" : "Restored", !root.a3, root.a3);
+                    }
+                }
+                if root.row-visible(3): Divider { }
+
+                if root.row-visible(4): ArticleRow {
+                    source: "SLINT NEWSLETTER";
+                    headline: "Slint 2.0 announced — full Android Q1 release";
+                    read-time: "9 min";
+                    thumb: @linear-gradient(135deg, #1e3a8a 0%, #4f8cff 100%);
+                    unread: root.u4;
+                    favourite: root.f4;
+                    archived: root.a4;
+                    row-clicked => {
+                        root.mark-read(4);
+                        root.set-status(root.u4 ? "Marked unread" : "Marked read", !root.u4, false);
+                        root.article-pressed(4);
+                    }
+                    fav-clicked => {
+                        root.toggle-fav(4);
+                        root.set-status(root.f4 ? "Favourited" : "Unfavourited", root.f4, false);
+                    }
+                    archive-clicked => {
+                        root.toggle-arch(4);
+                        root.set-status(root.a4 ? "Archived" : "Restored", !root.a4, root.a4);
+                    }
+                }
+
+                if root.new-articles > 0: VerticalLayout {
+                    padding: Theme.spacing-md;
+                    Rectangle {
+                        background: Theme.accent-success.with-alpha(0.16);
+                        border-radius: Theme.radius-md;
+                        height: 44px;
+                        HorizontalLayout {
+                            padding: Theme.spacing-md;
+                            VerticalLayout {
+                                alignment: center;
+                                Text {
+                                    text: "+" + root.new-articles + " new article" + (root.new-articles == 1 ? "" : "s") + " saved this session";
+                                    color: Theme.accent-success;
+                                    font-size: Theme.font-size-body;
+                                    font-weight: 700;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ===================== Bottom sheet =====================
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+                root.confirm-clear = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: Theme.surface-2;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.muted;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: "Reading list menu";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 700;
+                    }
+                }
+                SheetRow {
+                    label: "Mark all read";
+                    clicked => {
+                        root.hero-unread = false;
+                        root.u0 = false;
+                        root.u1 = false;
+                        root.u2 = false;
+                        root.u3 = false;
+                        root.u4 = false;
+                        root.set-status("All marked read", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Mark all unread";
+                    clicked => {
+                        root.hero-unread = true;
+                        root.u0 = true;
+                        root.u1 = true;
+                        root.u2 = true;
+                        root.u3 = true;
+                        root.u4 = true;
+                        root.set-status("All marked unread", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Restore all archived";
+                    clicked => {
+                        root.hero-arch = false;
+                        root.a0 = false;
+                        root.a1 = false;
+                        root.a2 = false;
+                        root.a3 = false;
+                        root.a4 = false;
+                        root.set-status("Archive restored", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                Divider { }
+
+                SheetRow {
+                    label: root.confirm-clear ? "Confirm: clear all" : "Clear all articles";
+                    destructive: true;
+                    clicked => {
+                        if (root.confirm-clear) {
+                            root.a0 = true;
+                            root.a1 = true;
+                            root.a2 = true;
+                            root.a3 = true;
+                            root.a4 = true;
+                            root.hero-arch = true;
+                            root.new-articles = 0;
+                            root.set-status("All cleared", false, true);
+                            root.sheet-open = false;
+                            root.confirm-clear = false;
+                        } else {
+                            root.confirm-clear = true;
+                        }
+                    }
+                }
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.sheet-open = false;
+                        root.confirm-clear = false;
+                    }
+                }
+            }
+        }
     }
 }

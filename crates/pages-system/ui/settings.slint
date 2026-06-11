@@ -1,23 +1,5 @@
 // SettingsPage
 // =====================================================================
-//
-// The flagship general-preferences screen. Pure showcase of the
-// `SettingRow` + `FormSection` alignment primitives: every row in the
-// page — toggle row, nav row, value-with-chevron row — is the SAME
-// `SettingRow` widget with a different `@children` trailing slot.
-// Result: identical 56 px min-height, identical 32 px leading-tile
-// size, identical 16 px gutters, identical vertical-centre of the
-// title regardless of whether it has a subtitle or not.
-//
-// What this screen does
-//   - Three grouped sections (NOTIFICATIONS, APPEARANCE, ABOUT) plus
-//     a destructive "Sign out" row at the bottom.
-//   - NOTIFICATIONS: three toggles (push, sounds, haptics).
-//   - APPEARANCE: theme nav-row (value = "System") + text-size stepper
-//     row (value = "Medium") + an "Adaptive accent" toggle.
-//   - ABOUT: app version (read-only value), open-source licences
-//     (chevron nav), privacy policy (chevron nav).
-//   - Destructive row: "Sign out" in danger tone, no trailing.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
@@ -28,6 +10,60 @@ import { Divider } from "@mobile-components/divider.slint";
 import { MobileSwitch } from "@mobile-components/switch.slint";
 import { ScrollView } from "std-widgets.slint";
 
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
+    min-height: 48px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.destructive ? Theme.accent-danger : Theme.on-background;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+        }
+    }
+}
+
+component StepperButton inherits Rectangle {
+    in property <string> label;
+    in property <bool> enabled: true;
+    callback clicked();
+    horizontal-stretch: 0;
+    width: 32px;
+    height: 32px;
+    border-radius: 16px;
+    background: root.enabled ? Theme.surface-3 : Theme.surface-2;
+    Text {
+        text: root.label;
+        color: root.enabled ? Theme.on-surface : Theme.muted;
+        font-size: Theme.font-size-body;
+        font-weight: 800;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: parent.width;
+        height: parent.height;
+    }
+    TouchArea {
+        clicked => {
+            if (root.enabled) {
+                root.clicked();
+            }
+        }
+    }
+}
+
 export component SettingsPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
@@ -36,12 +72,48 @@ export component SettingsPage inherits Window {
     in-out property <bool> sounds-enabled: true;
     in-out property <bool> haptics-enabled: false;
     in-out property <bool> adaptive-accent: true;
+    in-out property <int> theme-idx: 0; // 0 System 1 Light 2 Dark 3 Sepia
+    in-out property <int> text-size: 1; // 0 S 1 M 2 L 3 XL
+    in-out property <int> accent-idx: 0; // 0 info 1 success 2 warning 3 danger
+
+    in-out property <int> expanded: 0; // 0 none, 1 licences, 2 privacy, 3 version
+    in-out property <bool> signout-armed;
+    in-out property <int> version-taps: 0;
+    in-out property <bool> sheet-open;
+    in-out property <string> status-msg;
+    in-out property <int> status-tone;
 
     callback back-pressed();
     callback row-pressed(string);
     callback sign-out-pressed();
 
     background: Theme.background;
+
+    function set-status(m: string, tone: int) {
+        root.status-msg = m;
+        root.status-tone = tone;
+    }
+    function status-color() -> color {
+        return root.status-tone == 1 ? Theme.accent-success : (root.status-tone == 2 ? Theme.accent-danger : (root.status-tone == 3 ? Theme.accent-warning : Theme.accent-info));
+    }
+    function theme-label() -> string {
+        return root.theme-idx == 0 ? "System" : (root.theme-idx == 1 ? "Light" : (root.theme-idx == 2 ? "Dark" : "Sepia"));
+    }
+    function text-size-label() -> string {
+        return root.text-size == 0 ? "Small" : (root.text-size == 1 ? "Medium" : (root.text-size == 2 ? "Large" : "XL"));
+    }
+    function size-scale() -> int {
+        return root.text-size == 0 ? 90 : (root.text-size == 1 ? 100 : (root.text-size == 2 ? 115 : 130));
+    }
+    function accent-color() -> color {
+        return root.accent-idx == 0 ? Theme.accent-info : (root.accent-idx == 1 ? Theme.accent-success : (root.accent-idx == 2 ? Theme.accent-warning : Theme.accent-danger));
+    }
+    function accent-label() -> string {
+        return root.accent-idx == 0 ? "Blue" : (root.accent-idx == 1 ? "Green" : (root.accent-idx == 2 ? "Amber" : "Red"));
+    }
+    function font-px(base: int) -> length {
+        return (base * root.size-scale() / 100) * 1px;
+    }
 
     VerticalLayout {
         spacing: 0;
@@ -50,59 +122,174 @@ export component SettingsPage inherits Window {
             title: "Settings";
             title-style: HeadingStyle.serif-display;
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
-            leading-pressed => { root.back-pressed(); }
+            trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
+            leading-pressed => {
+                root.back-pressed();
+            }
+            trailing-pressed => {
+                root.sheet-open = true;
+            }
+        }
+
+        if !root.status-msg.is-empty: Rectangle {
+            height: 28px;
+            background: root.status-color().with-alpha(0.18);
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.status-msg;
+                        color: root.status-color();
+                        font-size: Theme.font-size-caption;
+                        font-weight: 600;
+                    }
+                }
+            }
         }
 
         ScrollView {
             vertical-stretch: 1;
-
             VerticalLayout {
                 padding-top: Theme.spacing-md;
                 padding-bottom: Theme.spacing-xl;
                 spacing: Theme.spacing-md;
                 alignment: start;
 
-                // ----- NOTIFICATIONS -----------------------------------------
+                // Live preview banner.
+                HorizontalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    Rectangle {
+                        background: root.accent-color().with-alpha(0.12);
+                        border-radius: Theme.radius-md;
+                        border-width: 1px;
+                        border-color: root.accent-color().with-alpha(0.5);
+                        min-height: 64px;
+                        HorizontalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-sm;
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                alignment: center;
+                                spacing: 2px;
+                                Text {
+                                    text: "Live preview";
+                                    color: root.accent-color();
+                                    font-size: root.font-px(14);
+                                    font-weight: 700;
+                                }
+                                Text {
+                                    text: root.theme-label() + " · " + root.text-size-label() + " · " + root.accent-label();
+                                    color: Theme.muted;
+                                    font-size: root.font-px(11);
+                                }
+                            }
+                            Rectangle {
+                                horizontal-stretch: 0;
+                                width: 56px;
+                                height: 32px;
+                                border-radius: 16px;
+                                background: root.accent-color();
+                                Text {
+                                    text: "OK";
+                                    color: Theme.background;
+                                    font-size: root.font-px(12);
+                                    font-weight: 800;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ----- NOTIFICATIONS ---------------------------------
                 FormSection {
                     title: "NOTIFICATIONS";
-                    caption: "Pick what you want this device to notify you about.";
+                    caption: root.push-enabled ? "Pick what you want this device to notify you about." : "Push is off — sounds and haptics paused.";
 
                     SettingRow {
                         icon: @image-url("@mobile-components/icons/bell.svg");
                         tone: Tone.info;
                         title: "Push notifications";
-                        subtitle: "Activity, mentions, security alerts.";
-                        MobileSwitch { checked <=> root.push-enabled; }
+                        subtitle: root.push-enabled ? "On · activity, mentions, alerts" : "Off";
+                        clicked => {
+                            root.push-enabled = !root.push-enabled;
+                            root.set-status(root.push-enabled ? "Push on" : "Push off — sounds & haptics paused", root.push-enabled ? 1 : 3);
+                        }
+                        MobileSwitch {
+                            checked <=> root.push-enabled;
+                            toggled(c) => {
+                                root.set-status(c ? "Push on" : "Push off — sounds & haptics paused", c ? 1 : 3);
+                            }
+                        }
                     }
                     Divider { }
                     SettingRow {
                         icon: @image-url("@mobile-components/icons/podcast-cover.svg");
                         title: "Sounds";
-                        subtitle: "Tap and notification chimes.";
-                        MobileSwitch { checked <=> root.sounds-enabled; }
+                        subtitle: root.push-enabled ? (root.sounds-enabled ? "On" : "Off") : "Disabled while push is off";
+                        clicked => {
+                            if (root.push-enabled) {
+                                root.sounds-enabled = !root.sounds-enabled;
+                                root.set-status(root.sounds-enabled ? "Sounds on" : "Sounds off", 0);
+                            } else {
+                                root.set-status("Turn on push first", 3);
+                            }
+                        }
+                        MobileSwitch {
+                            checked <=> root.sounds-enabled;
+                            enabled: root.push-enabled;
+                            toggled(c) => {
+                                root.set-status(c ? "Sounds on" : "Sounds off", 0);
+                            }
+                        }
                     }
                     Divider { }
                     SettingRow {
                         icon: @image-url("@mobile-components/icons/pin.svg");
                         title: "Haptics";
-                        subtitle: "Subtle vibration on key actions.";
-                        MobileSwitch { checked <=> root.haptics-enabled; }
+                        subtitle: root.push-enabled ? (root.haptics-enabled ? "On" : "Off") : "Disabled while push is off";
+                        clicked => {
+                            if (root.push-enabled) {
+                                root.haptics-enabled = !root.haptics-enabled;
+                                root.set-status(root.haptics-enabled ? "Haptics on" : "Haptics off", 0);
+                            } else {
+                                root.set-status("Turn on push first", 3);
+                            }
+                        }
+                        MobileSwitch {
+                            checked <=> root.haptics-enabled;
+                            enabled: root.push-enabled;
+                            toggled(c) => {
+                                root.set-status(c ? "Haptics on" : "Haptics off", 0);
+                            }
+                        }
                     }
                 }
 
-                // ----- APPEARANCE --------------------------------------------
+                // ----- APPEARANCE ------------------------------------
                 FormSection {
                     title: "APPEARANCE";
 
                     SettingRow {
                         icon: @image-url("@mobile-components/icons/star.svg");
                         title: "Theme";
-                        subtitle: "Follow system or pick manually.";
-                        clicked => { root.row-pressed("theme"); }
+                        subtitle: "Tap to cycle: System → Light → Dark → Sepia";
+                        clicked => {
+                            root.theme-idx = mod(root.theme-idx + 1, 4);
+                            root.set-status("Theme → " + root.theme-label(), 0);
+                            root.row-pressed("theme");
+                        }
                         Text {
-                            text: "System";
-                            color: Theme.muted;
+                            text: root.theme-label();
+                            color: root.accent-color();
                             font-size: Theme.font-size-body;
+                            font-weight: 700;
                             vertical-alignment: center;
                         }
                         Image {
@@ -117,20 +304,47 @@ export component SettingsPage inherits Window {
                     SettingRow {
                         icon: @image-url("@mobile-components/icons/pencil.svg");
                         title: "Text size";
-                        subtitle: "Affects all reading surfaces.";
-                        clicked => { root.row-pressed("text-size"); }
-                        Text {
-                            text: "Medium";
-                            color: Theme.muted;
-                            font-size: Theme.font-size-body;
-                            vertical-alignment: center;
+                        subtitle: root.text-size-label() + " · " + root.size-scale() + "%";
+                        clicked => {
+                            root.text-size = mod(root.text-size + 1, 4);
+                            root.set-status("Size → " + root.text-size-label(), 0);
+                            root.row-pressed("text-size");
                         }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
+                        HorizontalLayout {
+                            spacing: 4px;
+                            VerticalLayout {
+                                alignment: center;
+                                StepperButton {
+                                    label: "−";
+                                    enabled: root.text-size > 0;
+                                    clicked => {
+                                        root.text-size = root.text-size - 1;
+                                        root.set-status("Size → " + root.text-size-label(), 0);
+                                    }
+                                }
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                Text {
+                                    text: root.text-size-label();
+                                    color: Theme.on-background;
+                                    font-size: Theme.font-size-body;
+                                    font-weight: 700;
+                                    horizontal-alignment: center;
+                                    min-width: 64px;
+                                }
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                StepperButton {
+                                    label: "+";
+                                    enabled: root.text-size < 3;
+                                    clicked => {
+                                        root.text-size = root.text-size + 1;
+                                        root.set-status("Size → " + root.text-size-label(), 0);
+                                    }
+                                }
+                            }
                         }
                     }
                     Divider { }
@@ -138,22 +352,61 @@ export component SettingsPage inherits Window {
                         icon: @image-url("@mobile-components/icons/heart.svg");
                         tone: Tone.success;
                         title: "Adaptive accent";
-                        subtitle: "Tint accent colours to match your wallpaper.";
-                        MobileSwitch { checked <=> root.adaptive-accent; }
+                        subtitle: root.adaptive-accent ? "Auto · cycle palette in menu" : "Manual · " + root.accent-label();
+                        clicked => {
+                            root.adaptive-accent = !root.adaptive-accent;
+                            root.set-status(root.adaptive-accent ? "Adaptive accent on" : "Adaptive accent off", 0);
+                        }
+                        MobileSwitch {
+                            checked <=> root.adaptive-accent;
+                            toggled(c) => {
+                                root.set-status(c ? "Adaptive accent on" : "Adaptive accent off", 0);
+                            }
+                        }
+                    }
+                    Divider { }
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/photo-coral.svg");
+                        title: "Accent colour";
+                        subtitle: "Tap to cycle palette";
+                        clicked => {
+                            root.accent-idx = mod(root.accent-idx + 1, 4);
+                            root.set-status("Accent → " + root.accent-label(), 0);
+                        }
+                        Rectangle {
+                            width: 20px;
+                            height: 20px;
+                            border-radius: 10px;
+                            background: root.accent-color();
+                            border-width: 2px;
+                            border-color: Theme.surface-3;
+                        }
                     }
                 }
 
-                // ----- ABOUT -------------------------------------------------
+                // ----- ABOUT -----------------------------------------
                 FormSection {
                     title: "ABOUT";
 
                     SettingRow {
                         icon: @image-url("@mobile-components/icons/menu.svg");
                         title: "Version";
+                        subtitle: root.version-taps >= 7 ? "Developer options unlocked" : "1.4.2 · build 3187";
+                        clicked => {
+                            root.version-taps = root.version-taps + 1;
+                            if (root.version-taps == 7) {
+                                root.set-status("🎉 Developer mode unlocked", 1);
+                            } else if (root.version-taps > 7) {
+                                root.set-status("Already unlocked", 0);
+                            } else {
+                                root.set-status((7 - root.version-taps) + " more taps to unlock developer mode", 0);
+                            }
+                        }
                         Text {
-                            text: "1.4.2 · build 3187";
-                            color: Theme.muted;
+                            text: root.version-taps >= 7 ? "DEV" : "1.4.2";
+                            color: root.version-taps >= 7 ? Theme.accent-success : Theme.muted;
                             font-size: Theme.font-size-caption;
+                            font-weight: 700;
                             vertical-alignment: center;
                         }
                     }
@@ -161,20 +414,62 @@ export component SettingsPage inherits Window {
                     SettingRow {
                         icon: @image-url("@mobile-components/icons/queue.svg");
                         title: "Open-source licences";
-                        clicked => { root.row-pressed("licences"); }
+                        subtitle: root.expanded == 1 ? "Tap row to collapse" : "Tap to expand";
+                        clicked => {
+                            root.expanded = root.expanded == 1 ? 0 : 1;
+                            root.set-status(root.expanded == 1 ? "Showing licences" : "Closed", 0);
+                            root.row-pressed("licences");
+                        }
                         Image {
                             width: 16px;
                             height: 16px;
                             source: @image-url("@mobile-components/icons/chevron-right.svg");
                             colorize: Theme.muted;
                             image-fit: contain;
+                        }
+                    }
+                    if root.expanded == 1: Rectangle {
+                        background: Theme.surface-2;
+                        VerticalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: 4px;
+                            Text {
+                                text: "Slint 1.16 · MIT";
+                                color: Theme.on-background;
+                                font-size: Theme.font-size-caption;
+                            }
+                            Text {
+                                text: "Cosmic Sans · OFL";
+                                color: Theme.on-background;
+                                font-size: Theme.font-size-caption;
+                            }
+                            Text {
+                                text: "Material Symbols · Apache 2.0";
+                                color: Theme.on-background;
+                                font-size: Theme.font-size-caption;
+                            }
+                            Text {
+                                text: "serde · MIT/Apache-2.0";
+                                color: Theme.on-background;
+                                font-size: Theme.font-size-caption;
+                            }
+                            Text {
+                                text: "tokio · MIT";
+                                color: Theme.on-background;
+                                font-size: Theme.font-size-caption;
+                            }
                         }
                     }
                     Divider { }
                     SettingRow {
                         icon: @image-url("@mobile-components/icons/lock.svg");
                         title: "Privacy policy";
-                        clicked => { root.row-pressed("privacy"); }
+                        subtitle: root.expanded == 2 ? "Tap row to collapse" : "Tap to expand";
+                        clicked => {
+                            root.expanded = root.expanded == 2 ? 0 : 2;
+                            root.set-status(root.expanded == 2 ? "Showing privacy" : "Closed", 0);
+                            root.row-pressed("privacy");
+                        }
                         Image {
                             width: 16px;
                             height: 16px;
@@ -183,17 +478,223 @@ export component SettingsPage inherits Window {
                             image-fit: contain;
                         }
                     }
+                    if root.expanded == 2: Rectangle {
+                        background: Theme.surface-2;
+                        VerticalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-xs;
+                            Text {
+                                text: "We collect only the minimum needed to operate the service. Telemetry is opt-in.";
+                                color: Theme.muted;
+                                font-size: Theme.font-size-caption;
+                                wrap: word-wrap;
+                            }
+                            HorizontalLayout {
+                                spacing: Theme.spacing-sm;
+                                Rectangle {
+                                    horizontal-stretch: 0;
+                                    min-width: 100px;
+                                    height: 30px;
+                                    border-radius: 15px;
+                                    background: Theme.accent-info;
+                                    Text {
+                                        text: "Accept";
+                                        color: Theme.background;
+                                        font-size: Theme.font-size-caption;
+                                        font-weight: 800;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                        width: parent.width;
+                                        height: parent.height;
+                                    }
+                                    TouchArea {
+                                        clicked => {
+                                            root.expanded = 0;
+                                            root.set-status("Privacy policy accepted", 1);
+                                        }
+                                    }
+                                }
+                                Rectangle {
+                                    horizontal-stretch: 0;
+                                    min-width: 100px;
+                                    height: 30px;
+                                    border-radius: 15px;
+                                    background: Theme.surface-3;
+                                    Text {
+                                        text: "Read full";
+                                        color: Theme.on-surface;
+                                        font-size: Theme.font-size-caption;
+                                        font-weight: 800;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                        width: parent.width;
+                                        height: parent.height;
+                                    }
+                                    TouchArea {
+                                        clicked => {
+                                            root.set-status("Opening full policy in browser", 0);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
 
-                // ----- DANGER ZONE -------------------------------------------
+                // ----- DEV (unlocked) --------------------------------
+                if root.version-taps >= 7: FormSection {
+                    title: "DEVELOPER";
+
+                    SettingRow {
+                        icon: @image-url("@mobile-components/icons/spinner-arc.svg");
+                        tone: Tone.warning;
+                        title: "Reset all settings";
+                        subtitle: "Restore defaults";
+                        clicked => {
+                            root.push-enabled = true;
+                            root.sounds-enabled = true;
+                            root.haptics-enabled = false;
+                            root.adaptive-accent = true;
+                            root.theme-idx = 0;
+                            root.text-size = 1;
+                            root.accent-idx = 0;
+                            root.version-taps = 0;
+                            root.expanded = 0;
+                            root.set-status("Settings reset", 1);
+                        }
+                    }
+                }
+
+                // ----- DANGER ZONE -----------------------------------
                 FormSection {
                     SettingRow {
                         icon: @image-url("@mobile-components/icons/close.svg");
                         tone: Tone.danger;
-                        title: "Sign out";
-                        subtitle: "You'll need to re-enter your password.";
+                        title: root.signout-armed ? "Tap again to confirm sign out" : "Sign out";
+                        subtitle: root.signout-armed ? "Press again within 5s" : "You'll need to re-enter your password.";
                         destructive: true;
-                        clicked => { root.sign-out-pressed(); }
+                        clicked => {
+                            if (root.signout-armed) {
+                                root.signout-armed = false;
+                                root.set-status("Signed out", 2);
+                                root.sign-out-pressed();
+                            } else {
+                                root.signout-armed = true;
+                                root.set-status("Tap once more to confirm", 3);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Auto-disarm signout.
+    signout-timer := Timer {
+        interval: 5000ms;
+        running: root.signout-armed;
+        triggered => {
+            root.signout-armed = false;
+            root.set-status("Sign out cancelled", 0);
+        }
+    }
+
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: Theme.surface-1;
+            border-top-left-radius: 16px;
+            border-top-right-radius: 16px;
+            clip: true;
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.muted;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: "Quick settings";
+                        color: Theme.on-background;
+                        font-size: Theme.font-size-title;
+                        font-weight: 700;
+                    }
+                }
+                SheetRow {
+                    label: root.theme-idx == 0 ? "Theme: System" : (root.theme-idx == 1 ? "Theme: Light" : (root.theme-idx == 2 ? "Theme: Dark" : "Theme: Sepia"));
+                    clicked => {
+                        root.theme-idx = mod(root.theme-idx + 1, 4);
+                        root.set-status("Theme → " + root.theme-label(), 0);
+                    }
+                }
+                SheetRow {
+                    label: "Accent: " + root.accent-label();
+                    clicked => {
+                        root.accent-idx = mod(root.accent-idx + 1, 4);
+                        root.set-status("Accent → " + root.accent-label(), 0);
+                    }
+                }
+                SheetRow {
+                    label: "Text size: " + root.text-size-label();
+                    clicked => {
+                        root.text-size = mod(root.text-size + 1, 4);
+                        root.set-status("Size → " + root.text-size-label(), 0);
+                    }
+                }
+                SheetRow {
+                    label: root.push-enabled ? "Mute all notifications" : "Unmute all notifications";
+                    clicked => {
+                        root.push-enabled = !root.push-enabled;
+                        root.set-status(root.push-enabled ? "Notifications on" : "Everything muted", root.push-enabled ? 1 : 3);
+                        root.sheet-open = false;
+                    }
+                }
+                Rectangle {
+                    height: 1px;
+                    background: Theme.outline;
+                }
+                SheetRow {
+                    label: "Reset preview";
+                    clicked => {
+                        root.theme-idx = 0;
+                        root.text-size = 1;
+                        root.accent-idx = 0;
+                        root.set-status("Preview reset", 1);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Sign out";
+                    destructive: true;
+                    clicked => {
+                        root.signout-armed = true;
+                        root.set-status("Tap Sign out row to confirm", 3);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.sheet-open = false;
                     }
                 }
             }

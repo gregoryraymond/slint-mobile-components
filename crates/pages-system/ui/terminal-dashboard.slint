@@ -1,16 +1,17 @@
 // TerminalDashboardPage  —  TerminalSkin demo
 // =====================================================================
-//
-// Neon cyberpunk terminal. Acid-green + cyan mono type over a near-black
-// phosphor grid with scanlines (baked SVG). Translucent dark panels let
-// the grid bleed through. Shows a command-prompt hero, a live log
-// stream, and a node-status grid. Reads TerminalSkin tokens.
 
 import { Theme } from "@mobile-theme/theme.slint";
 import { TerminalSkin } from "@mobile-theme/skins.slint";
 import { ScrollView } from "std-widgets.slint";
 
-// A monospaced log line: timestamp + level tag + message.
+struct LogEntry {
+    ts: string,
+    level: string,
+    msg: string,
+    c: color,
+}
+
 component LogLine inherits HorizontalLayout {
     in property <string> ts;
     in property <string> level;
@@ -40,14 +41,16 @@ component LogLine inherits HorizontalLayout {
     }
 }
 
-// A node tile in the status grid.
 component NodeTile inherits Rectangle {
     in property <string> name;
     in property <string> stat;
     in property <bool> up;
-    background: TerminalSkin.glass-fill;
+    in property <bool> selected;
+    callback clicked();
+
+    background: root.selected ? #2fd8c422 : TerminalSkin.glass-fill;
     border-width: 1px;
-    border-color: TerminalSkin.hairline;
+    border-color: root.selected ? #2fd8c4 : TerminalSkin.hairline;
     border-radius: Theme.radius-sm;
     clip: true;
     min-height: 72px;
@@ -76,6 +79,40 @@ component NodeTile inherits Rectangle {
             font-size: Theme.font-size-caption;
         }
     }
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component CmdChip inherits Rectangle {
+    in property <string> label;
+    in property <bool> active;
+    callback clicked();
+    horizontal-stretch: 0;
+    min-height: 30px;
+    background: root.active ? #2fd8c4 : transparent;
+    border-width: 1px;
+    border-color: #2fd8c4;
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.active ? #0a0a0a : #2fd8c4;
+                font-size: Theme.font-size-caption;
+                font-weight: 700;
+            }
+        }
+    }
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
 }
 
 export component TerminalDashboardPage inherits Window {
@@ -84,8 +121,105 @@ export component TerminalDashboardPage inherits Window {
     default-font-family: TerminalSkin.font-family;
     background: TerminalSkin.page-background;
 
+    in-out property <bool> paused: false;
+    in-out property <int> tick: 23;
+    in-out property <int> incidents: 0;
+    in-out property <int> nodes-online: 14;
+    in-out property <bool> node7-up: false;
+    in-out property <bool> node7-busy: false;
+    in-out property <int> node7-restart-pct: 0;
+    in-out property <int> selected-node: 0; // 0..4
+    in-out property <int> cpu-01: 38;
+    in-out property <int> cpu-02: 55;
+    in-out property <int> cpu-11: 12;
+    in-out property <bool> sheet-open;
+    in-out property <string> status-msg;
+    in-out property <int> status-tone; // 0 default 1 success 2 warning 3 danger
+
+    in-out property <LogEntry> l0: { ts: "08:21", level: "OK", msg: "auth handshake complete", c: #5dff9b };
+    in-out property <LogEntry> l1: { ts: "08:21", level: "INFO", msg: "cache warmed 1.2GB", c: #2fd8c4 };
+    in-out property <LogEntry> l2: { ts: "08:22", level: "WARN", msg: "node-07 latency 240ms", c: #ffd24f };
+    in-out property <LogEntry> l3: { ts: "08:22", level: "WARN", msg: "node-07 dropped from ring", c: #ffd24f };
+    in-out property <LogEntry> l4: { ts: "08:22", level: "OK", msg: "rebalanced shard ring", c: #5dff9b };
+    in-out property <LogEntry> l5: { ts: "08:23", level: "INFO", msg: "snapshot pushed to cold", c: #2fd8c4 };
+    in-out property <LogEntry> l6: { ts: "", level: "", msg: "", c: #000000 };
+    in-out property <LogEntry> l7: { ts: "", level: "", msg: "", c: #000000 };
+
+    function set-status(m: string, tone: int) {
+        root.status-msg = m;
+        root.status-tone = tone;
+    }
+    function status-color() -> color {
+        return root.status-tone == 1 ? #5dff9b : (root.status-tone == 2 ? #ffd24f : (root.status-tone == 3 ? #ff4f6d : #2fd8c4));
+    }
+    function now-str() -> string {
+        return "08:" + (mod(root.tick, 60) < 10 ? "0" : "") + mod(root.tick, 60);
+    }
+    function push-log(level: string, msg: string, c: color) {
+        root.l0 = root.l1;
+        root.l1 = root.l2;
+        root.l2 = root.l3;
+        root.l3 = root.l4;
+        root.l4 = root.l5;
+        root.l5 = root.l6.ts.is-empty ? root.l5 : root.l6;
+        root.l6 = root.l7.ts.is-empty ? root.l6 : root.l7;
+        root.l7 = { ts: root.now-str(), level: level, msg: msg, c: c };
+    }
+    function uptime-text() -> string {
+        if (root.incidents == 0) {
+            return "99.982%";
+        }
+        if (root.incidents == 1) {
+            return "99.910%";
+        }
+        if (root.incidents == 2) {
+            return "99.840%";
+        }
+        return "99.7" + (10 - min(9, root.incidents)) + "%";
+    }
+    function status-line() -> string {
+        return root.nodes-online + " nodes online · " + root.incidents + " incidents · 42d";
+    }
+
+    // Live log Timer (when not paused).
+    stream-timer := Timer {
+        interval: 2400ms;
+        running: !root.paused;
+        triggered => {
+            root.tick = root.tick + 1;
+            root.cpu-01 = max(5, min(95, root.cpu-01 + mod(root.tick, 7) - 3));
+            root.cpu-02 = max(5, min(95, root.cpu-02 + mod(root.tick, 9) - 4));
+            root.cpu-11 = max(2, min(95, root.cpu-11 + mod(root.tick, 5) - 2));
+            // Auto-add a log line on each tick.
+            if (mod(root.tick, 4) == 0) {
+                root.push-log("INFO", "heartbeat ok · " + root.nodes-online + " peers", #2fd8c4);
+            } else if (mod(root.tick, 4) == 1) {
+                root.push-log("OK", "rebalanced shard ring", #5dff9b);
+            } else if (mod(root.tick, 4) == 2) {
+                root.push-log("INFO", "cache hit ratio " + (80 + mod(root.tick, 15)) + "%", #2fd8c4);
+            }
+        }
+    }
+    // Restart progress Timer for node-07.
+    restart-timer := Timer {
+        interval: 200ms;
+        running: root.node7-busy;
+        triggered => {
+            root.node7-restart-pct = min(100, root.node7-restart-pct + 8);
+            if (root.node7-restart-pct >= 100) {
+                root.node7-busy = false;
+                root.node7-up = true;
+                root.nodes-online = root.nodes-online + 1;
+                root.incidents = max(0, root.incidents - 1);
+                root.push-log("OK", "node-07 back online · joined ring", #5dff9b);
+                root.set-status("node-07 back online", 1);
+            }
+        }
+    }
+
     if TerminalSkin.has-background-image: Image {
-        x: 0; y: 0;
+        x: 0;
+        y: 0;
         width: root.width;
         height: root.height;
         source: TerminalSkin.page-background-image;
@@ -95,7 +229,6 @@ export component TerminalDashboardPage inherits Window {
     VerticalLayout {
         spacing: 0;
 
-        // ---- Status bar ----
         Rectangle {
             background: TerminalSkin.bar-background;
             height: 64px;
@@ -110,12 +243,56 @@ export component TerminalDashboardPage inherits Window {
                     font-weight: 700;
                     vertical-alignment: center;
                 }
-                Text {
-                    text: "● LIVE";
-                    color: TerminalSkin.text-secondary;
-                    font-size: Theme.font-size-caption;
-                    font-weight: 700;
-                    vertical-alignment: center;
+                HorizontalLayout {
+                    spacing: Theme.spacing-sm;
+                    VerticalLayout {
+                        alignment: center;
+                        Text {
+                            text: root.paused ? "○ PAUSED" : "● LIVE";
+                            color: root.paused ? #ffd24f : #5dff9b;
+                            font-size: Theme.font-size-caption;
+                            font-weight: 700;
+                        }
+                    }
+                    Rectangle {
+                        horizontal-stretch: 0;
+                        width: 32px;
+                        height: 32px;
+                        border-width: 1px;
+                        border-color: TerminalSkin.hairline;
+                        Text {
+                            text: "⋮";
+                            color: TerminalSkin.text-primary;
+                            font-size: Theme.font-size-title;
+                            font-weight: 700;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
+                        }
+                        TouchArea {
+                            clicked => {
+                                root.sheet-open = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if !root.status-msg.is-empty: Rectangle {
+            height: 24px;
+            background: #0a0a0a;
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: "> " + root.status-msg;
+                        color: root.status-color();
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                    }
                 }
             }
         }
@@ -127,7 +304,6 @@ export component TerminalDashboardPage inherits Window {
                 padding: Theme.spacing-md;
                 padding-bottom: Theme.spacing-xl;
 
-                // ---- Prompt hero ----
                 Rectangle {
                     background: TerminalSkin.glass-fill;
                     border-width: 1px;
@@ -143,13 +319,13 @@ export component TerminalDashboardPage inherits Window {
                             font-size: Theme.font-size-caption;
                         }
                         Text {
-                            text: "99.982%";
-                            color: TerminalSkin.text-primary;
+                            text: root.uptime-text();
+                            color: root.incidents > 0 ? #ffd24f : TerminalSkin.text-primary;
                             font-size: 48px;
                             font-weight: 700;
                         }
                         Text {
-                            text: "14 nodes online · 0 incidents · 42d";
+                            text: root.status-line();
                             color: TerminalSkin.text-secondary;
                             font-size: Theme.font-size-caption;
                             wrap: word-wrap;
@@ -157,7 +333,122 @@ export component TerminalDashboardPage inherits Window {
                     }
                 }
 
-                // ---- Log stream ----
+                Text {
+                    text: ">> commands";
+                    color: TerminalSkin.text-muted;
+                    font-size: Theme.font-size-caption;
+                }
+                HorizontalLayout {
+                    spacing: Theme.spacing-sm;
+                    CmdChip {
+                        label: "ps";
+                        clicked => {
+                            root.push-log("OK", "37 procs · 4 zombies", #5dff9b);
+                            root.set-status("ps · 37 procs", 1);
+                        }
+                    }
+                    CmdChip {
+                        label: "restart node-07";
+                        active: root.node7-busy;
+                        clicked => {
+                            if (!root.node7-busy && !root.node7-up) {
+                                root.node7-busy = true;
+                                root.node7-restart-pct = 0;
+                                root.push-log("INFO", "restarting node-07…", #2fd8c4);
+                                root.set-status("Restarting node-07…", 0);
+                            } else if (root.node7-up) {
+                                root.set-status("node-07 already up", 0);
+                            }
+                        }
+                    }
+                    CmdChip {
+                        label: "snapshot";
+                        clicked => {
+                            root.push-log("INFO", "snapshot pushed to cold", #2fd8c4);
+                            root.set-status("Snapshot pushed", 1);
+                        }
+                    }
+                }
+                HorizontalLayout {
+                    spacing: Theme.spacing-sm;
+                    CmdChip {
+                        label: root.paused ? "tail -f" : "pause";
+                        clicked => {
+                            root.paused = !root.paused;
+                            root.set-status(root.paused ? "Stream paused" : "Stream live", root.paused ? 2 : 1);
+                        }
+                    }
+                    CmdChip {
+                        label: "inject WARN";
+                        clicked => {
+                            root.incidents = root.incidents + 1;
+                            root.push-log("WARN", "disk pressure on node-" + (root.tick / 4 + 1) + " 86%", #ffd24f);
+                            root.set-status("WARN injected — incidents " + root.incidents, 2);
+                        }
+                    }
+                    CmdChip {
+                        label: "clear logs";
+                        clicked => {
+                            root.l0 = { ts: "", level: "", msg: "", c: #000000 };
+                            root.l1 = { ts: "", level: "", msg: "", c: #000000 };
+                            root.l2 = { ts: "", level: "", msg: "", c: #000000 };
+                            root.l3 = { ts: "", level: "", msg: "", c: #000000 };
+                            root.l4 = { ts: "", level: "", msg: "", c: #000000 };
+                            root.l5 = { ts: "", level: "", msg: "", c: #000000 };
+                            root.l6 = { ts: "", level: "", msg: "", c: #000000 };
+                            root.l7 = { ts: "", level: "", msg: "", c: #000000 };
+                            root.set-status("Logs cleared", 0);
+                        }
+                    }
+                }
+
+                if root.node7-busy: Rectangle {
+                    background: #2fd8c422;
+                    border-width: 1px;
+                    border-color: #2fd8c4;
+                    min-height: 40px;
+                    HorizontalLayout {
+                        padding: Theme.spacing-sm;
+                        spacing: Theme.spacing-sm;
+                        VerticalLayout {
+                            alignment: center;
+                            horizontal-stretch: 0;
+                            Text {
+                                text: "node-07";
+                                color: #2fd8c4;
+                                font-size: Theme.font-size-caption;
+                                font-weight: 700;
+                            }
+                        }
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            alignment: center;
+                            Rectangle {
+                                height: 8px;
+                                border-radius: 4px;
+                                background: #00000088;
+                                clip: true;
+                                Rectangle {
+                                    x: 0;
+                                    y: 0;
+                                    height: parent.height;
+                                    width: parent.width * root.node7-restart-pct / 100;
+                                    background: #2fd8c4;
+                                }
+                            }
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: root.node7-restart-pct + "%";
+                                color: #2fd8c4;
+                                font-size: Theme.font-size-caption;
+                                font-weight: 700;
+                            }
+                        }
+                    }
+                }
+
                 Text {
                     text: ">> tail -f /var/log/sys";
                     color: TerminalSkin.text-muted;
@@ -173,15 +464,66 @@ export component TerminalDashboardPage inherits Window {
                         padding-top: Theme.spacing-sm;
                         padding-bottom: Theme.spacing-sm;
                         spacing: Theme.spacing-xs;
-                        LogLine { ts: "08:21"; level: "OK"; msg: "auth handshake complete"; level-color: #5dff9b; }
-                        LogLine { ts: "08:21"; level: "INFO"; msg: "cache warmed 1.2GB"; level-color: #2fd8c4; }
-                        LogLine { ts: "08:22"; level: "WARN"; msg: "node-07 latency 240ms"; level-color: #ffd24f; }
-                        LogLine { ts: "08:22"; level: "OK"; msg: "rebalanced shard ring"; level-color: #5dff9b; }
-                        LogLine { ts: "08:23"; level: "INFO"; msg: "snapshot pushed to cold"; level-color: #2fd8c4; }
+                        if !root.l0.ts.is-empty: LogLine {
+                            ts: root.l0.ts;
+                            level: root.l0.level;
+                            msg: root.l0.msg;
+                            level-color: root.l0.c;
+                        }
+                        if !root.l1.ts.is-empty: LogLine {
+                            ts: root.l1.ts;
+                            level: root.l1.level;
+                            msg: root.l1.msg;
+                            level-color: root.l1.c;
+                        }
+                        if !root.l2.ts.is-empty: LogLine {
+                            ts: root.l2.ts;
+                            level: root.l2.level;
+                            msg: root.l2.msg;
+                            level-color: root.l2.c;
+                        }
+                        if !root.l3.ts.is-empty: LogLine {
+                            ts: root.l3.ts;
+                            level: root.l3.level;
+                            msg: root.l3.msg;
+                            level-color: root.l3.c;
+                        }
+                        if !root.l4.ts.is-empty: LogLine {
+                            ts: root.l4.ts;
+                            level: root.l4.level;
+                            msg: root.l4.msg;
+                            level-color: root.l4.c;
+                        }
+                        if !root.l5.ts.is-empty: LogLine {
+                            ts: root.l5.ts;
+                            level: root.l5.level;
+                            msg: root.l5.msg;
+                            level-color: root.l5.c;
+                        }
+                        if !root.l6.ts.is-empty: LogLine {
+                            ts: root.l6.ts;
+                            level: root.l6.level;
+                            msg: root.l6.msg;
+                            level-color: root.l6.c;
+                        }
+                        if !root.l7.ts.is-empty: LogLine {
+                            ts: root.l7.ts;
+                            level: root.l7.level;
+                            msg: root.l7.msg;
+                            level-color: root.l7.c;
+                        }
+                        if root.l0.ts.is-empty && root.l1.ts.is-empty && root.l2.ts.is-empty: HorizontalLayout {
+                            padding-left: Theme.spacing-md;
+                            Text {
+                                text: "(log buffer empty)";
+                                color: TerminalSkin.text-muted;
+                                font-size: Theme.font-size-caption;
+                                font-italic: true;
+                            }
+                        }
                     }
                 }
 
-                // ---- Node grid ----
                 Text {
                     text: ">> nodes --status";
                     color: TerminalSkin.text-muted;
@@ -189,13 +531,264 @@ export component TerminalDashboardPage inherits Window {
                 }
                 HorizontalLayout {
                     spacing: Theme.spacing-sm;
-                    NodeTile { name: "node-01"; stat: "cpu 38%"; up: true; horizontal-stretch: 1; }
-                    NodeTile { name: "node-02"; stat: "cpu 55%"; up: true; horizontal-stretch: 1; }
+                    NodeTile {
+                        name: "node-01";
+                        stat: "cpu " + root.cpu-01 + "%";
+                        up: true;
+                        selected: root.selected-node == 1;
+                        horizontal-stretch: 1;
+                        clicked => {
+                            root.selected-node = root.selected-node == 1 ? 0 : 1;
+                            root.set-status(root.selected-node == 1 ? "Inspecting node-01" : "Closed", 0);
+                        }
+                    }
+                    NodeTile {
+                        name: "node-02";
+                        stat: "cpu " + root.cpu-02 + "%";
+                        up: true;
+                        selected: root.selected-node == 2;
+                        horizontal-stretch: 1;
+                        clicked => {
+                            root.selected-node = root.selected-node == 2 ? 0 : 2;
+                            root.set-status(root.selected-node == 2 ? "Inspecting node-02" : "Closed", 0);
+                        }
+                    }
                 }
                 HorizontalLayout {
                     spacing: Theme.spacing-sm;
-                    NodeTile { name: "node-07"; stat: "degraded"; up: false; horizontal-stretch: 1; }
-                    NodeTile { name: "node-11"; stat: "cpu 12%"; up: true; horizontal-stretch: 1; }
+                    NodeTile {
+                        name: "node-07";
+                        stat: root.node7-busy ? "starting…" : (root.node7-up ? "cpu 24%" : "DOWN");
+                        up: root.node7-up;
+                        selected: root.selected-node == 3;
+                        horizontal-stretch: 1;
+                        clicked => {
+                            root.selected-node = root.selected-node == 3 ? 0 : 3;
+                            root.set-status(root.selected-node == 3 ? "Inspecting node-07" : "Closed", 0);
+                        }
+                    }
+                    NodeTile {
+                        name: "node-11";
+                        stat: "cpu " + root.cpu-11 + "%";
+                        up: true;
+                        selected: root.selected-node == 4;
+                        horizontal-stretch: 1;
+                        clicked => {
+                            root.selected-node = root.selected-node == 4 ? 0 : 4;
+                            root.set-status(root.selected-node == 4 ? "Inspecting node-11" : "Closed", 0);
+                        }
+                    }
+                }
+
+                if root.selected-node > 0: Rectangle {
+                    background: #2fd8c422;
+                    border-width: 1px;
+                    border-color: #2fd8c4;
+                    VerticalLayout {
+                        padding: Theme.spacing-md;
+                        spacing: Theme.spacing-xs;
+                        Text {
+                            text: root.selected-node == 1 ? "node-01 · eu-west-1a · v3.4.1" : (root.selected-node == 2 ? "node-02 · eu-west-1b · v3.4.1" : (root.selected-node == 3 ? "node-07 · eu-west-2c · v3.4.0" : "node-11 · us-east-1a · v3.4.1"));
+                            color: #2fd8c4;
+                            font-size: Theme.font-size-body;
+                            font-weight: 700;
+                        }
+                        Text {
+                            text: "uptime " + (root.selected-node == 3 ? "0d 0h 0m" : "12d 4h 33m") + " · region " + (root.selected-node <= 2 ? "EU" : (root.selected-node == 3 ? "EU-2" : "US"));
+                            color: TerminalSkin.text-secondary;
+                            font-size: Theme.font-size-caption;
+                        }
+                        HorizontalLayout {
+                            spacing: Theme.spacing-sm;
+                            padding-top: Theme.spacing-sm;
+                            CmdChip {
+                                label: "drain";
+                                clicked => {
+                                    root.push-log("WARN", "drain initiated on selected node", #ffd24f);
+                                    root.set-status("Drain requested", 2);
+                                }
+                            }
+                            CmdChip {
+                                label: "ssh";
+                                clicked => {
+                                    root.set-status("Opening SSH…", 0);
+                                }
+                            }
+                            CmdChip {
+                                label: "metrics";
+                                clicked => {
+                                    root.push-log("INFO", "metrics opened — " + root.cpu-01 + "% cpu", #2fd8c4);
+                                    root.set-status("Metrics opened", 0);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: #0a0a0a;
+            border-width: 1px;
+            border-color: TerminalSkin.hairline;
+            clip: true;
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: #2fd8c4;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: ">> ops menu";
+                        color: #2fd8c4;
+                        font-size: Theme.font-size-body-large;
+                        font-weight: 800;
+                    }
+                }
+                Rectangle {
+                    min-height: 44px;
+                    TouchArea {
+                        clicked => {
+                            root.push-log("OK", "all incidents acknowledged", #5dff9b);
+                            root.incidents = 0;
+                            root.set-status("All incidents acknowledged", 1);
+                            root.sheet-open = false;
+                        }
+                    }
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-md;
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: "ack all incidents";
+                                color: #5dff9b;
+                                font-size: Theme.font-size-body;
+                                font-weight: 700;
+                            }
+                        }
+                    }
+                }
+                Rectangle {
+                    min-height: 44px;
+                    TouchArea {
+                        clicked => {
+                            root.incidents = root.incidents + 3;
+                            root.push-log("WARN", "3 services flapping", #ffd24f);
+                            root.set-status("3 incidents added", 2);
+                            root.sheet-open = false;
+                        }
+                    }
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-md;
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: "simulate outage";
+                                color: #ffd24f;
+                                font-size: Theme.font-size-body;
+                                font-weight: 700;
+                            }
+                        }
+                    }
+                }
+                Rectangle {
+                    min-height: 44px;
+                    TouchArea {
+                        clicked => {
+                            root.tick = 23;
+                            root.incidents = 0;
+                            root.nodes-online = 14;
+                            root.node7-up = false;
+                            root.node7-busy = false;
+                            root.cpu-01 = 38;
+                            root.cpu-02 = 55;
+                            root.cpu-11 = 12;
+                            root.set-status("Demo state reset", 0);
+                            root.sheet-open = false;
+                        }
+                    }
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-md;
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: "reset demo state";
+                                color: #2fd8c4;
+                                font-size: Theme.font-size-body;
+                                font-weight: 700;
+                            }
+                        }
+                    }
+                }
+                Rectangle {
+                    height: 1px;
+                    background: TerminalSkin.hairline;
+                }
+                Rectangle {
+                    min-height: 44px;
+                    TouchArea {
+                        clicked => {
+                            root.push-log("ERR", "panic: kernel oops at 0xdeadbeef", #ff4f6d);
+                            root.nodes-online = max(0, root.nodes-online - 1);
+                            root.incidents = root.incidents + 1;
+                            root.set-status("KERNEL PANIC", 3);
+                            root.sheet-open = false;
+                        }
+                    }
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-md;
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: "kernel panic";
+                                color: #ff4f6d;
+                                font-size: Theme.font-size-body;
+                                font-weight: 800;
+                            }
+                        }
+                    }
+                }
+                Rectangle {
+                    min-height: 44px;
+                    TouchArea {
+                        clicked => {
+                            root.sheet-open = false;
+                        }
+                    }
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-md;
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: "cancel";
+                                color: TerminalSkin.text-secondary;
+                                font-size: Theme.font-size-body;
+                            }
+                        }
+                    }
                 }
             }
         }

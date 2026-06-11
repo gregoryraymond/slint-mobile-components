@@ -1,73 +1,49 @@
 // SmartTVRemotePage
 // =====================================================================
-//
-// IR / smart-home TV remote — Logitech Harmony / Apple Remote-style.
-// Distinct from `SmartHomePage` (multi-device dashboard) and
-// `RoomThermostatPage` (single-device dial). Demonstrates a control
-// surface with no scrolling — every glyph is a button.
-//
-// Layout:
-//   - Device pill at the top (Sony Bravia · Living room) + status dot.
-//   - Source chip strip (Netflix / Apple TV / Switch / HDMI 1).
-//   - Big d-pad: four directional discs around a centre OK button.
-//   - Volume + Channel rocker pair underneath, each with a + on top
-//     and − on bottom.
-//   - Power + Home + Mute + Back utility row.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
-import { Chip } from "@mobile-components/chip.slint";
 import { HeadingStyle } from "@mobile-components/heading.slint";
+import { Divider } from "@mobile-components/divider.slint";
+import { ScrollView } from "std-widgets.slint";
 
-// A round directional / utility key.
 component RoundKey inherits Rectangle {
     in property <image> icon;
     in property <string> letter;
-    in property <Tone> tone: Tone.default;
+    in property <int> tone-i: 0; // 0 default 1 info 2 success 3 warning 4 danger
     in property <length> size: 64px;
     in property <bool> dim: false;
     callback clicked();
 
     accessible-role: button;
-    accessible-action-default => { root.clicked(); }
+    accessible-action-default => {
+        root.clicked();
+    }
 
     width: root.size;
     height: root.size;
     border-radius: self.width / 2;
-    background:
-          touch.pressed
-        ? Theme.surface-pressed
-        : (
-              root.tone == Tone.success ? Theme.accent-success
-            : root.tone == Tone.warning ? Theme.accent-warning
-            : root.tone == Tone.danger  ? Theme.accent-danger
-            : root.tone == Tone.info    ? Theme.accent-info
-            : Theme.surface-1
-          );
-    border-width: root.tone == Tone.default ? 1px : 0px;
+    background: touch.pressed ? Theme.surface-pressed : (root.tone-i == 2 ? Theme.accent-success : (root.tone-i == 3 ? Theme.accent-warning : (root.tone-i == 4 ? Theme.accent-danger : (root.tone-i == 1 ? Theme.accent-info : Theme.surface-1))));
+    border-width: root.tone-i == 0 ? 1px : 0px;
     border-color: Theme.outline;
     drop-shadow-blur: Theme.elevation-1-blur;
     drop-shadow-color: Theme.elevation-1-color;
     drop-shadow-offset-y: Theme.elevation-1-y;
-    opacity: root.dim ? 0.55 : 1.0;
+    opacity: root.dim ? 0.45 : 1.0;
     animate background { duration: Theme.motion-fast; }
 
-    if root.letter == "" : Image {
+    if root.letter == "": Image {
         width: root.size * 0.4;
         height: root.size * 0.4;
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
         source: root.icon;
-        colorize:
-              root.tone == Tone.default ? Theme.on-surface
-            : Theme.on-primary;
+        colorize: root.tone-i == 0 ? Theme.on-surface : Theme.on-primary;
         image-fit: contain;
     }
-    if root.letter != "" : Text {
+    if root.letter != "": Text {
         text: root.letter;
-        color:
-              root.tone == Tone.default ? Theme.on-surface
-            : Theme.on-primary;
+        color: root.tone-i == 0 ? Theme.on-surface : Theme.on-primary;
         font-size: 18px;
         font-weight: 800;
         horizontal-alignment: center;
@@ -76,24 +52,26 @@ component RoundKey inherits Rectangle {
         height: parent.height;
     }
     touch := TouchArea {
-        clicked => { root.clicked(); }
+        clicked => {
+            root.clicked();
+        }
     }
 }
 
-// A rectangular rocker key (used for Vol+/Vol−/Ch+/Ch−).
 component RockerKey inherits Rectangle {
     in property <string> caption;
     in property <bool> top: true;
+    in property <bool> dim: false;
     callback clicked();
 
     accessible-role: button;
-    accessible-action-default => { root.clicked(); }
+    accessible-action-default => {
+        root.clicked();
+    }
 
     width: 96px;
     height: 64px;
-    background:
-          touch.pressed ? Theme.surface-pressed
-        : Theme.surface-1;
+    background: touch.pressed ? Theme.surface-pressed : Theme.surface-1;
     border-top-left-radius: root.top ? Theme.radius-lg : 0px;
     border-top-right-radius: root.top ? Theme.radius-lg : 0px;
     border-bottom-left-radius: root.top ? 0px : Theme.radius-lg;
@@ -103,6 +81,7 @@ component RockerKey inherits Rectangle {
     drop-shadow-blur: Theme.elevation-1-blur;
     drop-shadow-color: Theme.elevation-1-color;
     drop-shadow-offset-y: Theme.elevation-1-y;
+    opacity: root.dim ? 0.45 : 1.0;
     animate background { duration: Theme.motion-fast; }
 
     Text {
@@ -116,26 +95,82 @@ component RockerKey inherits Rectangle {
         height: parent.height;
     }
     touch := TouchArea {
-        clicked => { root.clicked(); }
+        clicked => {
+            root.clicked();
+        }
     }
 }
 
-// Rocker label between top/bottom (e.g. "VOL" / "CH").
-component RockerLabel inherits Rectangle {
-    in property <string> text;
-    width: 96px;
-    height: 28px;
-    background: transparent;
-    Text {
-        text: root.text;
-        color: Theme.muted;
-        font-size: 11px;
-        font-weight: 800;
-        letter-spacing: 1px;
-        horizontal-alignment: center;
-        vertical-alignment: center;
-        width: parent.width;
-        height: parent.height;
+component SourceChip inherits Rectangle {
+    in property <string> label;
+    in property <bool> selected: false;
+    callback clicked();
+
+    horizontal-stretch: 0;
+    height: 30px;
+    border-radius: 15px;
+    background: root.selected ? Theme.primary : Theme.surface-2;
+    HorizontalLayout {
+        padding-left: Theme.spacing-sm;
+        padding-right: Theme.spacing-sm;
+        alignment: center;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.selected ? Theme.on-primary : Theme.on-surface;
+                font-size: Theme.font-size-caption;
+                font-weight: 700;
+            }
+        }
+    }
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component RecentRow inherits Rectangle {
+    in property <int> ch;
+    in property <string> name;
+    in property <bool> current: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    background: ta.has-hover ? Theme.surface-2 : (root.current ? Theme.accent-info.with-alpha(0.10) : transparent);
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        VerticalLayout {
+            alignment: center;
+            width: 40px;
+            Text {
+                text: "" + root.ch;
+                color: root.current ? Theme.accent-info : Theme.on-surface;
+                font-family: "JetBrains Mono";
+                font-weight: 800;
+                font-size: Theme.font-size-body;
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            Text {
+                text: root.name + (root.current ? " · NOW" : "");
+                color: root.current ? Theme.accent-info : Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: root.current ? 700 : 500;
+            }
+        }
     }
 }
 
@@ -143,13 +178,38 @@ export component SmartTVRemotePage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
     in property <string> device: "Sony Bravia · Living room";
-    in property <string> status: "CONNECTED";
+
+    in-out property <bool> power: true;
+    in-out property <int> volume: 32;
+    in-out property <int> channel: 4;
+    in-out property <bool> muted: false;
+    in-out property <int> source-idx: 0;
+    in-out property <int> nav-x: 1;
+    in-out property <int> nav-y: 1;
+    in-out property <string> last-cmd: "—";
+    in-out property <string> status-msg: "";
+    in-out property <bool> status-success: false;
+    in-out property <bool> status-danger: false;
+
     callback back-pressed();
     callback device-pressed();
-    callback source-pressed(string);
+    callback source-pressed(int);
     callback dir-pressed(string);
     callback rocker-pressed(string);
     callback util-pressed(string);
+
+    function source-label() -> string {
+        return root.source-idx == 0 ? "Netflix" : (root.source-idx == 1 ? "Apple TV" : (root.source-idx == 2 ? "HDMI 1" : "Switch"));
+    }
+    function vol-pct() -> int {
+        return root.muted ? 0 : root.volume;
+    }
+    function set-status(m: string, ok: bool, bad: bool) {
+        root.status-msg = m;
+        root.status-success = ok;
+        root.status-danger = bad;
+        root.last-cmd = m;
+    }
 
     background: Theme.background;
 
@@ -161,191 +221,501 @@ export component SmartTVRemotePage inherits Window {
             title-style: HeadingStyle.uppercase-spaced;
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
-            leading-pressed => { root.back-pressed(); }
+            leading-pressed => {
+                root.back-pressed();
+            }
+            trailing-pressed => {
+                root.set-status("More — pair / settings", true, false);
+            }
         }
 
-        // Device pill.
-        VerticalLayout {
-            padding: Theme.spacing-md;
-            spacing: Theme.spacing-sm;
-            Rectangle {
-                background: Theme.surface-1;
-                border-radius: Theme.radius-md;
-                drop-shadow-blur: Theme.elevation-1-blur;
-                drop-shadow-color: Theme.elevation-1-color;
-                drop-shadow-offset-y: Theme.elevation-1-y;
-                height: 56px;
-                HorizontalLayout {
+        // Status banner (also shows last command).
+        Rectangle {
+            height: 32px;
+            background: !root.power ? Theme.accent-danger.with-alpha(0.16) : (root.status-success ? Theme.accent-success.with-alpha(0.16) : (root.status-danger ? Theme.accent-danger.with-alpha(0.16) : Theme.surface-2));
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                alignment: stretch;
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    Text {
+                        text: !root.power ? "📺 TV OFF · press power to wake" : (root.source-label() + " · CH " + root.channel + " · " + (root.muted ? "MUTED" : "VOL " + root.volume));
+                        color: !root.power ? Theme.accent-danger : (root.status-success ? Theme.accent-success : Theme.on-surface);
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: "Last: " + root.last-cmd;
+                        color: Theme.muted;
+                        font-size: 10px;
+                        font-weight: 600;
+                    }
+                }
+            }
+        }
+
+        ScrollView {
+            vertical-stretch: 1;
+            VerticalLayout {
+                spacing: 0;
+                // Device pill.
+                VerticalLayout {
                     padding: Theme.spacing-md;
                     spacing: Theme.spacing-sm;
-                    alignment: stretch;
-                    VerticalLayout {
-                        alignment: center;
+                    Rectangle {
+                        background: Theme.surface-1;
+                        border-radius: Theme.radius-md;
+                        drop-shadow-blur: Theme.elevation-1-blur;
+                        drop-shadow-color: Theme.elevation-1-color;
+                        drop-shadow-offset-y: Theme.elevation-1-y;
+                        height: 56px;
+                        HorizontalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-sm;
+                            alignment: stretch;
+                            VerticalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: 10px;
+                                    height: 10px;
+                                    border-radius: 5px;
+                                    background: root.power ? Theme.accent-success : Theme.accent-danger;
+                                }
+                            }
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                alignment: center;
+                                spacing: 2px;
+                                Text {
+                                    text: root.device;
+                                    color: Theme.on-surface;
+                                    font-family: "IBM Plex Sans";
+                                    font-size: Theme.font-size-body;
+                                    font-weight: 700;
+                                }
+                                Text {
+                                    text: root.power ? "CONNECTED" : "STANDBY";
+                                    color: root.power ? Theme.accent-success : Theme.accent-danger;
+                                    font-size: 10px;
+                                    font-weight: 800;
+                                    letter-spacing: 0.5px;
+                                }
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                Image {
+                                    width: 16px;
+                                    height: 16px;
+                                    source: @image-url("@mobile-components/icons/chevron-right.svg");
+                                    colorize: Theme.muted;
+                                    image-fit: contain;
+                                }
+                            }
+                        }
+                        TouchArea {
+                            clicked => {
+                                root.set-status("Switch device…", true, false);
+                                root.device-pressed();
+                            }
+                        }
+                    }
+
+                    // Source chips.
+                    HorizontalLayout {
+                        spacing: Theme.spacing-sm;
+                        SourceChip {
+                            label: "Netflix";
+                            selected: root.source-idx == 0;
+                            clicked => {
+                                root.source-idx = 0;
+                                root.set-status("Source: Netflix", true, false);
+                                root.source-pressed(0);
+                            }
+                        }
+                        SourceChip {
+                            label: "Apple TV";
+                            selected: root.source-idx == 1;
+                            clicked => {
+                                root.source-idx = 1;
+                                root.set-status("Source: Apple TV", true, false);
+                                root.source-pressed(1);
+                            }
+                        }
+                        SourceChip {
+                            label: "HDMI 1";
+                            selected: root.source-idx == 2;
+                            clicked => {
+                                root.source-idx = 2;
+                                root.set-status("Source: HDMI 1", true, false);
+                                root.source-pressed(2);
+                            }
+                        }
+                        SourceChip {
+                            label: "Switch";
+                            selected: root.source-idx == 3;
+                            clicked => {
+                                root.source-idx = 3;
+                                root.set-status("Source: Switch", true, false);
+                                root.source-pressed(3);
+                            }
+                        }
+                    }
+
+                    // Volume bar.
+                    Rectangle {
+                        height: 8px;
+                        border-radius: 4px;
+                        background: Theme.surface-2;
+                        clip: true;
                         Rectangle {
-                            width: 10px;
-                            height: 10px;
-                            border-radius: 5px;
-                            background: Theme.accent-success;
+                            x: 0;
+                            width: parent.width * root.vol-pct() / 100;
+                            height: parent.height;
+                            background: root.muted ? Theme.accent-danger : Theme.accent-info;
+                            border-radius: 4px;
+                            animate width { duration: Theme.motion-fast; }
                         }
                     }
-                    VerticalLayout {
-                        horizontal-stretch: 1;
-                        alignment: center;
-                        spacing: 2px;
+                    // Nav grid mini-preview.
+                    HorizontalLayout {
+                        alignment: stretch;
+                        spacing: Theme.spacing-sm;
                         Text {
-                            text: root.device;
-                            color: Theme.on-surface;
-                            font-family: "IBM Plex Sans";
-                            font-size: Theme.font-size-body;
+                            text: "Nav cursor: (" + root.nav-x + "," + root.nav-y + ")";
+                            color: Theme.muted;
+                            font-size: Theme.font-size-caption;
                             font-weight: 700;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
                         }
-                        Text {
-                            text: root.status;
-                            color: Theme.accent-success;
-                            font-size: 10px;
-                            font-weight: 800;
-                            letter-spacing: 0.5px;
-                        }
-                    }
-                    VerticalLayout {
-                        alignment: center;
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
-                            TouchArea {
-                                clicked => { root.device-pressed(); }
+                        Rectangle {
+                            width: 64px;
+                            height: 24px;
+                            VerticalLayout {
+                                spacing: 1px;
+                                for ry in 3: HorizontalLayout {
+                                    spacing: 1px;
+                                    for rx in 3: Rectangle {
+                                        horizontal-stretch: 1;
+                                        background: root.nav-x == rx && root.nav-y == ry ? Theme.accent-info : Theme.surface-2;
+                                    }
+                                }
                             }
                         }
                     }
                 }
-            }
 
-            // Source chip strip.
-            HorizontalLayout {
-                spacing: Theme.spacing-sm;
-                Chip { label: "Netflix"; selected: true; }
-                Chip { label: "Apple TV"; }
-                Chip { label: "HDMI 1"; }
-                Chip { label: "Switch"; }
-            }
-        }
-
-        // Big d-pad.
-        VerticalLayout {
-            padding-top: Theme.spacing-md;
-            spacing: Theme.spacing-sm;
-
-            HorizontalLayout {
-                alignment: center;
-                RoundKey {
-                    icon: @image-url("@mobile-components/icons/arrow-left.svg");
-                    size: 64px;
-                    clicked => { root.dir-pressed("up"); }
-                }
-            }
-            HorizontalLayout {
-                alignment: center;
-                spacing: Theme.spacing-md;
-                RoundKey {
-                    icon: @image-url("@mobile-components/icons/arrow-left.svg");
-                    size: 64px;
-                    clicked => { root.dir-pressed("left"); }
-                }
-                RoundKey {
-                    letter: "OK";
-                    tone: Tone.info;
-                    size: 80px;
-                    clicked => { root.dir-pressed("ok"); }
-                }
-                RoundKey {
-                    icon: @image-url("@mobile-components/icons/chevron-right.svg");
-                    size: 64px;
-                    clicked => { root.dir-pressed("right"); }
-                }
-            }
-            HorizontalLayout {
-                alignment: center;
-                RoundKey {
-                    icon: @image-url("@mobile-components/icons/chevron-right.svg");
-                    size: 64px;
-                    clicked => { root.dir-pressed("down"); }
-                }
-            }
-        }
-
-        // Rockers + utility row.
-        VerticalLayout {
-            padding: Theme.spacing-md;
-            spacing: Theme.spacing-md;
-
-            HorizontalLayout {
-                alignment: center;
-                spacing: Theme.spacing-xl;
-                // Volume rocker.
+                // Big d-pad.
                 VerticalLayout {
-                    spacing: 0;
-                    alignment: center;
-                    RockerKey {
-                        caption: "+";
-                        top: true;
-                        clicked => { root.rocker-pressed("vol-up"); }
-                    }
-                    RockerLabel { text: "VOL"; }
-                    RockerKey {
-                        caption: "−";
-                        top: false;
-                        clicked => { root.rocker-pressed("vol-down"); }
-                    }
-                }
-                // Channel rocker.
-                VerticalLayout {
-                    spacing: 0;
-                    alignment: center;
-                    RockerKey {
-                        caption: "+";
-                        top: true;
-                        clicked => { root.rocker-pressed("ch-up"); }
-                    }
-                    RockerLabel { text: "CH"; }
-                    RockerKey {
-                        caption: "−";
-                        top: false;
-                        clicked => { root.rocker-pressed("ch-down"); }
-                    }
-                }
-            }
+                    padding-top: Theme.spacing-md;
+                    spacing: Theme.spacing-sm;
 
-            // Utility row.
-            HorizontalLayout {
-                alignment: center;
-                spacing: Theme.spacing-md;
-                RoundKey {
-                    icon: @image-url("@mobile-components/icons/lock.svg");
-                    tone: Tone.danger;
-                    size: 56px;
-                    clicked => { root.util-pressed("power"); }
+                    HorizontalLayout {
+                        alignment: center;
+                        RoundKey {
+                            icon: @image-url("@mobile-components/icons/arrow-left.svg");
+                            size: 64px;
+                            dim: !root.power;
+                            clicked => {
+                                if (root.power) {
+                                    root.nav-y = max(0, root.nav-y - 1);
+                                    root.set-status("▲ up", true, false);
+                                    root.dir-pressed("up");
+                                }
+                            }
+                        }
+                    }
+                    HorizontalLayout {
+                        alignment: center;
+                        spacing: Theme.spacing-md;
+                        RoundKey {
+                            icon: @image-url("@mobile-components/icons/arrow-left.svg");
+                            size: 64px;
+                            dim: !root.power;
+                            clicked => {
+                                if (root.power) {
+                                    root.nav-x = max(0, root.nav-x - 1);
+                                    root.set-status("◀ left", true, false);
+                                    root.dir-pressed("left");
+                                }
+                            }
+                        }
+                        RoundKey {
+                            letter: "OK";
+                            tone-i: 1;
+                            size: 80px;
+                            dim: !root.power;
+                            clicked => {
+                                if (root.power) {
+                                    root.set-status("OK · cell (" + root.nav-x + "," + root.nav-y + ")", true, false);
+                                    root.dir-pressed("ok");
+                                }
+                            }
+                        }
+                        RoundKey {
+                            icon: @image-url("@mobile-components/icons/chevron-right.svg");
+                            size: 64px;
+                            dim: !root.power;
+                            clicked => {
+                                if (root.power) {
+                                    root.nav-x = min(2, root.nav-x + 1);
+                                    root.set-status("▶ right", true, false);
+                                    root.dir-pressed("right");
+                                }
+                            }
+                        }
+                    }
+                    HorizontalLayout {
+                        alignment: center;
+                        RoundKey {
+                            icon: @image-url("@mobile-components/icons/chevron-right.svg");
+                            size: 64px;
+                            dim: !root.power;
+                            clicked => {
+                                if (root.power) {
+                                    root.nav-y = min(2, root.nav-y + 1);
+                                    root.set-status("▼ down", true, false);
+                                    root.dir-pressed("down");
+                                }
+                            }
+                        }
+                    }
                 }
-                RoundKey {
-                    icon: @image-url("@mobile-components/icons/home.svg");
-                    size: 56px;
-                    clicked => { root.util-pressed("home"); }
+
+                // Rockers.
+                VerticalLayout {
+                    padding: Theme.spacing-md;
+                    spacing: Theme.spacing-md;
+
+                    HorizontalLayout {
+                        alignment: center;
+                        spacing: Theme.spacing-xl;
+                        VerticalLayout {
+                            spacing: 0;
+                            alignment: center;
+                            RockerKey {
+                                caption: "+";
+                                top: true;
+                                dim: !root.power;
+                                clicked => {
+                                    if (root.power) {
+                                        root.volume = min(100, root.volume + 5);
+                                        root.muted = false;
+                                        root.set-status("VOL " + root.volume, true, false);
+                                        root.rocker-pressed("vol-up");
+                                    }
+                                }
+                            }
+                            Rectangle {
+                                width: 96px;
+                                height: 28px;
+                                Text {
+                                    text: "VOL " + root.volume;
+                                    color: Theme.muted;
+                                    font-size: 11px;
+                                    font-weight: 800;
+                                    letter-spacing: 1px;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                            }
+                            RockerKey {
+                                caption: "−";
+                                top: false;
+                                dim: !root.power;
+                                clicked => {
+                                    if (root.power) {
+                                        root.volume = max(0, root.volume - 5);
+                                        root.set-status("VOL " + root.volume, true, false);
+                                        root.rocker-pressed("vol-down");
+                                    }
+                                }
+                            }
+                        }
+                        VerticalLayout {
+                            spacing: 0;
+                            alignment: center;
+                            RockerKey {
+                                caption: "+";
+                                top: true;
+                                dim: !root.power;
+                                clicked => {
+                                    if (root.power) {
+                                        root.channel = root.channel + 1;
+                                        root.set-status("CH " + root.channel, true, false);
+                                        root.rocker-pressed("ch-up");
+                                    }
+                                }
+                            }
+                            Rectangle {
+                                width: 96px;
+                                height: 28px;
+                                Text {
+                                    text: "CH " + root.channel;
+                                    color: Theme.muted;
+                                    font-size: 11px;
+                                    font-weight: 800;
+                                    letter-spacing: 1px;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                            }
+                            RockerKey {
+                                caption: "−";
+                                top: false;
+                                dim: !root.power;
+                                clicked => {
+                                    if (root.power) {
+                                        root.channel = max(1, root.channel - 1);
+                                        root.set-status("CH " + root.channel, true, false);
+                                        root.rocker-pressed("ch-down");
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Utility row.
+                    HorizontalLayout {
+                        alignment: center;
+                        spacing: Theme.spacing-md;
+                        RoundKey {
+                            icon: @image-url("@mobile-components/icons/lock.svg");
+                            tone-i: root.power ? 4 : 0;
+                            size: 56px;
+                            clicked => {
+                                root.power = !root.power;
+                                root.set-status(root.power ? "Power on" : "Power off", root.power, !root.power);
+                                root.util-pressed("power");
+                            }
+                        }
+                        RoundKey {
+                            icon: @image-url("@mobile-components/icons/home.svg");
+                            size: 56px;
+                            dim: !root.power;
+                            clicked => {
+                                if (root.power) {
+                                    root.nav-x = 1;
+                                    root.nav-y = 1;
+                                    root.set-status("Home", true, false);
+                                    root.util-pressed("home");
+                                }
+                            }
+                        }
+                        RoundKey {
+                            icon: @image-url("@mobile-components/icons/bell.svg");
+                            tone-i: root.muted ? 4 : 0;
+                            size: 56px;
+                            dim: !root.power;
+                            clicked => {
+                                if (root.power) {
+                                    root.muted = !root.muted;
+                                    root.set-status(root.muted ? "Muted" : "Unmuted", !root.muted, root.muted);
+                                    root.util-pressed("mute");
+                                }
+                            }
+                        }
+                        RoundKey {
+                            icon: @image-url("@mobile-components/icons/arrow-left.svg");
+                            size: 56px;
+                            dim: !root.power;
+                            clicked => {
+                                if (root.power) {
+                                    root.set-status("Back", true, false);
+                                    root.util-pressed("back");
+                                }
+                            }
+                        }
+                    }
                 }
-                RoundKey {
-                    icon: @image-url("@mobile-components/icons/bell.svg");
-                    size: 56px;
-                    clicked => { root.util-pressed("mute"); }
+
+                // Recent channels list (scrollable area).
+                Divider { }
+
+                Rectangle {
+                    height: 32px;
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-md;
+                        padding-right: Theme.spacing-md;
+                        alignment: start;
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: "RECENT CHANNELS";
+                                color: Theme.muted;
+                                font-size: 11px;
+                                font-weight: 800;
+                                letter-spacing: 2px;
+                            }
+                        }
+                    }
                 }
-                RoundKey {
-                    icon: @image-url("@mobile-components/icons/arrow-left.svg");
-                    size: 56px;
-                    clicked => { root.util-pressed("back"); }
+                RecentRow {
+                    ch: 4;
+                    name: "ARD";
+                    current: root.channel == 4;
+                    clicked => {
+                        root.channel = 4;
+                        root.set-status("CH 4 · ARD", true, false);
+                    }
+                }
+                Divider { }
+
+                RecentRow {
+                    ch: 11;
+                    name: "BBC One";
+                    current: root.channel == 11;
+                    clicked => {
+                        root.channel = 11;
+                        root.set-status("CH 11 · BBC One", true, false);
+                    }
+                }
+                Divider { }
+
+                RecentRow {
+                    ch: 24;
+                    name: "Arte";
+                    current: root.channel == 24;
+                    clicked => {
+                        root.channel = 24;
+                        root.set-status("CH 24 · Arte", true, false);
+                    }
+                }
+                Divider { }
+
+                RecentRow {
+                    ch: 88;
+                    name: "Eurosport";
+                    current: root.channel == 88;
+                    clicked => {
+                        root.channel = 88;
+                        root.set-status("CH 88 · Eurosport", true, false);
+                    }
+                }
+                Divider { }
+
+                RecentRow {
+                    ch: 132;
+                    name: "Comedy Central";
+                    current: root.channel == 132;
+                    clicked => {
+                        root.channel = 132;
+                        root.set-status("CH 132 · Comedy Central", true, false);
+                    }
+                }
+                Rectangle {
+                    height: Theme.spacing-xl;
                 }
             }
         }
-
-        Rectangle { vertical-stretch: 1; }
     }
 }

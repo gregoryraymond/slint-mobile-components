@@ -1,8 +1,5 @@
 // FormWizardPage
 // =====================================================================
-//
-// Multi-step form mid-flow. Pure FormField + ProgressBar discipline.
-// "Back / Continue" buttons sit at the bottom in a HorizontalLayout.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
@@ -15,21 +12,173 @@ import { ProgressBar } from "@mobile-components/progress-bar.slint";
 import { MobileSwitch } from "@mobile-components/switch.slint";
 import { MobileButton, TextButton } from "@mobile-components/button.slint";
 import { Divider } from "@mobile-components/divider.slint";
+import { Banner } from "@mobile-components/banner.slint";
 import { ScrollView } from "std-widgets.slint";
+
+component StepPip inherits Rectangle {
+    in property <int> idx;
+    in property <int> current: 0;
+
+    horizontal-stretch: 1;
+    height: 4px;
+    border-radius: 2px;
+    background: root.idx < root.current ? Theme.accent-success : (root.idx == root.current ? Theme.accent-info : Theme.surface-variant);
+    animate background { duration: Theme.motion-fast; }
+}
+
+component CountryChip inherits Rectangle {
+    in property <string> label;
+    in property <bool> active: false;
+    callback clicked();
+
+    horizontal-stretch: 0;
+    height: 30px;
+    border-radius: 15px;
+    background: root.active ? Theme.primary : Theme.surface-2;
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: center;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.active ? Theme.on-primary : Theme.on-surface;
+                font-size: Theme.font-size-caption;
+                font-weight: 700;
+            }
+        }
+    }
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.destructive ? Theme.accent-danger : Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+        }
+    }
+}
 
 export component FormWizardPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
 
+    in-out property <int> step: 0; // 0..3 plus 4 = submitted
+    in-out property <string> email;
+    in-out property <string> password;
+    in-out property <bool> tos-accepted: false;
     in-out property <string> first-name;
     in-out property <string> last-name;
     in-out property <string> dob;
     in-out property <string> phone;
+    in-out property <int> country: 0; // 0 BE 1 NL 2 FR 3 DE
+    in-out property <string> city;
+    in-out property <string> postal;
     in-out property <bool> product-updates: true;
     in-out property <bool> marketing-emails: false;
+    in-out property <bool> submitted: false;
+    in-out property <bool> sheet-open: false;
+    in-out property <bool> confirm-cancel: false;
+    in-out property <string> status-msg: "";
+    in-out property <bool> status-success: false;
+    in-out property <bool> status-danger: false;
 
     callback back-pressed();
     callback continue-pressed();
+
+    function step-title() -> string {
+        return root.submitted ? "Done" : (root.step == 0 ? "Account" : (root.step == 1 ? "Your details" : (root.step == 2 ? "Address" : "Review")));
+    }
+    function step-progress() -> float {
+        return root.submitted ? 1.0 : (root.step + 1) / 4.0;
+    }
+    function country-label() -> string {
+        return root.country == 0 ? "Belgium" : (root.country == 1 ? "Netherlands" : (root.country == 2 ? "France" : "Germany"));
+    }
+    function can-continue() -> bool {
+        if (root.step == 0) {
+            return !root.email.is-empty && !root.password.is-empty && root.tos-accepted;
+        }
+        if (root.step == 1) {
+            return !root.first-name.is-empty && !root.last-name.is-empty;
+        }
+        if (root.step == 2) {
+            return !root.city.is-empty && !root.postal.is-empty;
+        }
+        return true;
+    }
+    function set-status(m: string, ok: bool, bad: bool) {
+        root.status-msg = m;
+        root.status-success = ok;
+        root.status-danger = bad;
+    }
+    function advance() {
+        if (!root.can-continue()) {
+            root.set-status("Please fill required fields", false, true);
+            return;
+        }
+        if (root.step == 3) {
+            root.submitted = true;
+            root.set-status("Submitted ✓", true, false);
+            root.continue-pressed();
+        } else {
+            root.step = root.step + 1;
+            root.set-status("Step " + (root.step + 1) + " · " + root.step-title(), true, false);
+        }
+    }
+    function retreat() {
+        if (root.submitted) {
+            root.submitted = false;
+            root.step = 3;
+            return;
+        }
+        if (root.step > 0) {
+            root.step = root.step - 1;
+            root.set-status("Back to " + root.step-title(), false, false);
+        } else {
+            root.back-pressed();
+        }
+    }
+    function fill-demo() {
+        root.email = "ada@lovelace.io";
+        root.password = "secret123";
+        root.tos-accepted = true;
+        root.first-name = "Ada";
+        root.last-name = "Lovelace";
+        root.dob = "12 / 10 / 1815";
+        root.phone = "+32 470 12 34 56";
+        root.city = "Brussels";
+        root.postal = "1000";
+        root.set-status("Demo data filled", true, false);
+    }
 
     background: Theme.background;
 
@@ -37,19 +186,65 @@ export component FormWizardPage inherits Window {
         spacing: 0;
 
         AppBar {
-            title: "Step 2 of 4";
+            title: root.submitted ? "Done" : "Step " + (root.step + 1) + " of 4 · " + root.step-title();
             title-style: HeadingStyle.caps-tight;
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
-            leading-pressed => { root.back-pressed(); }
+            trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
+            leading-pressed => {
+                root.retreat();
+            }
+            trailing-pressed => {
+                root.sheet-open = true;
+            }
         }
 
-        // Progress bar directly under the bar — full-width inset matches body.
+        // Status banner.
+        if !root.status-msg.is-empty: Rectangle {
+            height: 28px;
+            background: root.status-success ? Theme.accent-success.with-alpha(0.16) : (root.status-danger ? Theme.accent-danger.with-alpha(0.16) : Theme.surface-2);
+            HorizontalLayout {
+                alignment: center;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.status-msg;
+                        color: root.status-success ? Theme.accent-success : (root.status-danger ? Theme.accent-danger : Theme.on-surface);
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                    }
+                }
+            }
+        }
+
+        // Progress strip with 4 pips + bar.
         VerticalLayout {
             padding-left: Theme.spacing-md;
             padding-right: Theme.spacing-md;
             padding-top: Theme.spacing-xs;
             padding-bottom: Theme.spacing-sm;
-            ProgressBar { value: 0.5; }
+            spacing: Theme.spacing-xs;
+            HorizontalLayout {
+                spacing: Theme.spacing-xs;
+                StepPip {
+                    idx: 0;
+                    current: root.submitted ? 4 : root.step;
+                }
+                StepPip {
+                    idx: 1;
+                    current: root.submitted ? 4 : root.step;
+                }
+                StepPip {
+                    idx: 2;
+                    current: root.submitted ? 4 : root.step;
+                }
+                StepPip {
+                    idx: 3;
+                    current: root.submitted ? 4 : root.step;
+                }
+            }
+            ProgressBar {
+                value: root.step-progress();
+            }
         }
 
         ScrollView {
@@ -61,92 +256,481 @@ export component FormWizardPage inherits Window {
                 spacing: Theme.spacing-lg;
                 alignment: start;
 
-                // ----- About you -------------------------------------------
-                FormSection {
-                    title: "ABOUT YOU";
-                    caption: "Step 2 — Your details";
-                }
-
-                // The actual FormFields live OUTSIDE the FormSection's card
-                // so they get the standard field-stack rhythm rather than
-                // being squashed into the card chrome.
-                VerticalLayout {
+                if root.submitted: VerticalLayout {
                     spacing: Theme.spacing-md;
-                    alignment: stretch;
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    HorizontalLayout {
+                        alignment: center;
+                        Rectangle {
+                            width: 96px;
+                            height: 96px;
+                            border-radius: 48px;
+                            background: Theme.accent-success;
+                            Text {
+                                text: "✓";
+                                color: Theme.on-primary;
+                                font-size: 48px;
+                                font-weight: 800;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                width: parent.width;
+                                height: parent.height;
+                            }
+                        }
+                    }
+                    Text {
+                        text: "Submitted ✓";
+                        color: Theme.on-background;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 800;
+                        horizontal-alignment: center;
+                    }
+                    Text {
+                        text: "Welcome, " + (root.first-name == "" ? "friend" : root.first-name) + ". We sent a verification email to " + (root.email == "" ? "your inbox" : root.email) + ".";
+                        color: Theme.muted;
+                        font-size: Theme.font-size-body;
+                        wrap: word-wrap;
+                        horizontal-alignment: center;
+                    }
+                }
 
-                    FormField {
-                        label: "First name";
-                        required: true;
-                        TextField {
-                            placeholder: "Ada";
-                            text <=> root.first-name;
+                // ===== Step 0: Account =====
+                if !root.submitted && root.step == 0: VerticalLayout {
+                    spacing: Theme.spacing-md;
+                    FormSection {
+                        title: "ACCOUNT";
+                        caption: "Step 1 — How you'll sign in";
+                    }
+                    VerticalLayout {
+                        spacing: Theme.spacing-md;
+                        alignment: stretch;
+                        FormField {
+                            label: "Email";
+                            required: true;
+                            TextField {
+                                placeholder: "you@example.com";
+                                text <=> root.email;
+                            }
+                        }
+                        FormField {
+                            label: "Password";
+                            required: true;
+                            helper: "At least 8 characters.";
+                            TextField {
+                                placeholder: "••••••••";
+                                text <=> root.password;
+                            }
                         }
                     }
-                    FormField {
-                        label: "Last name";
-                        required: true;
-                        TextField {
-                            placeholder: "Lovelace";
-                            text <=> root.last-name;
-                        }
-                    }
-                    FormField {
-                        label: "Date of birth";
-                        helper: "We use this to personalise content.";
-                        TextField {
-                            placeholder: "MM / DD / YYYY";
-                            text <=> root.dob;
-                        }
-                    }
-                    FormField {
-                        label: "Phone";
-                        helper: "Include country code.";
-                        TextField {
-                            placeholder: "+32 470 12 34 56";
-                            text <=> root.phone;
-                            input-type: InputType.number;
+                    FormSection {
+                        title: "TERMS";
+                        SettingRow {
+                            icon: @image-url("@mobile-components/icons/lock.svg");
+                            tone: Tone.info;
+                            title: "I accept the terms of service";
+                            subtitle: "Required to create an account.";
+                            MobileSwitch {
+                                checked <=> root.tos-accepted;
+                            }
                         }
                     }
                 }
 
-                // ----- Preferences -----------------------------------------
-                FormSection {
-                    title: "PREFERENCES";
-
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/bell.svg");
-                        tone: Tone.info;
-                        title: "Send me product updates";
-                        subtitle: "Release notes and new features.";
-                        MobileSwitch { checked <=> root.product-updates; }
+                // ===== Step 1: About you =====
+                if !root.submitted && root.step == 1: VerticalLayout {
+                    spacing: Theme.spacing-md;
+                    FormSection {
+                        title: "ABOUT YOU";
+                        caption: "Step 2 — Your details";
                     }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/send.svg");
-                        title: "Allow marketing emails";
-                        subtitle: "Occasional newsletters and promos.";
-                        MobileSwitch { checked <=> root.marketing-emails; }
+                    VerticalLayout {
+                        spacing: Theme.spacing-md;
+                        alignment: stretch;
+                        FormField {
+                            label: "First name";
+                            required: true;
+                            TextField {
+                                placeholder: "Ada";
+                                text <=> root.first-name;
+                            }
+                        }
+                        FormField {
+                            label: "Last name";
+                            required: true;
+                            TextField {
+                                placeholder: "Lovelace";
+                                text <=> root.last-name;
+                            }
+                        }
+                        FormField {
+                            label: "Date of birth";
+                            helper: "We use this to personalise content.";
+                            TextField {
+                                placeholder: "MM / DD / YYYY";
+                                text <=> root.dob;
+                            }
+                        }
+                        FormField {
+                            label: "Phone";
+                            helper: "Include country code.";
+                            TextField {
+                                placeholder: "+32 470 12 34 56";
+                                text <=> root.phone;
+                                input-type: InputType.number;
+                            }
+                        }
+                    }
+                    FormSection {
+                        title: "PREFERENCES";
+
+                        SettingRow {
+                            icon: @image-url("@mobile-components/icons/bell.svg");
+                            tone: Tone.info;
+                            title: "Send me product updates";
+                            subtitle: "Release notes and new features.";
+                            MobileSwitch {
+                                checked <=> root.product-updates;
+                            }
+                        }
+                        Divider { }
+
+                        SettingRow {
+                            icon: @image-url("@mobile-components/icons/send.svg");
+                            title: "Allow marketing emails";
+                            subtitle: "Occasional newsletters and promos.";
+                            MobileSwitch {
+                                checked <=> root.marketing-emails;
+                            }
+                        }
+                    }
+                }
+
+                // ===== Step 2: Address =====
+                if !root.submitted && root.step == 2: VerticalLayout {
+                    spacing: Theme.spacing-md;
+                    FormSection {
+                        title: "ADDRESS";
+                        caption: "Step 3 — Where we should reach you";
+                    }
+                    VerticalLayout {
+                        padding-left: Theme.spacing-md;
+                        padding-right: Theme.spacing-md;
+                        spacing: Theme.spacing-xs;
+                        Text {
+                            text: "COUNTRY · " + root.country-label();
+                            color: Theme.muted;
+                            font-size: 11px;
+                            font-weight: 700;
+                            letter-spacing: 2px;
+                        }
+                        HorizontalLayout {
+                            spacing: Theme.spacing-sm;
+                            CountryChip {
+                                label: "BE";
+                                active: root.country == 0;
+                                clicked => {
+                                    root.country = 0;
+                                }
+                            }
+                            CountryChip {
+                                label: "NL";
+                                active: root.country == 1;
+                                clicked => {
+                                    root.country = 1;
+                                }
+                            }
+                            CountryChip {
+                                label: "FR";
+                                active: root.country == 2;
+                                clicked => {
+                                    root.country = 2;
+                                }
+                            }
+                            CountryChip {
+                                label: "DE";
+                                active: root.country == 3;
+                                clicked => {
+                                    root.country = 3;
+                                }
+                            }
+                        }
+                    }
+                    VerticalLayout {
+                        spacing: Theme.spacing-md;
+                        alignment: stretch;
+                        FormField {
+                            label: "City";
+                            required: true;
+                            TextField {
+                                placeholder: "Brussels";
+                                text <=> root.city;
+                            }
+                        }
+                        FormField {
+                            label: "Postal code";
+                            required: true;
+                            TextField {
+                                placeholder: "1000";
+                                text <=> root.postal;
+                                input-type: InputType.number;
+                            }
+                        }
+                    }
+                }
+
+                // ===== Step 3: Review =====
+                if !root.submitted && root.step == 3: VerticalLayout {
+                    spacing: Theme.spacing-md;
+                    FormSection {
+                        title: "REVIEW";
+                        caption: "Step 4 — Confirm everything looks right";
+                    }
+                    VerticalLayout {
+                        padding-left: Theme.spacing-md;
+                        padding-right: Theme.spacing-md;
+                        spacing: Theme.spacing-sm;
+                        Banner {
+                            icon: @image-url("@mobile-components/icons/check.svg");
+                            message: "Almost done. Tap Submit to finish or any row to go back and edit.";
+                            tone: Tone.success;
+                        }
+
+                        Rectangle {
+                            background: Theme.surface-1;
+                            border-radius: Theme.radius-md;
+                            min-height: 56px;
+                            VerticalLayout {
+                                padding: Theme.spacing-md;
+                                Text {
+                                    text: "ACCOUNT";
+                                    color: Theme.muted;
+                                    font-size: 11px;
+                                    font-weight: 700;
+                                    letter-spacing: 2px;
+                                }
+                                Text {
+                                    text: root.email == "" ? "—" : root.email;
+                                    color: Theme.on-surface;
+                                    font-size: Theme.font-size-body;
+                                    font-weight: 700;
+                                }
+                            }
+                            TouchArea {
+                                clicked => {
+                                    root.step = 0;
+                                    root.set-status("Editing Account", true, false);
+                                }
+                            }
+                        }
+                        Rectangle {
+                            background: Theme.surface-1;
+                            border-radius: Theme.radius-md;
+                            min-height: 56px;
+                            VerticalLayout {
+                                padding: Theme.spacing-md;
+                                Text {
+                                    text: "DETAILS";
+                                    color: Theme.muted;
+                                    font-size: 11px;
+                                    font-weight: 700;
+                                    letter-spacing: 2px;
+                                }
+                                Text {
+                                    text: (root.first-name == "" ? "—" : root.first-name) + " " + (root.last-name == "" ? "" : root.last-name);
+                                    color: Theme.on-surface;
+                                    font-size: Theme.font-size-body;
+                                    font-weight: 700;
+                                }
+                                if !root.phone.is-empty: Text {
+                                    text: root.phone;
+                                    color: Theme.muted;
+                                    font-size: Theme.font-size-caption;
+                                }
+                            }
+                            TouchArea {
+                                clicked => {
+                                    root.step = 1;
+                                    root.set-status("Editing Details", true, false);
+                                }
+                            }
+                        }
+                        Rectangle {
+                            background: Theme.surface-1;
+                            border-radius: Theme.radius-md;
+                            min-height: 56px;
+                            VerticalLayout {
+                                padding: Theme.spacing-md;
+                                Text {
+                                    text: "ADDRESS";
+                                    color: Theme.muted;
+                                    font-size: 11px;
+                                    font-weight: 700;
+                                    letter-spacing: 2px;
+                                }
+                                Text {
+                                    text: (root.city == "" ? "—" : root.city) + (root.postal == "" ? "" : ", " + root.postal) + " · " + root.country-label();
+                                    color: Theme.on-surface;
+                                    font-size: Theme.font-size-body;
+                                    font-weight: 700;
+                                }
+                            }
+                            TouchArea {
+                                clicked => {
+                                    root.step = 2;
+                                    root.set-status("Editing Address", true, false);
+                                }
+                            }
+                        }
                     }
                 }
 
                 // ----- Nav bar at bottom -----------------------------------
-                HorizontalLayout {
+                if !root.submitted: HorizontalLayout {
                     padding-left: Theme.spacing-md;
                     padding-right: Theme.spacing-md;
                     spacing: Theme.spacing-md;
                     alignment: stretch;
 
                     TextButton {
-                        text: "Back";
-                        clicked => { root.back-pressed(); }
+                        text: root.step == 0 ? "Cancel" : "Back";
+                        clicked => {
+                            root.retreat();
+                        }
                     }
-                    Rectangle { horizontal-stretch: 1; }
+                    Rectangle {
+                        horizontal-stretch: 1;
+                    }
                     MobileButton {
-                        text: "Continue";
+                        text: root.step == 3 ? "Submit" : "Continue";
                         horizontal-stretch: 0;
                         min-width: 160px;
-                        enabled: root.first-name != "" && root.last-name != "";
-                        clicked => { root.continue-pressed(); }
+                        tone: root.step == 3 ? Tone.success : Tone.default;
+                        clicked => {
+                            root.advance();
+                        }
+                    }
+                }
+
+                if root.submitted: HorizontalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    alignment: center;
+                    MobileButton {
+                        text: "Edit again";
+                        tone: Tone.warning;
+                        min-width: 200px;
+                        horizontal-stretch: 0;
+                        clicked => {
+                            root.submitted = false;
+                            root.step = 3;
+                            root.set-status("Reopened for editing", false, false);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ===================== Bottom sheet =====================
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+                root.confirm-cancel = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: Theme.surface-2;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.muted;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: "Wizard menu";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 700;
+                    }
+                }
+                SheetRow {
+                    label: "Fill with demo data";
+                    clicked => {
+                        root.fill-demo();
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Jump to review";
+                    clicked => {
+                        root.step = 3;
+                        root.submitted = false;
+                        root.set-status("Jumped to review", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Restart from step 1";
+                    clicked => {
+                        root.step = 0;
+                        root.submitted = false;
+                        root.set-status("Restarted", false, false);
+                        root.sheet-open = false;
+                    }
+                }
+                Divider { }
+
+                SheetRow {
+                    label: root.confirm-cancel ? "Confirm: cancel signup" : "Cancel signup";
+                    destructive: true;
+                    clicked => {
+                        if (root.confirm-cancel) {
+                            root.email = "";
+                            root.password = "";
+                            root.tos-accepted = false;
+                            root.first-name = "";
+                            root.last-name = "";
+                            root.dob = "";
+                            root.phone = "";
+                            root.city = "";
+                            root.postal = "";
+                            root.step = 0;
+                            root.submitted = false;
+                            root.set-status("Signup cancelled", false, true);
+                            root.sheet-open = false;
+                            root.confirm-cancel = false;
+                        } else {
+                            root.confirm-cancel = true;
+                        }
+                    }
+                }
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.sheet-open = false;
+                        root.confirm-cancel = false;
                     }
                 }
             }

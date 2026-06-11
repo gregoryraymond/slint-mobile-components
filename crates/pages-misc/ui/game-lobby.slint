@@ -1,10 +1,7 @@
 // GameLobbyPage
 // =====================================================================
 //
-// Multiplayer match lobby — countdown hero, two team sections of
-// SettingRows with READY/WAITING Chips in the trailing slot, a row of
-// StatTiles describing the match parameters, and a primary "Ready up"
-// + danger "Leave" pair at the bottom.
+// Multiplayer match lobby.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
@@ -12,19 +9,293 @@ import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
 import { Card } from "@mobile-components/card.slint";
 import { Chip } from "@mobile-components/chip.slint";
 import { FormSection } from "@mobile-components/form-section.slint";
-import { SettingRow } from "@mobile-components/setting-row.slint";
 import { StatTile } from "@mobile-components/stat-tile.slint";
 import { Divider } from "@mobile-components/divider.slint";
 import { MobileButton, TextButton } from "@mobile-components/button.slint";
 import { ScrollView } from "std-widgets.slint";
 
+component PlayerRow inherits Rectangle {
+    in property <string> handle;
+    in property <string> subtitle;
+    in property <int> tone-i: 0; // 0 default 1 info 2 success 3 warning 4 danger
+    in property <bool> ready: false;
+    in property <bool> me: false;
+    in property <bool> muted: false;
+    callback row-clicked();
+    callback mute-clicked();
+
+    horizontal-stretch: 1;
+    min-height: 64px;
+    background: ta.has-hover ? Theme.surface-2 : (root.me ? Theme.accent-info.with-alpha(0.08) : transparent);
+
+    ta := TouchArea {
+        clicked => {
+            root.row-clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 36px;
+                height: 36px;
+                border-radius: 18px;
+                background: root.tone-i == 1 ? Theme.accent-info.with-alpha(0.22) : (root.tone-i == 2 ? Theme.accent-success.with-alpha(0.22) : (root.tone-i == 3 ? Theme.accent-warning.with-alpha(0.22) : (root.tone-i == 4 ? Theme.accent-danger.with-alpha(0.22) : Theme.surface-2)));
+                Image {
+                    width: 18px;
+                    height: 18px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: @image-url("@mobile-components/icons/profile.svg");
+                    colorize: root.tone-i == 1 ? Theme.accent-info : (root.tone-i == 2 ? Theme.accent-success : (root.tone-i == 3 ? Theme.accent-warning : (root.tone-i == 4 ? Theme.accent-danger : Theme.muted)));
+                    image-fit: contain;
+                }
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            HorizontalLayout {
+                spacing: Theme.spacing-xs;
+                Text {
+                    text: root.handle + (root.me ? " (you)" : "");
+                    color: Theme.on-surface;
+                    font-size: Theme.font-size-body;
+                    font-weight: 700;
+                }
+                if root.muted: Rectangle {
+                    horizontal-stretch: 0;
+                    height: 18px;
+                    border-radius: 9px;
+                    background: Theme.accent-danger.with-alpha(0.22);
+                    HorizontalLayout {
+                        padding-left: 6px;
+                        padding-right: 6px;
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: "MUTED";
+                                color: Theme.accent-danger;
+                                font-size: 9px;
+                                font-weight: 800;
+                            }
+                        }
+                    }
+                }
+            }
+            Text {
+                text: root.subtitle;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 32px;
+                height: 32px;
+                border-radius: 16px;
+                background: root.muted ? Theme.accent-danger.with-alpha(0.22) : Theme.surface-2;
+                Text {
+                    text: root.muted ? "🔇" : "🔊";
+                    color: Theme.on-surface;
+                    font-size: 12px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                }
+                TouchArea {
+                    clicked => {
+                        root.mute-clicked();
+                    }
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                horizontal-stretch: 0;
+                height: 24px;
+                border-radius: 12px;
+                background: root.ready ? Theme.accent-success.with-alpha(0.22) : Theme.surface-2;
+                HorizontalLayout {
+                    padding-left: Theme.spacing-sm;
+                    padding-right: Theme.spacing-sm;
+                    alignment: center;
+                    VerticalLayout {
+                        alignment: center;
+                        Text {
+                            text: root.ready ? "READY" : "WAIT";
+                            color: root.ready ? Theme.accent-success : Theme.muted;
+                            font-size: 10px;
+                            font-weight: 800;
+                            letter-spacing: 0.5px;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+component TileCycle inherits Rectangle {
+    in property <string> value;
+    in property <string> label;
+    in property <int> tone-i: 0;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    StatTile {
+        value: root.value;
+        label: root.label;
+        tone: root.tone-i == 1 ? Tone.info : (root.tone-i == 2 ? Tone.success : (root.tone-i == 3 ? Tone.warning : Tone.default));
+    }
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.destructive ? Theme.accent-danger : Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+        }
+    }
+}
+
 export component GameLobbyPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
 
+    in-out property <int> countdown-secs: 42;
+    in-out property <bool> paused: false;
+    in-out property <bool> me-ready: false;
+    in-out property <bool> a-ready1: true;
+    in-out property <bool> a-ready2: true;
+    in-out property <bool> a-ready3: false;
+    in-out property <bool> b-ready1: true;
+    in-out property <bool> b-ready2: true;
+    in-out property <bool> b-ready3: true;
+    in-out property <bool> b-ready4: false;
+    in-out property <bool> muted1: false;
+    in-out property <bool> muted2: false;
+    in-out property <bool> muted3: false;
+    in-out property <bool> muted-b1: false;
+    in-out property <bool> muted-b2: false;
+    in-out property <bool> muted-b3: false;
+    in-out property <bool> muted-b4: false;
+    in-out property <int> region-idx: 0; // 0 EU-W 1 EU-E 2 NA-E 3 NA-W 4 APAC
+    in-out property <int> mode-idx: 1; // 0 Casual 1 Ranked 2 Tournament
+    in-out property <int> map-idx: 0; // 0 Dust III 1 Vault 2 Marina
+    in-out property <bool> voice-on: true;
+    in-out property <bool> sheet-open: false;
+    in-out property <bool> confirm-leave: false;
+    in-out property <string> status-msg: "";
+    in-out property <bool> status-success: false;
+    in-out property <bool> status-danger: false;
+
     callback back-pressed();
     callback ready-pressed();
     callback leave-pressed();
+    callback launch-pressed();
+
+    function pad2(n: int) -> string {
+        return n < 10 ? "0" + n : "" + n;
+    }
+    function countdown-text() -> string {
+        return root.pad2(floor(root.countdown-secs / 60)) + ":" + root.pad2(mod(root.countdown-secs, 60));
+    }
+    function all-ready() -> bool {
+        return root.me-ready && root.a-ready1 && root.a-ready2 && root.a-ready3 && root.b-ready1 && root.b-ready2 && root.b-ready3 && root.b-ready4;
+    }
+    function ready-count() -> int {
+        return (root.me-ready ? 1 : 0) + (root.a-ready1 ? 1 : 0) + (root.a-ready2 ? 1 : 0) + (root.a-ready3 ? 1 : 0) + (root.b-ready1 ? 1 : 0) + (root.b-ready2 ? 1 : 0) + (root.b-ready3 ? 1 : 0) + (root.b-ready4 ? 1 : 0);
+    }
+    function region-label() -> string {
+        return root.region-idx == 0 ? "EU-W" : (root.region-idx == 1 ? "EU-E" : (root.region-idx == 2 ? "NA-E" : (root.region-idx == 3 ? "NA-W" : "APAC")));
+    }
+    function mode-label() -> string {
+        return root.mode-idx == 0 ? "Casual" : (root.mode-idx == 1 ? "Ranked" : "Tourney");
+    }
+    function map-label() -> string {
+        return root.map-idx == 0 ? "Dust III" : (root.map-idx == 1 ? "Vault" : "Marina");
+    }
+    function set-status(m: string, ok: bool, bad: bool) {
+        root.status-msg = m;
+        root.status-success = ok;
+        root.status-danger = bad;
+    }
+    function toggle-mute(i: int) {
+        if (i == 1) {
+            root.muted1 = !root.muted1;
+        }
+        if (i == 2) {
+            root.muted2 = !root.muted2;
+        }
+        if (i == 3) {
+            root.muted3 = !root.muted3;
+        }
+        if (i == 11) {
+            root.muted-b1 = !root.muted-b1;
+        }
+        if (i == 12) {
+            root.muted-b2 = !root.muted-b2;
+        }
+        if (i == 13) {
+            root.muted-b3 = !root.muted-b3;
+        }
+        if (i == 14) {
+            root.muted-b4 = !root.muted-b4;
+        }
+        root.set-status("Voice toggled", true, false);
+    }
+    function ping(name: string) {
+        root.set-status("Pinged " + name + " · ready up!", true, false);
+    }
+
+    tick := Timer {
+        interval: 1s;
+        running: !root.paused && root.countdown-secs > 0;
+        triggered => {
+            root.countdown-secs = root.countdown-secs - 1;
+            if (root.countdown-secs == 0 && root.all-ready()) {
+                root.set-status("Match launching!", true, false);
+                root.launch-pressed();
+            } else if (root.countdown-secs == 0 && !root.all-ready()) {
+                root.countdown-secs = 15;
+                root.set-status("Waiting on " + (8 - root.ready-count()) + " players", false, true);
+            }
+        }
+    }
 
     background: Theme.background;
 
@@ -35,7 +306,31 @@ export component GameLobbyPage inherits Window {
             title: "Lobby · Storm Quad";
             title-style: HeadingStyle.grotesk-bold;
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
-            leading-pressed => { root.back-pressed(); }
+            trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
+            leading-pressed => {
+                root.back-pressed();
+            }
+            trailing-pressed => {
+                root.sheet-open = true;
+            }
+        }
+
+        // Status banner.
+        if !root.status-msg.is-empty: Rectangle {
+            height: 28px;
+            background: root.status-success ? Theme.accent-success.with-alpha(0.16) : (root.status-danger ? Theme.accent-danger.with-alpha(0.16) : Theme.surface-2);
+            HorizontalLayout {
+                alignment: center;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.status-msg;
+                        color: root.status-success ? Theme.accent-success : (root.status-danger ? Theme.accent-danger : Theme.on-surface);
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                    }
+                }
+            }
         }
 
         ScrollView {
@@ -53,14 +348,14 @@ export component GameLobbyPage inherits Window {
                     padding-right: Theme.spacing-md;
                     Card {
                         VerticalLayout {
-                            spacing: 2px;
+                            spacing: 4px;
                             alignment: center;
 
                             HorizontalLayout {
                                 alignment: center;
                                 Text {
-                                    text: "00:42";
-                                    color: Theme.on-surface;
+                                    text: root.countdown-text();
+                                    color: root.all-ready() ? Theme.accent-success : (root.countdown-secs < 10 ? Theme.accent-warning : Theme.on-surface);
                                     font-family: "JetBrains Mono";
                                     font-size: Theme.font-size-headline;
                                     font-weight: 700;
@@ -70,12 +365,95 @@ export component GameLobbyPage inherits Window {
                             HorizontalLayout {
                                 alignment: center;
                                 Text {
-                                    text: "Match starts in";
+                                    text: root.paused ? "Paused" : (root.all-ready() ? "All ready — launching" : ("Waiting · " + root.ready-count() + "/8 ready"));
                                     color: Theme.muted;
                                     font-size: Theme.font-size-caption;
                                     font-weight: 600;
                                     letter-spacing: 1px;
                                     horizontal-alignment: center;
+                                }
+                            }
+                            HorizontalLayout {
+                                spacing: Theme.spacing-sm;
+                                alignment: center;
+                                padding-top: Theme.spacing-xs;
+                                Rectangle {
+                                    horizontal-stretch: 0;
+                                    height: 28px;
+                                    border-radius: 14px;
+                                    background: root.paused ? Theme.accent-warning : Theme.surface-2;
+                                    HorizontalLayout {
+                                        padding-left: Theme.spacing-sm;
+                                        padding-right: Theme.spacing-sm;
+                                        alignment: center;
+                                        VerticalLayout {
+                                            alignment: center;
+                                            Text {
+                                                text: root.paused ? "Resume" : "Pause";
+                                                color: root.paused ? Theme.on-primary : Theme.on-surface;
+                                                font-size: Theme.font-size-caption;
+                                                font-weight: 700;
+                                            }
+                                        }
+                                    }
+                                    TouchArea {
+                                        clicked => {
+                                            root.paused = !root.paused;
+                                            root.set-status(root.paused ? "Countdown paused" : "Countdown resumed", !root.paused, root.paused);
+                                        }
+                                    }
+                                }
+                                Rectangle {
+                                    horizontal-stretch: 0;
+                                    height: 28px;
+                                    border-radius: 14px;
+                                    background: Theme.surface-2;
+                                    HorizontalLayout {
+                                        padding-left: Theme.spacing-sm;
+                                        padding-right: Theme.spacing-sm;
+                                        alignment: center;
+                                        VerticalLayout {
+                                            alignment: center;
+                                            Text {
+                                                text: "+30s";
+                                                color: Theme.on-surface;
+                                                font-size: Theme.font-size-caption;
+                                                font-weight: 700;
+                                            }
+                                        }
+                                    }
+                                    TouchArea {
+                                        clicked => {
+                                            root.countdown-secs = root.countdown-secs + 30;
+                                            root.set-status("+30s added", true, false);
+                                        }
+                                    }
+                                }
+                                Rectangle {
+                                    horizontal-stretch: 0;
+                                    height: 28px;
+                                    border-radius: 14px;
+                                    background: root.voice-on ? Theme.accent-success.with-alpha(0.22) : Theme.surface-2;
+                                    HorizontalLayout {
+                                        padding-left: Theme.spacing-sm;
+                                        padding-right: Theme.spacing-sm;
+                                        alignment: center;
+                                        VerticalLayout {
+                                            alignment: center;
+                                            Text {
+                                                text: root.voice-on ? "🎙 On" : "🎙 Off";
+                                                color: root.voice-on ? Theme.accent-success : Theme.muted;
+                                                font-size: Theme.font-size-caption;
+                                                font-weight: 700;
+                                            }
+                                        }
+                                    }
+                                    TouchArea {
+                                        clicked => {
+                                            root.voice-on = !root.voice-on;
+                                            root.set-status(root.voice-on ? "Mic open" : "Mic muted", root.voice-on, !root.voice-on);
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -86,35 +464,67 @@ export component GameLobbyPage inherits Window {
                 FormSection {
                     title: "TEAM ALPHA";
 
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/profile.svg");
-                        tone: Tone.info;
-                        title: "@nightowl";
+                    PlayerRow {
+                        handle: "@nightowl";
                         subtitle: "level 47 · K/D 2.4";
-                        Chip { label: "READY"; selected: true; }
+                        tone-i: 1;
+                        ready: root.a-ready1;
+                        muted: root.muted1;
+                        row-clicked => {
+                            root.ping("@nightowl");
+                        }
+                        mute-clicked => {
+                            root.toggle-mute(1);
+                        }
                     }
                     Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/profile.svg");
-                        tone: Tone.success;
-                        title: "@violet_storm";
+
+                    PlayerRow {
+                        handle: "@violet_storm";
                         subtitle: "level 52 · K/D 1.9";
-                        Chip { label: "READY"; selected: true; }
+                        tone-i: 2;
+                        ready: root.a-ready2;
+                        muted: root.muted2;
+                        row-clicked => {
+                            root.ping("@violet_storm");
+                        }
+                        mute-clicked => {
+                            root.toggle-mute(2);
+                        }
                     }
                     Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/profile.svg");
-                        tone: Tone.warning;
-                        title: "@axolotl_99";
+
+                    PlayerRow {
+                        handle: "@axolotl_99";
                         subtitle: "level 31 · K/D 1.3";
-                        Chip { label: "WAITING"; }
+                        tone-i: 3;
+                        ready: root.a-ready3;
+                        muted: root.muted3;
+                        row-clicked => {
+                            root.a-ready3 = !root.a-ready3;
+                            root.set-status(root.a-ready3 ? "@axolotl_99 ready" : "@axolotl_99 unready", root.a-ready3, !root.a-ready3);
+                        }
+                        mute-clicked => {
+                            root.toggle-mute(3);
+                        }
                     }
                     Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/profile.svg");
-                        title: "@you";
+
+                    PlayerRow {
+                        handle: "@you";
                         subtitle: "level 44 · K/D 1.7";
-                        Chip { label: "WAITING"; }
+                        tone-i: 0;
+                        ready: root.me-ready;
+                        me: true;
+                        row-clicked => {
+                            root.me-ready = !root.me-ready;
+                            root.set-status(root.me-ready ? "You are READY" : "You are unready", root.me-ready, !root.me-ready);
+                            root.ready-pressed();
+                        }
+                        mute-clicked => {
+                            root.voice-on = !root.voice-on;
+                            root.set-status(root.voice-on ? "Mic open" : "Mic muted", root.voice-on, !root.voice-on);
+                        }
                     }
                 }
 
@@ -122,35 +532,64 @@ export component GameLobbyPage inherits Window {
                 FormSection {
                     title: "TEAM BRAVO";
 
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/profile.svg");
-                        tone: Tone.danger;
-                        title: "@blackcat";
+                    PlayerRow {
+                        handle: "@blackcat";
                         subtitle: "level 60 · K/D 3.1";
-                        Chip { label: "READY"; selected: true; }
+                        tone-i: 4;
+                        ready: root.b-ready1;
+                        muted: root.muted-b1;
+                        row-clicked => {
+                            root.ping("@blackcat");
+                        }
+                        mute-clicked => {
+                            root.toggle-mute(11);
+                        }
                     }
                     Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/profile.svg");
-                        tone: Tone.info;
-                        title: "@oslo_runner";
+
+                    PlayerRow {
+                        handle: "@oslo_runner";
                         subtitle: "level 48 · K/D 2.0";
-                        Chip { label: "READY"; selected: true; }
+                        tone-i: 1;
+                        ready: root.b-ready2;
+                        muted: root.muted-b2;
+                        row-clicked => {
+                            root.ping("@oslo_runner");
+                        }
+                        mute-clicked => {
+                            root.toggle-mute(12);
+                        }
                     }
                     Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/profile.svg");
-                        title: "@sparrow.84";
+
+                    PlayerRow {
+                        handle: "@sparrow.84";
                         subtitle: "level 39 · K/D 1.5";
-                        Chip { label: "READY"; selected: true; }
+                        tone-i: 0;
+                        ready: root.b-ready3;
+                        muted: root.muted-b3;
+                        row-clicked => {
+                            root.ping("@sparrow.84");
+                        }
+                        mute-clicked => {
+                            root.toggle-mute(13);
+                        }
                     }
                     Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/profile.svg");
-                        tone: Tone.warning;
-                        title: "@quicksilver";
+
+                    PlayerRow {
+                        handle: "@quicksilver";
                         subtitle: "level 42 · K/D 1.8";
-                        Chip { label: "WAITING"; }
+                        tone-i: 3;
+                        ready: root.b-ready4;
+                        muted: root.muted-b4;
+                        row-clicked => {
+                            root.b-ready4 = !root.b-ready4;
+                            root.set-status(root.b-ready4 ? "@quicksilver ready" : "@quicksilver unready", root.b-ready4, !root.b-ready4);
+                        }
+                        mute-clicked => {
+                            root.toggle-mute(14);
+                        }
                     }
                 }
 
@@ -160,9 +599,33 @@ export component GameLobbyPage inherits Window {
                     padding-right: Theme.spacing-md;
                     spacing: Theme.spacing-md;
 
-                    StatTile { value: "EU-W"; label: "REGION"; }
-                    StatTile { value: "Ranked"; label: "MODE"; tone: Tone.info; }
-                    StatTile { value: "Dust III"; label: "MAP"; }
+                    TileCycle {
+                        value: root.region-label();
+                        label: "REGION";
+                        tone-i: 0;
+                        clicked => {
+                            root.region-idx = mod(root.region-idx + 1, 5);
+                            root.set-status("Region: " + root.region-label(), true, false);
+                        }
+                    }
+                    TileCycle {
+                        value: root.mode-label();
+                        label: "MODE";
+                        tone-i: 1;
+                        clicked => {
+                            root.mode-idx = mod(root.mode-idx + 1, 3);
+                            root.set-status("Mode: " + root.mode-label(), true, false);
+                        }
+                    }
+                    TileCycle {
+                        value: root.map-label();
+                        label: "MAP";
+                        tone-i: 0;
+                        clicked => {
+                            root.map-idx = mod(root.map-idx + 1, 3);
+                            root.set-status("Map: " + root.map-label(), true, false);
+                        }
+                    }
                 }
 
                 // ----- Actions -----------------------------------------
@@ -173,13 +636,127 @@ export component GameLobbyPage inherits Window {
                     alignment: stretch;
 
                     MobileButton {
-                        text: "Ready up";
-                        tone: Tone.success;
-                        clicked => { root.ready-pressed(); }
+                        text: root.me-ready ? "Unready" : "Ready up";
+                        tone: root.me-ready ? Tone.warning : Tone.success;
+                        clicked => {
+                            root.me-ready = !root.me-ready;
+                            root.set-status(root.me-ready ? "READY" : "unready", root.me-ready, !root.me-ready);
+                            root.ready-pressed();
+                        }
                     }
                     TextButton {
                         text: "Leave lobby";
-                        clicked => { root.leave-pressed(); }
+                        clicked => {
+                            root.sheet-open = true;
+                            root.confirm-leave = true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ===================== Bottom sheet =====================
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+                root.confirm-leave = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: Theme.surface-2;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.muted;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: "Lobby actions";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 700;
+                    }
+                }
+                SheetRow {
+                    label: "Invite friend";
+                    clicked => {
+                        root.set-status("Invite link copied", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Force-ready everyone";
+                    clicked => {
+                        root.a-ready1 = true;
+                        root.a-ready2 = true;
+                        root.a-ready3 = true;
+                        root.b-ready1 = true;
+                        root.b-ready2 = true;
+                        root.b-ready3 = true;
+                        root.b-ready4 = true;
+                        root.me-ready = true;
+                        root.set-status("All players ready", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Reshuffle teams";
+                    clicked => {
+                        root.set-status("Teams reshuffled", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Cycle map (" + root.map-label() + ")";
+                    clicked => {
+                        root.map-idx = mod(root.map-idx + 1, 3);
+                        root.set-status("Map: " + root.map-label(), true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                Divider { }
+
+                SheetRow {
+                    label: root.confirm-leave ? "Confirm: leave lobby" : "Leave lobby";
+                    destructive: true;
+                    clicked => {
+                        if (root.confirm-leave) {
+                            root.set-status("Left lobby", false, true);
+                            root.sheet-open = false;
+                            root.confirm-leave = false;
+                            root.leave-pressed();
+                        } else {
+                            root.confirm-leave = true;
+                        }
+                    }
+                }
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.sheet-open = false;
+                        root.confirm-leave = false;
                     }
                 }
             }

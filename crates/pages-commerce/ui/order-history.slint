@@ -24,6 +24,8 @@ import { SettingRow } from "@mobile-components/setting-row.slint";
 import { SegmentedControl } from "@mobile-components/segmented-control.slint";
 import { Chip } from "@mobile-components/chip.slint";
 import { Divider } from "@mobile-components/divider.slint";
+import { TextField } from "@mobile-components/text-field.slint";
+import { MobileButton, TextButton } from "@mobile-components/button.slint";
 import { ScrollView } from "std-widgets.slint";
 
 export component OrderHistoryPage inherits Window {
@@ -35,6 +37,153 @@ export component OrderHistoryPage inherits Window {
     callback back-pressed();
     callback order-pressed(string);
     callback filter-changed(int);
+    callback reorder-pressed(string /* order-id */);
+    callback cancel-pressed(string);
+    callback track-pressed(string);
+    callback rated(string, int);
+
+    // ----- Per-order state -----
+    // Status: 0 = Processing, 1 = In transit, 2 = Delivered, 3 = Cancelled
+    private property <int> s0: 1; // #2147 Atlas Coffee — in transit
+    private property <int> s1: 2; // #2138 Patagonia — delivered
+    private property <int> s2: 0; // #2131 Tartine — processing
+    private property <int> s3: 2; // #2099 Atlas Coffee — delivered
+    private property <int> s4: 2; // #2087 Muji — delivered
+    private property <int> s5: 2; // #2061 Uniqlo — delivered
+
+    // Star rating per order (0 = not rated, 1-5 stars).
+    in-out property <int> r0: 0;
+    in-out property <int> r1: 0;
+    in-out property <int> r2: 0;
+    in-out property <int> r3: 0;
+    in-out property <int> r4: 0;
+    in-out property <int> r5: 0;
+
+    // Expanded order index (-1 = none).
+    private property <int> expanded: -1;
+    in-out property <string> search-query: "";
+
+    // ----- Status banner -----
+    private property <string> status-msg: "Tap a row to expand. Filter, search, or reorder.";
+    private property <bool> status-is-success: false;
+    private property <bool> status-is-danger: false;
+
+    // ----- Helpers -----
+    function status-label(s: int) -> string {
+        return s == 0 ? "Processing"
+            : s == 1 ? "In transit"
+            : s == 2 ? "Delivered"
+            : "Cancelled";
+    }
+    function status-tone(s: int) -> Tone {
+        return s == 0 ? Tone.warning
+            : s == 1 ? Tone.info
+            : s == 2 ? Tone.success
+            : Tone.danger;
+    }
+    function status-icon(s: int) -> image {
+        return s == 0 ? @image-url("@mobile-components/icons/queue.svg")
+            : s == 1 ? @image-url("@mobile-components/icons/queue.svg")
+            : s == 2 ? @image-url("@mobile-components/icons/inbox.svg")
+            : @image-url("@mobile-components/icons/close.svg");
+    }
+    function filter-matches(s: int) -> bool {
+        // All / Active / Delivered. Cancelled counts as "delivered-like"
+        // in the sense that it's no longer in flight; we put it under
+        // Delivered so it doesn't disappear when the user is reviewing
+        // their past activity.
+        if (root.filter-index == 0) { return true; }
+        if (root.filter-index == 1) { return s == 0 || s == 1; }
+        return s == 2 || s == 3;
+    }
+    function name-matches(merchant: string) -> bool {
+        if (root.search-query == "") { return true; }
+        // Slint string has no `contains`, so we settle for an
+        // equality fallback to drive the banner: the visitor either
+        // typed nothing OR typed an exact merchant.
+        return merchant == root.search-query;
+    }
+    function row-visible(s: int, merchant: string) -> bool {
+        return root.filter-matches(s) && root.name-matches(merchant);
+    }
+    function active-count() -> int {
+        return (root.s0 == 0 || root.s0 == 1 ? 1 : 0)
+            + (root.s1 == 0 || root.s1 == 1 ? 1 : 0)
+            + (root.s2 == 0 || root.s2 == 1 ? 1 : 0)
+            + (root.s3 == 0 || root.s3 == 1 ? 1 : 0)
+            + (root.s4 == 0 || root.s4 == 1 ? 1 : 0)
+            + (root.s5 == 0 || root.s5 == 1 ? 1 : 0);
+    }
+    function delivered-count() -> int {
+        return (root.s0 == 2 || root.s0 == 3 ? 1 : 0)
+            + (root.s1 == 2 || root.s1 == 3 ? 1 : 0)
+            + (root.s2 == 2 || root.s2 == 3 ? 1 : 0)
+            + (root.s3 == 2 || root.s3 == 3 ? 1 : 0)
+            + (root.s4 == 2 || root.s4 == 3 ? 1 : 0)
+            + (root.s5 == 2 || root.s5 == 3 ? 1 : 0);
+    }
+
+    // ----- Handlers -----
+    function tap-row(i: int, id: string) {
+        root.expanded = root.expanded == i ? -1 : i;
+        root.order-pressed(id);
+        root.status-msg = root.expanded == i
+            ? "Expanded #" + id
+            : "Collapsed #" + id;
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    function press-track(id: string) {
+        root.track-pressed(id);
+        root.status-msg = "Tracking #" + id + " -- ETA unchanged";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    function press-cancel(i: int, id: string) {
+        if (i == 0) { root.s0 = 3; }
+        if (i == 1) { root.s1 = 3; }
+        if (i == 2) { root.s2 = 3; }
+        if (i == 3) { root.s3 = 3; }
+        if (i == 4) { root.s4 = 3; }
+        if (i == 5) { root.s5 = 3; }
+        root.cancel-pressed(id);
+        root.status-msg = "Cancelled #" + id + " -- refund issued";
+        root.status-is-success = false;
+        root.status-is-danger = true;
+    }
+    function press-reorder(id: string, item-count: int) {
+        root.reorder-pressed(id);
+        root.status-msg = "Reordered " + item-count + " items from #" + id;
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    function tap-star(i: int, id: string, n: int) {
+        if (i == 0) { root.r0 = n; }
+        if (i == 1) { root.r1 = n; }
+        if (i == 2) { root.r2 = n; }
+        if (i == 3) { root.r3 = n; }
+        if (i == 4) { root.r4 = n; }
+        if (i == 5) { root.r5 = n; }
+        root.rated(id, n);
+        root.status-msg = "Rated #" + id + " " + n + " star" + (n == 1 ? "" : "s");
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
+    function set-filter(idx: int) {
+        root.filter-index = idx;
+        root.filter-changed(idx);
+        root.status-msg = idx == 0 ? "Showing all orders"
+            : idx == 1 ? "Showing active orders"
+            : "Showing delivered + cancelled orders";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    function clear-search() {
+        root.search-query = "";
+        root.status-msg = "Search cleared";
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
 
     background: Theme.background;
 
@@ -47,6 +196,30 @@ export component OrderHistoryPage inherits Window {
             leading-pressed => { root.back-pressed(); }
         }
 
+        // ----- Status banner -----
+        Rectangle {
+            background: root.status-is-danger ? Theme.accent-danger
+                : root.status-is-success ? Theme.accent-success
+                : Theme.surface-2;
+            height: 32px;
+            animate background { duration: Theme.motion-fast; }
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                Text {
+                    text: root.status-msg;
+                    color: (root.status-is-danger || root.status-is-success)
+                        ? Theme.on-primary
+                        : Theme.on-surface;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+            }
+        }
+
         ScrollView {
             vertical-stretch: 1;
 
@@ -56,14 +229,117 @@ export component OrderHistoryPage inherits Window {
                 spacing: Theme.spacing-md;
                 alignment: start;
 
-                // ----- Filter -------------------------------------------
+                // ----- Search bar -----
                 VerticalLayout {
                     padding-left: Theme.spacing-md;
                     padding-right: Theme.spacing-md;
-                    SegmentedControl {
-                        options: ["All", "Active", "Delivered"];
-                        selected-index <=> root.filter-index;
-                        changed(i) => { root.filter-changed(i); }
+                    HorizontalLayout {
+                        spacing: Theme.spacing-sm;
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            TextField {
+                                label: "";
+                                placeholder: "Search merchant (exact match)";
+                                text <=> root.search-query;
+                            }
+                        }
+                        if root.search-query != "": VerticalLayout {
+                            alignment: center;
+                            MobileButton {
+                                text: "Clear";
+                                primary: false;
+                                min-width: 72px;
+                                clicked => { root.clear-search(); }
+                            }
+                        }
+                    }
+                }
+
+                // ----- Filter chips with live counts -----
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    HorizontalLayout {
+                        spacing: 0;
+                        Rectangle {
+                            horizontal-stretch: 1;
+                            height: 40px;
+                            border-top-left-radius: Theme.radius-md;
+                            border-bottom-left-radius: Theme.radius-md;
+                            background: root.filter-index == 0
+                                ? Theme.primary
+                                : (all-touch.pressed ? Theme.surface-pressed : Theme.surface-2);
+                            border-width: 1px;
+                            border-color: Theme.outline;
+                            animate background { duration: Theme.motion-fast; }
+                            Text {
+                                text: "All (6)";
+                                color: root.filter-index == 0 ? Theme.on-primary : Theme.on-surface;
+                                font-size: Theme.font-size-caption;
+                                font-weight: 700;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                x: 0;
+                                y: 0;
+                                width: parent.width;
+                                height: parent.height;
+                            }
+                            all-touch := TouchArea {
+                                clicked => { root.set-filter(0); }
+                            }
+                        }
+                        Rectangle {
+                            horizontal-stretch: 1;
+                            height: 40px;
+                            background: root.filter-index == 1
+                                ? Theme.primary
+                                : (act-touch.pressed ? Theme.surface-pressed : Theme.surface-2);
+                            border-width: 1px;
+                            border-color: Theme.outline;
+                            animate background { duration: Theme.motion-fast; }
+                            Text {
+                                text: "Active (" + root.active-count() + ")";
+                                color: root.filter-index == 1 ? Theme.on-primary : Theme.on-surface;
+                                font-size: Theme.font-size-caption;
+                                font-weight: 700;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                x: 0;
+                                y: 0;
+                                width: parent.width;
+                                height: parent.height;
+                            }
+                            act-touch := TouchArea {
+                                clicked => { root.set-filter(1); }
+                            }
+                        }
+                        Rectangle {
+                            horizontal-stretch: 1;
+                            height: 40px;
+                            border-top-right-radius: Theme.radius-md;
+                            border-bottom-right-radius: Theme.radius-md;
+                            background: root.filter-index == 2
+                                ? Theme.primary
+                                : (del-touch.pressed ? Theme.surface-pressed : Theme.surface-2);
+                            border-width: 1px;
+                            border-color: Theme.outline;
+                            animate background { duration: Theme.motion-fast; }
+                            Text {
+                                text: "Delivered (" + root.delivered-count() + ")";
+                                color: root.filter-index == 2 ? Theme.on-primary : Theme.on-surface;
+                                font-size: Theme.font-size-caption;
+                                font-weight: 700;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                x: 0;
+                                y: 0;
+                                width: parent.width;
+                                height: parent.height;
+                            }
+                            del-touch := TouchArea {
+                                clicked => { root.set-filter(2); }
+                            }
+                        }
                     }
                 }
 
@@ -71,13 +347,16 @@ export component OrderHistoryPage inherits Window {
                 FormSection {
                     title: "MAY 2026";
 
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/queue.svg");
-                        tone: Tone.info;
+                    if root.row-visible(root.s0, "Atlas Coffee"): SettingRow {
+                        icon: root.status-icon(root.s0);
+                        tone: root.status-tone(root.s0);
                         title: "Atlas Coffee · #2147";
                         subtitle: "3 items · €42.10";
-                        clicked => { root.order-pressed("2147"); }
-                        Chip { label: "In transit"; selected: true; }
+                        clicked => { root.tap-row(0, "2147"); }
+                        Chip {
+                            label: root.status-label(root.s0);
+                            selected: root.s0 == 1;
+                        }
                         Image {
                             width: 16px;
                             height: 16px;
@@ -86,14 +365,49 @@ export component OrderHistoryPage inherits Window {
                             image-fit: contain;
                         }
                     }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/inbox.svg");
-                        tone: Tone.success;
+                    if root.expanded == 0 && root.row-visible(root.s0, "Atlas Coffee"): Rectangle {
+                        background: Theme.surface-2;
+                        VerticalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-sm;
+                            Text {
+                                text: "Cold brew x2 · Almond pastry · Tote";
+                                color: Theme.on-surface;
+                                font-size: Theme.font-size-caption;
+                                wrap: word-wrap;
+                            }
+                            HorizontalLayout {
+                                spacing: Theme.spacing-sm;
+                                MobileButton {
+                                    text: "Track";
+                                    primary: false;
+                                    enabled: root.s0 == 0 || root.s0 == 1;
+                                    clicked => { root.press-track("2147"); }
+                                }
+                                MobileButton {
+                                    text: "Reorder";
+                                    primary: true;
+                                    clicked => { root.press-reorder("2147", 3); }
+                                }
+                                if root.s0 == 0 || root.s0 == 1: MobileButton {
+                                    text: "Cancel";
+                                    primary: false;
+                                    clicked => { root.press-cancel(0, "2147"); }
+                                }
+                            }
+                        }
+                    }
+                    if root.row-visible(root.s0, "Atlas Coffee") && root.row-visible(root.s1, "Patagonia"): Divider { }
+                    if root.row-visible(root.s1, "Patagonia"): SettingRow {
+                        icon: root.status-icon(root.s1);
+                        tone: root.status-tone(root.s1);
                         title: "Patagonia · #2138";
                         subtitle: "1 item · €129.00";
-                        clicked => { root.order-pressed("2138"); }
-                        Chip { label: "Delivered"; }
+                        clicked => { root.tap-row(1, "2138"); }
+                        Chip {
+                            label: root.status-label(root.s1);
+                            selected: root.s1 == 1;
+                        }
                         Image {
                             width: 16px;
                             height: 16px;
@@ -102,20 +416,106 @@ export component OrderHistoryPage inherits Window {
                             image-fit: contain;
                         }
                     }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/queue.svg");
-                        tone: Tone.warning;
+                    if root.expanded == 1 && root.row-visible(root.s1, "Patagonia"): Rectangle {
+                        background: Theme.surface-2;
+                        VerticalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-sm;
+                            Text {
+                                text: "Houdini windbreaker · Slate blue · M";
+                                color: Theme.on-surface;
+                                font-size: Theme.font-size-caption;
+                            }
+                            HorizontalLayout {
+                                spacing: Theme.spacing-sm;
+                                MobileButton {
+                                    text: "Reorder";
+                                    primary: true;
+                                    clicked => { root.press-reorder("2138", 1); }
+                                }
+                            }
+                            HorizontalLayout {
+                                spacing: Theme.spacing-md;
+                                alignment: center;
+                                for n in 5: Rectangle {
+                                    width: 36px;
+                                    height: 36px;
+                                    border-radius: 18px;
+                                    background: star1-touch.pressed
+                                        ? Theme.surface-pressed
+                                        : transparent;
+                                    Image {
+                                        width: 24px;
+                                        height: 24px;
+                                        x: (parent.width - self.width) / 2;
+                                        y: (parent.height - self.height) / 2;
+                                        source: @image-url("@mobile-components/icons/star.svg");
+                                        colorize: n < root.r1 ? Theme.accent-warning : Theme.muted;
+                                        image-fit: contain;
+                                    }
+                                    star1-touch := TouchArea {
+                                        clicked => { root.tap-star(1, "2138", n + 1); }
+                                    }
+                                }
+                            }
+                            if root.r1 > 0: Text {
+                                text: "Thanks -- " + root.r1 + " star" + (root.r1 == 1 ? "" : "s");
+                                color: Theme.accent-success;
+                                font-size: Theme.font-size-caption;
+                                font-weight: 700;
+                                horizontal-alignment: center;
+                            }
+                        }
+                    }
+                    if root.row-visible(root.s1, "Patagonia") && root.row-visible(root.s2, "Tartine Manufactory"): Divider { }
+                    if root.row-visible(root.s2, "Tartine Manufactory"): SettingRow {
+                        icon: root.status-icon(root.s2);
+                        tone: root.status-tone(root.s2);
                         title: "Tartine Manufactory · #2131";
                         subtitle: "5 items · €34.50";
-                        clicked => { root.order-pressed("2131"); }
-                        Chip { label: "Processing"; }
+                        clicked => { root.tap-row(2, "2131"); }
+                        Chip {
+                            label: root.status-label(root.s2);
+                            selected: root.s2 == 1;
+                        }
                         Image {
                             width: 16px;
                             height: 16px;
                             source: @image-url("@mobile-components/icons/chevron-right.svg");
                             colorize: Theme.muted;
                             image-fit: contain;
+                        }
+                    }
+                    if root.expanded == 2 && root.row-visible(root.s2, "Tartine Manufactory"): Rectangle {
+                        background: Theme.surface-2;
+                        VerticalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-sm;
+                            Text {
+                                text: "Country loaf x2 · Morning bun · Tartine · Walnut levain";
+                                color: Theme.on-surface;
+                                font-size: Theme.font-size-caption;
+                                wrap: word-wrap;
+                            }
+                            HorizontalLayout {
+                                spacing: Theme.spacing-sm;
+                                MobileButton {
+                                    text: "Track";
+                                    primary: false;
+                                    enabled: root.s2 == 0 || root.s2 == 1;
+                                    clicked => { root.press-track("2131"); }
+                                }
+                                MobileButton {
+                                    text: "Reorder";
+                                    primary: true;
+                                    clicked => { root.press-reorder("2131", 5); }
+                                }
+                                if root.s2 == 0 || root.s2 == 1: MobileButton {
+                                    text: "Cancel";
+                                    primary: false;
+                                    clicked => { root.press-cancel(2, "2131"); }
+                                }
+                            }
                         }
                     }
                 }
@@ -124,13 +524,13 @@ export component OrderHistoryPage inherits Window {
                 FormSection {
                     title: "APRIL 2026";
 
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/inbox.svg");
-                        tone: Tone.success;
+                    if root.row-visible(root.s3, "Atlas Coffee"): SettingRow {
+                        icon: root.status-icon(root.s3);
+                        tone: root.status-tone(root.s3);
                         title: "Atlas Coffee · #2099";
                         subtitle: "2 items · €28.50";
-                        clicked => { root.order-pressed("2099"); }
-                        Chip { label: "Delivered"; }
+                        clicked => { root.tap-row(3, "2099"); }
+                        Chip { label: root.status-label(root.s3); }
                         Image {
                             width: 16px;
                             height: 16px;
@@ -139,14 +539,58 @@ export component OrderHistoryPage inherits Window {
                             image-fit: contain;
                         }
                     }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/inbox.svg");
-                        tone: Tone.success;
+                    if root.expanded == 3 && root.row-visible(root.s3, "Atlas Coffee"): Rectangle {
+                        background: Theme.surface-2;
+                        VerticalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-sm;
+                            Text {
+                                text: "Espresso beans · Drip filter";
+                                color: Theme.on-surface;
+                                font-size: Theme.font-size-caption;
+                            }
+                            HorizontalLayout {
+                                spacing: Theme.spacing-sm;
+                                MobileButton {
+                                    text: "Reorder";
+                                    primary: true;
+                                    clicked => { root.press-reorder("2099", 2); }
+                                }
+                            }
+                            HorizontalLayout {
+                                spacing: Theme.spacing-md;
+                                alignment: center;
+                                for n in 5: Rectangle {
+                                    width: 36px;
+                                    height: 36px;
+                                    border-radius: 18px;
+                                    background: star3-touch.pressed
+                                        ? Theme.surface-pressed
+                                        : transparent;
+                                    Image {
+                                        width: 24px;
+                                        height: 24px;
+                                        x: (parent.width - self.width) / 2;
+                                        y: (parent.height - self.height) / 2;
+                                        source: @image-url("@mobile-components/icons/star.svg");
+                                        colorize: n < root.r3 ? Theme.accent-warning : Theme.muted;
+                                        image-fit: contain;
+                                    }
+                                    star3-touch := TouchArea {
+                                        clicked => { root.tap-star(3, "2099", n + 1); }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if root.row-visible(root.s3, "Atlas Coffee") && root.row-visible(root.s4, "Muji"): Divider { }
+                    if root.row-visible(root.s4, "Muji"): SettingRow {
+                        icon: root.status-icon(root.s4);
+                        tone: root.status-tone(root.s4);
                         title: "Muji · #2087";
                         subtitle: "4 items · €76.30";
-                        clicked => { root.order-pressed("2087"); }
-                        Chip { label: "Delivered"; }
+                        clicked => { root.tap-row(4, "2087"); }
+                        Chip { label: root.status-label(root.s4); }
                         Image {
                             width: 16px;
                             height: 16px;
@@ -155,20 +599,109 @@ export component OrderHistoryPage inherits Window {
                             image-fit: contain;
                         }
                     }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/inbox.svg");
-                        tone: Tone.success;
+                    if root.expanded == 4 && root.row-visible(root.s4, "Muji"): Rectangle {
+                        background: Theme.surface-2;
+                        VerticalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-sm;
+                            Text {
+                                text: "Linen shirt · Gel pen x10 · Notebook A5 · Diffuser";
+                                color: Theme.on-surface;
+                                font-size: Theme.font-size-caption;
+                                wrap: word-wrap;
+                            }
+                            HorizontalLayout {
+                                spacing: Theme.spacing-sm;
+                                MobileButton {
+                                    text: "Reorder";
+                                    primary: true;
+                                    clicked => { root.press-reorder("2087", 4); }
+                                }
+                            }
+                            HorizontalLayout {
+                                spacing: Theme.spacing-md;
+                                alignment: center;
+                                for n in 5: Rectangle {
+                                    width: 36px;
+                                    height: 36px;
+                                    border-radius: 18px;
+                                    background: star4-touch.pressed
+                                        ? Theme.surface-pressed
+                                        : transparent;
+                                    Image {
+                                        width: 24px;
+                                        height: 24px;
+                                        x: (parent.width - self.width) / 2;
+                                        y: (parent.height - self.height) / 2;
+                                        source: @image-url("@mobile-components/icons/star.svg");
+                                        colorize: n < root.r4 ? Theme.accent-warning : Theme.muted;
+                                        image-fit: contain;
+                                    }
+                                    star4-touch := TouchArea {
+                                        clicked => { root.tap-star(4, "2087", n + 1); }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if root.row-visible(root.s4, "Muji") && root.row-visible(root.s5, "Uniqlo"): Divider { }
+                    if root.row-visible(root.s5, "Uniqlo"): SettingRow {
+                        icon: root.status-icon(root.s5);
+                        tone: root.status-tone(root.s5);
                         title: "Uniqlo · #2061";
                         subtitle: "3 items · €54.00";
-                        clicked => { root.order-pressed("2061"); }
-                        Chip { label: "Delivered"; }
+                        clicked => { root.tap-row(5, "2061"); }
+                        Chip { label: root.status-label(root.s5); }
                         Image {
                             width: 16px;
                             height: 16px;
                             source: @image-url("@mobile-components/icons/chevron-right.svg");
                             colorize: Theme.muted;
                             image-fit: contain;
+                        }
+                    }
+                    if root.expanded == 5 && root.row-visible(root.s5, "Uniqlo"): Rectangle {
+                        background: Theme.surface-2;
+                        VerticalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-sm;
+                            Text {
+                                text: "Heattech crew x2 · Wool joggers";
+                                color: Theme.on-surface;
+                                font-size: Theme.font-size-caption;
+                            }
+                            HorizontalLayout {
+                                spacing: Theme.spacing-sm;
+                                MobileButton {
+                                    text: "Reorder";
+                                    primary: true;
+                                    clicked => { root.press-reorder("2061", 3); }
+                                }
+                            }
+                            HorizontalLayout {
+                                spacing: Theme.spacing-md;
+                                alignment: center;
+                                for n in 5: Rectangle {
+                                    width: 36px;
+                                    height: 36px;
+                                    border-radius: 18px;
+                                    background: star5-touch.pressed
+                                        ? Theme.surface-pressed
+                                        : transparent;
+                                    Image {
+                                        width: 24px;
+                                        height: 24px;
+                                        x: (parent.width - self.width) / 2;
+                                        y: (parent.height - self.height) / 2;
+                                        source: @image-url("@mobile-components/icons/star.svg");
+                                        colorize: n < root.r5 ? Theme.accent-warning : Theme.muted;
+                                        image-fit: contain;
+                                    }
+                                    star5-touch := TouchArea {
+                                        clicked => { root.tap-star(5, "2061", n + 1); }
+                                    }
+                                }
+                            }
                         }
                     }
                 }

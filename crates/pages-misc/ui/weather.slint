@@ -1,30 +1,5 @@
 // WeatherPage
 // =====================================================================
-//
-// Current conditions hero + horizontal hourly forecast + vertical 7-day
-// forecast. Demonstrates mixed-orientation forecast strips, the giant-
-// numeral typography weather apps favour, and a horizontal ScrollView
-// inside a vertical page (a layout that pairs awkwardly in some
-// frameworks but composes cleanly in Slint).
-//
-// Visual treatment: opt-in to `DawnSkin` — a dawn-sky vertical
-// gradient (no SVG, the brush is the background) and DejaVu Sans for
-// the giant temperature numeral. All translucent overlays and text
-// colours come from the skin; no hex literals live in this file.
-//
-// Layout
-// ------
-//
-//   AppBar — location with chevron + refresh trailing
-//   Hero block:
-//     - City
-//     - Big temperature (96 px Light)
-//     - Condition + hi/lo
-//     - Sun-icon (placeholder via spinner-arc.svg)
-//   Horizontal hourly strip (12 entries)
-//   "7-DAY FORECAST" section header
-//   Daily row × 7
-//   Tone bar at the bottom — "Severe weather alert" when applicable
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { DawnSkin } from "@mobile-theme/skins.slint";
@@ -35,15 +10,15 @@ import { Divider } from "@mobile-components/divider.slint";
 import { Banner } from "@mobile-components/banner.slint";
 import { ScrollView } from "std-widgets.slint";
 
-// One column in the horizontal hourly strip.
 component HourCell inherits Rectangle {
     in property <string> when;
-    in property <string> temp;
+    in property <int> temp-f: 60;
+    in property <bool> unit-c: false;
     in property <bool> highlight: false;
+    callback clicked();
 
     width: 56px;
     height: 96px;
-    // Highlighted "Now" pill keeps the gradient visible behind it.
     background: root.highlight ? DawnSkin.glass-fill : transparent;
     border-radius: Theme.radius-md;
 
@@ -73,94 +48,159 @@ component HourCell inherits Rectangle {
             }
         }
         Text {
-            text: root.temp;
+            text: (root.unit-c ? floor((root.temp-f - 32) * 5 / 9) : root.temp-f) + "°";
             color: DawnSkin.text-primary;
             font-size: Theme.font-size-body;
             font-weight: 600;
             horizontal-alignment: center;
         }
     }
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
 }
 
-// One row in the 7-day forecast list. `low-fill` and `high-fill` drive
-// the position of a hi/lo bar so the user can scan the week's range at
-// a glance (left = cooler, right = hotter, across the global min/max).
 component DayRow inherits Rectangle {
     in property <string> day;
-    in property <string> low;
-    in property <string> high;
+    in property <int> low-f;
+    in property <int> high-f;
+    in property <bool> unit-c: false;
     in property <float> low-fill: 0.3;
     in property <float> high-fill: 0.6;
-    in property <Tone> tone: Tone.default;
+    in property <int> tone-i: 0;
+    in property <bool> expanded: false;
+    callback clicked();
 
+    horizontal-stretch: 1;
     min-height: 44px;
+    background: ta.has-hover ? DawnSkin.glass-fill : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    VerticalLayout {
+        spacing: 0;
+        HorizontalLayout {
+            padding-left: Theme.spacing-md;
+            padding-right: Theme.spacing-md;
+            spacing: Theme.spacing-md;
+            alignment: stretch;
+
+            Text {
+                text: root.day;
+                width: 48px;
+                color: DawnSkin.text-primary;
+                font-size: Theme.font-size-body;
+                font-weight: root.expanded ? 800 : 500;
+                vertical-alignment: center;
+            }
+            Image {
+                width: 20px;
+                height: 20px;
+                source: @image-url("@mobile-components/icons/star.svg");
+                colorize: root.tone-i == 2 ? Theme.accent-success : (root.tone-i == 3 ? Theme.accent-warning : (root.tone-i == 4 ? Theme.accent-danger : (root.tone-i == 1 ? Theme.accent-info : Theme.muted)));
+                image-fit: contain;
+                vertical-alignment: center;
+            }
+            Text {
+                text: (root.unit-c ? floor((root.low-f - 32) * 5 / 9) : root.low-f) + "°";
+                width: 36px;
+                color: DawnSkin.text-muted;
+                font-size: Theme.font-size-body;
+                horizontal-alignment: right;
+                vertical-alignment: center;
+            }
+
+            Rectangle {
+                horizontal-stretch: 1;
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        height: 4px;
+                        background: DawnSkin.hairline;
+                        border-radius: 2px;
+                        Rectangle {
+                            x: parent.width * root.low-fill;
+                            y: 0;
+                            width: parent.width * (root.high-fill - root.low-fill);
+                            height: parent.height;
+                            background: @linear-gradient(90deg, #4f8cff 0%, #f59e0b 100%);
+                            border-radius: 2px;
+                        }
+                    }
+                }
+            }
+
+            Text {
+                text: (root.unit-c ? floor((root.high-f - 32) * 5 / 9) : root.high-f) + "°";
+                width: 36px;
+                color: DawnSkin.text-primary;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+                horizontal-alignment: right;
+                vertical-alignment: center;
+            }
+        }
+
+        if root.expanded: Rectangle {
+            background: DawnSkin.glass-fill;
+            min-height: 64px;
+            VerticalLayout {
+                padding: Theme.spacing-md;
+                spacing: 4px;
+                Text {
+                    text: "Sunrise 06:42 · Sunset 19:18";
+                    color: DawnSkin.text-secondary;
+                    font-size: Theme.font-size-caption;
+                }
+                Text {
+                    text: "Wind 12 mph SW · Humidity 64% · UV 5";
+                    color: DawnSkin.text-secondary;
+                    font-size: Theme.font-size-caption;
+                }
+                Text {
+                    text: "Precipitation chance: " + (root.tone-i == 1 ? "70% (rain)" : (root.tone-i == 3 ? "5%" : "20%"));
+                    color: DawnSkin.text-primary;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                }
+            }
+        }
+    }
+}
+
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    background: ta.has-hover ? DawnSkin.glass-fill : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
 
     HorizontalLayout {
         padding-left: Theme.spacing-md;
         padding-right: Theme.spacing-md;
-        spacing: Theme.spacing-md;
-        alignment: stretch;
-
-        Text {
-            text: root.day;
-            width: 48px;
-            color: DawnSkin.text-primary;
-            font-size: Theme.font-size-body;
-            font-weight: 500;
-            vertical-alignment: center;
-        }
-        Image {
-            width: 20px;
-            height: 20px;
-            source: @image-url("@mobile-components/icons/star.svg");
-            colorize:
-                  root.tone == Tone.success ? Theme.accent-success
-                : root.tone == Tone.warning ? Theme.accent-warning
-                : root.tone == Tone.danger  ? Theme.accent-danger
-                : root.tone == Tone.info    ? Theme.accent-info
-                : Theme.muted;
-            image-fit: contain;
-            vertical-alignment: center;
-        }
-        Text {
-            text: root.low;
-            width: 36px;
-            color: DawnSkin.text-muted;
-            font-size: Theme.font-size-body;
-            horizontal-alignment: right;
-            vertical-alignment: center;
-        }
-
-        // Range bar.
-        Rectangle {
-            horizontal-stretch: 1;
-            VerticalLayout {
-                alignment: center;
-                Rectangle {
-                    height: 4px;
-                    background: DawnSkin.hairline;
-                    border-radius: 2px;
-                    // Filled segment.
-                    Rectangle {
-                        x: parent.width * root.low-fill;
-                        y: 0;
-                        width: parent.width * (root.high-fill - root.low-fill);
-                        height: parent.height;
-                        background: @linear-gradient(90deg, #4f8cff 0%, #f59e0b 100%);
-                        border-radius: 2px;
-                    }
-                }
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.destructive ? Theme.accent-danger : DawnSkin.text-primary;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
             }
-        }
-
-        Text {
-            text: root.high;
-            width: 36px;
-            color: DawnSkin.text-primary;
-            font-size: Theme.font-size-body;
-            font-weight: 600;
-            horizontal-alignment: right;
-            vertical-alignment: center;
         }
     }
 }
@@ -170,18 +210,83 @@ export component WeatherPage inherits Window {
     preferred-height: 892px;
     default-font-family: DawnSkin.font-family;
 
-    in property <string> city: "San Francisco";
-    in property <string> temp: "62°";
-    in property <string> condition: "Mostly Sunny";
-    in property <string> hi-lo: "H: 68° · L: 54°";
+    in-out property <int> city-idx: 0; // 0 SF 1 NYC 2 Brussels 3 Tokyo
+    in-out property <bool> unit-c: false;
+    in-out property <int> highlight-hour: 0;
+    in-out property <int> expanded-day: -1;
+    in-out property <bool> alert-dismissed: false;
+    in-out property <bool> fav-sf: true;
+    in-out property <bool> fav-nyc: false;
+    in-out property <bool> fav-brussels: true;
+    in-out property <bool> fav-tokyo: false;
+    in-out property <int> condition-tick: 0;
+    in-out property <bool> sheet-open: false;
+    in-out property <string> status-msg: "";
+    in-out property <bool> status-success: false;
+    in-out property <bool> status-danger: false;
+
     callback back-pressed();
     callback refresh-pressed();
+    callback city-changed(int);
+
+    function city() -> string {
+        return root.city-idx == 0 ? "San Francisco" : (root.city-idx == 1 ? "New York" : (root.city-idx == 2 ? "Brussels" : "Tokyo"));
+    }
+    function temp-f() -> int {
+        return root.city-idx == 0 ? 62 + root.condition-tick : (root.city-idx == 1 ? 48 - root.condition-tick : (root.city-idx == 2 ? 54 + root.condition-tick : 64 - root.condition-tick));
+    }
+    function condition() -> string {
+        return root.city-idx == 0 ? (root.condition-tick == 0 ? "Mostly Sunny" : "Hazy Sun") : (root.city-idx == 1 ? "Light Rain" : (root.city-idx == 2 ? "Drizzle" : "Cloudy"));
+    }
+    function low-f() -> int {
+        return root.city-idx == 0 ? 54 : (root.city-idx == 1 ? 43 : (root.city-idx == 2 ? 46 : 58));
+    }
+    function high-f() -> int {
+        return root.city-idx == 0 ? 68 : (root.city-idx == 1 ? 52 : (root.city-idx == 2 ? 58 : 68));
+    }
+    function feels-like-f() -> int {
+        return root.temp-f() - (root.city-idx == 1 || root.city-idx == 2 ? 4 : 0);
+    }
+    function fmt-temp(f: int) -> string {
+        return (root.unit-c ? floor((f - 32) * 5 / 9) : f) + "°";
+    }
+    function fmt-hi-lo() -> string {
+        return "H: " + root.fmt-temp(root.high-f()) + " · L: " + root.fmt-temp(root.low-f());
+    }
+    function fav-current() -> bool {
+        return root.city-idx == 0 ? root.fav-sf : (root.city-idx == 1 ? root.fav-nyc : (root.city-idx == 2 ? root.fav-brussels : root.fav-tokyo));
+    }
+    function toggle-fav() {
+        if (root.city-idx == 0) {
+            root.fav-sf = !root.fav-sf;
+        }
+        if (root.city-idx == 1) {
+            root.fav-nyc = !root.fav-nyc;
+        }
+        if (root.city-idx == 2) {
+            root.fav-brussels = !root.fav-brussels;
+        }
+        if (root.city-idx == 3) {
+            root.fav-tokyo = !root.fav-tokyo;
+        }
+    }
+    function fav-count() -> int {
+        return (root.fav-sf ? 1 : 0) + (root.fav-nyc ? 1 : 0) + (root.fav-brussels ? 1 : 0) + (root.fav-tokyo ? 1 : 0);
+    }
+    function set-status(m: string, ok: bool, bad: bool) {
+        root.status-msg = m;
+        root.status-success = ok;
+        root.status-danger = bad;
+    }
+    function alert-tone-i() -> int {
+        return root.city-idx == 1 ? 4 : (root.city-idx == 2 ? 1 : 3);
+    }
+    function hour-label(i: int) -> string {
+        return i == 0 ? "Now" : (i == 1 ? "1PM" : (i == 2 ? "2PM" : (i == 3 ? "3PM" : (i == 4 ? "4PM" : (i == 5 ? "5PM" : (i == 6 ? "6PM" : (i == 7 ? "7PM" : (i == 8 ? "8PM" : (i == 9 ? "9PM" : (i == 10 ? "10PM" : "11PM"))))))))));
+    }
 
     background: DawnSkin.page-background;
 
-    // DawnSkin uses an inline gradient brush, so no background-image
-    // element is needed. The guard keeps the structure consistent with
-    // image-backed skins like LiquidGlassSkin / LatticeSkin.
     if DawnSkin.has-background-image: Image {
         x: 0;
         y: 0;
@@ -195,180 +300,454 @@ export component WeatherPage inherits Window {
         spacing: 0;
 
         AppBar {
-            title: root.city;
+            title: root.city();
             title-style: HeadingStyle.serif-light;
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
-            trailing-icon: @image-url("@mobile-components/icons/chevron-right.svg");
+            trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
             bar-background: DawnSkin.bar-background;
             text-color: DawnSkin.text-primary;
-            leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.refresh-pressed(); }
+            leading-pressed => {
+                root.back-pressed();
+            }
+            trailing-pressed => {
+                root.sheet-open = true;
+            }
         }
 
-        // ----- Hero -----
-        VerticalLayout {
-            padding-top: Theme.spacing-lg;
-            padding-bottom: Theme.spacing-lg;
-            spacing: Theme.spacing-xs;
-            alignment: center;
-
+        // Status banner.
+        if !root.status-msg.is-empty: Rectangle {
+            height: 28px;
+            background: root.status-success ? Theme.accent-success.with-alpha(0.22) : (root.status-danger ? Theme.accent-danger.with-alpha(0.22) : DawnSkin.glass-fill);
             HorizontalLayout {
                 alignment: center;
-                Image {
-                    width: 64px;
-                    height: 64px;
-                    source: @image-url("@mobile-components/icons/star.svg");
-                    colorize: Theme.accent-warning;
-                    image-fit: contain;
-                }
-            }
-            HorizontalLayout {
-                alignment: center;
-                Text {
-                    text: root.temp;
-                    color: DawnSkin.text-primary;
-                    font-size: 96px;
-                    font-weight: 200;
-                    horizontal-alignment: center;
-                }
-            }
-            HorizontalLayout {
-                alignment: center;
-                Text {
-                    text: root.condition;
-                    color: DawnSkin.text-primary;
-                    font-size: Theme.font-size-body-large;
-                    font-weight: 500;
-                    horizontal-alignment: center;
-                }
-            }
-            HorizontalLayout {
-                alignment: center;
-                Text {
-                    text: root.hi-lo;
-                    color: DawnSkin.text-secondary;
-                    font-size: Theme.font-size-body;
-                    horizontal-alignment: center;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.status-msg;
+                        color: root.status-success ? Theme.accent-success : (root.status-danger ? Theme.accent-danger : DawnSkin.text-primary);
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                    }
                 }
             }
         }
 
-        // ----- Hourly strip -----
-        VerticalLayout {
-            padding-left: Theme.spacing-md;
-            padding-right: Theme.spacing-md;
-            padding-bottom: Theme.spacing-md;
-            spacing: Theme.spacing-sm;
+        ScrollView {
+            vertical-stretch: 1;
+            VerticalLayout {
+                spacing: 0;
 
-            Text {
-                text: "Hourly";
-                color: DawnSkin.text-primary;
-                font-family: "Fraunces 9pt";
-                font-size: 18px;
-                font-weight: 400;
-            }
-
-            ScrollView {
-                height: 112px;
-                horizontal-stretch: 1;
-                viewport-width: 12 * 56px + 11 * Theme.spacing-xs + 2 * Theme.spacing-sm;
-                viewport-height: 96px;
+                // City chips strip.
                 HorizontalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    spacing: Theme.spacing-sm;
+                    for chip[i] in [
+                        { label: "SF" },
+                        { label: "NYC" },
+                        { label: "Brussels" },
+                        { label: "Tokyo" },
+                    ]: Rectangle {
+                        horizontal-stretch: 0;
+                        height: 28px;
+                        border-radius: 14px;
+                        background: root.city-idx == i ? DawnSkin.text-primary : DawnSkin.glass-fill;
+                        HorizontalLayout {
+                            padding-left: Theme.spacing-md;
+                            padding-right: Theme.spacing-md;
+                            alignment: center;
+                            VerticalLayout {
+                                alignment: center;
+                                Text {
+                                    text: chip.label;
+                                    color: root.city-idx == i ? DawnSkin.page-background : DawnSkin.text-primary;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 700;
+                                }
+                            }
+                        }
+                        TouchArea {
+                            clicked => {
+                                root.city-idx = i;
+                                root.condition-tick = 0;
+                                root.expanded-day = -1;
+                                root.set-status("Switched to " + root.city(), true, false);
+                                root.city-changed(i);
+                            }
+                        }
+                    }
+                }
+
+                // ----- Hero -----
+                VerticalLayout {
+                    padding-top: Theme.spacing-md;
+                    padding-bottom: Theme.spacing-lg;
                     spacing: Theme.spacing-xs;
-                    padding-left: Theme.spacing-sm;
-                    padding-right: Theme.spacing-sm;
-                    HourCell { when: "Now";  temp: "62°"; highlight: true; }
-                    HourCell { when: "1PM";  temp: "63°"; }
-                    HourCell { when: "2PM";  temp: "65°"; }
-                    HourCell { when: "3PM";  temp: "66°"; }
-                    HourCell { when: "4PM";  temp: "67°"; }
-                    HourCell { when: "5PM";  temp: "66°"; }
-                    HourCell { when: "6PM";  temp: "64°"; }
-                    HourCell { when: "7PM";  temp: "61°"; }
-                    HourCell { when: "8PM";  temp: "59°"; }
-                    HourCell { when: "9PM";  temp: "57°"; }
-                    HourCell { when: "10PM"; temp: "56°"; }
-                    HourCell { when: "11PM"; temp: "55°"; }
+                    alignment: center;
+
+                    HorizontalLayout {
+                        alignment: center;
+                        Image {
+                            width: 64px;
+                            height: 64px;
+                            source: @image-url("@mobile-components/icons/star.svg");
+                            colorize: Theme.accent-warning;
+                            image-fit: contain;
+                        }
+                    }
+                    HorizontalLayout {
+                        alignment: center;
+                        Text {
+                            text: root.fmt-temp(root.temp-f());
+                            color: DawnSkin.text-primary;
+                            font-size: 96px;
+                            font-weight: 200;
+                            horizontal-alignment: center;
+                        }
+                    }
+                    HorizontalLayout {
+                        alignment: center;
+                        Text {
+                            text: root.condition();
+                            color: DawnSkin.text-primary;
+                            font-size: Theme.font-size-body-large;
+                            font-weight: 500;
+                            horizontal-alignment: center;
+                        }
+                    }
+                    HorizontalLayout {
+                        alignment: center;
+                        Text {
+                            text: root.fmt-hi-lo() + " · Feels like " + root.fmt-temp(root.feels-like-f());
+                            color: DawnSkin.text-secondary;
+                            font-size: Theme.font-size-body;
+                            horizontal-alignment: center;
+                        }
+                    }
+                    // Action chips.
+                    HorizontalLayout {
+                        alignment: center;
+                        spacing: Theme.spacing-sm;
+                        padding-top: Theme.spacing-sm;
+                        Rectangle {
+                            horizontal-stretch: 0;
+                            height: 32px;
+                            border-radius: 16px;
+                            background: DawnSkin.glass-fill;
+                            HorizontalLayout {
+                                padding-left: Theme.spacing-md;
+                                padding-right: Theme.spacing-md;
+                                alignment: center;
+                                VerticalLayout {
+                                    alignment: center;
+                                    Text {
+                                        text: root.unit-c ? "°C" : "°F";
+                                        color: DawnSkin.text-primary;
+                                        font-size: Theme.font-size-caption;
+                                        font-weight: 800;
+                                    }
+                                }
+                            }
+                            TouchArea {
+                                clicked => {
+                                    root.unit-c = !root.unit-c;
+                                    root.set-status("Units: " + (root.unit-c ? "°C" : "°F"), true, false);
+                                }
+                            }
+                        }
+                        Rectangle {
+                            horizontal-stretch: 0;
+                            height: 32px;
+                            border-radius: 16px;
+                            background: DawnSkin.glass-fill;
+                            HorizontalLayout {
+                                padding-left: Theme.spacing-md;
+                                padding-right: Theme.spacing-md;
+                                spacing: 4px;
+                                alignment: center;
+                                VerticalLayout {
+                                    alignment: center;
+                                    Text {
+                                        text: "↻ Refresh";
+                                        color: DawnSkin.text-primary;
+                                        font-size: Theme.font-size-caption;
+                                        font-weight: 700;
+                                    }
+                                }
+                            }
+                            TouchArea {
+                                clicked => {
+                                    root.condition-tick = mod(root.condition-tick + 1, 4);
+                                    root.set-status("Refreshed · " + root.condition(), true, false);
+                                    root.refresh-pressed();
+                                }
+                            }
+                        }
+                        Rectangle {
+                            horizontal-stretch: 0;
+                            height: 32px;
+                            border-radius: 16px;
+                            background: root.fav-current() ? Theme.accent-warning.with-alpha(0.30) : DawnSkin.glass-fill;
+                            HorizontalLayout {
+                                padding-left: Theme.spacing-md;
+                                padding-right: Theme.spacing-md;
+                                alignment: center;
+                                VerticalLayout {
+                                    alignment: center;
+                                    Text {
+                                        text: root.fav-current() ? "★ Saved" : "☆ Save";
+                                        color: root.fav-current() ? Theme.accent-warning : DawnSkin.text-primary;
+                                        font-size: Theme.font-size-caption;
+                                        font-weight: 800;
+                                    }
+                                }
+                            }
+                            TouchArea {
+                                clicked => {
+                                    root.toggle-fav();
+                                    root.set-status(root.fav-current() ? "Saved · " + root.fav-count() + " favs" : "Removed · " + root.fav-count() + " favs", root.fav-current(), false);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ----- Hourly strip -----
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-bottom: Theme.spacing-md;
+                    spacing: Theme.spacing-sm;
+
+                    Text {
+                        text: "Hourly · highlight " + root.hour-label(root.highlight-hour);
+                        color: DawnSkin.text-primary;
+                        font-family: "Fraunces 9pt";
+                        font-size: 18px;
+                        font-weight: 400;
+                    }
+
+                    ScrollView {
+                        height: 112px;
+                        horizontal-stretch: 1;
+                        viewport-width: 12 * 56px + 11 * Theme.spacing-xs + 2 * Theme.spacing-sm;
+                        viewport-height: 96px;
+                        HorizontalLayout {
+                            spacing: Theme.spacing-xs;
+                            padding-left: Theme.spacing-sm;
+                            padding-right: Theme.spacing-sm;
+                            for hour[i] in [
+                                { when: "Now", t: 62 },
+                                { when: "1PM", t: 63 },
+                                { when: "2PM", t: 65 },
+                                { when: "3PM", t: 66 },
+                                { when: "4PM", t: 67 },
+                                { when: "5PM", t: 66 },
+                                { when: "6PM", t: 64 },
+                                { when: "7PM", t: 61 },
+                                { when: "8PM", t: 59 },
+                                { when: "9PM", t: 57 },
+                                { when: "10PM", t: 56 },
+                                { when: "11PM", t: 55 },
+                            ]: HourCell {
+                                when: hour.when;
+                                temp-f: hour.t + root.condition-tick;
+                                unit-c: root.unit-c;
+                                highlight: root.highlight-hour == i;
+                                clicked => {
+                                    root.highlight-hour = i;
+                                    root.set-status("Selected " + hour.when, true, false);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ----- 7-day forecast -----
+                SectionHeader {
+                    text: "7-DAY FORECAST · TAP A DAY";
+                }
+
+                for d[i] in [
+                    { day: "Today", low: 54, high: 68, lf: 0.35, hf: 0.68, t: 3 },
+                    { day: "Wed", low: 53, high: 70, lf: 0.33, hf: 0.72, t: 3 },
+                    { day: "Thu", low: 52, high: 67, lf: 0.30, hf: 0.65, t: 0 },
+                    { day: "Fri", low: 55, high: 63, lf: 0.40, hf: 0.55, t: 1 },
+                    { day: "Sat", low: 50, high: 60, lf: 0.25, hf: 0.50, t: 1 },
+                    { day: "Sun", low: 48, high: 58, lf: 0.20, hf: 0.45, t: 1 },
+                    { day: "Mon", low: 51, high: 66, lf: 0.28, hf: 0.62, t: 0 },
+                ]: VerticalLayout {
+                    spacing: 0;
+                    DayRow {
+                        day: d.day;
+                        low-f: d.low;
+                        high-f: d.high;
+                        unit-c: root.unit-c;
+                        low-fill: d.lf;
+                        high-fill: d.hf;
+                        tone-i: d.t;
+                        expanded: root.expanded-day == i;
+                        clicked => {
+                            root.expanded-day = root.expanded-day == i ? -1 : i;
+                            root.set-status(root.expanded-day == i ? "Expanded " + d.day : "Collapsed", true, false);
+                        }
+                    }
+                    if i < 6: Divider { }
+                }
+
+                // ----- Alert banner (dismissable) -----
+                if !root.alert-dismissed: VerticalLayout {
+                    padding: Theme.spacing-md;
+                    Rectangle {
+                        background: root.alert-tone-i() == 4 ? Theme.accent-danger.with-alpha(0.16) : (root.alert-tone-i() == 3 ? Theme.accent-warning.with-alpha(0.16) : Theme.accent-info.with-alpha(0.16));
+                        border-radius: Theme.radius-md;
+                        VerticalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-xs;
+                            HorizontalLayout {
+                                spacing: Theme.spacing-sm;
+                                alignment: stretch;
+                                Image {
+                                    width: 20px;
+                                    height: 20px;
+                                    source: @image-url("@mobile-components/icons/bell.svg");
+                                    colorize: root.alert-tone-i() == 4 ? Theme.accent-danger : (root.alert-tone-i() == 3 ? Theme.accent-warning : Theme.accent-info);
+                                    image-fit: contain;
+                                }
+                                Text {
+                                    text: root.city-idx == 1 ? "Flash flood watch through tomorrow morning." : (root.city-idx == 2 ? "Light rain expected all afternoon." : (root.city-idx == 3 ? "Air quality moderate · pollen high." : "High wind advisory — gusts up to 35 mph through tomorrow morning."));
+                                    color: DawnSkin.text-primary;
+                                    font-size: Theme.font-size-caption;
+                                    font-weight: 700;
+                                    horizontal-stretch: 1;
+                                    wrap: word-wrap;
+                                }
+                                Rectangle {
+                                    horizontal-stretch: 0;
+                                    height: 22px;
+                                    border-radius: 11px;
+                                    background: DawnSkin.glass-fill;
+                                    HorizontalLayout {
+                                        padding-left: Theme.spacing-sm;
+                                        padding-right: Theme.spacing-sm;
+                                        alignment: center;
+                                        VerticalLayout {
+                                            alignment: center;
+                                            Text {
+                                                text: "Dismiss";
+                                                color: DawnSkin.text-primary;
+                                                font-size: Theme.font-size-caption;
+                                                font-weight: 800;
+                                            }
+                                        }
+                                    }
+                                    TouchArea {
+                                        clicked => {
+                                            root.alert-dismissed = true;
+                                            root.set-status("Alert dismissed", false, false);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    height: Theme.spacing-xl;
                 }
             }
         }
+    }
 
-        // ----- 7-day forecast -----
-        SectionHeader { text: "7-DAY FORECAST"; }
-
-        DayRow {
-            day: "Today";
-            low: "54°";
-            high: "68°";
-            low-fill: 0.35;
-            high-fill: 0.68;
-            tone: Tone.warning;
-        }
-        Divider { }
-        DayRow {
-            day: "Wed";
-            low: "53°";
-            high: "70°";
-            low-fill: 0.33;
-            high-fill: 0.72;
-            tone: Tone.warning;
-        }
-        Divider { }
-        DayRow {
-            day: "Thu";
-            low: "52°";
-            high: "67°";
-            low-fill: 0.30;
-            high-fill: 0.65;
-            tone: Tone.default;
-        }
-        Divider { }
-        DayRow {
-            day: "Fri";
-            low: "55°";
-            high: "63°";
-            low-fill: 0.40;
-            high-fill: 0.55;
-            tone: Tone.info;
-        }
-        Divider { }
-        DayRow {
-            day: "Sat";
-            low: "50°";
-            high: "60°";
-            low-fill: 0.25;
-            high-fill: 0.50;
-            tone: Tone.info;
-        }
-        Divider { }
-        DayRow {
-            day: "Sun";
-            low: "48°";
-            high: "58°";
-            low-fill: 0.20;
-            high-fill: 0.45;
-            tone: Tone.info;
-        }
-        Divider { }
-        DayRow {
-            day: "Mon";
-            low: "51°";
-            high: "66°";
-            low-fill: 0.28;
-            high-fill: 0.62;
-            tone: Tone.default;
-        }
-
-        // ----- Trailing alert banner -----
-        VerticalLayout {
-            padding: Theme.spacing-md;
-            Banner {
-                icon: @image-url("@mobile-components/icons/bell.svg");
-                message: "High wind advisory — gusts up to 35 mph through tomorrow morning.";
-                tone: Tone.warning;
+    // ===================== Bottom sheet =====================
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
             }
         }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: DawnSkin.bar-background;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
 
-        Rectangle { vertical-stretch: 1; }
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: DawnSkin.text-secondary;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: "Weather menu";
+                        color: DawnSkin.text-primary;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 700;
+                    }
+                }
+                SheetRow {
+                    label: "Switch units (" + (root.unit-c ? "°C" : "°F") + ")";
+                    clicked => {
+                        root.unit-c = !root.unit-c;
+                        root.set-status("Units: " + (root.unit-c ? "°C" : "°F"), true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Force refresh";
+                    clicked => {
+                        root.condition-tick = mod(root.condition-tick + 1, 4);
+                        root.set-status("Refreshed · " + root.condition(), true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: root.alert-dismissed ? "Show alerts" : "Dismiss alert";
+                    clicked => {
+                        root.alert-dismissed = !root.alert-dismissed;
+                        root.set-status(root.alert-dismissed ? "Alerts hidden" : "Alerts visible", !root.alert-dismissed, root.alert-dismissed);
+                        root.sheet-open = false;
+                    }
+                }
+                Divider { }
+
+                SheetRow {
+                    label: "Clear all favorites";
+                    destructive: true;
+                    clicked => {
+                        root.fav-sf = false;
+                        root.fav-nyc = false;
+                        root.fav-brussels = false;
+                        root.fav-tokyo = false;
+                        root.set-status("Favorites cleared", false, true);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.sheet-open = false;
+                    }
+                }
+            }
+        }
     }
 }

@@ -1,10 +1,5 @@
 // ContactDetailPage
 // =====================================================================
-//
-// A single contact's full detail page. Hero block with large Avatar,
-// name and supporting line, then a chip-style MetaRow with stats,
-// then a row of 4 quick-action IconButton-styled tiles, then grouped
-// KeyValueRow + SettingRow sections for CONTACT / NOTES / SHARED.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
@@ -12,7 +7,6 @@ import { Avatar } from "@mobile-components/avatar.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
 import { MetaRow, MetaChip } from "@mobile-components/meta-row.slint";
 import { FormSection } from "@mobile-components/form-section.slint";
-import { SettingRow } from "@mobile-components/setting-row.slint";
 import { KeyValueRow } from "@mobile-components/key-value-row.slint";
 import { Divider } from "@mobile-components/divider.slint";
 import { ScrollView } from "std-widgets.slint";
@@ -20,17 +14,22 @@ import { ScrollView } from "std-widgets.slint";
 component QuickAction inherits Rectangle {
     in property <image> icon;
     in property <string> label;
+    in property <bool> active: false;
     callback clicked();
 
     accessible-role: button;
     accessible-label: root.label;
-    accessible-action-default => { root.clicked(); }
+    accessible-action-default => {
+        root.clicked();
+    }
 
     horizontal-stretch: 1;
     min-width: 0;
     height: 72px;
     border-radius: Theme.radius-md;
-    background: touch.pressed ? Theme.surface-pressed : Theme.surface-1;
+    background: touch.pressed ? Theme.surface-pressed : (root.active ? Theme.primary.with-alpha(0.22) : Theme.surface-1);
+    border-width: root.active ? 1px : 0px;
+    border-color: Theme.primary;
     animate background { duration: Theme.motion-fast; }
 
     VerticalLayout {
@@ -45,7 +44,7 @@ component QuickAction inherits Rectangle {
                 width: 22px;
                 height: 22px;
                 source: root.icon;
-                colorize: Theme.primary;
+                colorize: root.active ? Theme.primary : Theme.primary;
                 image-fit: contain;
             }
         }
@@ -53,16 +52,130 @@ component QuickAction inherits Rectangle {
             alignment: center;
             Text {
                 text: root.label;
-                color: Theme.muted;
+                color: root.active ? Theme.primary : Theme.muted;
                 font-size: 10px;
-                font-weight: 700;
+                font-weight: 800;
                 letter-spacing: 0.5px;
             }
         }
     }
 
     touch := TouchArea {
-        clicked => { root.clicked(); }
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component SharedRow inherits Rectangle {
+    in property <string> title;
+    in property <string> subtitle;
+    in property <int> tone-i: 0;
+    in property <bool> pinned: false;
+    in property <bool> visited: false;
+    callback row-clicked();
+    callback pin-clicked();
+
+    horizontal-stretch: 1;
+    min-height: 56px;
+    opacity: root.visited ? 0.7 : 1.0;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+    ta := TouchArea {
+        clicked => {
+            root.row-clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 32px;
+                height: 32px;
+                border-radius: 8px;
+                background: root.tone-i == 1 ? Theme.accent-info.with-alpha(0.22) : (root.tone-i == 2 ? Theme.accent-success.with-alpha(0.22) : (root.tone-i == 3 ? Theme.accent-warning.with-alpha(0.22) : Theme.surface-2));
+                Image {
+                    width: 16px;
+                    height: 16px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: root.tone-i == 1 ? @image-url("@mobile-components/icons/queue.svg") : (root.tone-i == 2 ? @image-url("@mobile-components/icons/star.svg") : @image-url("@mobile-components/icons/menu.svg"));
+                    colorize: root.tone-i == 1 ? Theme.accent-info : (root.tone-i == 2 ? Theme.accent-success : Theme.accent-warning);
+                    image-fit: contain;
+                }
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: (root.pinned ? "★ " : "") + root.title + (root.visited ? " · opened" : "");
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 700;
+            }
+            Text {
+                text: root.subtitle;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+            }
+        }
+        Rectangle {
+            width: 32px;
+            height: 32px;
+            border-radius: 16px;
+            background: root.pinned ? Theme.accent-warning.with-alpha(0.22) : Theme.surface-2;
+            Text {
+                text: "★";
+                color: root.pinned ? Theme.accent-warning : Theme.muted;
+                font-size: 14px;
+                font-weight: 800;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                width: parent.width;
+                height: parent.height;
+            }
+            TouchArea {
+                clicked => {
+                    root.pin-clicked();
+                }
+            }
+        }
+    }
+}
+
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.destructive ? Theme.accent-danger : Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+        }
     }
 }
 
@@ -70,9 +183,38 @@ export component ContactDetailPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
 
+    in-out property <bool> calling: false;
+    in-out property <bool> msging: false;
+    in-out property <int> share-mode: 0; // 0 idle, 1 copied, 2 sent
+    in-out property <bool> starred: false;
+    in-out property <bool> edit-mode: false;
+    in-out property <bool> note-expanded: false;
+    in-out property <bool> blocked: false;
+    in-out property <bool> muted: false;
+    in-out property <bool> pin-s0: false;
+    in-out property <bool> pin-s1: true;
+    in-out property <bool> pin-s2: false;
+    in-out property <bool> visited-s0: false;
+    in-out property <bool> visited-s1: false;
+    in-out property <bool> visited-s2: false;
+    in-out property <bool> sheet-open: false;
+    in-out property <bool> confirm-block: false;
+    in-out property <string> status-msg: "";
+    in-out property <bool> status-success: false;
+    in-out property <bool> status-danger: false;
+
     callback back-pressed();
     callback edit-pressed();
     callback action-pressed(string);
+
+    function share-label() -> string {
+        return root.share-mode == 0 ? "SEND" : (root.share-mode == 1 ? "COPIED" : "SENT");
+    }
+    function set-status(m: string, ok: bool, bad: bool) {
+        root.status-msg = m;
+        root.status-success = ok;
+        root.status-danger = bad;
+    }
 
     background: Theme.background;
 
@@ -80,11 +222,43 @@ export component ContactDetailPage inherits Window {
         spacing: 0;
 
         AppBar {
-            title: "Contact";
+            title: root.edit-mode ? "Editing contact" : "Contact" + (root.starred ? " · ★" : "") + (root.blocked ? " · blocked" : "");
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
-            trailing-icon: @image-url("@mobile-components/icons/pencil.svg");
-            leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.edit-pressed(); }
+            trailing-icon: root.edit-mode ? @image-url("@mobile-components/icons/check.svg") : @image-url("@mobile-components/icons/more-vertical.svg");
+            leading-pressed => {
+                if (root.edit-mode) {
+                    root.edit-mode = false;
+                    root.set-status("Edit discarded", false, true);
+                } else {
+                    root.back-pressed();
+                }
+            }
+            trailing-pressed => {
+                if (root.edit-mode) {
+                    root.edit-mode = false;
+                    root.set-status("Saved", true, false);
+                    root.edit-pressed();
+                } else {
+                    root.sheet-open = true;
+                }
+            }
+        }
+
+        if !root.status-msg.is-empty: Rectangle {
+            height: 28px;
+            background: root.status-success ? Theme.accent-success.with-alpha(0.16) : (root.status-danger ? Theme.accent-danger.with-alpha(0.16) : Theme.surface-2);
+            HorizontalLayout {
+                alignment: center;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.status-msg;
+                        color: root.status-success ? Theme.accent-success : (root.status-danger ? Theme.accent-danger : Theme.on-surface);
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                    }
+                }
+            }
         }
 
         ScrollView {
@@ -96,22 +270,63 @@ export component ContactDetailPage inherits Window {
                 spacing: Theme.spacing-lg;
                 alignment: start;
 
-                // ----- Hero --------------------------------------------------
                 VerticalLayout {
                     spacing: Theme.spacing-sm;
 
                     HorizontalLayout {
                         alignment: center;
-                        Avatar {
-                            fallback: "AL";
-                            size: 96px;
+                        Rectangle {
+                            width: 96px;
+                            height: 96px;
+                            Avatar {
+                                x: 0;
+                                y: 0;
+                                fallback: "AL";
+                                size: 96px;
+                            }
+                            if root.starred: Rectangle {
+                                x: parent.width - 24px;
+                                y: 0;
+                                width: 28px;
+                                height: 28px;
+                                border-radius: 14px;
+                                background: Theme.accent-warning;
+                                Text {
+                                    text: "★";
+                                    color: Theme.on-primary;
+                                    font-size: 14px;
+                                    font-weight: 800;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                            }
+                            if root.calling: Rectangle {
+                                x: 0;
+                                y: parent.height - 24px;
+                                width: 28px;
+                                height: 28px;
+                                border-radius: 14px;
+                                background: Theme.accent-success;
+                                Text {
+                                    text: "☎";
+                                    color: Theme.on-primary;
+                                    font-size: 14px;
+                                    font-weight: 800;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                            }
                         }
                     }
 
                     HorizontalLayout {
                         alignment: center;
                         Heading {
-                            text: "Ada Lovelace";
+                            text: "Ada Lovelace" + (root.edit-mode ? " ✎" : "");
                             style: HeadingStyle.serif-display;
                             color: Theme.on-background;
                             font-size: 24px;
@@ -136,98 +351,260 @@ export component ContactDetailPage inherits Window {
                     }
                 }
 
-                // ----- Quick actions ----------------------------------------
+                // Quick actions.
                 VerticalLayout {
                     padding-left: Theme.spacing-md;
                     padding-right: Theme.spacing-md;
                     HorizontalLayout {
-                        spacing: Theme.spacing-lg;
+                        spacing: Theme.spacing-md;
                         alignment: stretch;
                         QuickAction {
                             icon: @image-url("@mobile-components/icons/bell.svg");
-                            label: "CALL";
-                            clicked => { root.action-pressed("call"); }
+                            label: root.calling ? "ON CALL" : "CALL";
+                            active: root.calling;
+                            clicked => {
+                                root.calling = !root.calling;
+                                root.set-status(root.calling ? "📞 Calling Ada…" : "Call ended", root.calling, !root.calling);
+                                root.action-pressed("call");
+                            }
                         }
                         QuickAction {
                             icon: @image-url("@mobile-components/icons/inbox.svg");
-                            label: "MSG";
-                            clicked => { root.action-pressed("message"); }
+                            label: root.msging ? "DRAFT" : "MSG";
+                            active: root.msging;
+                            clicked => {
+                                root.msging = !root.msging;
+                                root.set-status(root.msging ? "Composing message…" : "Closed message", root.msging, false);
+                                root.action-pressed("message");
+                            }
                         }
                         QuickAction {
                             icon: @image-url("@mobile-components/icons/send.svg");
-                            label: "SEND";
-                            clicked => { root.action-pressed("send"); }
+                            label: root.share-label();
+                            active: root.share-mode != 0;
+                            clicked => {
+                                root.share-mode = mod(root.share-mode + 1, 3);
+                                root.set-status("Share · " + root.share-label(), root.share-mode != 0, false);
+                                root.action-pressed("send");
+                            }
                         }
                         QuickAction {
                             icon: @image-url("@mobile-components/icons/star.svg");
-                            label: "STAR";
-                            clicked => { root.action-pressed("star"); }
+                            label: root.starred ? "★ STAR" : "STAR";
+                            active: root.starred;
+                            clicked => {
+                                root.starred = !root.starred;
+                                root.set-status(root.starred ? "★ Starred" : "Unstarred", root.starred, false);
+                                root.action-pressed("star");
+                            }
                         }
                     }
                 }
 
-                // ----- CONTACT ----------------------------------------------
                 FormSection {
-                    title: "CONTACT";
-                    KeyValueRow { label: "Phone"; value: "+32 478 12 34"; }
+                    title: "CONTACT" + (root.edit-mode ? " · TAP TO EDIT" : "");
+                    KeyValueRow {
+                        label: "Phone";
+                        value: "+32 478 12 34";
+                    }
                     Divider { }
-                    KeyValueRow { label: "Email"; value: "ada@analyticalengine.uk"; }
+
+                    KeyValueRow {
+                        label: "Email";
+                        value: "ada@analyticalengine.uk";
+                    }
                     Divider { }
-                    KeyValueRow { label: "Address"; value: "Avenue Louise, BE"; }
+
+                    KeyValueRow {
+                        label: "Address";
+                        value: "Avenue Louise, BE";
+                    }
                 }
 
-                // ----- NOTES ------------------------------------------------
                 FormSection {
                     title: "NOTES";
-                    SettingRow {
-                        title: "Ada's birthday is in December";
-                        subtitle: "Send a hand-written card before the 10th — she still keeps the wall above her writing desk reserved for paper.";
+
+                    Rectangle {
+                        min-height: 80px;
+                        VerticalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-xs;
+                            Text {
+                                text: "Ada's birthday is in December";
+                                color: Theme.on-surface;
+                                font-size: Theme.font-size-body;
+                                font-weight: 700;
+                            }
+                            Text {
+                                text: root.note-expanded ? "Send a hand-written card before the 10th — she still keeps the wall above her writing desk reserved for paper. Last year I sent a folded sketch of the BCD engine; she pinned it next to her telegraph plates." : "Send a hand-written card before the 10th — she still keeps the wall above her writing desk reserved for paper.";
+                                color: Theme.muted;
+                                font-size: Theme.font-size-caption;
+                                wrap: word-wrap;
+                            }
+                            Text {
+                                text: root.note-expanded ? "Show less" : "Show more";
+                                color: Theme.accent-info;
+                                font-size: Theme.font-size-caption;
+                                font-weight: 700;
+                            }
+                        }
+                        TouchArea {
+                            clicked => {
+                                root.note-expanded = !root.note-expanded;
+                            }
+                        }
                     }
                 }
 
-                // ----- SHARED -----------------------------------------------
                 FormSection {
                     title: "SHARED";
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/queue.svg");
-                        tone: Tone.info;
+
+                    SharedRow {
                         title: "Slint design group";
                         subtitle: "8 members · joined 2024";
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
+                        tone-i: 1;
+                        pinned: root.pin-s0;
+                        visited: root.visited-s0;
+                        row-clicked => {
+                            root.visited-s0 = true;
+                            root.set-status("Opened design group", true, false);
+                        }
+                        pin-clicked => {
+                            root.pin-s0 = !root.pin-s0;
+                            root.set-status(root.pin-s0 ? "Pinned group" : "Unpinned", root.pin-s0, false);
                         }
                     }
                     Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/star.svg");
-                        tone: Tone.success;
+
+                    SharedRow {
                         title: "Iteration 13 review";
                         subtitle: "Event · May 6 2026";
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
+                        tone-i: 2;
+                        pinned: root.pin-s1;
+                        visited: root.visited-s1;
+                        row-clicked => {
+                            root.visited-s1 = true;
+                            root.set-status("Opened event", true, false);
+                        }
+                        pin-clicked => {
+                            root.pin-s1 = !root.pin-s1;
+                            root.set-status(root.pin-s1 ? "Pinned event" : "Unpinned", root.pin-s1, false);
                         }
                     }
                     Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/menu.svg");
-                        tone: Tone.warning;
+
+                    SharedRow {
                         title: "drawer-shadow-fix.pdf";
                         subtitle: "Shared file · 88 KB";
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/chevron-right.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
+                        tone-i: 3;
+                        pinned: root.pin-s2;
+                        visited: root.visited-s2;
+                        row-clicked => {
+                            root.visited-s2 = true;
+                            root.set-status("Opened file", true, false);
                         }
+                        pin-clicked => {
+                            root.pin-s2 = !root.pin-s2;
+                            root.set-status(root.pin-s2 ? "Pinned file" : "Unpinned", root.pin-s2, false);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ===================== Bottom sheet =====================
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+                root.confirm-block = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: Theme.surface-2;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.muted;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: "Ada Lovelace";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 700;
+                    }
+                }
+                SheetRow {
+                    label: root.edit-mode ? "Exit edit mode" : "Edit contact";
+                    clicked => {
+                        root.edit-mode = !root.edit-mode;
+                        root.set-status(root.edit-mode ? "Edit mode" : "Saved", root.edit-mode, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: root.starred ? "Unstar contact" : "Star contact";
+                    clicked => {
+                        root.starred = !root.starred;
+                        root.set-status(root.starred ? "Starred" : "Unstarred", root.starred, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: root.muted ? "Unmute notifications" : "Mute notifications";
+                    clicked => {
+                        root.muted = !root.muted;
+                        root.set-status(root.muted ? "Muted" : "Unmuted", !root.muted, root.muted);
+                        root.sheet-open = false;
+                    }
+                }
+                Divider { }
+
+                SheetRow {
+                    label: root.confirm-block ? "Confirm: block Ada" : (root.blocked ? "Unblock contact" : "Block contact");
+                    destructive: true;
+                    clicked => {
+                        if (root.blocked) {
+                            root.blocked = false;
+                            root.set-status("Unblocked", true, false);
+                            root.sheet-open = false;
+                        } else if (root.confirm-block) {
+                            root.blocked = true;
+                            root.set-status("Blocked", false, true);
+                            root.sheet-open = false;
+                            root.confirm-block = false;
+                        } else {
+                            root.confirm-block = true;
+                        }
+                    }
+                }
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.sheet-open = false;
+                        root.confirm-block = false;
                     }
                 }
             }

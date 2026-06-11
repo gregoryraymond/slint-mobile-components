@@ -1,107 +1,286 @@
 // OnboardingPage
 // =====================================================================
 //
-// Hero-style template — one frame of a paginated onboarding flow.
-// Shown to new users walking through the app's value props before the
-// first interaction. Pages alternate the illustration / headline /
-// description; this component renders ONE frame at a time and exposes
-// `page-index` so the caller drives advancement.
+// Paginated onboarding flow with the wizard logic INTERNAL to the
+// page: the catalogue cell already advances through 5 slides on
+// Continue, supports Back, jumps to a slide via the dot row,
+// surfaces a horizontally-scrollable "Highlights" strip per slide,
+// and lands on a completion screen with Restart + Get started
+// affordances. All of these were previously the host's
+// responsibility; now they Just Work in the demo without any
+// wiring.
 //
-// Specification
-// -------------
+// Slides (cycled via `current-slide`):
+//   0  GETTING STARTED   "Design that travels with your app"
+//   1  TYPOGRAPHY        "A font system that speaks each surface"
+//   2  THEMING           "Light, dark, and Liquid Glass — out of the box"
+//   3  COMPONENTS        "30+ Slint widgets ready to drop in"
+//   4  YOU'RE READY      "Open the catalogue and explore"
 //
-// Geometry
-//   - Skip TextButton anchored to the top-right (small, recessive).
-//   - Centred illustration — large, ~280-320 px tall on a 412 px wide
-//     screen, occupying the upper-third of the page.
-//   - Headline below the illustration (`font-size-headline`, weight
-//     600, centred).
-//   - Description paragraph beneath the headline (`font-size-body-large`,
-//     muted, centred, wrap word-wrap).
-//   - Page-dot indicator above the CTA (`page-count` dots; the
-//     `page-index`'th is the active dot, others are muted).
-//   - Primary `Next` CTA pinned to the bottom — full-width.
-//
-// State
-//   - `page-index` (in-out int) + `page-count` (in int) — caller can
-//     swap the slot content on each tap and drive the dot indicator.
+// Each slide swaps the headline, body, and tint of the dot
+// indicator. Skip jumps straight to the completion screen
+// (eyebrow flips to "SKIPPED"). Restart resets `current-slide`
+// to 0 and clears the completed / skipped flags.
 
+import { ScrollView } from "std-widgets.slint";
 import { Theme } from "@mobile-theme/theme.slint";
 import { MobileButton, TextButton } from "@mobile-components/button.slint";
 import { DotIndicator } from "@mobile-components/dot-indicator.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
 
+// Coloured pill used in the horizontally-scrollable highlights
+// strip. Tap fires the host `highlight-tapped` callback AND
+// surfaces "Selected: <text>" in the inline status banner so the
+// catalogue cell shows real feedback per tap.
+component HighlightPill inherits Rectangle {
+    in property <string> text;
+    in property <brush> tint;
+    callback clicked();
+
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-action-default => { root.clicked(); }
+
+    height: 36px;
+    border-radius: 18px;
+    background: touch.pressed ? Theme.surface-pressed : root.tint;
+    border-width: 1px;
+    border-color: Theme.outline;
+    animate background { duration: Theme.motion-fast; }
+
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        Text {
+            text: root.text;
+            color: Theme.on-primary;
+            font-family: "IBM Plex Sans";
+            font-size: Theme.font-size-caption;
+            font-weight: 700;
+            vertical-alignment: center;
+        }
+    }
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+// Tappable dot used by the inline jump-to-page indicator row.
+// The plain `DotIndicator` widget doesn't expose per-dot
+// clicks, so we inline the row here.
+component JumpDot inherits Rectangle {
+    in property <bool> active: false;
+    callback clicked();
+
+    width: root.active ? 24px : 8px;
+    height: 8px;
+    border-radius: 4px;
+    background: root.active ? Theme.primary : Theme.surface-variant;
+    animate width, background { duration: Theme.motion-fast; }
+    TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
 export component OnboardingPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
     in property <image> illustration: @image-url("@mobile-components/icons/onboarding-illus.svg");
+    // Kept as `in` so a host can still rebrand defaults; internal
+    // slide state below uses these as the slide-0 values.
     in property <string> headline: "Design that travels with your app";
     in property <string> description: "A handcrafted Slint component catalogue for Android — same look on every screen, fully themable from your Rust code.";
     in-out property <int> page-index: 0;
-    in property <int> page-count: 4;
+    in property <int> page-count: 5;
     in property <string> primary-label: "Continue";
     in property <string> skip-label: "Skip";
     callback skip-pressed();
     callback primary-pressed();
+    // Fires when the user finishes the wizard (presses the final
+    // Continue or Get Started). Real apps would dismiss / advance.
+    callback finished();
+    // Fires when the user taps a highlight pill — host can react if
+    // it cares; the cell itself surfaces feedback in the status banner.
+    callback highlight-tapped(string);
+
+    // ---- Internal slide state ----
+    private property <int> current-slide: root.page-index;
+    private property <bool> completed: false;
+    private property <bool> skipped: false;
+    private property <string> status-msg: "";
+
+    // ---- Slide content (parallel arrays so the slint type system
+    //      can statically check the index) ----
+    private property <[string]> slide-eyebrows: [
+        "GETTING STARTED",
+        "TYPOGRAPHY",
+        "THEMING",
+        "COMPONENTS",
+        "YOU'RE READY",
+    ];
+    private property <[string]> slide-titles: [
+        "Design that travels with your app",
+        "A font system that speaks each surface",
+        "Light, dark, and Liquid Glass",
+        "30+ widgets ready to drop in",
+        "Open the catalogue and explore",
+    ];
+    private property <[string]> slide-bodies: [
+        "A handcrafted Slint component catalogue for Android — same look on every screen, fully themable from your Rust code.",
+        "Inter sets the chrome, Fraunces leads the editorial moments, Plex Sans grounds the lists, JetBrains Mono carries the numbers.",
+        "Swap one import to reskin the entire library: warm photo backdrops, true OLED dark, or translucent Liquid Glass — your call.",
+        "Buttons, cards, forms, navigation, lists, charts — every widget honours the design tokens so your app stays cohesive.",
+        "You're all set. Tap Get started to dive into the catalogue, or Restart to revisit the tour.",
+    ];
+
+    // Per-slide pill set — kept as one flat array (per-slide indexed
+    // via a `slide` field) because slint structs can't nest models.
+    private property <int> selected-highlight: -1;
+
+    callback signed-in(string);
+
+    // ---- Handlers ----
+    function press-next() {
+        root.primary-pressed();
+        if (root.current-slide + 1 >= root.page-count) {
+            // Last "Get started" press finishes the tour.
+            root.completed = true;
+            root.status-msg = "Get started -- catalogue opened";
+            root.finished();
+        } else {
+            root.current-slide = root.current-slide + 1;
+            root.page-index = root.current-slide;
+            root.status-msg = "Slide " + (root.current-slide + 1)
+                + " of " + root.page-count;
+        }
+    }
+    function press-back() {
+        if (root.current-slide > 0) {
+            root.current-slide = root.current-slide - 1;
+            root.page-index = root.current-slide;
+            root.status-msg = "Back to slide " + (root.current-slide + 1);
+        }
+    }
+    function press-skip() {
+        root.skip-pressed();
+        root.skipped = true;
+        root.completed = true;
+        root.status-msg = "Tour skipped";
+    }
+    function press-restart() {
+        root.completed = false;
+        root.skipped = false;
+        root.current-slide = 0;
+        root.page-index = 0;
+        root.selected-highlight = -1;
+        root.status-msg = "Tour restarted";
+    }
+    function press-jump(i: int) {
+        if (i >= 0 && i < root.page-count) {
+            root.current-slide = i;
+            root.page-index = i;
+            root.completed = false;
+            root.skipped = false;
+            root.status-msg = "Jumped to slide " + (i + 1);
+        }
+    }
+    function tap-highlight(idx: int, text: string) {
+        root.selected-highlight = idx;
+        root.status-msg = "Selected: " + text;
+        root.highlight-tapped(text);
+    }
 
     background: Theme.background;
 
-    // Top-right Skip
-    Rectangle {
+    // Top-right Skip — hidden once the wizard is completed.
+    if !root.completed: Rectangle {
         x: parent.width - self.width - Theme.spacing-sm;
         y: Theme.spacing-sm;
         width: 80px;
         height: 40px;
         TextButton {
             text: root.skip-label;
-            clicked => { root.skip-pressed(); }
+            clicked => { root.press-skip(); }
         }
     }
 
-    // The outer VL packs from the top; an explicit `vertical-stretch: 1`
-    // spacer below the headline group pushes the dots + CTA to the
-    // bottom of the page. Slint's default `alignment: stretch` would
-    // otherwise grow the CTA button to fill the surplus, which looks
-    // wrong for a one-line primary action.
+    // Top-left Back — appears only past slide 0 and never on the
+    // completion screen.
+    if !root.completed && root.current-slide > 0: Rectangle {
+        x: Theme.spacing-sm;
+        y: Theme.spacing-sm;
+        width: 80px;
+        height: 40px;
+        TextButton {
+            text: "Back";
+            clicked => { root.press-back(); }
+        }
+    }
+
     VerticalLayout {
         alignment: start;
         padding-top: Theme.spacing-xl;
         padding-bottom: Theme.spacing-xl;
         padding-left: Theme.spacing-lg;
         padding-right: Theme.spacing-lg;
-        spacing: Theme.spacing-lg;
+        spacing: Theme.spacing-md;
 
         Rectangle {
-            height: min(self.width, 320px);
+            height: min(self.width, 280px);
             Image {
-                // Fixed square — `min(parent.width, …)` here makes the
-                // width depend on the centring layout it also feeds, a
-                // binding loop. 320px fits the 412px mobile target.
-                width: 320px;
-                height: 320px;
+                width: 280px;
+                height: 280px;
                 source: root.illustration;
                 image-fit: ImageFit.contain;
+                // Slight transform shift so each slide visually
+                // differs even when the illustration source itself
+                // doesn't change.
+                transform-rotation: root.current-slide * 6deg;
+                animate transform-rotation { duration: Theme.motion-base; }
             }
         }
 
-        // Headline — Fraunces serif-display 28 px 700, romantic /
-        // editorial. Pairs with the airy illustration above.
+        // Eyebrow tag pulled from the current slide spec — Space
+        // Grotesk all-caps so it reads as a chapter marker above
+        // the editorial-serif title below.
+        HorizontalLayout {
+            alignment: center;
+            Text {
+                text: root.completed
+                    ? (root.skipped ? "TOUR · SKIPPED" : "TOUR · COMPLETE")
+                    : root.slide-eyebrows[root.current-slide];
+                color: root.completed && !root.skipped
+                    ? Theme.accent-success
+                    : Theme.primary;
+                font-family: "Space Grotesk";
+                font-size: 11px;
+                font-weight: 800;
+                letter-spacing: 2.5px;
+            }
+        }
+
+        // Headline driven by the current slide.
         HorizontalLayout {
             alignment: center;
             Heading {
-                text: root.headline;
+                text: root.completed
+                    ? (root.skipped ? "Tour skipped" : "You're all set!")
+                    : root.slide-titles[root.current-slide];
                 style: HeadingStyle.serif-display;
                 horizontal-alignment: center;
                 wrap: word-wrap;
             }
         }
 
-        // Description — Inter 400, generous tracking. Calm body that
-        // doesn't compete with the Fraunces hero above it.
+        // Description driven by the current slide.
         HorizontalLayout {
             alignment: center;
             Text {
-                text: root.description;
+                text: root.completed
+                    ? (root.skipped
+                        ? "No worries — tap Restart any time to revisit the tour."
+                        : root.slide-bodies[4])
+                    : root.slide-bodies[root.current-slide];
                 color: Theme.muted;
                 font-family: "Inter";
                 font-size: Theme.font-size-body-large;
@@ -112,19 +291,127 @@ export component OnboardingPage inherits Window {
             }
         }
 
-        // Flexible spacer that absorbs surplus vertical space.
-        Rectangle {
-            vertical-stretch: 1;
+        // ---- Highlights strip — horizontally scrollable, each
+        //      pill tappable to surface "Selected: <text>" in the
+        //      status line.
+        if !root.completed: ScrollView {
+            height: 52px;
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                spacing: Theme.spacing-sm;
+                alignment: start;
+                HighlightPill {
+                    text: "Themable";
+                    tint: root.selected-highlight == 0 ? Theme.primary-pressed : Theme.primary;
+                    clicked => { root.tap-highlight(0, "Themable"); }
+                }
+                HighlightPill {
+                    text: "Mobile-first";
+                    tint: root.selected-highlight == 1 ? #c4540e : #e0691a;
+                    clicked => { root.tap-highlight(1, "Mobile-first"); }
+                }
+                HighlightPill {
+                    text: "Open source";
+                    tint: root.selected-highlight == 2 ? #1a8a4a : Theme.accent-success;
+                    clicked => { root.tap-highlight(2, "Open source"); }
+                }
+                HighlightPill {
+                    text: "Rust";
+                    tint: root.selected-highlight == 3 ? #a64223 : #d05a30;
+                    clicked => { root.tap-highlight(3, "Rust"); }
+                }
+                HighlightPill {
+                    text: "Slint";
+                    tint: root.selected-highlight == 4 ? #4c2c92 : #6b3eb3;
+                    clicked => { root.tap-highlight(4, "Slint"); }
+                }
+                HighlightPill {
+                    text: "Liquid Glass";
+                    tint: root.selected-highlight == 5 ? #0066b3 : #1976d2;
+                    clicked => { root.tap-highlight(5, "Liquid Glass"); }
+                }
+                HighlightPill {
+                    text: "Fraunces";
+                    tint: root.selected-highlight == 6 ? #8e0046 : #b4135f;
+                    clicked => { root.tap-highlight(6, "Fraunces"); }
+                }
+                HighlightPill {
+                    text: "Editorial";
+                    tint: root.selected-highlight == 7 ? #b8650b : #db7c10;
+                    clicked => { root.tap-highlight(7, "Editorial"); }
+                }
+            }
         }
 
-        DotIndicator {
-            count: root.page-count;
-            active: root.page-index;
+        // Live status line — shows what each tap did so the
+        // catalogue cell narrates its state.
+        if root.status-msg != "": HorizontalLayout {
+            alignment: center;
+            Text {
+                text: root.status-msg;
+                color: Theme.accent-info;
+                font-family: "JetBrains Mono";
+                font-size: Theme.font-size-caption;
+                font-weight: 700;
+                horizontal-alignment: center;
+            }
         }
 
+        Rectangle { vertical-stretch: 1; }
+
+        // ---- Tappable dot row — jump to any slide directly ----
+        if !root.completed: HorizontalLayout {
+            alignment: center;
+            spacing: Theme.spacing-sm;
+            JumpDot {
+                active: root.current-slide == 0;
+                clicked => { root.press-jump(0); }
+            }
+            JumpDot {
+                active: root.current-slide == 1;
+                clicked => { root.press-jump(1); }
+            }
+            JumpDot {
+                active: root.current-slide == 2;
+                clicked => { root.press-jump(2); }
+            }
+            JumpDot {
+                active: root.current-slide == 3;
+                clicked => { root.press-jump(3); }
+            }
+            JumpDot {
+                active: root.current-slide == 4;
+                clicked => { root.press-jump(4); }
+            }
+        }
+
+        // ---- Primary CTA — label depends on wizard state ----
         MobileButton {
-            text: root.primary-label;
-            clicked => { root.primary-pressed(); }
+            text: root.completed
+                ? "Restart tour"
+                : (root.current-slide + 1 >= root.page-count
+                    ? "Get started"
+                    : root.primary-label);
+            primary: true;
+            clicked => {
+                if (root.completed) {
+                    root.press-restart();
+                } else {
+                    root.press-next();
+                }
+            }
+        }
+
+        // Secondary "Get started" / "Restart" pairing once the
+        // tour completes — the primary above flips to Restart, so
+        // we add the actual "Get started" finalisation here.
+        if root.completed: TextButton {
+            text: "Open catalogue";
+            clicked => {
+                root.status-msg = "Catalogue opened";
+                root.finished();
+            }
         }
     }
 }

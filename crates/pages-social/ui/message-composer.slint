@@ -1,31 +1,299 @@
 // MessageComposerPage
 // =====================================================================
-//
-// New-message draft. TO section with chips-as-rows for recipients,
-// FormField for the subject, BODY section with a multi-line input area
-// (a tall SettingRow placeholder — caller swaps for a real multi-line
-// TextField when adopted), and an ATTACHMENTS section listing files.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { FormField } from "@mobile-components/form-field.slint";
 import { FormSection } from "@mobile-components/form-section.slint";
-import { SettingRow } from "@mobile-components/setting-row.slint";
 import { TextField } from "@mobile-components/text-field.slint";
 import { TextButton } from "@mobile-components/button.slint";
 import { Divider } from "@mobile-components/divider.slint";
 import { ScrollView } from "std-widgets.slint";
+
+component RecipientChip inherits Rectangle {
+    in property <string> name;
+    in property <string> avatar-init;
+    callback remove();
+
+    horizontal-stretch: 0;
+    height: 32px;
+    border-radius: 16px;
+    background: Theme.accent-info.with-alpha(0.16);
+
+    HorizontalLayout {
+        padding-left: 4px;
+        padding-right: Theme.spacing-sm;
+        spacing: 6px;
+        alignment: center;
+        Rectangle {
+            width: 24px;
+            height: 24px;
+            border-radius: 12px;
+            background: Theme.accent-info;
+            Text {
+                text: root.avatar-init;
+                color: Theme.on-primary;
+                font-size: 10px;
+                font-weight: 800;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                width: parent.width;
+                height: parent.height;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.name;
+                color: Theme.accent-info;
+                font-size: Theme.font-size-caption;
+                font-weight: 700;
+            }
+        }
+        Rectangle {
+            width: 18px;
+            height: 18px;
+            border-radius: 9px;
+            background: Theme.surface-2;
+            Text {
+                text: "✕";
+                color: Theme.muted;
+                font-size: 9px;
+                font-weight: 800;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                width: parent.width;
+                height: parent.height;
+            }
+            TouchArea {
+                clicked => {
+                    root.remove();
+                }
+            }
+        }
+    }
+}
+
+component CandidateChip inherits Rectangle {
+    in property <string> name;
+    callback clicked();
+
+    horizontal-stretch: 0;
+    height: 28px;
+    border-radius: 14px;
+    background: Theme.surface-2;
+    HorizontalLayout {
+        padding-left: Theme.spacing-sm;
+        padding-right: Theme.spacing-sm;
+        spacing: 4px;
+        alignment: center;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: "+ " + root.name;
+                color: Theme.accent-info;
+                font-size: Theme.font-size-caption;
+                font-weight: 700;
+            }
+        }
+    }
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component AttachmentRow inherits Rectangle {
+    in property <string> name;
+    in property <string> meta;
+    in property <int> tone-i: 0;
+    in property <bool> removed: false;
+    callback remove-clicked();
+
+    horizontal-stretch: 1;
+    min-height: 56px;
+    opacity: root.removed ? 0.5 : 1.0;
+    HorizontalLayout {
+        padding: Theme.spacing-md;
+        spacing: Theme.spacing-md;
+        alignment: stretch;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 32px;
+                height: 32px;
+                border-radius: 8px;
+                background: root.tone-i == 1 ? Theme.accent-info.with-alpha(0.22) : (root.tone-i == 2 ? Theme.accent-success.with-alpha(0.22) : (root.tone-i == 3 ? Theme.accent-warning.with-alpha(0.22) : Theme.surface-2));
+                Image {
+                    width: 16px;
+                    height: 16px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: @image-url("@mobile-components/icons/menu.svg");
+                    colorize: root.tone-i == 1 ? Theme.accent-info : (root.tone-i == 2 ? Theme.accent-success : (root.tone-i == 3 ? Theme.accent-warning : Theme.muted));
+                    image-fit: contain;
+                }
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: root.name + (root.removed ? " · removed" : "");
+                color: Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 700;
+            }
+            Text {
+                text: root.meta;
+                color: Theme.muted;
+                font-size: Theme.font-size-caption;
+            }
+        }
+        Rectangle {
+            width: 32px;
+            height: 32px;
+            border-radius: 16px;
+            background: root.removed ? Theme.accent-success.with-alpha(0.22) : Theme.accent-danger.with-alpha(0.22);
+            Text {
+                text: root.removed ? "↺" : "✕";
+                color: root.removed ? Theme.accent-success : Theme.accent-danger;
+                font-size: 14px;
+                font-weight: 800;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                width: parent.width;
+                height: parent.height;
+            }
+            TouchArea {
+                clicked => {
+                    root.remove-clicked();
+                }
+            }
+        }
+    }
+}
+
+component Chip2 inherits Rectangle {
+    in property <string> label;
+    in property <bool> active: false;
+    in property <int> tone-i: 0;
+    callback clicked();
+
+    horizontal-stretch: 0;
+    height: 28px;
+    border-radius: 14px;
+    background: root.active ? (root.tone-i == 4 ? Theme.accent-danger : (root.tone-i == 3 ? Theme.accent-warning : Theme.primary)) : Theme.surface-2;
+    HorizontalLayout {
+        padding-left: Theme.spacing-sm;
+        padding-right: Theme.spacing-sm;
+        alignment: center;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.active ? Theme.on-primary : Theme.on-surface;
+                font-size: Theme.font-size-caption;
+                font-weight: 700;
+            }
+        }
+    }
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component SheetRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> destructive: false;
+    callback clicked();
+
+    horizontal-stretch: 1;
+    min-height: 48px;
+    background: ta.has-hover ? Theme.surface-2 : transparent;
+
+    ta := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.spacing-md;
+        padding-right: Theme.spacing-md;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: root.destructive ? Theme.accent-danger : Theme.on-surface;
+                font-size: Theme.font-size-body;
+                font-weight: 600;
+            }
+        }
+    }
+}
 
 export component MessageComposerPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
 
     in-out property <string> subject;
+    in-out property <string> body;
+    in-out property <bool> ada-on: true;
+    in-out property <bool> petra-on: false;
+    in-out property <bool> bao-on: false;
+    in-out property <bool> chen-on: false;
+    in-out property <bool> cc-open: false;
+    in-out property <bool> attach0-removed: false;
+    in-out property <bool> attach1-removed: false;
+    in-out property <int> attach-extra: 0;
+    in-out property <int> priority: 0; // 0 normal, 1 high, 2 urgent
+    in-out property <bool> schedule: false;
+    in-out property <bool> read-receipt: false;
+    in-out property <bool> sent: false;
+    in-out property <bool> sheet-open: false;
+    in-out property <bool> confirm-discard: false;
+    in-out property <string> status-msg: "";
+    in-out property <bool> status-success: false;
+    in-out property <bool> status-danger: false;
+
     callback back-pressed();
     callback send-pressed();
     callback add-recipient-pressed();
     callback remove-recipient-pressed();
     callback remove-attachment-pressed(string);
+
+    function recipient-count() -> int {
+        return (root.ada-on ? 1 : 0) + (root.petra-on ? 1 : 0) + (root.bao-on ? 1 : 0) + (root.chen-on ? 1 : 0);
+    }
+    function attach-count() -> int {
+        return (root.attach0-removed ? 0 : 1) + (root.attach1-removed ? 0 : 1) + root.attach-extra;
+    }
+    function priority-label() -> string {
+        return root.priority == 0 ? "Normal" : (root.priority == 1 ? "High" : "Urgent");
+    }
+    function can-send() -> bool {
+        return root.recipient-count() > 0 && !root.subject.is-empty;
+    }
+    function set-status(m: string, ok: bool, bad: bool) {
+        root.status-msg = m;
+        root.status-success = ok;
+        root.status-danger = bad;
+    }
+    function send-message() {
+        if (!root.can-send()) {
+            root.set-status(root.recipient-count() == 0 ? "Add a recipient" : "Subject is empty", false, true);
+            return;
+        }
+        root.sent = true;
+        root.set-status(root.schedule ? "Scheduled for tomorrow ⏰" : "Message sent ✓", true, false);
+        root.send-pressed();
+    }
 
     background: Theme.background;
 
@@ -33,20 +301,94 @@ export component MessageComposerPage inherits Window {
         spacing: 0;
 
         AppBar {
-            title: "New message";
+            title: root.sent ? (root.schedule ? "Scheduled" : "Sent") : "New message" + (root.priority > 0 ? " · " + root.priority-label() : "");
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
-            leading-pressed => { root.back-pressed(); }
-            // Trailing slot: tap area only — text label below.
+            trailing-icon: @image-url("@mobile-components/icons/more-vertical.svg");
+            leading-pressed => {
+                root.back-pressed();
+            }
+            trailing-pressed => {
+                root.sheet-open = true;
+            }
         }
-        // Send action — kept inline as a TextButton anchored to the bar's
-        // trailing edge via a small overlay row so it can be a text label.
+
+        // Send row.
         HorizontalLayout {
             padding-left: Theme.spacing-md;
             padding-right: Theme.spacing-md;
-            alignment: end;
-            TextButton {
-                text: "Send";
-                clicked => { root.send-pressed(); }
+            padding-top: Theme.spacing-sm;
+            padding-bottom: Theme.spacing-sm;
+            spacing: Theme.spacing-sm;
+            alignment: stretch;
+            Rectangle {
+                horizontal-stretch: 1;
+            }
+            Rectangle {
+                horizontal-stretch: 0;
+                height: 32px;
+                border-radius: 16px;
+                background: root.schedule ? Theme.accent-warning.with-alpha(0.22) : Theme.surface-2;
+                HorizontalLayout {
+                    padding-left: Theme.spacing-sm;
+                    padding-right: Theme.spacing-sm;
+                    VerticalLayout {
+                        alignment: center;
+                        Text {
+                            text: root.schedule ? "⏰ Scheduled" : "Send now";
+                            color: root.schedule ? Theme.accent-warning : Theme.on-surface;
+                            font-size: Theme.font-size-caption;
+                            font-weight: 800;
+                        }
+                    }
+                }
+                TouchArea {
+                    clicked => {
+                        root.schedule = !root.schedule;
+                        root.set-status(root.schedule ? "Will send tomorrow 09:00" : "Send-now mode", root.schedule, false);
+                    }
+                }
+            }
+            Rectangle {
+                horizontal-stretch: 0;
+                height: 32px;
+                border-radius: 16px;
+                background: root.can-send() ? Theme.primary : Theme.surface-2;
+                HorizontalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    VerticalLayout {
+                        alignment: center;
+                        Text {
+                            text: root.sent ? "Sent ✓" : (root.schedule ? "Schedule" : "Send");
+                            color: root.can-send() ? Theme.on-primary : Theme.muted;
+                            font-size: Theme.font-size-caption;
+                            font-weight: 800;
+                        }
+                    }
+                }
+                TouchArea {
+                    enabled: root.can-send() && !root.sent;
+                    clicked => {
+                        root.send-message();
+                    }
+                }
+            }
+        }
+
+        if !root.status-msg.is-empty: Rectangle {
+            height: 28px;
+            background: root.status-success ? Theme.accent-success.with-alpha(0.16) : (root.status-danger ? Theme.accent-danger.with-alpha(0.16) : Theme.surface-2);
+            HorizontalLayout {
+                alignment: center;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: root.status-msg;
+                        color: root.status-success ? Theme.accent-success : (root.status-danger ? Theme.accent-danger : Theme.on-surface);
+                        font-size: Theme.font-size-caption;
+                        font-weight: 700;
+                    }
+                }
             }
         }
 
@@ -59,82 +401,363 @@ export component MessageComposerPage inherits Window {
                 spacing: Theme.spacing-md;
                 alignment: start;
 
-                // ----- TO ---------------------------------------------------
                 FormSection {
-                    title: "TO";
+                    title: "TO · " + root.recipient-count() + " RECIPIENT" + (root.recipient-count() == 1 ? "" : "S");
 
-                    SettingRow {
-                        title: "Ada Lovelace";
-                        subtitle: "+32 478 12 34 · ada@analyticalengine.uk";
-                        clicked => { root.remove-recipient-pressed(); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/close.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
+                    Rectangle {
+                        VerticalLayout {
+                            padding: Theme.spacing-md;
+                            spacing: Theme.spacing-sm;
+                            HorizontalLayout {
+                                spacing: Theme.spacing-xs;
+                                alignment: start;
+                                if root.ada-on: RecipientChip {
+                                    name: "Ada Lovelace";
+                                    avatar-init: "AL";
+                                    remove => {
+                                        root.ada-on = false;
+                                        root.set-status("Removed Ada", false, true);
+                                        root.remove-recipient-pressed();
+                                    }
+                                }
+                                if root.petra-on: RecipientChip {
+                                    name: "Petra";
+                                    avatar-init: "PL";
+                                    remove => {
+                                        root.petra-on = false;
+                                        root.set-status("Removed Petra", false, true);
+                                    }
+                                }
+                                if root.bao-on: RecipientChip {
+                                    name: "Bao";
+                                    avatar-init: "BN";
+                                    remove => {
+                                        root.bao-on = false;
+                                        root.set-status("Removed Bao", false, true);
+                                    }
+                                }
+                                if root.chen-on: RecipientChip {
+                                    name: "Chen";
+                                    avatar-init: "CW";
+                                    remove => {
+                                        root.chen-on = false;
+                                        root.set-status("Removed Chen", false, true);
+                                    }
+                                }
+                            }
+                            HorizontalLayout {
+                                spacing: Theme.spacing-xs;
+                                alignment: start;
+                                if !root.ada-on: CandidateChip {
+                                    name: "Ada Lovelace";
+                                    clicked => {
+                                        root.ada-on = true;
+                                        root.set-status("Added Ada", true, false);
+                                        root.add-recipient-pressed();
+                                    }
+                                }
+                                if !root.petra-on: CandidateChip {
+                                    name: "Petra Lindquist";
+                                    clicked => {
+                                        root.petra-on = true;
+                                        root.set-status("Added Petra", true, false);
+                                    }
+                                }
+                                if !root.bao-on: CandidateChip {
+                                    name: "Bao Nguyen";
+                                    clicked => {
+                                        root.bao-on = true;
+                                        root.set-status("Added Bao", true, false);
+                                    }
+                                }
+                                if !root.chen-on: CandidateChip {
+                                    name: "Chen Wei";
+                                    clicked => {
+                                        root.chen-on = true;
+                                        root.set-status("Added Chen", true, false);
+                                    }
+                                }
+                            }
+                            HorizontalLayout {
+                                spacing: Theme.spacing-sm;
+                                padding-top: Theme.spacing-xs;
+                                Rectangle {
+                                    horizontal-stretch: 0;
+                                    height: 24px;
+                                    border-radius: 12px;
+                                    background: root.cc-open ? Theme.accent-info.with-alpha(0.22) : Theme.surface-2;
+                                    HorizontalLayout {
+                                        padding-left: Theme.spacing-sm;
+                                        padding-right: Theme.spacing-sm;
+                                        VerticalLayout {
+                                            alignment: center;
+                                            Text {
+                                                text: root.cc-open ? "− CC / BCC" : "+ CC / BCC";
+                                                color: root.cc-open ? Theme.accent-info : Theme.muted;
+                                                font-size: 10px;
+                                                font-weight: 800;
+                                            }
+                                        }
+                                    }
+                                    TouchArea {
+                                        clicked => {
+                                            root.cc-open = !root.cc-open;
+                                            root.set-status(root.cc-open ? "CC/BCC shown" : "CC/BCC hidden", true, false);
+                                        }
+                                    }
+                                }
+                            }
+                            if root.cc-open: Rectangle {
+                                background: Theme.accent-info.with-alpha(0.10);
+                                border-radius: Theme.radius-md;
+                                VerticalLayout {
+                                    padding: Theme.spacing-sm;
+                                    Text {
+                                        text: "CC: petra@slint.dev · BCC: (none)";
+                                        color: Theme.muted;
+                                        font-size: Theme.font-size-caption;
+                                        font-weight: 700;
+                                    }
+                                }
+                            }
                         }
-                    }
-                    Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/plus.svg");
-                        tone: Tone.info;
-                        title: "Add recipient";
-                        clicked => { root.add-recipient-pressed(); }
                     }
                 }
 
-                // ----- Subject ----------------------------------------------
                 FormField {
-                    label: "Subject";
+                    label: "Subject" + (root.subject.is-empty ? " · required" : "");
                     TextField {
                         placeholder: "Subject";
                         text <=> root.subject;
                     }
                 }
 
-                // ----- BODY -------------------------------------------------
-                FormSection {
-                    title: "BODY";
-
-                    SettingRow {
-                        title: "Write your message…";
-                        subtitle: "Use this space for a longer note. The text will wrap and grow vertically as you type — most adopters drop a real multi-line TextField in here at integration time.";
+                FormField {
+                    label: "Body · " + root.body.character-count + " chars";
+                    TextField {
+                        placeholder: "Write your message…";
+                        text <=> root.body;
                     }
                 }
 
-                // ----- ATTACHMENTS ------------------------------------------
-                FormSection {
-                    title: "ATTACHMENTS";
+                // Priority chips.
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    spacing: Theme.spacing-xs;
+                    Text {
+                        text: "PRIORITY · " + root.priority-label();
+                        color: Theme.muted;
+                        font-size: 11px;
+                        font-weight: 800;
+                        letter-spacing: 2px;
+                    }
+                    HorizontalLayout {
+                        spacing: Theme.spacing-sm;
+                        Chip2 {
+                            label: "Normal";
+                            active: root.priority == 0;
+                            tone-i: 0;
+                            clicked => {
+                                root.priority = 0;
+                                root.set-status("Priority: Normal", true, false);
+                            }
+                        }
+                        Chip2 {
+                            label: "High";
+                            active: root.priority == 1;
+                            tone-i: 3;
+                            clicked => {
+                                root.priority = 1;
+                                root.set-status("Priority: High", false, false);
+                            }
+                        }
+                        Chip2 {
+                            label: "Urgent";
+                            active: root.priority == 2;
+                            tone-i: 4;
+                            clicked => {
+                                root.priority = 2;
+                                root.set-status("Priority: Urgent", false, true);
+                            }
+                        }
+                        Chip2 {
+                            label: root.read-receipt ? "✓ Receipt" : "Receipt";
+                            active: root.read-receipt;
+                            tone-i: 0;
+                            clicked => {
+                                root.read-receipt = !root.read-receipt;
+                                root.set-status(root.read-receipt ? "Read receipt requested" : "No receipt", root.read-receipt, false);
+                            }
+                        }
+                    }
+                }
 
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/menu.svg");
-                        tone: Tone.info;
-                        title: "report.pdf";
-                        subtitle: "412 KB";
-                        clicked => { root.remove-attachment-pressed("report.pdf"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/close.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
+                FormSection {
+                    title: "ATTACHMENTS · " + root.attach-count();
+
+                    AttachmentRow {
+                        name: "report.pdf";
+                        meta: "412 KB";
+                        tone-i: 1;
+                        removed: root.attach0-removed;
+                        remove-clicked => {
+                            root.attach0-removed = !root.attach0-removed;
+                            root.set-status(root.attach0-removed ? "Removed report.pdf" : "Restored", !root.attach0-removed, root.attach0-removed);
+                            root.remove-attachment-pressed("report.pdf");
                         }
                     }
                     Divider { }
-                    SettingRow {
-                        icon: @image-url("@mobile-components/icons/menu.svg");
-                        tone: Tone.success;
-                        title: "screenshot.png";
-                        subtitle: "88 KB";
-                        clicked => { root.remove-attachment-pressed("screenshot.png"); }
-                        Image {
-                            width: 16px;
-                            height: 16px;
-                            source: @image-url("@mobile-components/icons/close.svg");
-                            colorize: Theme.muted;
-                            image-fit: contain;
+
+                    AttachmentRow {
+                        name: "screenshot.png";
+                        meta: "88 KB";
+                        tone-i: 2;
+                        removed: root.attach1-removed;
+                        remove-clicked => {
+                            root.attach1-removed = !root.attach1-removed;
+                            root.set-status(root.attach1-removed ? "Removed screenshot.png" : "Restored", !root.attach1-removed, root.attach1-removed);
+                            root.remove-attachment-pressed("screenshot.png");
                         }
+                    }
+
+                    for nt[i] in [{ idx: 1 }, { idx: 2 }, { idx: 3 }]: VerticalLayout {
+                        spacing: 0;
+                        if nt.idx <= root.attach-extra: Divider { }
+                        if nt.idx <= root.attach-extra: AttachmentRow {
+                            name: "untitled_" + nt.idx + ".bin";
+                            meta: "added just now";
+                            tone-i: 3;
+                            removed: false;
+                            remove-clicked => {
+                                root.attach-extra = max(0, root.attach-extra - 1);
+                                root.set-status("Removed attachment", false, true);
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        min-height: 48px;
+                        HorizontalLayout {
+                            padding: Theme.spacing-md;
+                            VerticalLayout {
+                                alignment: center;
+                                Text {
+                                    text: root.attach-extra >= 3 ? "Max attachments reached" : "+ Attach a file";
+                                    color: root.attach-extra >= 3 ? Theme.muted : Theme.accent-info;
+                                    font-size: Theme.font-size-body;
+                                    font-weight: 800;
+                                }
+                            }
+                        }
+                        TouchArea {
+                            enabled: root.attach-extra < 3;
+                            clicked => {
+                                root.attach-extra = root.attach-extra + 1;
+                                root.set-status("Attached untitled_" + root.attach-extra + ".bin", true, false);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ===================== Bottom sheet =====================
+    if root.sheet-open: Rectangle {
+        background: #00000099;
+        TouchArea {
+            clicked => {
+                root.sheet-open = false;
+                root.confirm-discard = false;
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            background: Theme.surface-2;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding-top: Theme.spacing-sm;
+                padding-bottom: Theme.spacing-md;
+                spacing: Theme.spacing-xs;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 36px;
+                        height: 4px;
+                        border-radius: 2px;
+                        background: Theme.muted;
+                    }
+                }
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-top: Theme.spacing-sm;
+                    Text {
+                        text: "Composer menu";
+                        color: Theme.on-surface;
+                        font-size: Theme.font-size-headline;
+                        font-weight: 700;
+                    }
+                }
+                SheetRow {
+                    label: "Save as draft";
+                    clicked => {
+                        root.set-status("Saved as draft", true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: root.schedule ? "Send immediately" : "Schedule for tomorrow";
+                    clicked => {
+                        root.schedule = !root.schedule;
+                        root.set-status(root.schedule ? "Scheduled" : "Send-now", root.schedule, false);
+                        root.sheet-open = false;
+                    }
+                }
+                SheetRow {
+                    label: "Cycle priority (now " + root.priority-label() + ")";
+                    clicked => {
+                        root.priority = mod(root.priority + 1, 3);
+                        root.set-status("Priority: " + root.priority-label(), true, false);
+                        root.sheet-open = false;
+                    }
+                }
+                Divider { }
+
+                SheetRow {
+                    label: root.confirm-discard ? "Confirm: discard draft" : "Discard draft";
+                    destructive: true;
+                    clicked => {
+                        if (root.confirm-discard) {
+                            root.subject = "";
+                            root.body = "";
+                            root.ada-on = false;
+                            root.petra-on = false;
+                            root.bao-on = false;
+                            root.chen-on = false;
+                            root.attach0-removed = true;
+                            root.attach1-removed = true;
+                            root.attach-extra = 0;
+                            root.set-status("Discarded", false, true);
+                            root.sheet-open = false;
+                            root.confirm-discard = false;
+                        } else {
+                            root.confirm-discard = true;
+                        }
+                    }
+                }
+                SheetRow {
+                    label: "Cancel";
+                    clicked => {
+                        root.sheet-open = false;
+                        root.confirm-discard = false;
                     }
                 }
             }

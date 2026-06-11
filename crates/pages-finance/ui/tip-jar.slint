@@ -5,15 +5,16 @@
 // from `CheckoutPage` (item-level checkout) and `PaymentSplitPage`
 // (multi-payer split). Demonstrates:
 //
-//   - Server greeting hero ("Marco served you tonight") + 3 selectable
-//     "rate the service" star clusters underneath that drive the
-//     suggested tip presets.
-//   - 4 tip-percent preset cards in a row (15 / 18 / 20 / 25 %) with
-//     the recommended one carrying a tone-tinted ring and "MOST
-//     COMMON" pill. Tapping recalculates the total.
-//   - Bill breakdown: subtotal + tax + tip + total emphasised.
-//   - Round-up / custom-tip controls underneath.
-//   - Sticky pay-with-saved-method footer.
+//   - Server greeting hero + 3 selectable "rate the service" star
+//     clusters underneath. Picking a rating moves both the
+//     `MOST COMMON` recommendation pill *and* the auto-selected
+//     preset to the matching tier (3★ → 15%, 4★ → 18%, 5★ → 20%).
+//   - 4 tip-percent preset cards (15 / 18 / 20 / 25 %). Tapping
+//     recalculates tip + total live.
+//   - Round-up toggle (rounds to the next whole dollar; delta shown
+//     dynamically) and a Custom amount sheet with a ± $1 stepper.
+//   - Bill breakdown: subtotal + tax + tip + total — all derived.
+//   - Sticky pay-with-saved-method footer with two-tap confirm.
 
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
@@ -22,7 +23,6 @@ import { Avatar } from "@mobile-components/avatar.slint";
 import { Divider } from "@mobile-components/divider.slint";
 import { MobileButton, TextButton } from "@mobile-components/button.slint";
 
-// One service-rating star cluster — 5 stars + tone-tinted label.
 component ServiceRating inherits Rectangle {
     in property <int> stars: 5;
     in property <string> label: "Great";
@@ -36,15 +36,15 @@ component ServiceRating inherits Rectangle {
 
     horizontal-stretch: 1;
     height: 76px;
-    background:
-          root.selected
+    background: root.selected
         ? (
               root.tone == Tone.success ? Theme.accent-success
             : root.tone == Tone.warning ? Theme.accent-warning
-            : root.tone == Tone.danger  ? Theme.accent-danger
+            : root.tone == Tone.danger ? Theme.accent-danger
             : Theme.surface-2
           )
         : Theme.surface-1;
+    animate background { duration: Theme.motion-fast; }
     border-radius: Theme.radius-md;
     drop-shadow-blur: Theme.elevation-1-blur;
     drop-shadow-color: Theme.elevation-1-color;
@@ -60,8 +60,7 @@ component ServiceRating inherits Rectangle {
                 width: 14px;
                 height: 14px;
                 source: @image-url("@mobile-components/icons/star.svg");
-                colorize:
-                      index < root.stars
+                colorize: index < root.stars
                     ? (root.selected ? Theme.on-primary : Theme.accent-warning)
                     : (root.selected ? #ffffff66 : Theme.surface-variant);
                 image-fit: contain;
@@ -78,12 +77,9 @@ component ServiceRating inherits Rectangle {
             }
         }
     }
-    TouchArea {
-        clicked => { root.clicked(); }
-    }
+    TouchArea { clicked => { root.clicked(); } }
 }
 
-// One tip-percent preset card.
 component TipPreset inherits Rectangle {
     in property <string> percent;
     in property <string> amount;
@@ -97,12 +93,12 @@ component TipPreset inherits Rectangle {
 
     horizontal-stretch: 1;
     height: 96px;
-    background:
-          root.selected ? Theme.accent-info
-        : Theme.surface-1;
+    background: root.selected ? Theme.accent-info : Theme.surface-1;
     border-radius: Theme.radius-md;
     border-width: root.recommended && !root.selected ? 2px : 0px;
     border-color: Theme.accent-info;
+    animate background { duration: Theme.motion-fast; }
+    animate border-width { duration: Theme.motion-fast; }
     drop-shadow-blur: Theme.elevation-1-blur;
     drop-shadow-color: Theme.elevation-1-color;
     drop-shadow-offset-y: Theme.elevation-1-y;
@@ -149,12 +145,9 @@ component TipPreset inherits Rectangle {
             }
         }
     }
-    TouchArea {
-        clicked => { root.clicked(); }
-    }
+    TouchArea { clicked => { root.clicked(); } }
 }
 
-// One totals row.
 component TotalRow inherits Rectangle {
     in property <string> label;
     in property <string> value;
@@ -176,11 +169,36 @@ component TotalRow inherits Rectangle {
             style: root.emphasize ? HeadingStyle.serif-display : HeadingStyle.plain;
             color: Theme.on-surface;
             font-size: root.emphasize ? 24px : 14px;
-            font-weight: root.emphasize ? 700 : 700;
+            font-weight: 700;
             horizontal-alignment: right;
             vertical-alignment: center;
         }
     }
+}
+
+// Big circular ± button for the custom sheet.
+component RoundStep inherits Rectangle {
+    in property <string> label;
+    in property <bool> primary: false;
+    callback clicked();
+
+    width: 56px;
+    height: 56px;
+    border-radius: 28px;
+    background: root.primary ? Theme.accent-success : Theme.accent-danger;
+    animate background { duration: Theme.motion-fast; }
+
+    Text {
+        text: root.label;
+        color: Theme.on-primary;
+        font-size: 28px;
+        font-weight: 800;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: parent.width;
+        height: parent.height;
+    }
+    TouchArea { clicked => { root.clicked(); } }
 }
 
 export component TipJarPage inherits Window {
@@ -188,14 +206,177 @@ export component TipJarPage inherits Window {
     preferred-height: 892px;
     in property <string> server-name: "Marco";
     in property <string> venue: "Tartine Manufactory";
-    in property <int> selected-rating: 5;
-    in property <int> selected-preset: 1;     // 0..3 (15/18/20/25)
     callback back-pressed();
     callback rating-pressed(int);
     callback preset-pressed(int);
     callback custom-pressed();
     callback round-up-pressed();
     callback pay-pressed();
+    callback tip-changed(int); // cents
+    callback paid(int, int); // total cents, tip cents
+
+    // ----- Interactive state -----
+    private property <int> selected-rating: 5;
+    private property <int> selected-preset: 1; // 0..3, or -1 for custom
+    private property <int> custom-tip-cents: 1660; // default = 18% of 92.26
+    private property <bool> round-up-on: false;
+    private property <bool> custom-sheet-open: false;
+    private property <bool> pay-confirming: false;
+    private property <int> pay-count: 0;
+    private property <int> subtotal-cents: 9226;
+    private property <string> status-msg: "Rate the service · pick a tip · tap Pay";
+    private property <bool> status-is-success: false;
+    private property <bool> status-is-danger: false;
+
+    // ----- Helpers -----
+    function preset-pct(i: int) -> int {
+        if (i == 0) { return 15; }
+        if (i == 1) { return 18; }
+        if (i == 2) { return 20; }
+        return 25;
+    }
+    function preset-tip-cents(i: int) -> int {
+        return floor(root.subtotal-cents * root.preset-pct(i) / 100);
+    }
+    function recommended-preset() -> int {
+        if (root.selected-rating == 3) { return 0; }
+        if (root.selected-rating == 4) { return 1; }
+        return 2; // 5★ → 20%
+    }
+    function base-tip-cents() -> int {
+        return root.selected-preset < 0
+            ? root.custom-tip-cents
+            : root.preset-tip-cents(root.selected-preset);
+    }
+    // Tax = 8.625% of subtotal, rounded.
+    function tax-cents() -> int {
+        return floor((root.subtotal-cents * 8625 + 50000) / 100000);
+    }
+    function pre-round-cents() -> int {
+        return root.subtotal-cents + root.tax-cents() + root.base-tip-cents();
+    }
+    function round-delta-cents() -> int {
+        return mod(root.pre-round-cents(), 100) == 0
+            ? 0
+            : 100 - mod(root.pre-round-cents(), 100);
+    }
+    function tip-cents() -> int {
+        return root.round-up-on
+            ? root.base-tip-cents() + root.round-delta-cents()
+            : root.base-tip-cents();
+    }
+    function total-cents() -> int {
+        return root.subtotal-cents + root.tax-cents() + root.tip-cents();
+    }
+    function tip-pct-display() -> int {
+        return root.selected-preset < 0
+            ? floor(root.tip-cents() * 100 / root.subtotal-cents)
+            : root.preset-pct(root.selected-preset);
+    }
+    function zpad3(n: int) -> string {
+        return n < 10 ? "00" + n : n < 100 ? "0" + n : "" + n;
+    }
+    function add-commas(n: int) -> string {
+        return n < 1000 ? "" + n
+            : floor(n / 1000) + "," + root.zpad3(mod(n, 1000));
+    }
+    function fmt-cents(c: int) -> string {
+        return "$" + root.add-commas(floor(c / 100)) + "."
+            + (mod(c, 100) < 10 ? "0" + mod(c, 100) : "" + mod(c, 100));
+    }
+    function rating-label(r: int) -> string {
+        if (r == 3) { return "OK"; }
+        if (r == 4) { return "GOOD"; }
+        return "GREAT";
+    }
+    function tip-row-label() -> string {
+        return root.selected-preset < 0
+            ? "Tip · custom" + (root.round-up-on ? " + round-up" : "")
+            : "Tip · " + root.preset-pct(root.selected-preset) + "%"
+                + (root.round-up-on ? " + round-up" : "");
+    }
+
+    // ----- Mutations -----
+    public function set-rating(stars: int) {
+        root.selected-rating = stars;
+        root.selected-preset = root.recommended-preset();
+        root.rating-pressed(stars);
+        root.tip-changed(root.tip-cents());
+        root.status-msg = "Rated " + stars + "★ " + root.rating-label(stars)
+            + " · auto " + root.preset-pct(root.selected-preset) + "% · "
+            + root.fmt-cents(root.total-cents());
+        root.status-is-success = stars >= 4;
+        root.status-is-danger = false;
+        root.pay-confirming = false;
+    }
+    public function set-preset(i: int) {
+        root.selected-preset = i;
+        root.preset-pressed(i);
+        root.tip-changed(root.tip-cents());
+        root.status-msg = "Tip · " + root.preset-pct(i) + "% · "
+            + root.fmt-cents(root.tip-cents()) + " · total "
+            + root.fmt-cents(root.total-cents());
+        root.status-is-success = true;
+        root.status-is-danger = false;
+        root.pay-confirming = false;
+    }
+    public function toggle-round-up() {
+        root.round-up-on = !root.round-up-on;
+        root.tip-changed(root.tip-cents());
+        if (root.round-up-on) {
+            root.round-up-pressed();
+            root.status-msg = "Rounded up · total now "
+                + root.fmt-cents(root.total-cents());
+            root.status-is-success = true;
+            root.status-is-danger = false;
+        } else {
+            root.status-msg = "Round-up removed · total "
+                + root.fmt-cents(root.total-cents());
+            root.status-is-success = false;
+            root.status-is-danger = true;
+        }
+        root.pay-confirming = false;
+    }
+    public function open-custom() {
+        if (root.selected-preset >= 0) {
+            root.custom-tip-cents = root.preset-tip-cents(root.selected-preset);
+        }
+        root.selected-preset = -1;
+        root.custom-pressed();
+        root.custom-sheet-open = true;
+        root.status-msg = "Custom tip · "
+            + root.fmt-cents(root.custom-tip-cents);
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function close-custom() { root.custom-sheet-open = false; }
+    public function adjust-custom(delta-cents: int) {
+        root.custom-tip-cents = max(0, root.custom-tip-cents + delta-cents);
+        root.tip-changed(root.tip-cents());
+        root.status-msg = "Custom tip · "
+            + root.fmt-cents(root.custom-tip-cents)
+            + " · total " + root.fmt-cents(root.total-cents());
+        root.status-is-success = delta-cents > 0;
+        root.status-is-danger = delta-cents < 0;
+    }
+    public function do-pay() {
+        if (!root.pay-confirming) {
+            root.pay-confirming = true;
+            root.status-msg = "Tap Pay again to confirm "
+                + root.fmt-cents(root.total-cents());
+            root.status-is-success = false;
+            root.status-is-danger = false;
+            return;
+        }
+        root.pay-confirming = false;
+        root.pay-count = root.pay-count + 1;
+        root.pay-pressed();
+        root.paid(root.total-cents(), root.tip-cents());
+        root.status-msg = "Paid " + root.fmt-cents(root.total-cents())
+            + " · Visa ··4242 (#" + root.pay-count + ")";
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
 
     background: Theme.background;
 
@@ -207,6 +388,30 @@ export component TipJarPage inherits Window {
             title-style: HeadingStyle.lowercase-soft;
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             leading-pressed => { root.back-pressed(); }
+        }
+
+        // ----- Status banner ---------------------------------------
+        Rectangle {
+            height: 32px;
+            background: root.status-is-danger ? Theme.accent-danger
+                : root.status-is-success ? Theme.accent-success
+                : Theme.surface-2;
+            animate background { duration: Theme.motion-fast; }
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                Text {
+                    text: root.status-msg;
+                    color: (root.status-is-danger || root.status-is-success)
+                        ? Theme.on-primary
+                        : Theme.on-surface;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+            }
         }
 
         VerticalLayout {
@@ -257,27 +462,28 @@ export component TipJarPage inherits Window {
                     label: "OK";
                     tone: Tone.warning;
                     selected: root.selected-rating == 3;
-                    clicked => { root.rating-pressed(3); }
+                    clicked => { root.set-rating(3); }
                 }
                 ServiceRating {
                     stars: 4;
                     label: "GOOD";
                     tone: Tone.success;
                     selected: root.selected-rating == 4;
-                    clicked => { root.rating-pressed(4); }
+                    clicked => { root.set-rating(4); }
                 }
                 ServiceRating {
                     stars: 5;
                     label: "GREAT";
                     tone: Tone.success;
                     selected: root.selected-rating == 5;
-                    clicked => { root.rating-pressed(5); }
+                    clicked => { root.set-rating(5); }
                 }
             }
 
             // Tip presets.
             Text {
-                text: "Tip";
+                text: "Tip · " + root.fmt-cents(root.tip-cents())
+                    + (root.selected-preset < 0 ? " (custom)" : "");
                 color: Theme.on-background;
                 font-size: Theme.font-size-body;
                 font-weight: 700;
@@ -286,58 +492,68 @@ export component TipJarPage inherits Window {
                 spacing: Theme.spacing-sm;
                 TipPreset {
                     percent: "15%";
-                    amount: "$13.84";
+                    amount: root.fmt-cents(root.preset-tip-cents(0));
+                    recommended: root.recommended-preset() == 0;
                     selected: root.selected-preset == 0;
-                    clicked => { root.preset-pressed(0); }
+                    clicked => { root.set-preset(0); }
                 }
                 TipPreset {
                     percent: "18%";
-                    amount: "$16.60";
-                    recommended: true;
+                    amount: root.fmt-cents(root.preset-tip-cents(1));
+                    recommended: root.recommended-preset() == 1;
                     selected: root.selected-preset == 1;
-                    clicked => { root.preset-pressed(1); }
+                    clicked => { root.set-preset(1); }
                 }
                 TipPreset {
                     percent: "20%";
-                    amount: "$18.45";
+                    amount: root.fmt-cents(root.preset-tip-cents(2));
+                    recommended: root.recommended-preset() == 2;
                     selected: root.selected-preset == 2;
-                    clicked => { root.preset-pressed(2); }
+                    clicked => { root.set-preset(2); }
                 }
                 TipPreset {
                     percent: "25%";
-                    amount: "$23.06";
+                    amount: root.fmt-cents(root.preset-tip-cents(3));
                     selected: root.selected-preset == 3;
-                    clicked => { root.preset-pressed(3); }
+                    clicked => { root.set-preset(3); }
                 }
             }
             HorizontalLayout {
                 spacing: Theme.spacing-sm;
                 TextButton {
-                    text: "Round up · +$1.55";
-                    clicked => { root.round-up-pressed(); }
+                    text: root.round-up-on
+                        ? "Round-up · −" + root.fmt-cents(root.round-delta-cents())
+                        : "Round up · +" + root.fmt-cents(root.round-delta-cents());
+                    clicked => { root.toggle-round-up(); }
                 }
                 Rectangle { horizontal-stretch: 1; }
                 TextButton {
-                    text: "Custom amount";
-                    clicked => { root.custom-pressed(); }
+                    text: root.selected-preset < 0 ? "Adjust custom" : "Custom amount";
+                    clicked => { root.open-custom(); }
                 }
             }
 
             Divider { }
 
-            // Totals.
+            // Totals — all derived.
             VerticalLayout {
                 spacing: Theme.spacing-xs;
-                TotalRow { label: "Subtotal"; value: "$92.26"; }
-                TotalRow { label: "Sales tax (8.625%)"; value: "$7.96"; }
                 TotalRow {
-                    label: "Tip · 18%";
-                    value: "+$16.60";
+                    label: "Subtotal";
+                    value: root.fmt-cents(root.subtotal-cents);
+                }
+                TotalRow {
+                    label: "Sales tax (8.625%)";
+                    value: root.fmt-cents(root.tax-cents());
+                }
+                TotalRow {
+                    label: root.tip-row-label();
+                    value: "+" + root.fmt-cents(root.tip-cents());
                 }
                 Divider { }
                 TotalRow {
                     label: "Total";
-                    value: "$116.82";
+                    value: root.fmt-cents(root.total-cents());
                     emphasize: true;
                 }
             }
@@ -356,9 +572,135 @@ export component TipJarPage inherits Window {
                 padding: Theme.spacing-md;
                 spacing: Theme.spacing-xs;
                 MobileButton {
-                    text: "Pay $116.82 · Visa ·• 4242";
+                    text: root.pay-confirming
+                        ? "Tap again to confirm " + root.fmt-cents(root.total-cents())
+                        : root.pay-count > 0
+                            ? "Pay " + root.fmt-cents(root.total-cents()) + " · paid " + root.pay-count + "×"
+                            : "Pay " + root.fmt-cents(root.total-cents()) + " · Visa ··4242";
                     tone: Tone.success;
-                    clicked => { root.pay-pressed(); }
+                    clicked => { root.do-pay(); }
+                }
+            }
+        }
+    }
+
+    // ----- Custom-tip bottom sheet -----------------------------------
+    if root.custom-sheet-open: Rectangle {
+        Rectangle {
+            background: #00000099;
+            TouchArea {
+                clicked => { root.close-custom(); }
+            }
+        }
+        Rectangle {
+            y: parent.height - self.height;
+            width: parent.width;
+            height: 360px;
+            background: Theme.surface-1;
+            border-top-left-radius: Theme.radius-lg;
+            border-top-right-radius: Theme.radius-lg;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding: Theme.spacing-lg;
+                spacing: Theme.spacing-md;
+
+                Rectangle {
+                    width: 40px;
+                    height: 4px;
+                    border-radius: 2px;
+                    background: Theme.muted;
+                }
+
+                Heading {
+                    text: "Custom tip";
+                    style: HeadingStyle.grotesk-bold;
+                    font-size: Theme.font-size-title;
+                }
+                Text {
+                    text: "Use the ± buttons to nudge the tip by $1.";
+                    color: Theme.muted;
+                    font-size: Theme.font-size-caption;
+                }
+
+                HorizontalLayout {
+                    spacing: Theme.spacing-md;
+                    alignment: center;
+                    RoundStep {
+                        label: "−";
+                        clicked => { root.adjust-custom(-100); }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 2px;
+                        Text {
+                            text: root.fmt-cents(root.custom-tip-cents);
+                            color: Theme.on-surface;
+                            font-size: 32px;
+                            font-weight: 800;
+                            horizontal-alignment: center;
+                            min-width: 120px;
+                        }
+                        Text {
+                            text: "tip";
+                            color: Theme.muted;
+                            font-size: Theme.font-size-caption;
+                            horizontal-alignment: center;
+                        }
+                    }
+                    RoundStep {
+                        label: "+";
+                        primary: true;
+                        clicked => { root.adjust-custom(100); }
+                    }
+                }
+
+                // Total preview.
+                Rectangle {
+                    background: Theme.surface-2;
+                    border-radius: Theme.radius-md;
+                    VerticalLayout {
+                        padding: Theme.spacing-md;
+                        spacing: 4px;
+                        HorizontalLayout {
+                            Text {
+                                text: "Tip + tax";
+                                color: Theme.muted;
+                                font-size: Theme.font-size-caption;
+                                horizontal-stretch: 1;
+                            }
+                            Text {
+                                text: root.fmt-cents(root.tax-cents() + root.custom-tip-cents);
+                                color: Theme.on-surface;
+                                font-size: Theme.font-size-body;
+                                font-weight: 700;
+                            }
+                        }
+                        HorizontalLayout {
+                            Text {
+                                text: "New total";
+                                color: Theme.muted;
+                                font-size: Theme.font-size-caption;
+                                horizontal-stretch: 1;
+                            }
+                            Text {
+                                text: root.fmt-cents(root.subtotal-cents + root.tax-cents() + root.custom-tip-cents);
+                                color: Theme.on-surface;
+                                font-size: Theme.font-size-body;
+                                font-weight: 800;
+                            }
+                        }
+                    }
+                }
+
+                Rectangle { vertical-stretch: 1; }
+
+                MobileButton {
+                    text: "Done";
+                    tone: Tone.success;
+                    clicked => { root.close-custom(); }
                 }
             }
         }

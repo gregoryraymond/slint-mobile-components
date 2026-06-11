@@ -7,33 +7,40 @@
 // only). Demonstrates:
 //
 //   - Total-spent hero at the top + delta against the prior period.
-//   - Period chip row (May / Apr / Mar / YTD).
+//   - Period chip row (May / Apr / Mar / YTD) — switching scales the
+//     hero total + delta + every category amount by a per-period
+//     factor.
 //   - Stacked horizontal "spending bar" showing the proportional
-//     breakdown across categories — each band tone-tinted.
+//     breakdown across categories — each band is tappable; tapping
+//     highlights its category card (others dim).
 //   - Category cards: tone-tinted icon disc + name + sum + percentage
-//     + share bar at the bottom. Expanding one card shows its top
-//     merchants (rendered always-expanded for the most-spent category
-//     so the snapshot includes them).
+//     + share bar at the bottom. Tap a card to expand its top merchants;
+//     merchant rows are themselves tappable.
 
 import { ScrollView } from "std-widgets.slint";
 import { Theme, Tone } from "@mobile-theme/theme.slint";
 import { AppBar } from "@mobile-components/app-bar.slint";
 import { Heading, HeadingStyle } from "@mobile-components/heading.slint";
-import { SectionHeader } from "@mobile-components/section-header.slint";
 import { Chip } from "@mobile-components/chip.slint";
 import { Divider } from "@mobile-components/divider.slint";
 
-// One band in the stacked spend bar.
+// One band in the stacked spend bar — now tappable.
 component SpendBand inherits Rectangle {
     in property <float> fraction;
     in property <color> fill;
+    in property <bool> active: false;
+    callback clicked();
 
     horizontal-stretch: root.fraction * 1000;
     height: 12px;
     background: root.fill;
+    opacity: root.active ? 1.0 : 0.95;
+    animate opacity { duration: Theme.motion-fast; }
+    TouchArea { clicked => { root.clicked(); } }
 }
 
-// One category card with its own embedded share bar.
+// One category card with its own embedded share bar. Tap-to-expand
+// shows `@children` (the merchant rows) only when `expanded` is true.
 component CategoryCard inherits Rectangle {
     in property <image> icon;
     in property <string> name;
@@ -41,13 +48,19 @@ component CategoryCard inherits Rectangle {
     in property <string> pct;
     in property <float> share;
     in property <Tone> tone: Tone.default;
+    in property <bool> expanded: false;
+    in property <bool> dimmed: false;
+    callback clicked();
 
     horizontal-stretch: 1;
-    background: Theme.surface-1;
+    background: root.expanded ? Theme.surface-2 : Theme.surface-1;
+    opacity: root.dimmed ? 0.35 : 1.0;
     border-radius: Theme.radius-md;
     drop-shadow-blur: Theme.elevation-1-blur;
     drop-shadow-color: Theme.elevation-1-color;
     drop-shadow-offset-y: Theme.elevation-1-y;
+    animate background { duration: Theme.motion-fast; }
+    animate opacity { duration: Theme.motion-fast; }
 
     VerticalLayout {
         padding: Theme.spacing-md;
@@ -90,7 +103,8 @@ component CategoryCard inherits Rectangle {
                     font-weight: 700;
                 }
                 Text {
-                    text: root.pct + " of spend";
+                    text: root.pct + " of spend"
+                        + (root.expanded ? " · tap to collapse" : " · tap for top merchants");
                     color: Theme.muted;
                     font-size: Theme.font-size-caption;
                 }
@@ -127,18 +141,31 @@ component CategoryCard inherits Rectangle {
             }
         }
 
-        @children
+        // Merchant rows go here via @children — the caller wraps each
+        // MerchantRow in `if root.expanded-card == i:` so they only
+        // instantiate when expanded, and the padding-top collapses to
+        // 0 in the same state.
+        VerticalLayout {
+            spacing: 4px;
+            padding-top: root.expanded ? Theme.spacing-sm : 0px;
+            @children
+        }
     }
+
+    TouchArea { clicked => { root.clicked(); } }
 }
 
-// One merchant row inside an expanded card.
+// One merchant row inside an expanded card — now tappable.
 component MerchantRow inherits Rectangle {
     in property <string> merchant;
     in property <string> count;
     in property <string> amount;
+    callback clicked();
 
     horizontal-stretch: 1;
     height: 36px;
+    background: touch.pressed ? Theme.surface-pressed : transparent;
+    animate background { duration: Theme.motion-fast; }
     HorizontalLayout {
         spacing: Theme.spacing-sm;
         alignment: stretch;
@@ -172,15 +199,181 @@ component MerchantRow inherits Rectangle {
             }
         }
     }
+    touch := TouchArea { clicked => { root.clicked(); } }
 }
 
 export component ExpenseReportPage inherits Window {
     preferred-width: 412px;
     preferred-height: 892px;
-    in property <string> total: "$3,142.88";
-    in property <string> delta: "+$418 vs April · 15% over budget";
     callback back-pressed();
     callback export-pressed();
+    callback category-pressed(string);
+    callback merchant-pressed(string);
+    callback period-changed(string);
+
+    // ----- Interactive state -----
+    private property <int> period-index: 0; // 0=May 1=Apr 2=Mar 3=YTD
+    private property <int> expanded-card: -1;
+    private property <int> highlight-cat: -1; // band index 0..5, -1 none
+    private property <int> sort-mode: 0;
+    private property <bool> export-confirming: false;
+    private property <int> export-count: 0;
+    private property <string> status-msg: "Pick a period · tap a band to highlight · tap a card to expand";
+    private property <bool> status-is-success: false;
+    private property <bool> status-is-danger: false;
+
+    // ----- Helpers -----
+    function period-label(p: int) -> string {
+        if (p == 0) { return "May"; }
+        if (p == 1) { return "Apr"; }
+        if (p == 2) { return "Mar"; }
+        return "YTD";
+    }
+    function period-eyebrow(p: int) -> string {
+        if (p == 0) { return "MAY · TOTAL SPEND"; }
+        if (p == 1) { return "APRIL · TOTAL SPEND"; }
+        if (p == 2) { return "MARCH · TOTAL SPEND"; }
+        return "YEAR-TO-DATE · TOTAL SPEND";
+    }
+    function period-factor(p: int) -> float {
+        if (p == 0) { return 1.0; }
+        if (p == 1) { return 0.87; }
+        if (p == 2) { return 0.92; }
+        return 4.5;
+    }
+    function delta-text(p: int) -> string {
+        if (p == 0) { return "+$408 vs April · 15% over budget"; }
+        if (p == 1) { return "−$157 vs March · on budget"; }
+        if (p == 2) { return "+$24 vs February · 5% under budget"; }
+        return "Year-to-date · 4 months tracked";
+    }
+    function delta-color(p: int) -> color {
+        if (p == 0) { return Theme.accent-warning; }
+        if (p == 1) { return Theme.muted; }
+        if (p == 2) { return Theme.accent-success; }
+        return Theme.muted;
+    }
+    function cat-base-cents(i: int) -> int {
+        if (i == 0) { return 88000; }   // Housing
+        if (i == 1) { return 69243; }   // Food & drink
+        if (i == 2) { return 56540; }   // Shopping
+        if (i == 3) { return 44010; }   // Transport
+        if (i == 4) { return 31400; }   // Subscriptions
+        return 25135;                   // Other
+    }
+    function cat-cents(i: int) -> int {
+        return floor(root.cat-base-cents(i) * root.period-factor(root.period-index));
+    }
+    function cat-name(i: int) -> string {
+        if (i == 0) { return "Housing"; }
+        if (i == 1) { return "Food & drink"; }
+        if (i == 2) { return "Shopping"; }
+        if (i == 3) { return "Transport"; }
+        if (i == 4) { return "Subscriptions"; }
+        return "Other";
+    }
+    function cat-pct(i: int) -> string {
+        if (i == 0) { return "28%"; }
+        if (i == 1) { return "22%"; }
+        if (i == 2) { return "18%"; }
+        if (i == 3) { return "14%"; }
+        if (i == 4) { return "10%"; }
+        return "8%";
+    }
+    function total-cents() -> int {
+        return root.cat-cents(0) + root.cat-cents(1) + root.cat-cents(2)
+            + root.cat-cents(3) + root.cat-cents(4) + root.cat-cents(5);
+    }
+    function zpad3(n: int) -> string {
+        return n < 10 ? "00" + n : n < 100 ? "0" + n : "" + n;
+    }
+    function add-commas(n: int) -> string {
+        return n < 1000 ? "" + n
+            : n < 1000000 ? floor(n / 1000) + "," + root.zpad3(mod(n, 1000))
+            : floor(n / 1000000) + ","
+                + root.zpad3(floor(mod(n, 1000000) / 1000)) + ","
+                + root.zpad3(mod(n, 1000));
+    }
+    function fmt-cents(c: int) -> string {
+        return "$" + root.add-commas(floor(c / 100)) + "."
+            + (mod(c, 100) < 10 ? "0" + mod(c, 100) : "" + mod(c, 100));
+    }
+    function cat-display(i: int) -> string {
+        return root.fmt-cents(root.cat-cents(i));
+    }
+    function total-display() -> string {
+        return root.fmt-cents(root.total-cents());
+    }
+    function sort-label(m: int) -> string {
+        if (m == 0) { return "By total"; }
+        if (m == 1) { return "By share"; }
+        return "Alphabetical";
+    }
+    function is-dimmed(i: int) -> bool {
+        return root.highlight-cat >= 0 && root.highlight-cat != i;
+    }
+
+    // ----- Mutations -----
+    public function set-period(p: int) {
+        root.period-index = p;
+        root.expanded-card = -1;
+        root.highlight-cat = -1;
+        root.period-changed(root.period-label(p));
+        root.status-msg = "Period: " + root.period-eyebrow(p)
+            + " · " + root.total-display();
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function tap-band(i: int) {
+        root.highlight-cat = root.highlight-cat == i ? -1 : i;
+        if (root.highlight-cat == i) {
+            root.status-msg = root.cat-name(i) + " · " + root.cat-pct(i)
+                + " · " + root.cat-display(i);
+            root.status-is-success = true;
+            root.status-is-danger = false;
+        } else {
+            root.status-msg = "Cleared highlight";
+            root.status-is-success = false;
+            root.status-is-danger = false;
+        }
+    }
+    public function tap-card(i: int) {
+        root.expanded-card = root.expanded-card == i ? -1 : i;
+        root.category-pressed(root.cat-name(i));
+        root.status-msg = root.expanded-card == i
+            ? "Expanded " + root.cat-name(i) + " · " + root.cat-display(i)
+            : "Collapsed " + root.cat-name(i);
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function tap-merchant(name: string, amount: string) {
+        root.merchant-pressed(name);
+        root.status-msg = "Merchant: " + name + " · " + amount;
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function cycle-sort() {
+        root.sort-mode = mod(root.sort-mode + 1, 3);
+        root.status-msg = "Sorted: " + root.sort-label(root.sort-mode);
+        root.status-is-success = false;
+        root.status-is-danger = false;
+    }
+    public function do-export() {
+        if (!root.export-confirming) {
+            root.export-confirming = true;
+            root.status-msg = "Tap export again to confirm PDF for " + root.period-label(root.period-index);
+            root.status-is-success = false;
+            root.status-is-danger = false;
+            return;
+        }
+        root.export-confirming = false;
+        root.export-count = root.export-count + 1;
+        root.export-pressed();
+        root.status-msg = "Exported " + root.period-label(root.period-index)
+            + " PDF (#" + root.export-count + ")";
+        root.status-is-success = true;
+        root.status-is-danger = false;
+    }
 
     background: Theme.background;
 
@@ -193,175 +386,343 @@ export component ExpenseReportPage inherits Window {
             leading-icon: @image-url("@mobile-components/icons/arrow-left.svg");
             trailing-icon: @image-url("@mobile-components/icons/send.svg");
             leading-pressed => { root.back-pressed(); }
-            trailing-pressed => { root.export-pressed(); }
+            trailing-pressed => { root.do-export(); }
         }
 
-        // Hero + chips + stacked bar + 5 category cards (with merchant
-        // rows) overflow a single 892-px screen, so everything below the
-        // pinned AppBar scrolls.
+        // ----- Status banner ---------------------------------------
+        Rectangle {
+            height: 32px;
+            background: root.status-is-danger ? Theme.accent-danger
+                : root.status-is-success ? Theme.accent-success
+                : Theme.surface-2;
+            animate background { duration: Theme.motion-fast; }
+            HorizontalLayout {
+                padding-left: Theme.spacing-md;
+                padding-right: Theme.spacing-md;
+                Text {
+                    text: root.status-msg;
+                    color: (root.status-is-danger || root.status-is-success)
+                        ? Theme.on-primary
+                        : Theme.on-surface;
+                    font-size: Theme.font-size-caption;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+            }
+        }
+
         ScrollView {
             vertical-stretch: 1;
 
             VerticalLayout {
                 spacing: 0;
 
-        VerticalLayout {
-            padding-top: Theme.spacing-md;
-            padding-bottom: Theme.spacing-sm;
-            spacing: 2px;
-            HorizontalLayout {
-                alignment: center;
-                Text {
-                    text: "MAY · TOTAL SPEND";
-                    color: Theme.muted;
-                    font-size: 10px;
-                    font-weight: 800;
-                    letter-spacing: 0.5px;
+                // Hero — derives from period factor.
+                VerticalLayout {
+                    padding-top: Theme.spacing-md;
+                    padding-bottom: Theme.spacing-sm;
+                    spacing: 2px;
+                    HorizontalLayout {
+                        alignment: center;
+                        Text {
+                            text: root.period-eyebrow(root.period-index);
+                            color: Theme.muted;
+                            font-size: 10px;
+                            font-weight: 800;
+                            letter-spacing: 0.5px;
+                        }
+                    }
+                    HorizontalLayout {
+                        alignment: center;
+                        Heading {
+                            text: root.total-display();
+                            style: HeadingStyle.mono;
+                            color: Theme.on-background;
+                            font-size: 44px;
+                            font-weight: 400;
+                        }
+                    }
+                    HorizontalLayout {
+                        alignment: center;
+                        Text {
+                            text: root.delta-text(root.period-index);
+                            color: root.delta-color(root.period-index);
+                            font-size: Theme.font-size-caption;
+                            font-weight: 600;
+                        }
+                    }
                 }
-            }
-            HorizontalLayout {
-                alignment: center;
-                Heading {
-                    text: root.total;
-                    style: HeadingStyle.mono;
-                    color: Theme.on-background;
-                    font-size: 44px;
-                    font-weight: 400;
-                }
-            }
-            HorizontalLayout {
-                alignment: center;
-                Text {
-                    text: root.delta;
-                    color: Theme.accent-warning;
-                    font-size: Theme.font-size-caption;
-                    font-weight: 600;
-                }
-            }
-        }
 
-        // Period chip row.
-        HorizontalLayout {
-            padding-left: Theme.spacing-md;
-            padding-right: Theme.spacing-md;
-            padding-bottom: Theme.spacing-sm;
-            spacing: Theme.spacing-sm;
-            Chip { label: "May"; selected: true; }
-            Chip { label: "Apr"; }
-            Chip { label: "Mar"; }
-            Chip { label: "YTD"; }
-        }
-
-        // Stacked spend bar.
-        VerticalLayout {
-            padding-left: Theme.spacing-md;
-            padding-right: Theme.spacing-md;
-            padding-bottom: Theme.spacing-md;
-            spacing: Theme.spacing-xs;
-            Rectangle {
-                height: 12px;
-                border-radius: Theme.radius-sm;
-                clip: true;
+                // Period chip row.
                 HorizontalLayout {
-                    spacing: 0;
-                    SpendBand { fraction: 0.28; fill: Theme.accent-info; }
-                    SpendBand { fraction: 0.22; fill: Theme.accent-warning; }
-                    SpendBand { fraction: 0.18; fill: Theme.accent-success; }
-                    SpendBand { fraction: 0.14; fill: Theme.accent-danger; }
-                    SpendBand { fraction: 0.10; fill: Theme.primary; }
-                    SpendBand { fraction: 0.08; fill: Theme.muted; }
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-bottom: Theme.spacing-sm;
+                    spacing: Theme.spacing-sm;
+                    Rectangle {
+                        Chip { label: "May"; selected: root.period-index == 0; }
+                        TouchArea { clicked => { root.set-period(0); } }
+                    }
+                    Rectangle {
+                        Chip { label: "Apr"; selected: root.period-index == 1; }
+                        TouchArea { clicked => { root.set-period(1); } }
+                    }
+                    Rectangle {
+                        Chip { label: "Mar"; selected: root.period-index == 2; }
+                        TouchArea { clicked => { root.set-period(2); } }
+                    }
+                    Rectangle {
+                        Chip { label: "YTD"; selected: root.period-index == 3; }
+                        TouchArea { clicked => { root.set-period(3); } }
+                    }
                 }
-            }
-            HorizontalLayout {
-                Text {
-                    text: "← Higher · Housing 28%";
-                    color: Theme.muted;
-                    font-size: 10px;
-                    font-weight: 600;
-                    horizontal-stretch: 1;
+
+                // Stacked spend bar — bands tappable.
+                VerticalLayout {
+                    padding-left: Theme.spacing-md;
+                    padding-right: Theme.spacing-md;
+                    padding-bottom: Theme.spacing-md;
+                    spacing: Theme.spacing-xs;
+                    Rectangle {
+                        height: 12px;
+                        border-radius: Theme.radius-sm;
+                        clip: true;
+                        HorizontalLayout {
+                            spacing: 0;
+                            SpendBand {
+                                fraction: 0.28;
+                                fill: Theme.accent-info;
+                                active: root.highlight-cat == 0;
+                                clicked => { root.tap-band(0); }
+                            }
+                            SpendBand {
+                                fraction: 0.22;
+                                fill: Theme.accent-warning;
+                                active: root.highlight-cat == 1;
+                                clicked => { root.tap-band(1); }
+                            }
+                            SpendBand {
+                                fraction: 0.18;
+                                fill: Theme.accent-success;
+                                active: root.highlight-cat == 2;
+                                clicked => { root.tap-band(2); }
+                            }
+                            SpendBand {
+                                fraction: 0.14;
+                                fill: Theme.accent-danger;
+                                active: root.highlight-cat == 3;
+                                clicked => { root.tap-band(3); }
+                            }
+                            SpendBand {
+                                fraction: 0.10;
+                                fill: Theme.primary;
+                                active: root.highlight-cat == 4;
+                                clicked => { root.tap-band(4); }
+                            }
+                            SpendBand {
+                                fraction: 0.08;
+                                fill: Theme.muted;
+                                active: root.highlight-cat == 5;
+                                clicked => { root.tap-band(5); }
+                            }
+                        }
+                    }
+                    HorizontalLayout {
+                        Text {
+                            text: root.highlight-cat >= 0
+                                ? root.cat-name(root.highlight-cat) + " " + root.cat-pct(root.highlight-cat)
+                                : "← Higher · Housing 28%";
+                            color: Theme.muted;
+                            font-size: 10px;
+                            font-weight: 600;
+                            horizontal-stretch: 1;
+                        }
+                        Text {
+                            text: "Other 8% →";
+                            color: Theme.muted;
+                            font-size: 10px;
+                            font-weight: 600;
+                        }
+                    }
                 }
-                Text {
-                    text: "Other 8% →";
-                    color: Theme.muted;
-                    font-size: 10px;
-                    font-weight: 600;
+
+                // Tappable sort header.
+                Rectangle {
+                    background: sort-touch.pressed ? Theme.surface-pressed : transparent;
+                    animate background { duration: Theme.motion-fast; }
+                    HorizontalLayout {
+                        padding-left: Theme.spacing-md;
+                        padding-right: Theme.spacing-md;
+                        padding-top: Theme.spacing-sm;
+                        padding-bottom: Theme.spacing-sm;
+                        Text {
+                            text: "BY  CATEGORY";
+                            color: Theme.muted;
+                            font-size: 10px;
+                            font-weight: 800;
+                            letter-spacing: 0.5px;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                        }
+                        Text {
+                            text: "Sort: " + root.sort-label(root.sort-mode) + "  ⇅";
+                            color: Theme.accent-info;
+                            font-size: 11px;
+                            font-weight: 800;
+                            letter-spacing: 0.3px;
+                            vertical-alignment: center;
+                        }
+                    }
+                    sort-touch := TouchArea { clicked => { root.cycle-sort(); } }
+                }
+
+                // Per-category cards.
+                VerticalLayout {
+                    padding: Theme.spacing-md;
+                    spacing: Theme.spacing-sm;
+
+                    CategoryCard {
+                        icon: @image-url("@mobile-components/icons/home.svg");
+                        name: "Housing";
+                        sum: root.cat-display(0);
+                        pct: "28%";
+                        share: 0.28;
+                        tone: Tone.info;
+                        expanded: root.expanded-card == 0;
+                        dimmed: root.is-dimmed(0);
+                        clicked => { root.tap-card(0); }
+                        if root.expanded-card == 0: MerchantRow {
+                            merchant: "Rent · Hayes Valley apt";
+                            count: "1 charge";
+                            amount: "$820.00";
+                            clicked => { root.tap-merchant("Rent · Hayes Valley apt", "$820.00"); }
+                        }
+                        if root.expanded-card == 0: MerchantRow {
+                            merchant: "PG&E";
+                            count: "1 charge";
+                            amount: "$60.00";
+                            clicked => { root.tap-merchant("PG&E", "$60.00"); }
+                        }
+                    }
+                    CategoryCard {
+                        icon: @image-url("@mobile-components/icons/heart.svg");
+                        name: "Food & drink";
+                        sum: root.cat-display(1);
+                        pct: "22%";
+                        share: 0.22;
+                        tone: Tone.warning;
+                        expanded: root.expanded-card == 1;
+                        dimmed: root.is-dimmed(1);
+                        clicked => { root.tap-card(1); }
+                        if root.expanded-card == 1: MerchantRow {
+                            merchant: "Whole Foods Market";
+                            count: "4 charges";
+                            amount: "$284.10";
+                            clicked => { root.tap-merchant("Whole Foods Market", "$284.10"); }
+                        }
+                        if root.expanded-card == 1: MerchantRow {
+                            merchant: "Blue Bottle Coffee";
+                            count: "11 charges";
+                            amount: "$72.80";
+                            clicked => { root.tap-merchant("Blue Bottle Coffee", "$72.80"); }
+                        }
+                        if root.expanded-card == 1: MerchantRow {
+                            merchant: "Restaurants (8)";
+                            count: "8 charges";
+                            amount: "$335.53";
+                            clicked => { root.tap-merchant("Restaurants (8)", "$335.53"); }
+                        }
+                    }
+                    CategoryCard {
+                        icon: @image-url("@mobile-components/icons/queue.svg");
+                        name: "Shopping";
+                        sum: root.cat-display(2);
+                        pct: "18%";
+                        share: 0.18;
+                        tone: Tone.success;
+                        expanded: root.expanded-card == 2;
+                        dimmed: root.is-dimmed(2);
+                        clicked => { root.tap-card(2); }
+                        if root.expanded-card == 2: MerchantRow {
+                            merchant: "Amazon";
+                            count: "6 charges";
+                            amount: "$240.00";
+                            clicked => { root.tap-merchant("Amazon", "$240.00"); }
+                        }
+                        if root.expanded-card == 2: MerchantRow {
+                            merchant: "Patagonia";
+                            count: "1 charge";
+                            amount: "$180.00";
+                            clicked => { root.tap-merchant("Patagonia", "$180.00"); }
+                        }
+                        if root.expanded-card == 2: MerchantRow {
+                            merchant: "Target";
+                            count: "3 charges";
+                            amount: "$145.40";
+                            clicked => { root.tap-merchant("Target", "$145.40"); }
+                        }
+                    }
+                    CategoryCard {
+                        icon: @image-url("@mobile-components/icons/pin.svg");
+                        name: "Transport";
+                        sum: root.cat-display(3);
+                        pct: "14%";
+                        share: 0.14;
+                        tone: Tone.danger;
+                        expanded: root.expanded-card == 3;
+                        dimmed: root.is-dimmed(3);
+                        clicked => { root.tap-card(3); }
+                        if root.expanded-card == 3: MerchantRow {
+                            merchant: "Uber";
+                            count: "18 trips";
+                            amount: "$240.10";
+                            clicked => { root.tap-merchant("Uber", "$240.10"); }
+                        }
+                        if root.expanded-card == 3: MerchantRow {
+                            merchant: "Gasoline (Shell)";
+                            count: "3 charges";
+                            amount: "$200.00";
+                            clicked => { root.tap-merchant("Gasoline (Shell)", "$200.00"); }
+                        }
+                    }
+                    CategoryCard {
+                        icon: @image-url("@mobile-components/icons/star.svg");
+                        name: "Subscriptions";
+                        sum: root.cat-display(4);
+                        pct: "10%";
+                        share: 0.10;
+                        expanded: root.expanded-card == 4;
+                        dimmed: root.is-dimmed(4);
+                        clicked => { root.tap-card(4); }
+                        if root.expanded-card == 4: MerchantRow {
+                            merchant: "Netflix";
+                            count: "1 charge";
+                            amount: "$16.00";
+                            clicked => { root.tap-merchant("Netflix", "$16.00"); }
+                        }
+                        if root.expanded-card == 4: MerchantRow {
+                            merchant: "Spotify";
+                            count: "1 charge";
+                            amount: "$10.99";
+                            clicked => { root.tap-merchant("Spotify", "$10.99"); }
+                        }
+                        if root.expanded-card == 4: MerchantRow {
+                            merchant: "Adobe Creative Cloud";
+                            count: "1 charge";
+                            amount: "$54.99";
+                            clicked => { root.tap-merchant("Adobe Creative Cloud", "$54.99"); }
+                        }
+                        if root.expanded-card == 4: MerchantRow {
+                            merchant: "Other recurring";
+                            count: "6 charges";
+                            amount: "$232.02";
+                            clicked => { root.tap-merchant("Other recurring", "$232.02"); }
+                        }
+                    }
                 }
             }
         }
-
-        SectionHeader { text: "BY  CATEGORY"; }
-
-        // Per-category cards.
-        VerticalLayout {
-            padding: Theme.spacing-md;
-            spacing: Theme.spacing-sm;
-
-            CategoryCard {
-                icon: @image-url("@mobile-components/icons/home.svg");
-                name: "Housing";
-                sum: "$880.00";
-                pct: "28%";
-                share: 0.28;
-                tone: Tone.info;
-                MerchantRow {
-                    merchant: "Rent · Hayes Valley apt";
-                    count: "1 charge";
-                    amount: "$820.00";
-                }
-                MerchantRow {
-                    merchant: "PG&E";
-                    count: "1 charge";
-                    amount: "$60.00";
-                }
-            }
-            CategoryCard {
-                icon: @image-url("@mobile-components/icons/heart.svg");
-                name: "Food & drink";
-                sum: "$692.43";
-                pct: "22%";
-                share: 0.22;
-                tone: Tone.warning;
-                MerchantRow {
-                    merchant: "Whole Foods Market";
-                    count: "4 charges";
-                    amount: "$284.10";
-                }
-                MerchantRow {
-                    merchant: "Blue Bottle Coffee";
-                    count: "11 charges";
-                    amount: "$72.80";
-                }
-                MerchantRow {
-                    merchant: "Restaurants (8)";
-                    count: "8 charges";
-                    amount: "$335.53";
-                }
-            }
-            CategoryCard {
-                icon: @image-url("@mobile-components/icons/queue.svg");
-                name: "Shopping";
-                sum: "$565.40";
-                pct: "18%";
-                share: 0.18;
-                tone: Tone.success;
-            }
-            CategoryCard {
-                icon: @image-url("@mobile-components/icons/pin.svg");
-                name: "Transport";
-                sum: "$440.10";
-                pct: "14%";
-                share: 0.14;
-                tone: Tone.danger;
-            }
-            CategoryCard {
-                icon: @image-url("@mobile-components/icons/star.svg");
-                name: "Subscriptions";
-                sum: "$314.00";
-                pct: "10%";
-                share: 0.10;
-            }
-        }
-            }   // end inner VerticalLayout
-        }       // end ScrollView
     }
 }
