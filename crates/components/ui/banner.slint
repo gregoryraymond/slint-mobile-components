@@ -79,7 +79,11 @@ export component Banner inherits Rectangle {
 
         if root.action-label != "": Rectangle {
             min-height: 36px;
-            min-width: 64px;
+            // Size to the label (64px Material floor): a Rectangle has no
+            // intrinsic content width, and Slint Text doesn't clip — with a
+            // bare 64px the label painted outside the button on both sides
+            // and bled past the banner's right edge.
+            min-width: max(64px, action-text.preferred-width + 2 * Theme.spacing-sm);
             border-radius: Theme.radius-sm;
             background: action-touch.pressed ? Theme.surface-pressed : transparent;
 
@@ -89,7 +93,7 @@ export component Banner inherits Rectangle {
 
             animate background { duration: Theme.motion-fast; }
 
-            Text {
+            action-text := Text {
                 x: Theme.spacing-sm;
                 y: 0;
                 width: parent.width - 2 * Theme.spacing-sm;
